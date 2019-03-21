@@ -1,6 +1,7 @@
 # 老鹰的脚本小巢 - RGSS3
 
 ![](logo.png)
+*绘制by[葱兔](http://onira.lofter.com/)*
 
 ## 基本信息
 
@@ -21,4 +22,3 @@
 由于本人精力有限，此处分享的脚本不会对其余脚本进行特别的兼容与整合（除非自用）。
 
 如果需要付费将某些脚本与指定脚本进行兼容，请在[Project1论坛](https://rpg.blue/home.php?mod=space&uid=287268)私信联系我，或微博[@独眼老鹰](https://www.weibo.com/oneeyedeagle)短消息联系我。
-
