@@ -2,14 +2,14 @@
 # ■ Add-on 滚动文本框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.3.19.21 修改
-# TODO - 在指定位置插入图片
+# - 2019.3.22.21 新增\pic转义符
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
 #     使用方式与 对话框扩展 中的保持一致
 # - 关于标签对：
 #     在标签对中的内容，将会被按照标签对的作用进行统一处理
+# - 由于效率问题，本插件暂不支持翻页或滚动
 #------------------------------------------------------------------------------
 # ● 转义符及其变量列表
 #------------------------------------------------------------------------------
@@ -34,6 +34,11 @@
 #    dc/dl - 以上一次成功绘制的文字的右上角为基准，加一个c/l的偏移值作为新绘制位置
 #
 #  \wait[param] - 设置等待帧数（同 对话框扩展）
+#
+#  \pic[param] -【重置】在指定位置绘制指定图片
+#    id - 指定需要绘制的图片的id（见【设置】中自定义）
+#    o - 设置图片的显示原点（默认7）（九宫格小键盘位置）
+#    x/y - 设置图片原点的显示位置（描绘的第一个字的左上角为(0,0)原点）
 #------------------------------------------------------------------------------
 # - 特效类
 #     此项同 对话框扩展 中的全部内容
@@ -163,6 +168,7 @@ module MESSAGE_EX
     :d => 60,  # 闪烁帧数
     :t => 60,  # 闪烁后的等待时间
   }
+  ST_CMIRROR_PARAMS_INIT = {}
   ST_CU_PARAMS_INIT = {
   # \cu[]
     :t => 10, # 每两次消散之间的时间间隔
@@ -172,31 +178,24 @@ module MESSAGE_EX
     :s =>  0, # 粒子的形状类型
     :dir => 4, # 消散方向类型
   }
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义\pic转义符中的id与对应图片
+  # （均位于 Graphics/Pictures 目录下）
+  #--------------------------------------------------------------------------
+  ID_TO_PICS = {
+    # id => pic_name,
+    0 => "",
+  }
 end
 #==============================================================================
 # ○ 读取设置
 #==============================================================================
 module MESSAGE_EX
   #--------------------------------------------------------------------------
-  # ● 获取指定转义符的基础设置
-  #--------------------------------------------------------------------------
-  class << self; alias eagle_scrolltext_ex_get_default_params get_default_params; end
-  def self.get_default_params(param_sym)
-    return SCROLL_PARAMS_INIT if param_sym == :scroll
-    eagle_scrolltext_ex_get_default_params(param_sym)
-  end
-  #--------------------------------------------------------------------------
   # ● 获取指定文字特效类转义符的基础设置
   #--------------------------------------------------------------------------
   def self.get_default_cparams_st(param_sym)
-    return ST_CIN_PARAMS_INIT    if param_sym == :cin
-    return ST_COUT_PARAMS_INIT   if param_sym == :cout
-    return ST_CSIN_PARAMS_INIT   if param_sym == :csin
-    return ST_CWAVE_PARAMS_INIT  if param_sym == :cwave
-    return ST_CSHAKE_PARAMS_INIT if param_sym == :cshake
-    return ST_CFLASH_PARAMS_INIT if param_sym == :cflash
-    return ST_CU_PARAMS_INIT     if param_sym == :cu
-    {}
+    MESSAGE_EX.const_get("ST_#{param_sym.to_s.upcase}_PARAMS_INIT".to_sym) rescue {}
   end
 end
 #==============================================================================
@@ -690,6 +689,20 @@ class Window_ScrollText < Window_Base
     h[:t] = 0 # 等待帧数
     parse_param(h, param, :t)
     wait(h[:t])
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置pic参数
+  #--------------------------------------------------------------------------
+  def eagle_text_control_pic(param = '0')
+    h = { :id => nil, :x => 0, :y => 0, :o => 7 }
+    parse_param(h, param, :id)
+    return if h[:id].nil?
+    pic_name = MESSAGE_EX::ID_TO_PICS[:id]
+    return if pic_name.nil?
+    pic_bitmap = Cache.pictures(pic_name) rescue return
+    rect = Rect.new(h[:x], h[:y], pic_bitmap.width, pic_bitmap.height)
+    MESSAGE_EX.reset_xy_origin(rect, h[:o])
+    self.contents.blt(rect.x, rect.y, pic_bitmap, pic_bitmap.rect)
   end
 end
 #==============================================================================

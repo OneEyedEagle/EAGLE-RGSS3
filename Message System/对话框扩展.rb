@@ -1,7 +1,10 @@
 #==============================================================================
 # ■ 对话框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2019.3.19.21 新增csin转义符
+$imported ||= {}
+$imported["EAGLE-MessageEX"] = true
+#==============================================================================
+# - 2019.3.22.12 精简
 #==============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -289,11 +292,11 @@ module MESSAGE_EX
     :w => 0,
     :h => 0,
     :dw => 0, # 若为1，则代表宽度会依据文字动态调整
-    :fw => 0, # 若为1，则窗口打开时即为文字绘制完成时所需宽度值（当dw==1时生效）
+    :fw => 1, # 若为1，则窗口打开时即为文字绘制完成时所需宽度值（当dw==1时生效）
     :wmin => 0, # 设置宽度的上下限（当dw==1时生效）
     :wmax => 0, # （有脸图时宽度会自动增加脸图宽度）
     :dh => 0, # 若为1，则代表高度会依据文字动态调整
-    :fh => 0, # 若为1，则窗口打开时即为文字绘制完成时所需高度值（当dh==1时生效）
+    :fh => 1, # 若为1，则窗口打开时即为文字绘制完成时所需高度值（当dh==1时生效）
     :hmin => 0, # 设置高度的上下限（当dh==1时生效）
     :hmax => 0,
     :ali => 0, # 设置文本对齐方式
@@ -413,6 +416,7 @@ module MESSAGE_EX
     :d => 60,  # 闪烁帧数
     :t => 60,  # 闪烁后的等待时间
   }
+  CMIRROR_PARAMS_INIT = {}
   CU_PARAMS_INIT = {
   # \cu[]
     :t => 10, # 每两次消散之间的时间间隔
@@ -499,26 +503,7 @@ module MESSAGE_EX
   # ● 获取指定转义符的基础设置
   #--------------------------------------------------------------------------
   def self.get_default_params(param_sym)
-    return FONT_PARAMS_INIT  if param_sym == :font
-    return WIN_PARAMS_INIT   if param_sym == :win
-    return POP_PARAMS_INIT   if param_sym == :pop
-    return FACE_PARAMS_INIT  if param_sym == :face
-    return NAME_PARAMS_INIT  if param_sym == :name
-    return PAUSE_PARAMS_INIT if param_sym == :pause
-    {}
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取指定文字特效类转义符的基础设置
-  #--------------------------------------------------------------------------
-  def self.get_default_cparams(param_sym)
-    return CIN_PARAMS_INIT    if param_sym == :cin
-    return COUT_PARAMS_INIT   if param_sym == :cout
-    return CSIN_PARAMS_INIT   if param_sym == :csin
-    return CWAVE_PARAMS_INIT  if param_sym == :cwave
-    return CSHAKE_PARAMS_INIT if param_sym == :cshake
-    return CFLASH_PARAMS_INIT if param_sym == :cflash
-    return CU_PARAMS_INIT     if param_sym == :cu
-    {}
+    MESSAGE_EX.const_get("#{param_sym.to_s.upcase}_PARAMS_INIT".to_sym) rescue {}
   end
   #--------------------------------------------------------------------------
   # ● 获取\conv[string]的替换字符串
@@ -1809,9 +1794,7 @@ class Window_Message
   #     text : 绘制处理中的字符串缓存（字符串可能会被修改）
   #     pos  : 绘制位置 {:x, :y, :new_x, :height}
   #--------------------------------------------------------------------------
-  if method_defined?(:process_escape_character)
-    alias eagle_message_ex_process_escape_character process_escape_character
-  end
+  alias eagle_message_ex_process_escape_character process_escape_character
   def process_escape_character(code, text, pos)
     temp_code = code.downcase
     m_c = ("eagle_text_control_" + temp_code).to_sym
@@ -2180,7 +2163,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 初始化特效的默认参数
   #--------------------------------------------------------------------------
   def init_effect_params(sym)
-    @params[sym] = MESSAGE_EX.get_default_cparams(sym).dup # 初始化
+    @params[sym] = MESSAGE_EX.get_default_params(sym).dup # 初始化
   end
   # def start_effect_code(param)  code - 转义符
   # end
