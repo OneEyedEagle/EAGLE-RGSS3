@@ -27,6 +27,7 @@ class << ParticleManager
     f.for_once = true
     f.bitmap_dispose = true
     vp = Viewport.new
+    vp.z = 100
     vp.add_fast_layer(1, 0) if $RGD
     ParticleManager.setup(:charas_out, f, vp)
   end
