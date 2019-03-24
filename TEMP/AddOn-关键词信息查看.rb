@@ -1,17 +1,73 @@
 #==============================================================================
-# ■ Add-on 关键词信息查看 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ Add-On 关键词信息查看 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.3.23.16
+# - 2019.3.24.15
 #==============================================================================
+# - 本插件新增 \key[word] 转义符，在对话框打开时，可以逐个查看 word 的详细信息文本
+# - 在对话框打开时，当已经有关键词 word 被绘制时，能够按下指定按键打开信息窗口
+#     指定按键：第一次按下时，定位到最后绘制的 关键词 前，
+#              再次按下，向前一个关键词跳转显示，直至没有关键词并关闭信息窗口
+#     信息窗口：显示对应关键词的预设的信息文本
+# - 出于不修改主插件数据的原则，已经绘制完的被查看过的关键词，不新增显示变更
+# -【高级】在 Window_Message类 的 eagle_text_control_key 方法中，进行了关键词增加
+#    在 Window_Keyword_Info类 中，处理了按键与显示切换
 #==============================================================================
 
 module MESSAGE_EX
+  #--------------------------------------------------------------------------
+  # ● 【设置】按键激活？
+  #--------------------------------------------------------------------------
+  def self.keyword_trigger?
+    Input.trigger?(:A)
+  end
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义关键词的信息文本
+  # （可以使用VA默认对话框中的转义符，其中\n代表换行）
+  #--------------------------------------------------------------------------
   KEYWORD_INFO = {
   # keyword => info (draw_text_ex),
     "执行者" => "奇迹之城中每一任的水晶守护者，被称为执行者。\n掌管对水晶能量的日常监控与紧急补偿。",
     "奇迹之城" => "据传是以前的神明为嘉奖跟随出征的人，\n赐下水晶，保佑一方人免遭沼泽威胁。",
   }
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义关键词前后需要插入的文本
+  # （可以使用 对话框扩展 中的转义符，需要用 \\ 代替 \ ）
+  #--------------------------------------------------------------------------
+  KEYWORD_PREFIX = "\\font[u1uc17]"
+  KEYWORD_SURFIX = "\\font[u0uc0]"
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义关键词信息前后需要插入的文本
+  # （可以使用VA默认对话框中的转义符，其中\n代表换行）
+  #  \keyword 将会被替换成对应的关键词
+  #--------------------------------------------------------------------------
+  KEYWORD_INFO_PREFIX = "\ec[17]\keyword\ec[0] 注：\n"
+  KEYWORD_INFO_SURFIX = ""
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义关键词信息窗口的皮肤INDEX
+  # （见 对话框扩展 中的 INDEX_TO_WINDOWSKIN ）
+  #--------------------------------------------------------------------------
+  KEYWORD_WINDOWSKIN_INDEX = 1
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义关键词信息窗口的远离文字的像素值
+  # （同 对话框扩展 中的 \pop 的 d 变量）
+  #--------------------------------------------------------------------------
+  KEYWORD_WINDOW_D = 8
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义关键词信息窗口的TAG皮肤的INDEX
+  # （见 对话框扩展 中的 INDEX_TO_WINDOWTAG ）
+  #--------------------------------------------------------------------------
+  KEYWORD_WINDOWTAG_INDEX = 2
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义关键词信息窗口的TAG的远离文字的像素值
+  # （同 对话框扩展 中的 \pop 的 td 变量）
+  #--------------------------------------------------------------------------
+  KEYWORD_WINDOWTAG_D = 3
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义提示文本的内容
+  # （具体设置见 Window_Keyword_Info类 中的 @sprite_hint 精灵实例）
+  #--------------------------------------------------------------------------
+  KEYWORD_KEY_HINT = "  ○ Shift键 - 查看关键词信息"
   #--------------------------------------------------------------------------
   # ● 获取关键词的信息文本
   #--------------------------------------------------------------------------
@@ -37,8 +93,8 @@ class Window_Message
   #--------------------------------------------------------------------------
   alias eagle_keyword_info_close close
   def close
-    @eagle_window_keyword_info.close
     eagle_keyword_info_close
+    @eagle_window_keyword_info.close
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -73,7 +129,10 @@ class Window_Message
     text = eagle_keyword_info_process_conv(text)
     text.gsub!(/\\key\[(.*?)\]/i) {
       c1 = $1[0]; c2 = $1[1..-1]; @eagle_keywords.push($1)
-      "\\font[u1uc17]#{c1}\\key[#{@eagle_keywords.size-1}]#{c2}\\font[u0uc0]"
+      t =  MESSAGE_EX::KEYWORD_PREFIX
+      t += "#{c1}\\key[#{@eagle_keywords.size-1}]#{c2}"
+      t += MESSAGE_EX::KEYWORD_SURFIX
+      t
     }
     text
   end
@@ -97,15 +156,32 @@ class Window_Keyword_Info < Window_Base
   def initialize(message_window)
     @message_window = message_window
     super(0, 0, 24, 24)
+    self.windowskin = MESSAGE_EX.windowskin(MESSAGE_EX::KEYWORD_WINDOWSKIN_INDEX)
     self.openness = 0
     @keywords = [] # [text, sprite_chara]
     @bitmaps = {} # id => bitmap
+
+    @sprite_tag_bitmap = MESSAGE_EX.windowtag(MESSAGE_EX::KEYWORD_WINDOWTAG_INDEX)
+    w = @sprite_tag_bitmap.width
+    h = @sprite_tag_bitmap.height
+    @sprite_tag = Sprite.new
+    @sprite_tag.bitmap = Bitmap.new(w/3, h/3)
+
+    @sprite_hint = Sprite.new
+    @sprite_hint.y = Graphics.height - 50 # 调整hint文本所在的位置
+    @sprite_hint.bitmap = Bitmap.new(Graphics.width/2, line_height)
+    @sprite_hint.bitmap.gradient_fill_rect(@sprite_hint.bitmap.rect,
+      Color.new(0,0,0,150), Color.new(0,0,0,0))
+    @sprite_hint.bitmap.draw_text(0,1,@sprite_hint.width,@sprite_hint.height,
+      MESSAGE_EX::KEYWORD_KEY_HINT, 0)
+    @sprite_hint.visible = false
   end
   #--------------------------------------------------------------------------
   # ● 新增关键词
   #--------------------------------------------------------------------------
   def add_keyword(text, sprite_chara)
     @keywords.push([text, sprite_chara])
+    @sprite_hint.visible = true
   end
   #--------------------------------------------------------------------------
   # ● 打开
@@ -120,8 +196,10 @@ class Window_Keyword_Info < Window_Base
   #--------------------------------------------------------------------------
   # ● 关闭
   #--------------------------------------------------------------------------
-  def close
-    super
+  def close(hint_close = true)
+    @sprite_hint.visible = false if hint_close
+    @sprite_tag.visible = false
+    super()
   end
   #--------------------------------------------------------------------------
   # ● 重置清除
@@ -134,8 +212,10 @@ class Window_Keyword_Info < Window_Base
   #--------------------------------------------------------------------------
   def refresh
     keyword = @keywords[@index][0]
-    text = "\ec[17]#{keyword}\ec[0] 注：\n"
+    text =  MESSAGE_EX::KEYWORD_INFO_PREFIX.dup
+    text.sub!(/\keyword/) { keyword }
     text += MESSAGE_EX.get_keyword_info(keyword)
+    text += MESSAGE_EX::KEYWORD_INFO_SURFIX
     w, h = @message_window.eagle_calculate_text_wh(text, 0,
       [line_height - contents.font.size, 0].max)
     self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
@@ -148,25 +228,39 @@ class Window_Keyword_Info < Window_Base
   def reposition
     s_c = @keywords[@index][1]
     self.x = @message_window.eagle_charas_x0 + s_c.origin_x - self.width/2
-    if @message_window.y > Graphics.height / 2
-      # 显示到文字上方
+    @sprite_tag.x = self.x + (self.width - @sprite_tag.width) / 2
+    up =  @message_window.y > Graphics.height / 2
+    if up # 窗口显示到文字上方
       self.y = @message_window.eagle_charas_y0 + s_c.origin_y - self.height
-    else
+      @sprite_tag.y = self.y + self.height
+      self.y -= MESSAGE_EX::KEYWORD_WINDOW_D
+    else # 窗口显示到文字下方
       self.y = @message_window.eagle_charas_y0 + s_c.origin_y + s_c.height
+      @sprite_tag.y = self.y
+      self.y += MESSAGE_EX::KEYWORD_WINDOW_D
     end
     self.z = @message_window.z + 100
+
+    MESSAGE_EX.windowtag_o(self, @sprite_tag, @sprite_tag_bitmap, up ? 2 : 8)
+    if up
+      @sprite_tag.y -= MESSAGE_EX::KEYWORD_WINDOWTAG_D
+    else
+      @sprite_tag.y += MESSAGE_EX::KEYWORD_WINDOWTAG_D
+    end
+    @sprite_tag.z = self.z + 1
   end
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
   def update
     super
+    @sprite_tag.visible = true if self.open?
   end
   #--------------------------------------------------------------------------
   # ● 更新按键
   #--------------------------------------------------------------------------
   def update_key
-    return if !QTE.trigger?(:TAB)
+    return if !MESSAGE_EX.keyword_trigger?
     return if @keywords.empty?
     return open if self.openness < 255
     move_left
@@ -176,7 +270,7 @@ class Window_Keyword_Info < Window_Base
   #--------------------------------------------------------------------------
   def move_left
     @index -= 1
-    return close if @index < 0
+    return close(false) if @index < 0
     refresh
     reposition
   end
@@ -184,6 +278,11 @@ class Window_Keyword_Info < Window_Base
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
+    @sprite_hint.bitmap.dispose
+    @sprite_hint.dispose
+    @sprite_tag_bitmap.dispose
+    @sprite_tag.bitmap.dispose
+    @sprite_tag.dispose
     super
   end
 end

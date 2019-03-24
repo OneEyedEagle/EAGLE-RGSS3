@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.3.24.0 统一格式
+# - 2019.3.24.12 整合 关键词信息查看
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -480,6 +480,7 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   INDEX_TO_WINDOWTAG = {
     1 => "Window_Tag", # 默认所用tag名称
+    2 => "Window_Help_Tag_Msg",
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义 index → pause箭头帧动画参数组 的映射
@@ -559,8 +560,8 @@ module MESSAGE_EX
       rect = Rect.new( w*(2-(9-o)%3), h*((9-o)/3), w, h)
       sprite.bitmap.blt(0, 0, tag_bitmap, rect)
     end
-    window.eagle_reset_xy_dorigin(sprite, window, o)
-    window.eagle_reset_xy_origin(sprite, 10 - o)
+    self.reset_xy_dorigin(sprite, window, o)
+    self.reset_xy_origin(sprite, 10 - o)
     return true
   end
   #--------------------------------------------------------------------------
