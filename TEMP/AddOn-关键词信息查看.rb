@@ -2,7 +2,7 @@
 # ■ Add-On 关键词信息查看 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.3.24.15
+# - 2019.3.25.17 新增位置修正
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，在对话框打开时，可以逐个查看 word 的详细信息文本
 # - 在对话框打开时，当已经有关键词 word 被绘制时，能够按下指定按键打开信息窗口
@@ -229,6 +229,7 @@ class Window_Keyword_Info < Window_Base
     s_c = @keywords[@index][1]
     self.x = @message_window.eagle_charas_x0 + s_c.origin_x - self.width/2
     @sprite_tag.x = self.x + (self.width - @sprite_tag.width) / 2
+    
     up =  @message_window.y > Graphics.height / 2
     if up # 窗口显示到文字上方
       self.y = @message_window.eagle_charas_y0 + s_c.origin_y - self.height
@@ -239,6 +240,7 @@ class Window_Keyword_Info < Window_Base
       @sprite_tag.y = self.y
       self.y += MESSAGE_EX::KEYWORD_WINDOW_D
     end
+    fix_position
     self.z = @message_window.z + 100
 
     MESSAGE_EX.windowtag_o(self, @sprite_tag, @sprite_tag_bitmap, up ? 2 : 8)
@@ -248,6 +250,13 @@ class Window_Keyword_Info < Window_Base
       @sprite_tag.y += MESSAGE_EX::KEYWORD_WINDOWTAG_D
     end
     @sprite_tag.z = self.z + 1
+  end
+  #--------------------------------------------------------------------------
+  # ● 修正位置，确保完整显示
+  #--------------------------------------------------------------------------
+  def fix_position
+    self.x = [[self.x, 0].max, Graphics.width - self.width].min
+    self.y = [[self.y, 0].max, Graphics.height - self.height].min
   end
   #--------------------------------------------------------------------------
   # ● 更新

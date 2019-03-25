@@ -4,7 +4,8 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.3.24.12 整合 关键词信息查看
+# - 2019.3.25.17 新增 \win转义符的 fix 变量
+# TODO - 对话框背景图片 eagle_recreate_back_bitmap方法
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -71,6 +72,7 @@ $imported["EAGLE-MessageEX"] = true
 #    cfast - 是否允许按键快进（默认true）
 #    se - 设置打字音类型index（默认0，按设置进行 index → 声效SE设置 映射）
 #    skin - 对话框所用windowskin的index（按设置进行 index → skin名称 映射）
+#    fix - 设置对话框是否进行位置修正（保证对话框完整显示在屏幕内）
 #
 #  \pop[param] - pop类型对话框的设置
 #    id - 【重置】【默认】所绑定的对象id
@@ -87,6 +89,7 @@ $imported["EAGLE-MessageEX"] = true
 #    dh - 设置pop对话框的高度是否随着文字绘制而动态变更（默认false）（不会自动翻页）
 #    fh - 设置pop对话框的高度是否直接指定为全部文字所需高度值（dw为true时有效）
 #    skin - pop对话框所用皮肤的index（默认nil，随win参数）（按设置进行 index → skin名称 映射）
+#    fix - 设置pop对话框是否进行位置修正（保证pop对话框完整显示在屏幕内）
 #
 #  \popt[param] - 【预先】pop对话框的箭头设置（当对话框为pop类型时才显示）
 #    tag - 【默认】设置tag的index（按设置进行 index → tag名称 映射）（默认0）
@@ -306,6 +309,7 @@ module MESSAGE_EX
     :cfast => 1, # 是否允许快进
     :se => 1, # 打字音类型（默认0，无声效）
     :skin => 0, # 对话框所用windowskin的类型
+    :fix => 1, # 是否进行位置修正
   }
   POP_PARAMS_INIT = {
   # \pop[]
@@ -320,6 +324,7 @@ module MESSAGE_EX
     :dh => 1, # 若为1，则代表高度会依据文字动态调整
     :fh => 0, # 若为1，则窗口打开时将预绘制成文字区域最终大小（dh==1时有效）
     :skin => nil, # pop模式下所用skin类型
+    :fix => 0, # 是否进行位置修正
   # \popt[]
     :tag => 1, # tag所用文件名index（0时表示不启用）
     :td => 3, # 与绑定事件格子中心位置的偏移值
@@ -1076,6 +1081,7 @@ class Window_Message
     eagle_reset_xy_origin(self, game_message.win_params[:o])
     self.x += game_message.win_params[:dx]
     self.y += game_message.win_params[:dy]
+    eagle_fix_position if game_message.win_params[:fix]
     eagle_recreate_back_bitmap if game_message.background == 1
     eagle_name_update if game_message.name?
   end
@@ -1149,6 +1155,13 @@ class Window_Message
     0
   end
   #--------------------------------------------------------------------------
+  # ● 修正位置（确保对话框完整显示）
+  #--------------------------------------------------------------------------
+  def eagle_fix_position
+    self.x = [[self.x, 0].max, Graphics.width - self.width].min
+    self.y = [[self.y, 0].max, Graphics.height - self.height].min
+  end
+  #--------------------------------------------------------------------------
   # ● 更新pop参数组
   #--------------------------------------------------------------------------
   def eagle_pop_update
@@ -1189,6 +1202,7 @@ class Window_Message
     # 坐标的补足偏移量
     self.x += game_message.pop_params[:dx]
     self.y += game_message.pop_params[:dy]
+    eagle_fix_position if game_message.pop_params[:fix]
     eagle_pop_tag_update if game_message.pop_params[:tag] > 0
     eagle_name_update if game_message.name?
   end
@@ -1906,6 +1920,7 @@ class Window_Message
     game_message.win_params[:fh] = MESSAGE_EX.check_bool(game_message.win_params[:fh])
     game_message.win_params[:cwait] = 0 if game_message.win_params[:cwait] < 0
     game_message.win_params[:cfast] = MESSAGE_EX.check_bool(game_message.win_params[:cfast])
+    game_message.win_params[:fix] = MESSAGE_EX.check_bool(game_message.win_params[:fix])
     eagle_reset_z
   end
   #--------------------------------------------------------------------------
@@ -1929,6 +1944,8 @@ class Window_Message
     game_message.pop_params[:fw] = MESSAGE_EX.check_bool(game_message.pop_params[:fw])
     game_message.pop_params[:dh] = MESSAGE_EX.check_bool(game_message.pop_params[:dh])
     game_message.pop_params[:fh] = MESSAGE_EX.check_bool(game_message.pop_params[:fh])
+    game_message.pop_params[:fix] = MESSAGE_EX.check_bool(game_message.pop_params[:fix])
+
     # 存储设定的固定宽度高度，原变量改为存储动态值，方便设置
     game_message.pop_params[:w_fix] = (game_message.pop_params[:w] > 0 ? game_message.pop_params[:w] : nil)
     game_message.pop_params[:h_fix] = (game_message.pop_params[:h] > 0 ? game_message.pop_params[:h] : nil)
