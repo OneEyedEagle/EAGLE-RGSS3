@@ -229,7 +229,7 @@ class Window_Keyword_Info < Window_Base
     s_c = @keywords[@index][1]
     self.x = @message_window.eagle_charas_x0 + s_c.origin_x - self.width/2
     @sprite_tag.x = self.x + (self.width - @sprite_tag.width) / 2
-    
+
     up =  @message_window.y > Graphics.height / 2
     if up # 窗口显示到文字上方
       self.y = @message_window.eagle_charas_y0 + s_c.origin_y - self.height
@@ -240,7 +240,6 @@ class Window_Keyword_Info < Window_Base
       @sprite_tag.y = self.y
       self.y += MESSAGE_EX::KEYWORD_WINDOW_D
     end
-    fix_position
     self.z = @message_window.z + 100
 
     MESSAGE_EX.windowtag_o(self, @sprite_tag, @sprite_tag_bitmap, up ? 2 : 8)
@@ -250,6 +249,8 @@ class Window_Keyword_Info < Window_Base
       @sprite_tag.y += MESSAGE_EX::KEYWORD_WINDOWTAG_D
     end
     @sprite_tag.z = self.z + 1
+
+    fix_position
   end
   #--------------------------------------------------------------------------
   # ● 修正位置，确保完整显示

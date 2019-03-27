@@ -4,8 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.3.25.17 新增 \win转义符的 fix 变量
-# TODO - 对话框背景图片 eagle_recreate_back_bitmap方法
+# - 2019.3.27.20 新增 \win转义符的 bg 变量
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -72,6 +71,8 @@ $imported["EAGLE-MessageEX"] = true
 #    cfast - 是否允许按键快进（默认true）
 #    se - 设置打字音类型index（默认0，按设置进行 index → 声效SE设置 映射）
 #    skin - 对话框所用windowskin的index（按设置进行 index → skin名称 映射）
+#    bg - 对话框背景图片的index（按设置进行 index → 图片名称 映射）（覆盖窗口皮肤）
+#         （若读取失败，仍然绘制窗口皮肤）（图片的左上角会与对话框的左上角对齐）
 #    fix - 设置对话框是否进行位置修正（保证对话框完整显示在屏幕内）
 #
 #  \pop[param] - pop类型对话框的设置
@@ -309,6 +310,7 @@ module MESSAGE_EX
     :cfast => 1, # 是否允许快进
     :se => 1, # 打字音类型（默认0，无声效）
     :skin => 0, # 对话框所用windowskin的类型
+    :bg => nil, # 对话框背景所用图片（覆盖窗口皮肤）
     :fix => 1, # 是否进行位置修正
   }
   POP_PARAMS_INIT = {
@@ -464,6 +466,14 @@ module MESSAGE_EX
     1 => "Window_Help",
   }
   #--------------------------------------------------------------------------
+  # ● 【设置】定义 index → windows背景图片名称 的映射
+  # （图片的左上角会与对话框的左上角对齐）
+  # （其中 index 必须为整数）
+  # （图片存储于 Graphics/System 目录下）
+  #--------------------------------------------------------------------------
+  INDEX_TO_WINDOW_BG = {
+  }
+  #--------------------------------------------------------------------------
   # ● 【设置】定义 index → 打字音设置 的映射
   # （音效存储于 Audio/SE 目录下）
   #--------------------------------------------------------------------------
@@ -531,6 +541,16 @@ module MESSAGE_EX
       return Cache.system(INDEX_TO_WINDOWSKIN[index])
     rescue
       return Cache.system(INDEX_TO_WINDOWSKIN[0])
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取对应的 window bg 位图
+  #--------------------------------------------------------------------------
+  def self.windowbg(index)
+    begin
+      return Cache.system(INDEX_TO_WINDOW_BG[index])
+    rescue
+      return nil
     end
   end
   #--------------------------------------------------------------------------
@@ -866,6 +886,12 @@ class Window_Message
     t.game_message.win_params[:z] = 0
     t.x = self.x; t.y = self.y; t.width = self.width; t.height = self.height
     t.z = self.z - 5
+    # 拷贝背景精灵
+    t.back_bitmap.dispose
+    t.back_bitmap = @back_bitmap
+    t.back_sprite.bitmap = @back_bitmap
+    t.eagle_recreate_back_bitmap
+    @back_bitmap = nil
     # 拷贝文字组
     t.eagle_chara_sprites = @eagle_chara_sprites
     @eagle_chara_sprites.each { |s| s.bind_window(t) }
@@ -975,22 +1001,6 @@ class Window_Message
     @eagle_sprite_pause.dispose
   end
   #--------------------------------------------------------------------------
-  # ● 重新生成背景位图
-  #--------------------------------------------------------------------------
-  def eagle_recreate_back_bitmap
-    @back_bitmap.dispose if @back_bitmap
-    @back_bitmap = Bitmap.new(width, height)
-    rect1 = Rect.new(0, 0, width, 12)
-    rect2 = Rect.new(0, 12, width, height - 24)
-    rect3 = Rect.new(0, height - 12, width, 12)
-    @back_bitmap.gradient_fill_rect(rect1, back_color2, back_color1, true)
-    @back_bitmap.fill_rect(rect2, back_color1)
-    @back_bitmap.gradient_fill_rect(rect3, back_color1, back_color2, true)
-    @back_sprite.bitmap = @back_bitmap
-    @back_sprite.x = self.x
-    @back_sprite.y = self.y
-  end
-  #--------------------------------------------------------------------------
   # ● 重置单页对话框
   #--------------------------------------------------------------------------
   def eagle_message_reset
@@ -1021,6 +1031,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_reset_z
     self.z = game_message.win_params[:z] if game_message.win_params[:z] > 0
+    @back_sprite.z = self.z - 1
     @eagle_chara_sprites.each { |s| s.z = self.z + 1 }
     @eagle_sprite_pop_tag.z = self.z + 1
     @eagle_sprite_face.z = self.z + 2
@@ -1082,7 +1093,7 @@ class Window_Message
     self.x += game_message.win_params[:dx]
     self.y += game_message.win_params[:dy]
     eagle_fix_position if game_message.win_params[:fix]
-    eagle_recreate_back_bitmap if game_message.background == 1
+    eagle_recreate_back_bitmap
     eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
@@ -1202,8 +1213,8 @@ class Window_Message
     # 坐标的补足偏移量
     self.x += game_message.pop_params[:dx]
     self.y += game_message.pop_params[:dy]
-    eagle_fix_position if game_message.pop_params[:fix]
     eagle_pop_tag_update if game_message.pop_params[:tag] > 0
+    eagle_fix_position if game_message.pop_params[:fix]
     eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
@@ -1276,6 +1287,54 @@ class Window_Message
     @eagle_window_name.x += game_message.name_params[:dx]
     @eagle_window_name.y += game_message.name_params[:dy]
     eagle_reset_xy_origin(@eagle_window_name, game_message.name_params[:o])
+  end
+  #--------------------------------------------------------------------------
+  # ● 重新生成背景位图
+  #--------------------------------------------------------------------------
+  def eagle_recreate_back_bitmap
+    if game_message.win_params[:bg] # 绘制图片背景
+      if game_message.win_params[:bg_draw] != game_message.win_params[:bg]
+        @back_bitmap.dispose if @back_bitmap
+        @back_bitmap = MESSAGE_EX.windowbg(game_message.win_params[:bg])
+        game_message.win_params[:bg_draw] = game_message.win_params[:bg]
+      end
+    else
+      if game_message.win_params[:bg_draw] # 清除之前的图片背景记录
+        @back_bitmap.dispose if @back_bitmap
+        @back_bitmap = nil
+        game_message.win_params[:bg_draw] = nil
+      end
+      if game_message.background == 1 # 绘制暗色背景
+        w = self.width; h = self.height
+        if @back_bitmap && @back_bitmap.width == w && @back_bitmap.height == h
+        else
+          @back_bitmap.dispose if @back_bitmap
+          @back_bitmap = Bitmap.new(w, h)
+          rect1 = Rect.new(0, 0, w, 12)
+          rect2 = Rect.new(0, 12, w, h - 24)
+          rect3 = Rect.new(0, h - 12, w, 12)
+          @back_bitmap.gradient_fill_rect(rect1, back_color2, back_color1, true)
+          @back_bitmap.fill_rect(rect2, back_color1)
+          @back_bitmap.gradient_fill_rect(rect3, back_color1, back_color2, true)
+        end
+      else
+        @back_bitmap.dispose if @back_bitmap
+        @back_bitmap = nil
+      end
+    end
+    return if @back_bitmap.nil?
+    @back_sprite.bitmap = @back_bitmap
+    @back_sprite.visible = true
+    self.opacity = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新背景精灵
+  #--------------------------------------------------------------------------
+  def update_back_sprite
+    @back_sprite.x = self.x
+    @back_sprite.y = self.y
+    @back_sprite.opacity = openness
+    @back_sprite.update
   end
 
   #--------------------------------------------------------------------------
@@ -2085,6 +2144,7 @@ end # end of class Window_Message
 # ○ 对话框拷贝
 #==============================================================================
 class Window_Message_Clone < Window_Message
+  attr_accessor :back_bitmap, :back_sprite
   attr_accessor :eagle_chara_sprites, :eagle_sprite_pop_tag
   attr_accessor :eagle_sprite_face, :eagle_window_name, :eagle_sprite_pause
   #--------------------------------------------------------------------------
