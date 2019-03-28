@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.3.27.20 新增 \win转义符的 bg 变量
+# - 2019.3.28.21 新增 \info 转义符
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -27,11 +27,22 @@ $imported["EAGLE-MessageEX"] = true
 #-----------------------------------------------------------------------------
 # ● 转义符及其变量列表
 #-----------------------------------------------------------------------------
+# - 文本替换类
+#     此类别的转义符将会在绘制开始前，预先进行目标绘制文本的替换
+#
+#  \new_line 与 \nl - 替换成换行\n（同编辑器中的手动回车）
+#
+#  \conv[string] - 替换成 CONVERT_ESCAPE 中所设置的文本
+#
+#  \info[type+id] - 替换成指定数据库对象的 图标+名称 的文本
+#    type - s代表技能，i代表物品，w代表武器，a代表防具
+#    id - 在数据库中的id序号
+#    如：\info[i16] → 被替换成16号物品的 图标+名称 的文本进行绘制
+#
+#-----------------------------------------------------------------------------
 # - 控制类
 #    对于带有 是否 描述的bool变量，数字 0 代表 false，正数（推荐数字 1）代表 true
 #    对于未说明 nil 时效果的变量，请尽量不要传入 nil/$
-#
-#  \new_line 与 \nl - 换行（同编辑器中的手动回车）
 #
 #  \font[param] - 对话框绘制单个字体的设置（默认Font模块的设置）
 #    size - 【默认】字体大小
@@ -193,6 +204,7 @@ $imported["EAGLE-MessageEX"] = true
 #    o - 单个粒子消失时的透明度变更最小值
 #    dir - 整体消散方向类型（同九宫格小键盘）（1379-四角；5-四方向；46-左右向上）
 #    s - 粒子形状类型（0-正方向；1-圆形；2-三角形）
+#
 #-----------------------------------------------------------------------------
 # ● 文本预定
 #-----------------------------------------------------------------------------
@@ -463,7 +475,6 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   INDEX_TO_WINDOWSKIN = {
     0 => "Window", # 默认所用皮肤名称
-    1 => "Window_Help",
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义 index → windows背景图片名称 的映射
@@ -495,7 +506,6 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   INDEX_TO_WINDOWTAG = {
     1 => "Window_Tag", # 默认所用tag名称
-    2 => "Window_Help_Tag_Msg",
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义 index → pause箭头帧动画参数组 的映射
@@ -598,6 +608,19 @@ module MESSAGE_EX
 #==============================================================================
 # ○ 共享方法
 #==============================================================================
+  #--------------------------------------------------------------------------
+  # ● 获取指定对象的信息文本
+  #--------------------------------------------------------------------------
+  def self.get_data_info(type, id)
+    case type
+    when 's'; obj = $data_skills[id]
+    when 'i'; obj = $data_items[id]
+    when 'w'; obj = $data_weapons[id]
+    when 'a'; obj = $data_armors[id]
+    end
+    return "\ei[#{obj.icon_index}]#{obj.name}" if obj
+    return ""
+  end
   #--------------------------------------------------------------------------
   # ● 解析字符串参数
   #--------------------------------------------------------------------------
@@ -1001,6 +1024,12 @@ class Window_Message
     @eagle_sprite_pause.dispose
   end
   #--------------------------------------------------------------------------
+  # ● 释放背景位图
+  #--------------------------------------------------------------------------
+  def dispose_back_bitmap
+    @back_bitmap.dispose if @back_bitmap
+  end
+  #--------------------------------------------------------------------------
   # ● 重置单页对话框
   #--------------------------------------------------------------------------
   def eagle_message_reset
@@ -1284,9 +1313,16 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_name_update
     eagle_reset_xy_dorigin(@eagle_window_name, self, game_message.name_params[:do])
+    eagle_reset_xy_origin(@eagle_window_name, game_message.name_params[:o])
+
+    # 若对话框遮挡了脸图，则移动到不遮挡的地方
+    lx = self.x + eagle_face_left_width
+    rx = self.x + self.width - eagle_face_right_width
+    @eagle_window_name.x = lx if @eagle_window_name.x < lx
+    @eagle_window_name.x = rx if @eagle_window_name.x > rx
+
     @eagle_window_name.x += game_message.name_params[:dx]
     @eagle_window_name.y += game_message.name_params[:dy]
-    eagle_reset_xy_origin(@eagle_window_name, game_message.name_params[:o])
   end
   #--------------------------------------------------------------------------
   # ● 重新生成背景位图
@@ -1348,7 +1384,6 @@ class Window_Message
     end
     text = eagle_process_conv(text)
     text = convert_escape_characters(text) # 此处将 \\ 替换成了 \e
-    text.gsub!(/\enew_line|\enl/i) { "\n" } # 替换换行转义符
     text
   end
   #--------------------------------------------------------------------------
@@ -1357,6 +1392,18 @@ class Window_Message
   def eagle_process_conv(text)
     text.gsub!(/\\conv\[(.*?)\]/i) { MESSAGE_EX.get_conv($1) }
     text
+  end
+  #--------------------------------------------------------------------------
+  # ● 进行控制符的事前变换
+  #    在实际绘制前、将控制符替换为实际的内容。
+  #    为了减少歧异，文字「\」会被首先替换为转义符（\e）。
+  #--------------------------------------------------------------------------
+  alias eagle_convert_escape_characters convert_escape_characters
+  def convert_escape_characters(text)
+    result = eagle_convert_escape_characters(text)
+    result.gsub!(/\eINFO\[(\w)(\d+)\]/i) { MESSAGE_EX.get_data_info($1, $2.to_i) }
+    result.gsub!(/\enew_line|\enl/i) { "\n" } # 替换换行转义符
+    result
   end
   #--------------------------------------------------------------------------
   # ● 处理所有文本内容（覆盖）
@@ -1857,9 +1904,15 @@ class Window_Message
   # ● 脸图在左侧占用的宽度（用于调整文字区域的左侧起始位置）
   #--------------------------------------------------------------------------
   def eagle_face_left_width
-    return 0 if !game_message.face?
     return 0 if game_message.face_params[:dir] # 显示在右侧时
-    @eagle_sprite_face.width + game_message.face_params[:dw]
+    eagle_face_width
+  end
+  #--------------------------------------------------------------------------
+  # ● 脸图在右侧占用的宽度
+  #--------------------------------------------------------------------------
+  def eagle_face_right_width
+    return 0 if !game_message.face_params[:dir] # 显示在左侧时
+    eagle_face_width
   end
 
   #--------------------------------------------------------------------------

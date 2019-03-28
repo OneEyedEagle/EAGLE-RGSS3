@@ -2,7 +2,7 @@
 # ■ Add-On 关键词信息查看 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.3.25.17 新增位置修正
+# - 2019.3.28.17 修正窗口大小
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，在对话框打开时，可以逐个查看 word 的详细信息文本
 # - 在对话框打开时，当已经有关键词 word 被绘制时，能够按下指定按键打开信息窗口
@@ -27,8 +27,8 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   KEYWORD_INFO = {
   # keyword => info (draw_text_ex),
-    "执行者" => "奇迹之城中每一任的水晶守护者，被称为执行者。\n掌管对水晶能量的日常监控与紧急补偿。",
-    "奇迹之城" => "据传是以前的神明为嘉奖跟随出征的人，\n赐下水晶，保佑一方人免遭沼泽威胁。",
+    "浮空遗迹" => "坐落于DEMO村东方的奇妙的浮空遗迹，\n虽然理应没有了作用，但有翻新的痕迹。",
+    "111" => "据传是以前的神明为嘉奖跟随出征的人，\n赐下水晶，保佑一方人免遭沼泽威胁。",
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义关键词前后需要插入的文本
@@ -216,8 +216,9 @@ class Window_Keyword_Info < Window_Base
     text.sub!(/\keyword/) { keyword }
     text += MESSAGE_EX.get_keyword_info(keyword)
     text += MESSAGE_EX::KEYWORD_INFO_SURFIX
-    w, h = @message_window.eagle_calculate_text_wh(text, 0,
-      [line_height - contents.font.size, 0].max)
+    dh = [line_height - contents.font.size, 0].max
+    w, h = @message_window.eagle_calculate_text_wh(text, 0, dh)
+    h += dh # 最后一行补足高度
     self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
     create_contents
     draw_text_ex(0, 0, text)
