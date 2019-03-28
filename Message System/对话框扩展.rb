@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.3.28.21 新增 \info 转义符
+# - 2019.3.29.0 调整更新顺序，修复\shake在pop对话框中失效的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -150,7 +150,7 @@ $imported["EAGLE-MessageEX"] = true
 #    参数字符串为按序排列的 c + Windowskin颜色索引号，无参数传入时代表取消渐变绘制
 #    如：\g[c1c2c1] 则表示用1号2号1号颜色由上至下进行渐变绘制
 #
-#  \hold - 【结尾】保留当前对话框，直至没有该指令的对话框结束，关闭所有保留的对话框
+#  \hold - 【结尾】保留当前对话框，直至没有该指令的对话框关闭，关闭所有保留的对话框
 #
 #  \instant - 【预先】当前对话框立即显示完毕（先打开，再全部显示内容）
 #
@@ -932,6 +932,8 @@ class Window_Message
     t.eagle_sprite_pause = @eagle_sprite_pause
     t.eagle_sprite_pause.visible = true
     @eagle_sprite_pause.bind_window(t)
+    # 拷贝pop对象
+    t.eagle_pop_chara = @eagle_pop_chara
     # 集体更新z值
     t.eagle_reset_z
     # 自身初始化组件与重置
@@ -976,7 +978,6 @@ class Window_Message
   alias eagle_message_ex_close close
   def close
     eagle_message_reset
-    eagle_release_hold
     eagle_message_ex_close
   end
   #--------------------------------------------------------------------------
@@ -1068,15 +1069,22 @@ class Window_Message
     @eagle_sprite_pause.z = self.z + 3
   end
   #--------------------------------------------------------------------------
-  # ● 更新
+  # ● 更新（在更新fiber之后）
   #--------------------------------------------------------------------------
   alias eagle_message_ex_update update
   def update
     eagle_message_ex_update
-    eagle_message_update_while_open if self.openness > 0
     @eagle_chara_sprites.each { |s| s.update }
-    eagle_face_update_move if game_message.face_params[:params_move]
     eagle_dup_windows_update
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新所有窗口（在更新fiber之前）
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_update_all_windows update_all_windows
+  def update_all_windows
+    eagle_message_ex_update_all_windows
+    eagle_message_update_while_open if self.openness > 0
+    eagle_face_update_move if game_message.face_params[:params_move]
   end
   #--------------------------------------------------------------------------
   # ● 对话框打开后的更新
@@ -1760,7 +1768,12 @@ class Window_Message
     game_message.hold = $1 ? true : false
   end
   def eagle_process_hold
-    game_message.hold ? @windows_dup.unshift( self.clone ) : eagle_release_hold
+    if game_message.hold
+      @windows_dup.unshift( self.clone )
+      self.openness = 0
+    else
+      eagle_release_hold
+    end
   end
   def eagle_release_hold # 所有暂存窗口关闭
     @windows_dup.each { |w| w.close }
@@ -2152,6 +2165,7 @@ class Window_Message
   # ● 设置shake参数
   #--------------------------------------------------------------------------
   def eagle_text_control_shake(param = '0')
+    return if !game_message.draw
     h = {}
     h[:p] = 5 # shake power
     h[:s] = 5 # shake speed
@@ -2200,6 +2214,7 @@ class Window_Message_Clone < Window_Message
   attr_accessor :back_bitmap, :back_sprite
   attr_accessor :eagle_chara_sprites, :eagle_sprite_pop_tag
   attr_accessor :eagle_sprite_face, :eagle_window_name, :eagle_sprite_pause
+  attr_accessor :eagle_pop_chara
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
