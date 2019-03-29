@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.3.29.0 调整更新顺序，修复\shake在pop对话框中失效的bug
+# - 2019.3.29.21 修复在更新顺序调整后，姓名框无法完全关闭bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -1049,6 +1049,7 @@ class Window_Message
     # 重置姓名框
     game_message.name_params[:name] = ""
     @eagle_window_name.close
+    @eagle_window_name.openness -= 15
     # 重置pause精灵
     @eagle_sprite_pause.bind_last_chara(nil) # 重置pause精灵的文末位置
     @eagle_sprite_pause.visible = false
