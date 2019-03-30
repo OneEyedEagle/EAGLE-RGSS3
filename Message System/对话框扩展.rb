@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.3.29.21 修复在更新顺序调整后，姓名框无法完全关闭bug
+# - 2019.3.30.12 修复文字特效类转义符失效bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -742,7 +742,6 @@ end
 # ○ Game_Message
 #=============================================================================
 class Game_Message
-  include MESSAGE_EX::CHARA_EFFECTS
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :chara_params, :chara_grad_colors, :escape_strings
@@ -864,6 +863,7 @@ end
 # ○ Window_Message
 #=============================================================================
 class Window_Message
+  include MESSAGE_EX::CHARA_EFFECTS
   attr_reader :eagle_charas_w, :eagle_charas_h
   #--------------------------------------------------------------------------
   # ● 初始化对象
