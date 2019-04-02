@@ -1,0 +1,1 @@
+﻿<list test><msg>\win[dw1dh1fw1fh1]第一句台词</msg><msg>\win[dw1dh1fw1fh1]第二句台词</msg></list>
