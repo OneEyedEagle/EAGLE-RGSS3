@@ -84,6 +84,8 @@ module MESSAGE_PARA
   # type_id => type_sym
   #--------------------------------------------------------------------------
   S_ID_NO_MSG = 0
+
+  FILE_MSG_LIST_NAME = ""
   #--------------------------------------------------------------------------
   # ●【常量】对话框的参数预设
   #--------------------------------------------------------------------------
@@ -143,15 +145,27 @@ module EAGLE
 end
 module MESSAGE_PARA
   #--------------------------------------------------------------------------
-  # ● 解析含并行对话序列的文本
+  # ● 解析含并行对话序列的文本文件
+  #--------------------------------------------------------------------------
+  # hash - 存储解析出的全部 name => [cond_string, 并行对话文本list_msg]
+  def self.parse_list_file(file_name)
+    text = read_file(file_name) # TODO
+    hash = {}
+    text.scan(/<list ?(\{.*?\})? ?(.*?)>(.*?)<\/list>/m).each do |params|
+      hash[ params[1].to_sym ] = [ params[0], params[2] ]
+    end
+    hash
+  end
+  #--------------------------------------------------------------------------
+  # ● 解析含并行对话序列的字符串
   #--------------------------------------------------------------------------
   # hash - 存储解析出的全部 name => 并行对话文本list_msg
-  def self.parse_list(text)
+  def self.parse_list_string(text)
     s = $game_switches; v = $game_variables; p = $game_player
     e = $game_map.events if SceneManager.scene_is?(Scene_Map)
     e = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
     hash = {}
-    text.scan(/<list ?(\{.*?\})? ?(.*?)>(.*?)<\/list>/).each do |params|
+    text.scan(/<list ?(\{.*?\})? ?(.*?)>(.*?)<\/list>/m).each do |params|
       next if eval(params[0]) == false
       hash[ params[1] ] = params[2]
     end
@@ -172,7 +186,7 @@ module MESSAGE_PARA
         ""
       end
     }
-    list_msg.scan(/<msg ?(\{.*?\})? ?(.*?)>(.*?)<\/msg>/).each do |_params|
+    list_msg.scan(/<msg ?(\{.*?\})? ?(.*?)>(.*?)<\/msg>/m).each do |_params|
       # 解析脸图信息
       face_infos = parse_face_info(_params[0])
       # 解析对话框参数
@@ -204,13 +218,8 @@ module MESSAGE_PARA
   def self.init
     @lists = {} # 存储当前正在更新的并行对话列表
     @lock_count = [] # 当前锁定类型汇总
-    @lists_msgs = {} # 存储预读取的全部并行对话序列 name_sym => [cond, list_msg]
-    read_default_text_file
-  end
-  #--------------------------------------------------------------------------
-  # ● 读取文本文件
-  #--------------------------------------------------------------------------
-  def self.read_default_text_file
+    # 存储预读取的全部并行对话序列 name_sym => [cond, list_msg]
+    @lists_msgs = parse_list_file(FILE_MSG_LIST_NAME)
   end
   #--------------------------------------------------------------------------
   # ● 指定对话组存在？
@@ -503,7 +512,7 @@ class Game_Event < Game_Character
     eagle_message_para_setup_page(new_page)
     @eagle_message_para = {} # type => [list_msg, list_params] # 每种一个
     t = EAGLE.event_comment_head(@list)
-    hash = MESSAGE_EX.parse_list(t) # params => list_msg
+    hash = MESSAGE_EX.parse_list_string(t) # params => list_msg
     hash.each do |key, value|
       hash_ = {}; MESSAGE_EX.parse_param(hash_, key)
       hash_ = MESSAGE_PARA.event_init_params(hash_)
