@@ -7,7 +7,7 @@
 # - 使用流程：
 #    1.【可选】继承 Particle_Template类，实现自己的 粒子模板类
 #    2. 生成一个 Particle_Template类或是其子类的实例p_t，并设置各种参数
-#    3. 通过调用 
+#    3. 通过调用
 #         ParticleManager.setup(id, p_t[, vp])
 #       将该实例存为id号的可用粒子模板，其中vp为粒子显示的viewport，可省略
 #    4. 管理粒子：
@@ -56,7 +56,7 @@ module ParticleManager
     @emitters[id].start if @emitters[id]
   end
   def self.finish(id)
-    @emitters[id].halt if @emitters[id]
+    @emitters[id].finish if @emitters[id]
   end
   #--------------------------------------------------------------------------
   # ● 指定id发射器冻结（不再更新）/ 继续更新
