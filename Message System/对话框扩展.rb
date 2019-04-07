@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.3.30.12 修复文字特效类转义符失效bug
+# - 2019.4.7.22 修复通常对话框多增加了pause精灵宽度的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -334,9 +334,9 @@ module MESSAGE_EX
     :w => 0, # 指定固定的宽度和高度（优先级高于win_params）
     :h => 0,
     :dw => 1, # 若为1，则代表宽度会依据文字动态调整
-    :fw => 0, # 若为1，则窗口打开时将预绘制成文字区域最终大小（dw==1时有效）
+    :fw => 1, # 若为1，则窗口打开时将预绘制成文字区域最终大小（dw==1时有效）
     :dh => 1, # 若为1，则代表高度会依据文字动态调整
-    :fh => 0, # 若为1，则窗口打开时将预绘制成文字区域最终大小（dh==1时有效）
+    :fh => 1, # 若为1，则窗口打开时将预绘制成文字区域最终大小（dh==1时有效）
     :skin => nil, # pop模式下所用skin类型
     :fix => 0, # 是否进行位置修正
   # \popt[]
@@ -1691,11 +1691,12 @@ class Window_Message
     # 当pause精灵位于句末且紧靠边界时
     # 增加对话框宽度保证它在对话框内部（不可占用padding）
     if game_message.pause_params[:v] != 0 && game_message.pause_params[:do] <= 0 &&
-       game_message.input_pause? &&
+       eagle_dynamic_w? && game_message.input_pause? &&
        @eagle_charas_w - @eagle_next_chara_x < @eagle_sprite_pause.width
       @eagle_sprite_pause_width_add = @eagle_sprite_pause.width
     end
   end
+
   #--------------------------------------------------------------------------
   # ● 处于快进显示？
   #--------------------------------------------------------------------------
