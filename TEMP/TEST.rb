@@ -1,3 +1,14 @@
+=begin
+s = Sprite.new
+s.bitmap = Cache.system("BattleStatus_1_normal")
+bs = []; xys = []
+EAGLE.bitmap_crop_square(s, bs, xys)
+f = ParticleManager.emitters[:charas_out].template
+f.total = bs.size
+f.bitmaps = bs
+f.xys = xys
+ParticleManager.start(:charas_out)
+=end
 module EAGLE
   def self.bitmap_crop_square(sprite, bitmaps, xys, sw = 5, sh = 5)
     bitmap = sprite.bitmap
@@ -29,12 +40,5 @@ module EAGLE
   end
 end
 
-s = Sprite.new
-s.bitmap = Cache.system("BattleStatus_1_normal")
-bs = []; xys = []
-EAGLE.bitmap_crop_square(s, bs, xys)
-f = ParticleManager.emitters[:charas_out].template
-f.total = bs.size
-f.bitmaps = bs
-f.xys = xys
-ParticleManager.start(:charas_out)
+a = 2525
+p sprintf("%3d", a)

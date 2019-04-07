@@ -2,7 +2,7 @@
 # ■ Add-On 选择框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.3.22.21 精简
+# - 2019.4.7.21 新增倒计时选择支
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #     i - 【默认】【重置】设置选择框光标初始所在的选择支（从0开始计数）（按实际显示选项顺序）
@@ -42,6 +42,8 @@
 #
 #   对 params 的解析：由 变量名 + 数字 构成（同 对话框扩展 中的变量参数字符串）
 #     ali - 【默认】设置该选择支的对齐方式（覆盖选择框的设置）
+#     t - 【重置】设置该选择支在倒计时结束后将自动被选择（只有最后一个有效）（单位为帧）
+#     tv - 【重置】设置该选择支的倒计时文本是否显示（1为显示，0为不显示）
 #
 #   示例：
 #     选项内容Dex{ali1} - 该选择支居中对齐绘制
@@ -80,8 +82,23 @@ module MESSAGE_EX
     :opa => 255, # 背景不透明度
     :skin => nil, # 皮肤类型（nil时代表跟随对话框）
   }
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义转义符各参数的预设值
+  #  <choice> 将会被替换成原始选择支内容
+  #  <time> 将会被替换成倒计时秒数
+  #--------------------------------------------------------------------------
+  CHOICE_AUTO_CD_TEXT = "<choice> - <time> s"
+  #--------------------------------------------------------------------------
+  # ● 获取倒计时选择支的文本
+  #--------------------------------------------------------------------------
+  def self.get_auto_cd_choice_text(text, time)
+    t = CHOICE_AUTO_CD_TEXT.dup
+    v = (frame / 60 + frame % 60 > 0 ? 1 : 0)
+    t.sub!(/<choice>/) { text }
+    t.sub!(/<time>/) { sprintf("%2d", v) }
+    t
+  end
 end
-
 #==============================================================================
 # ○ Game_Message
 #==============================================================================
@@ -151,6 +168,10 @@ class Window_ChoiceList < Window_Command
   def initialize(message_window)
     @choices_texts = []
     @choices_info = {} # 选择支在窗口中的index => 信息组
+    @func_key_freeze = false # 冻结功能按键
+    @choice_auto_t = 0 # 倒计时计数
+    @choice_auto_index = -1 # 倒计时的选择支index（实际显示index）
+    @choice_auto_show = false # 是否要修改选项文本
     @message_window_w_add = @message_window_h_add = 0
     eagle_choicelist_ex_init(message_window)
   end
@@ -159,7 +180,8 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   alias eagle_choicelist_ex_close close
   def close
-    @message_window_w_add = @message_window_h_add = 0 # 重置对话框wh增量
+    # 重置对话框wh增量
+    @message_window_w_add = @message_window_h_add = 0
     # 重置默认光标位置
     $game_message.choice_params[:i] = MESSAGE_EX.get_default_params(:choice)[:i]
     eagle_choicelist_ex_close
@@ -203,10 +225,10 @@ class Window_ChoiceList < Window_Command
       text.gsub!(/(?i:ex){(.*?)}/) { "" }
       @choices_info[i][:extra] = {}
       parse_extra_info(@choices_info[i][:extra], $1, :ali) if $1
+      check_auto_cd_choice(i) if @choices_info[i][:extra][:t]
 
-      @choices_texts.push(text)
-      @choices_info[i][:index] = index
-      @choices_info[i][:width] = cal_width_line(text)
+      @choices_texts.push(text) # 存储原始文本
+      @choices_info[i][:index] = index # 存储该选择支在事件页里的序号
       i += 1
     end
   end
@@ -217,19 +239,12 @@ class Window_ChoiceList < Window_Command
     @message_window.parse_param(params, param_s, default_type)
   end
   #--------------------------------------------------------------------------
-  # ● 计算文本块的最大宽度（不计算\{\}转义符造成的影响）
+  # ● 分析倒计时选项参数
   #--------------------------------------------------------------------------
-  def cal_width_line(text)
-    reset_font_settings
-    text_clone, array_width = text.dup, []
-    text_clone.each_line do |line|
-      line = convert_escape_characters(line)
-      line.gsub!(/\n/){ "" }; line.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i){ "" }
-      icon_length = 0; line.gsub!(/\ei\[\d+\]/i){ icon_length += 24; "" }
-      line.gsub!(/\e\w+\[(\d|\w)+\]/i){ "" } # 清除掉全部的\w[wd]格式转义符
-      array_width.push(text_size(line).width + icon_length)
-    end
-    array_width.max
+  def check_auto_cd_choice(i)
+    @choice_auto_t = @choices_info[i][:extra][:t]
+    @choice_auto_show = @choices_info[i][:extra][:tv] == 0 ? false : true
+    @choice_auto_index = i
   end
   #--------------------------------------------------------------------------
   # ● 检查高度参数
@@ -244,7 +259,11 @@ class Window_ChoiceList < Window_Command
   # ● 更新窗口的大小
   #--------------------------------------------------------------------------
   def update_size
-    width_min = @choices_info.values.collect {|v| v[:width]}.max + 8 # 宽度最小值（不含边界）
+    @choices_texts.size.times do |i|
+      @choices_info[i][:width] = cal_width_line( command_name(i) )
+    end
+    # 窗口宽度最小值（不含边界）
+    width_min = @choices_info.values.collect {|v| v[:width]}.max + 8
     self.height = fitting_height(@choices_texts.size)
     h = eagle_check_param_h($game_message.choice_params[:h])
     self.height = h if h > 0
@@ -331,6 +350,16 @@ class Window_ChoiceList < Window_Command
     end
   end
   #--------------------------------------------------------------------------
+  # ● 获取指令名称
+  #--------------------------------------------------------------------------
+  def command_name(index)
+    text = @list[index][:name]
+    if @choice_auto_show && index == @choice_auto_index
+      text = MESSAGE_EX.get_auto_cd_choice_text(text, @choice_auto_t)
+    end
+    text
+  end
+  #--------------------------------------------------------------------------
   # ● 绘制项目
   #--------------------------------------------------------------------------
   def draw_item(index)
@@ -346,12 +375,35 @@ class Window_ChoiceList < Window_Command
     draw_text_ex(x_, rect.y, command_name(index))
   end
   #--------------------------------------------------------------------------
+  # ● 计算文本块的最大宽度（不计算\{\}转义符造成的影响）
+  #--------------------------------------------------------------------------
+  def cal_width_line(text)
+    reset_font_settings
+    text_clone, array_width = text.dup, []
+    text_clone.each_line do |line|
+      line = convert_escape_characters(line)
+      line.gsub!(/\n/){ "" }; line.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i){ "" }
+      icon_length = 0; line.gsub!(/\ei\[\d+\]/i){ icon_length += 24; "" }
+      line.gsub!(/\e\w+\[(\d|\w)+\]/i){ "" } # 清除掉全部的\w[wd]格式转义符
+      array_width.push(text_size(line).width + icon_length)
+    end
+    array_width.max
+  end
+  #--------------------------------------------------------------------------
   # ● 更改内容绘制颜色
   #     enabled : 有效的标志。false 的时候使用半透明效果绘制
   #--------------------------------------------------------------------------
   def change_color(color, enabled = true)
     contents.font.color.set(color)
     contents.font.color.alpha = translucent_alpha if !enabled || !@cur_item_enable
+  end
+  #--------------------------------------------------------------------------
+  # ● “确定”和“取消”的处理
+  #--------------------------------------------------------------------------
+  alias eagle_choicelist_ex_process_handling process_handling
+  def process_handling
+    return unless @func_key_freeze
+    eagle_choicelist_ex_process_handling
   end
   #--------------------------------------------------------------------------
   # ● 获取“取消处理”的有效状态（覆盖）
@@ -372,6 +424,43 @@ class Window_ChoiceList < Window_Command
   def call_cancel_handler
     $game_message.method_choice_result.call($game_message.choice_cancel_index)
     close
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    super
+    update_auto_cd_choice if active? && @choice_auto_t > 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新倒计时选项
+  #--------------------------------------------------------------------------
+  def update_auto_cd_choice
+    process_auto_cd_choice(@choice_auto_index) if @choice_auto_t == 1
+    @choice_auto_t = (@choice_auto_t > 0 ? @choice_auto_t - 1 : @choice_auto_t + 1)
+    redraw_item(@choice_auto_index) if @choice_auto_show && @choice_auto_t % 60 == 0
+    process_auto_cd_choice_ok if @choice_auto_t == -1
+  end
+  #--------------------------------------------------------------------------
+  # ● 选择倒计时选项
+  #--------------------------------------------------------------------------
+  def process_auto_cd_choice(i)
+    select(i)
+    self.top_row = i - (page_row_max - 1) / 2
+    @choice_auto_t = -90
+    @cursor_fix = true
+    @func_key_freeze = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 决定倒计时选项
+  #--------------------------------------------------------------------------
+  def process_auto_cd_choice_ok
+    @choice_auto_show = false
+    redraw_item(@choice_auto_index)
+    @choice_auto_t = 0
+    @cursor_fix = false
+    @func_key_freeze = false
+    process_ok
   end
 end
 #==============================================================================
