@@ -2,7 +2,7 @@
 # ■ Add-On 选择框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.4.7.23 新增倒计时选择支
+# - 2019.4.8.1 新增倒计时后禁止选择的选择支
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #     i - 【默认】【重置】设置选择框光标初始所在的选择支
@@ -46,7 +46,9 @@
 #   对 params 的解析：由 变量名 + 数字 构成（同 对话框扩展 中的变量参数字符串）
 #     ali - 【默认】设置该选择支的对齐方式（覆盖选择框的设置）
 #     t - 【重置】设置该选择支在倒计时结束后将自动被选择（只有最后一个有效）（单位为帧）
-#     tv - 【重置】设置该选择支的倒计时文本是否显示（1为显示，0为不显示）（默认显示）
+#     tv - 【重置】设置倒计时文本是否显示（1为显示，0为不显示）（默认显示）
+#     u - 【重置】设置该选择支在倒计时结束后禁止被选择（单位为帧）
+#     uv - 【重置】设置倒计时文本是否显示（1为显示，0为不显示）（默认显示）
 #
 #   示例：
 #     选项内容Dex{ali1} - 该选择支居中对齐绘制
@@ -92,6 +94,12 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   CHOICE_AUTO_CD_TEXT = "<choice> / <time> s"
   #--------------------------------------------------------------------------
+  # ● 【设置】倒计时结束禁用的选择支的文本格式
+  #  <choice> 将会被替换成原始选择支内容
+  #  <time> 将会被替换成倒计时秒数
+  #--------------------------------------------------------------------------
+  CHOICE_AUTO_UNABLE_TEXT = "<choice> (<time> s)"
+  #--------------------------------------------------------------------------
   # ● 【设置】倒计时选择支自动选中后，重新绘制时添加的前缀
   #  （由于重绘时没有重置选择框大小，所以不推荐新增绘制文本）
   #  其中转义符用 \\ 代替 \
@@ -104,7 +112,17 @@ module MESSAGE_EX
     t = CHOICE_AUTO_CD_TEXT.dup
     v = frame / 60 + (frame % 60 > 0 ? 1 : 0)
     t.sub!(/<choice>/) { text }
-    t.sub!(/<time>/) { sprintf("%2d", v) }
+    t.sub!(/<time>/) { sprintf("%d", v) }
+    t
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取倒计时禁用选择支的文本
+  #--------------------------------------------------------------------------
+  def self.get_auto_unable_choice_text(text, frame)
+    t = CHOICE_AUTO_UNABLE_TEXT.dup
+    v = frame / 60 + (frame % 60 > 0 ? 1 : 0)
+    t.sub!(/<choice>/) { text }
+    t.sub!(/<time>/) { sprintf("%d", v) }
     t
   end
 end
@@ -182,6 +200,7 @@ class Window_ChoiceList < Window_Command
     @choice_auto_index = -1 # 倒计时的选择支index（实际显示index）
     @choice_auto_show = false # 是否要修改选项文本
     @choice_auto_ok = false # 倒计时的选择支被自动选中？
+    @choices_auto_unable = {} # 选项显示index => {倒计时禁用相关信息}
     @message_window_w_add = @message_window_h_add = 0
     eagle_choicelist_ex_init(message_window)
   end
@@ -226,7 +245,7 @@ class Window_ChoiceList < Window_Command
   # ● 处理选项
   #--------------------------------------------------------------------------
   def process_choices
-    @choices_texts.clear; @choices_info.clear
+    @choices_texts.clear; @choices_info.clear; @choices_auto_unable.clear
     s = $game_switches
     v = $game_variables
     i = 0 # 实际显示出来的选项组中的序号
@@ -236,13 +255,14 @@ class Window_ChoiceList < Window_Command
       next if $1 && eval($1) == false
       @choices_info[i] = {} # 初始化
       text.gsub!(/(?i:en){(.*?)}/) { "" }
-      @choices_info[i][:enable] = $1.nil? || eval($1) == true
+      @choices_info[i][:enable] = $1.nil? || eval($1) == true # 初始的启用状态
       text.gsub!(/(?i:cl){(.*?)}/) { "" }
       $game_message.choice_cancel_index = index if $1 && eval($1) == true
       text.gsub!(/(?i:ex){(.*?)}/) { "" }
       @choices_info[i][:extra] = {}
       parse_extra_info(@choices_info[i][:extra], $1, :ali) if $1
       check_auto_cd_choice(i) if @choices_info[i][:extra][:t]
+      check_auto_unable_choice(i) if @choices_info[i][:extra][:u]
 
       @choices_texts.push(text) # 存储原始文本
       @choices_info[i][:index] = index # 存储该选择支在事件页里的序号
@@ -262,6 +282,14 @@ class Window_ChoiceList < Window_Command
     @choice_auto_t = @choices_info[i][:extra][:t]
     @choice_auto_show = @choices_info[i][:extra][:tv] == 0 ? false : true
     @choice_auto_index = i
+  end
+  #--------------------------------------------------------------------------
+  # ● 分析倒计时禁止选项参数
+  #--------------------------------------------------------------------------
+  def check_auto_unable_choice(i)
+    @choices_auto_unable[i] = {}
+    @choices_auto_unable[i][:t] = @choices_info[i][:extra][:u]
+    @choices_auto_unable[i][:show] = @choices_info[i][:extra][:uv] == 0 ? false : true
   end
   #--------------------------------------------------------------------------
   # ● 检查高度参数
@@ -377,6 +405,9 @@ class Window_ChoiceList < Window_Command
       text = MESSAGE_EX.get_auto_cd_choice_text(text, @choice_auto_t) if @choice_auto_show
       text = MESSAGE_EX::CHOICE_AUTO_TEXT_OK_PREFIX + text if @choice_auto_ok
     end
+    if @choices_auto_unable.has_key?(index) && @choices_auto_unable[index][:show]
+      text = MESSAGE_EX.get_auto_unable_choice_text(text, @choices_auto_unable[index][:t])
+    end
     text
   end
   #--------------------------------------------------------------------------
@@ -391,7 +422,7 @@ class Window_ChoiceList < Window_Command
     when 1; x_ = rect.x + dw / 2
     when 2; x_ = rect.x + dw
     end
-    @cur_item_enable = @choices_info[index][:enable]
+    @cur_item_enable = command_enabled?(index) #@choices_info[index][:enable]
     draw_text_ex(x_, rect.y, command_name(index))
   end
   #--------------------------------------------------------------------------
@@ -450,7 +481,9 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   def update
     super
-    update_auto_cd_choice if self.active && @choice_auto_t != 0
+    return if !self.active
+    update_auto_cd_choice if @choice_auto_t != 0
+    update_auto_unable_choices if !@choices_auto_unable.empty?
   end
   #--------------------------------------------------------------------------
   # ● 更新倒计时选项
@@ -494,6 +527,22 @@ class Window_ChoiceList < Window_Command
     Sound.play_ok
     $game_message.method_choice_result.call(@choices_info[@choice_auto_index][:index])
     close
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新倒计时后禁选的选项
+  #--------------------------------------------------------------------------
+  def update_auto_unable_choices
+    temp = []
+    @choices_auto_unable.each do |i, v|
+      next temp.push(i) if v[:t] == 0
+      redraw_item(i) if v[:show] && v[:t] % 60 == 0
+      @choices_auto_unable[i][:t] -= 1
+    end
+    temp.each do |i|
+      @list[i][:enabled] = false
+      @choices_auto_unable.delete(i)
+      redraw_item(i)
+    end
   end
 end
 #==============================================================================
