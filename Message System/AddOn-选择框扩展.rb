@@ -2,7 +2,7 @@
 # ■ Add-On 选择框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.4.8.1 新增倒计时后禁止选择的选择支
+# - 2019.4.8.12 新增倒计时后自动变换的选择支
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #     i - 【默认】【重置】设置选择框光标初始所在的选择支
@@ -20,10 +20,12 @@
 #     opa - 选择框的背景不透明度（默认255）（文字内容不透明度固定为255）
 #         （嵌入do=0时不显示窗口背景）
 #     skin - 选择框皮肤类型（每次默认取对话框皮肤）（见index → windowskin名称 的映射）
+#
 #------------------------------------------------------------------------------
 # - 在 事件脚本 中利用 $game_message.choice_params[sym] = value 对指定参数赋值
 #   举例：
 #     $game_message.choice_params[:i] = 1 # 下一次选项框的光标默认在第二个分支
+#
 #------------------------------------------------------------------------------
 # - 在选择支内容中新增条件扩展：
 #
@@ -38,6 +40,7 @@
 #     选项内容Aif{v[1]>0} - 该选择支只有在1号变量值大于0时显示
 #     选项内容Ben{s[2]} - 该选择支只有在2号开关开启时才能选择，否则提示禁止音效
 #     选项内容Ccl{true} - 该选择支设定为取消分支（覆盖默认取消分支的设置）
+#
 #------------------------------------------------------------------------------
 # - 在选择支内容中新增额外设置：
 #
@@ -45,16 +48,27 @@
 #
 #   对 params 的解析：由 变量名 + 数字 构成（同 对话框扩展 中的变量参数字符串）
 #     ali - 【默认】设置该选择支的对齐方式（覆盖选择框的设置）
-#     t - 【重置】设置该选择支在倒计时结束后将自动被选择（只有最后一个有效）（单位为帧）
+#     t - 【重置】设置该选择支在倒计时结束后将自动被选择（单位为帧）
+#          （只有最后一个有该设置的选项的倒计时有效）（无视禁止选择条件）
 #     tv - 【重置】设置倒计时文本是否显示（1为显示，0为不显示）（默认显示）
 #     u - 【重置】设置该选择支在倒计时结束后禁止被选择（单位为帧）
 #     uv - 【重置】设置倒计时文本是否显示（1为显示，0为不显示）（默认显示）
+#     g - 【重置】设置该选择支在倒计时结束后自动变换成gi的目标选择支（单位为帧）
+#          （该变换无视目标选择支的if{}条件）
+#     gv - 【重置】设置倒计时文本是否显示（1为显示，0为不显示）（默认显示）
+#     gi - 【重置】设置变换后的目标选择支在事件列表中全部选择支中的序号（从0开始）
+#          （取消分支只有最后一个选项指令中的生效，它的序号为选项列表最后一个）
 #
 #   示例：
-#     选项内容Dex{ali1} - 该选择支居中对齐绘制
+#     选项内容ex{ali1} - 该选择支居中对齐绘制
+#     选项内容ex{t200} - 在200帧后（选择框开始处理选择时计数），该选择支被自动选择
+#     选项内容ex{u100} - 在100帧后，该选择支变更为不可选状态
+#     选项内容ex{g600gi4} - 在600帧后，该选择支变更为事件中的4号选择支，原有分支失效
+#       （本插件已经处理了多个选项指令的融合，4号即事件列表从上至下的第5个选项分支）
+#
 #------------------------------------------------------------------------------
 # - 相邻的同级的 选择支处理 指令将自动合并（若不想自动合并，可在之间插入 注释 指令）
-#  【注意】合并后只保留最后出现的一个取消分支
+#  【注意】合并后只保留最后一个选项指令中的取消分支（其他选项指令的取消分支无效）
 #------------------------------------------------------------------------------
 # - 参数重置（具体见 对话框扩展 中的注释）
 #      $game_message.reset_params(:choice, code_string)
@@ -91,14 +105,23 @@ module MESSAGE_EX
   # ● 【设置】倒计时选择支的文本格式
   #  <choice> 将会被替换成原始选择支内容
   #  <time> 将会被替换成倒计时秒数
+  #  其中转义符用 \\ 代替 \
   #--------------------------------------------------------------------------
   CHOICE_AUTO_CD_TEXT = "<choice> / <time> s"
   #--------------------------------------------------------------------------
   # ● 【设置】倒计时结束禁用的选择支的文本格式
   #  <choice> 将会被替换成原始选择支内容
   #  <time> 将会被替换成倒计时秒数
+  #  其中转义符用 \\ 代替 \
   #--------------------------------------------------------------------------
   CHOICE_AUTO_UNABLE_TEXT = "<choice> (<time> s)"
+  #--------------------------------------------------------------------------
+  # ● 【设置】倒计时结束自动变换的选择支的文本格式
+  #  <choice> 将会被替换成原始选择支内容
+  #  <time> 将会被替换成倒计时秒数
+  #  其中转义符用 \\ 代替 \
+  #--------------------------------------------------------------------------
+  CHOICE_AUTO_GOTO_TEXT = "<choice> - <time> s"
   #--------------------------------------------------------------------------
   # ● 【设置】倒计时选择支自动选中后，重新绘制时添加的前缀
   #  （由于重绘时没有重置选择框大小，所以不推荐新增绘制文本）
@@ -106,24 +129,26 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   CHOICE_AUTO_TEXT_OK_PREFIX = "\\c[1]"
   #--------------------------------------------------------------------------
-  # ● 获取倒计时选择支的文本
+  # ● 获取倒计时相关文本的通用替换
   #--------------------------------------------------------------------------
-  def self.get_auto_cd_choice_text(text, frame)
-    t = CHOICE_AUTO_CD_TEXT.dup
+  def self.get_auto_choice_text(default_text, text, frame)
+    t = default_text.dup
     v = frame / 60 + (frame % 60 > 0 ? 1 : 0)
     t.sub!(/<choice>/) { text }
     t.sub!(/<time>/) { sprintf("%d", v) }
     t
   end
   #--------------------------------------------------------------------------
-  # ● 获取倒计时禁用选择支的文本
+  # ● 获取倒计时相关选项文本
   #--------------------------------------------------------------------------
+  def self.get_auto_cd_choice_text(text, frame)
+    get_auto_choice_text(CHOICE_AUTO_CD_TEXT, text, frame)
+  end
   def self.get_auto_unable_choice_text(text, frame)
-    t = CHOICE_AUTO_UNABLE_TEXT.dup
-    v = frame / 60 + (frame % 60 > 0 ? 1 : 0)
-    t.sub!(/<choice>/) { text }
-    t.sub!(/<time>/) { sprintf("%d", v) }
-    t
+    get_auto_choice_text(CHOICE_AUTO_UNABLE_TEXT, text, frame)
+  end
+  def self.get_auto_goto_choice_text(text, frame)
+    get_auto_choice_text(CHOICE_AUTO_GOTO_TEXT, text, frame)
   end
 end
 #==============================================================================
@@ -138,7 +163,7 @@ class Game_Message
   def initialize
     eagle_choicelist_ex_init
     set_default_params
-    @choice_cancel_index = -1 # 取消分支的判别index
+    @choice_cancel_index = -1 # 取消分支的判别序号（事件中序号）
   end
   #--------------------------------------------------------------------------
   # ● 清除
@@ -193,35 +218,40 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   alias eagle_choicelist_ex_init initialize
   def initialize(message_window)
-    @choices_texts = []
-    @choices_info = {} # 选择支在窗口中的index => 信息组
+    @choices_info = {} # 选择支的窗口序号 => 信息组
+    @choices_num = 0 # 存储总共显示出的选项数目
     @func_key_freeze = false # 冻结功能按键
+
     @choice_auto_t = 0 # 倒计时计数
-    @choice_auto_index = -1 # 倒计时的选择支index（实际显示index）
-    @choice_auto_show = false # 是否要修改选项文本
+    @choice_auto_index = -1 # 倒计时自动选择的选择支的窗口序号
+    @choice_auto_show = false # 是否要修改选项文本？
     @choice_auto_ok = false # 倒计时的选择支被自动选中？
-    @choices_auto_unable = {} # 选项显示index => {倒计时禁用相关信息}
+    @choices_auto_unable = {} # 选择支窗口序号 => {倒计时禁用选项的信息}
+    @choices_auto_goto = {} # 选择支窗口序号 => {倒计时自动变换选项的信息}
+
     @message_window_w_add = @message_window_h_add = 0
     eagle_choicelist_ex_init(message_window)
   end
   #--------------------------------------------------------------------------
-  # ● 关闭
+  # ● 重置
   #--------------------------------------------------------------------------
-  alias eagle_choicelist_ex_close close
-  def close
+  def eagle_reset
+    @choices_info.clear
+    @choices_auto_unable.clear
+    @choices_auto_goto.clear
     # 重置对话框wh增量
     @message_window_w_add = @message_window_h_add = 0
     # 重置默认光标位置
     $game_message.choice_params[:i] = MESSAGE_EX.get_default_params(:choice)[:i]
-    # 重置倒计时选择支index
+    # 重置倒计时自动选择的选择支序号
     @choice_auto_index = -1
-    eagle_choicelist_ex_close
   end
   #--------------------------------------------------------------------------
   # ● 开始输入的处理（覆盖）
   #--------------------------------------------------------------------------
   def start
-    process_choices
+    eagle_reset
+    process_choice_list
     update_size
     refresh
     update_placement
@@ -242,32 +272,46 @@ class Window_ChoiceList < Window_Command
     select(i)
   end
   #--------------------------------------------------------------------------
-  # ● 处理选项
+  # ● 处理选项列表
   #--------------------------------------------------------------------------
-  def process_choices
-    @choices_texts.clear; @choices_info.clear; @choices_auto_unable.clear
-    s = $game_switches
-    v = $game_variables
-    i = 0 # 实际显示出来的选项组中的序号
-    $game_message.choices.each_with_index do |text_, index|
-      text = text_.dup
-      text.gsub!(/(?i:if){(.*?)}/) { "" }
-      next if $1 && eval($1) == false
-      @choices_info[i] = {} # 初始化
-      text.gsub!(/(?i:en){(.*?)}/) { "" }
-      @choices_info[i][:enable] = $1.nil? || eval($1) == true # 初始的启用状态
-      text.gsub!(/(?i:cl){(.*?)}/) { "" }
-      $game_message.choice_cancel_index = index if $1 && eval($1) == true
-      text.gsub!(/(?i:ex){(.*?)}/) { "" }
-      @choices_info[i][:extra] = {}
-      parse_extra_info(@choices_info[i][:extra], $1, :ali) if $1
-      check_auto_cd_choice(i) if @choices_info[i][:extra][:t]
-      check_auto_unable_choice(i) if @choices_info[i][:extra][:u]
-
-      @choices_texts.push(text) # 存储原始文本
-      @choices_info[i][:index] = index # 存储该选择支在事件页里的序号
-      i += 1
+  def process_choice_list
+    i = 0 # 选择支的窗口序号
+    $game_message.choices.each_with_index do |text, index|
+      i += 1 if process_choice(text.dup, index, i, true)
     end
+    @choices_num = i
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理指定选项
+  # i_e 事件里该选择支的序号
+  # i_w 窗口里该选择支的序号
+  # apply_if 是否应用if语句的效果
+  #--------------------------------------------------------------------------
+  def process_choice(text, i_e, i_w, apply_if = true)
+    # 缩写
+    s = $game_switches; v = $game_variables
+    # 判定if{}
+    text.gsub!(/(?i:if){(.*?)}/) { "" }
+    return false if apply_if && $1 && eval($1) == false # 跳过该选项的增加
+    # 初始化对应hash信息组
+    @choices_info[i_w] = {}
+    @choices_info[i_w][:i_e] = i_e # 存储该选择支在事件页里的序号
+    # 判定en{}
+    text.gsub!(/(?i:en){(.*?)}/) { "" }
+    @choices_info[i_w][:enable] = $1.nil? || eval($1) == true # 初始的启用状态
+    # 判定cl{}
+    text.gsub!(/(?i:cl){(.*?)}/) { "" }
+    $game_message.choice_cancel_index = i_e if $1 && eval($1) == true
+    # 判定ex{}
+    @choices_info[i_w][:extra] = {}
+    text.gsub!(/(?i:ex){(.*?)}/) { "" }
+    parse_extra_info(@choices_info[i_w][:extra], $1, :ali) if $1
+    check_auto_cd_choice(i_w) if @choices_info[i_w][:extra][:t]
+    check_auto_unable_choice(i_w) if @choices_info[i_w][:extra][:u]
+    check_auto_goto_choice(i_w) if @choices_info[i_w][:extra][:g]
+    # 存储绘制的原始文本（去除全部判定文本）
+    @choices_info[i_w][:text] = text
+    return true # 成功设置一个需要显示的选项的信息
   end
   #--------------------------------------------------------------------------
   # ● 分析额外设置参数
@@ -292,6 +336,16 @@ class Window_ChoiceList < Window_Command
     @choices_auto_unable[i][:show] = @choices_info[i][:extra][:uv] == 0 ? false : true
   end
   #--------------------------------------------------------------------------
+  # ● 分析倒计时变换选项参数
+  #--------------------------------------------------------------------------
+  def check_auto_goto_choice(i)
+    @choices_auto_goto[i] = {}
+    @choices_auto_goto[i][:t] = @choices_info[i][:extra][:g]
+    @choices_auto_goto[i][:i_e] = @choices_info[i][:extra][:gi]
+    @choices_auto_goto[i][:show] = @choices_info[i][:extra][:gv] == 0 ? false : true
+  end
+
+  #--------------------------------------------------------------------------
   # ● 检查高度参数
   #--------------------------------------------------------------------------
   def eagle_check_param_h(h)
@@ -301,15 +355,30 @@ class Window_ChoiceList < Window_Command
     return h
   end
   #--------------------------------------------------------------------------
+  # ● 计算文本块的最大宽度（不计算\{\}转义符造成的影响）
+  #--------------------------------------------------------------------------
+  def cal_width_line(text)
+    reset_font_settings
+    text_clone, array_width = text.dup, []
+    text_clone.each_line do |line|
+      line = convert_escape_characters(line)
+      line.gsub!(/\n/){ "" }; line.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i){ "" }
+      icon_length = 0; line.gsub!(/\ei\[\d+\]/i){ icon_length += 24; "" }
+      line.gsub!(/\e\w+\[(\d|\w)+\]/i){ "" } # 清除掉全部的\w[wd]格式转义符
+      array_width.push(text_size(line).width + icon_length)
+    end
+    array_width.max
+  end
+  #--------------------------------------------------------------------------
   # ● 更新窗口的大小
   #--------------------------------------------------------------------------
   def update_size
-    @choices_texts.size.times do |i|
+    @choices_num.times do |i|
       @choices_info[i][:width] = cal_width_line( command_name(i) )
     end
     # 窗口宽度最小值（不含边界）
     width_min = @choices_info.values.collect {|v| v[:width]}.max + 8
-    self.height = fitting_height(@choices_texts.size)
+    self.height = fitting_height(@choices_num)
     h = eagle_check_param_h($game_message.choice_params[:h])
     self.height = h if h > 0
 
@@ -388,27 +457,31 @@ class Window_ChoiceList < Window_Command
     self.opacity = 0 if @message_window.open? && $game_message.choice_params[:do] == 0
     self.contents_opacity = 255
   end
+
   #--------------------------------------------------------------------------
   # ● 生成指令列表（覆盖）
   #--------------------------------------------------------------------------
   def make_command_list
-    @choices_texts.each_with_index do |choice, i|
-      add_command(choice, :choice, @choices_info[i][:enable])
+    @choices_info.each do |i, v|
+      add_command(v[:text], :choice, v[:enable])
     end
   end
   #--------------------------------------------------------------------------
   # ● 获取指令名称
   #--------------------------------------------------------------------------
-  def command_name(index)
-    text = @choices_texts[index] #@list[index][:name]
-    if index == @choice_auto_index
-      text = MESSAGE_EX.get_auto_cd_choice_text(text, @choice_auto_t) if @choice_auto_show
-      text = MESSAGE_EX::CHOICE_AUTO_TEXT_OK_PREFIX + text if @choice_auto_ok
+  def command_name(i)
+    t = @choices_info[i][:text] #@list[i][:name]
+    if i == @choice_auto_index
+      t = MESSAGE_EX.get_auto_cd_choice_text(t, @choice_auto_t) if @choice_auto_show
+      return MESSAGE_EX::CHOICE_AUTO_TEXT_OK_PREFIX + t if @choice_auto_ok
     end
-    if @choices_auto_unable.has_key?(index) && @choices_auto_unable[index][:show]
-      text = MESSAGE_EX.get_auto_unable_choice_text(text, @choices_auto_unable[index][:t])
+    if @choices_auto_unable.has_key?(i) && @choices_auto_unable[i][:show]
+      t = MESSAGE_EX.get_auto_unable_choice_text(t, @choices_auto_unable[i][:t])
     end
-    text
+    if @choices_auto_goto.has_key?(i) && @choices_auto_goto[i][:show]
+      t = MESSAGE_EX.get_auto_goto_choice_text(t, @choices_auto_goto[i][:t])
+    end
+    t
   end
   #--------------------------------------------------------------------------
   # ● 绘制项目
@@ -422,23 +495,8 @@ class Window_ChoiceList < Window_Command
     when 1; x_ = rect.x + dw / 2
     when 2; x_ = rect.x + dw
     end
-    @cur_item_enable = command_enabled?(index) #@choices_info[index][:enable]
+    @cur_item_enable = command_enabled?(index)
     draw_text_ex(x_, rect.y, command_name(index))
-  end
-  #--------------------------------------------------------------------------
-  # ● 计算文本块的最大宽度（不计算\{\}转义符造成的影响）
-  #--------------------------------------------------------------------------
-  def cal_width_line(text)
-    reset_font_settings
-    text_clone, array_width = text.dup, []
-    text_clone.each_line do |line|
-      line = convert_escape_characters(line)
-      line.gsub!(/\n/){ "" }; line.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i){ "" }
-      icon_length = 0; line.gsub!(/\ei\[\d+\]/i){ icon_length += 24; "" }
-      line.gsub!(/\e\w+\[(\d|\w)+\]/i){ "" } # 清除掉全部的\w[wd]格式转义符
-      array_width.push(text_size(line).width + icon_length)
-    end
-    array_width.max
   end
   #--------------------------------------------------------------------------
   # ● 更改内容绘制颜色
@@ -448,6 +506,7 @@ class Window_ChoiceList < Window_Command
     contents.font.color.set(color)
     contents.font.color.alpha = translucent_alpha if !enabled || !@cur_item_enable
   end
+
   #--------------------------------------------------------------------------
   # ● “确定”和“取消”的处理
   #--------------------------------------------------------------------------
@@ -466,7 +525,7 @@ class Window_ChoiceList < Window_Command
   # ● 调用“确定”的处理方法（覆盖）
   #--------------------------------------------------------------------------
   def call_ok_handler
-    $game_message.method_choice_result.call(@choices_info[index][:index])
+    $game_message.method_choice_result.call(@choices_info[index][:i_e])
     close
   end
   #--------------------------------------------------------------------------
@@ -476,6 +535,7 @@ class Window_ChoiceList < Window_Command
     $game_message.method_choice_result.call($game_message.choice_cancel_index)
     close
   end
+
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
@@ -484,6 +544,7 @@ class Window_ChoiceList < Window_Command
     return if !self.active
     update_auto_cd_choice if @choice_auto_t != 0
     update_auto_unable_choices if !@choices_auto_unable.empty?
+    update_auto_goto_choices if !@choices_auto_goto.empty?
   end
   #--------------------------------------------------------------------------
   # ● 更新倒计时选项
@@ -504,6 +565,7 @@ class Window_ChoiceList < Window_Command
   def process_auto_cd_choice(i)
     @choice_auto_show = false
     @choice_auto_ok = true
+    @list[@choice_auto_index][:enabled] = true
 
     #update_size; refresh; update_placement # 重置大小的重绘
     redraw_item(@choice_auto_index) # 单纯重绘
@@ -525,7 +587,7 @@ class Window_ChoiceList < Window_Command
     @func_key_freeze = false
     deactivate
     Sound.play_ok
-    $game_message.method_choice_result.call(@choices_info[@choice_auto_index][:index])
+    $game_message.method_choice_result.call(@choices_info[@choice_auto_index][:i_e])
     close
   end
   #--------------------------------------------------------------------------
@@ -542,6 +604,25 @@ class Window_ChoiceList < Window_Command
       @list[i][:enabled] = false
       @choices_auto_unable.delete(i)
       redraw_item(i)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新倒计时后变换的选项
+  #--------------------------------------------------------------------------
+  def update_auto_goto_choices
+    temp = []
+    @choices_auto_goto.each do |i, v|
+      next temp.push(i) if v[:t] == 0
+      redraw_item(i) if v[:show] && v[:t] % 60 == 0
+      @choices_auto_goto[i][:t] -= 1
+    end
+    temp.each do |i|
+      i_e_new = @choices_auto_goto[i][:i_e]
+      process_choice($game_message.choices[i_e_new].dup, i_e_new, i, false)
+      @choices_auto_goto.delete(i)
+      cursor_rect.empty
+      update_size; refresh; update_placement
+      select(self.index)
     end
   end
 end
