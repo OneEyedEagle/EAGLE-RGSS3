@@ -2,7 +2,7 @@
 # ■ Add-On 关键词信息查看 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.3.28.17 修正窗口大小
+# - 2019.4.10.16 新增位图缓存
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，在对话框打开时，可以逐个查看 word 的详细信息文本
 # - 在对话框打开时，当已经有关键词 word 被绘制时，能够按下指定按键打开信息窗口
@@ -28,7 +28,7 @@ module MESSAGE_EX
   KEYWORD_INFO = {
   # keyword => info (draw_text_ex),
     "浮空遗迹" => "坐落于DEMO村东方的奇妙的浮空遗迹，\n虽然理应没有了作用，但有翻新的痕迹。",
-    "111" => "据传是以前的神明为嘉奖跟随出征的人，\n赐下水晶，保佑一方人免遭沼泽威胁。",
+    "湛蓝水晶" => "据传是以前的神明为嘉奖跟随出征的人而赐下的水晶。",
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义关键词前后需要插入的文本
@@ -168,7 +168,7 @@ class Window_Keyword_Info < Window_Base
     @sprite_tag.bitmap = Bitmap.new(w/3, h/3)
 
     @sprite_hint = Sprite.new
-    @sprite_hint.y = Graphics.height - 50 # 调整hint文本所在的位置
+    @sprite_hint.y = Graphics.height - 50 # 调整hint文本所在的y位置
     @sprite_hint.bitmap = Bitmap.new(Graphics.width/2, line_height)
     @sprite_hint.bitmap.gradient_fill_rect(@sprite_hint.bitmap.rect,
       Color.new(0,0,0,150), Color.new(0,0,0,0))
@@ -206,22 +206,42 @@ class Window_Keyword_Info < Window_Base
   #--------------------------------------------------------------------------
   def reset
     @keywords.clear
+    @bitmaps.each { |i, b| b.dispose }
+    @bitmaps.clear
+    create_contents_no_dispose
+  end
+  #--------------------------------------------------------------------------
+  # ● 生成窗口内容（不释放原本位图）
+  #--------------------------------------------------------------------------
+  def create_contents_no_dispose
+    if contents_width > 0 && contents_height > 0
+      self.contents = Bitmap.new(contents_width, contents_height)
+    else
+      self.contents = Bitmap.new(1, 1)
+    end
   end
   #--------------------------------------------------------------------------
   # ● 重绘
   #--------------------------------------------------------------------------
   def refresh
-    keyword = @keywords[@index][0]
-    text =  MESSAGE_EX::KEYWORD_INFO_PREFIX.dup
-    text.sub!(/\keyword/) { keyword }
-    text += MESSAGE_EX.get_keyword_info(keyword)
-    text += MESSAGE_EX::KEYWORD_INFO_SURFIX
-    dh = [line_height - contents.font.size, 0].max
-    w, h = @message_window.eagle_calculate_text_wh(text, 0, dh)
-    h += dh # 最后一行补足高度
-    self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
-    create_contents
-    draw_text_ex(0, 0, text)
+    if !@bitmaps.has_key?(@index)
+      keyword = @keywords[@index][0]
+      text =  MESSAGE_EX::KEYWORD_INFO_PREFIX.dup
+      text.sub!(/\keyword/) { keyword }
+      text += MESSAGE_EX.get_keyword_info(keyword)
+      text += MESSAGE_EX::KEYWORD_INFO_SURFIX
+      dh = [line_height - contents.font.size, 0].max
+      w, h = @message_window.eagle_calculate_text_wh(text, 0, dh)
+      h += dh # 最后一行补足高度
+      self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
+      create_contents_no_dispose
+      draw_text_ex(0, 0, text)
+      @bitmaps[@index] = self.contents
+    else
+      w, h = @bitmaps[@index].width, @bitmaps[@index].height
+      self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
+      self.contents = @bitmaps[@index]
+    end
   end
   #--------------------------------------------------------------------------
   # ● 重定位
@@ -289,6 +309,8 @@ class Window_Keyword_Info < Window_Base
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
+    @bitmaps.delete(@index)
+    @bitmaps.each { |i, b| b.dispose }
     @sprite_hint.bitmap.dispose
     @sprite_hint.dispose
     @sprite_tag_bitmap.dispose
