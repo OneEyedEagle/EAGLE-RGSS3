@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.9.15 添加\rb{}转义符
+# - 2019.4.11.17 添加\auto转义符
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -148,8 +148,13 @@ $imported["EAGLE-MessageEX"] = true
 #    s - 设置震动的速度（默认5）
 #    t - 【默认】设置震动的持续帧数（最后会补足平滑结束的帧数）（默认40）
 #
-#  \wait[param] - 等待（在快进状态下，默认的等待类型转义符与该转义符均会被跳过）
+#  \wait[param] - 设置直接等待
+#   （注意：和默认的等待相关转义符保持一致，等待不会被快进跳过、期间不会处理按键）
 #    t - 【默认】设置等待帧数
+#
+#  \auto[param] - 设置对话框的按键等待处理，是否会自动继续
+#    t - 【默认】在t帧后自动结束按键等待，并继续之后处理（默认nil，不自动继续）
+#    r - 是否在每一次对话框打开时将t重置为nil（默认true）
 #
 #  \g[c1..] - 渐变描绘【需要前置Sion_GradientText插件】
 #    参数字符串为按序排列的 c + Windowskin颜色索引号，无参数传入时代表取消渐变绘制
@@ -524,6 +529,11 @@ module MESSAGE_EX
    -1 => ["", nil, 1, 1], # 不显示
     0 => ["Window", Rect.new(96,64,32,32), 2, 2], # 默认 使用皮肤窗口里的箭头
   }
+  #--------------------------------------------------------------------------
+  # ● 【设置】是否屏蔽默认的输入等待的箭头显示
+  # （位于底部中央的4帧动画）
+  #--------------------------------------------------------------------------
+  NO_DEFAULT_PAUSE = true
 end
 
 #=============================================================================
@@ -750,7 +760,7 @@ class Game_Message
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :chara_params, :chara_grad_colors, :escape_strings
-  attr_accessor :hold, :instant, :draw
+  attr_accessor :hold, :instant, :draw, :auto_r
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -758,6 +768,7 @@ class Game_Message
   def initialize
     eagle_message_ex_init
     set_default_params
+    @auto_r = true # 是否重置window.auto_continue_t
   end
   #--------------------------------------------------------------------------
   # ● 获取全部可保存params的符号的数组
@@ -1059,6 +1070,8 @@ class Window_Message
     @eagle_sprite_pause.bind_last_chara(nil) # 重置pause精灵的文末位置
     @eagle_sprite_pause.visible = false
     @eagle_sprite_pause_width_add = 0 # 因pause精灵而扩展的窗口宽度
+    # 重置auto的设置帧数
+    @eagle_auto_continue_t = nil if game_message.auto_r # nil时为不自动继续
     # 重置集体的z值
     eagle_reset_z
   end
@@ -1663,6 +1676,12 @@ class Window_Message
     end
   end
   #--------------------------------------------------------------------------
+  # ● 处于快进显示？
+  #--------------------------------------------------------------------------
+  def show_fast?
+    game_message.instant || @show_fast || @line_show_fast
+  end
+  #--------------------------------------------------------------------------
   # ● 处理换行文字
   #--------------------------------------------------------------------------
   alias eagle_message_ex_process_new_line process_new_line
@@ -1687,15 +1706,16 @@ class Window_Message
     eagle_process_hold
   end
   #--------------------------------------------------------------------------
-  # ● 处理输入等待
+  # ● （覆盖）处理输入等待
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_input_pause input_pause
   def input_pause
     return if !game_message.draw
     before_input_pause
     eagle_process_draw_update # 统一更新一次
     @eagle_sprite_pause.show
-    eagle_message_ex_input_pause
+    self.pause = true unless MESSAGE_EX::NO_DEFAULT_PAUSE
+    process_input_pause
+    self.pause = false
     @eagle_sprite_pause.hide
   end
   #--------------------------------------------------------------------------
@@ -1710,21 +1730,18 @@ class Window_Message
       @eagle_sprite_pause_width_add = @eagle_sprite_pause.width
     end
   end
-
   #--------------------------------------------------------------------------
-  # ● 处于快进显示？
+  # ● 执行输入等待
   #--------------------------------------------------------------------------
-  def show_fast?
-    game_message.instant || @show_fast || @line_show_fast
-  end
-  #--------------------------------------------------------------------------
-  # ● 等待
-  #--------------------------------------------------------------------------
-  alias eagle_message_ex_wait wait
-  def wait(duration)
-    return if !game_message.draw
-    return if show_fast?
-    eagle_message_ex_wait(duration)
+  def process_input_pause
+    wait(1)
+    t = @eagle_auto_continue_t
+    while true
+      Fiber.yield
+      break if t && (t -= 1) <= 0
+      break if Input.trigger?(:B) || Input.trigger?(:C)
+    end
+    Input.update
   end
 
   #--------------------------------------------------------------------------
@@ -2176,6 +2193,25 @@ class Window_Message
     h[:t] = 0 # 等待帧数
     parse_param(h, param, :t)
     wait(h[:t])
+  end
+  #--------------------------------------------------------------------------
+  # ● 等待
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_wait wait
+  def wait(duration)
+    return if !game_message.draw
+    eagle_message_ex_wait(duration)
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置auto参数
+  #--------------------------------------------------------------------------
+  def eagle_text_control_auto(param = '0')
+    h = {}
+    h[:t] = @eagle_auto_continue_t # 自动继续的帧数
+    h[:r] = game_message.auto_r ? 1 : 0
+    parse_param(h, param, :t)
+    @eagle_auto_continue_t = h[:t]
+    game_message.auto_r = MESSAGE_EX.check_bool(h[:r])
   end
   #--------------------------------------------------------------------------
   # ● 设置shake参数
