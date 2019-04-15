@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.11.17 添加\auto转义符
+# - 2019.4.15.19 修复脸图未释放的BUG
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -1896,6 +1896,7 @@ class Window_Message
     game_message.face_params[:sole_w] = @eagle_face_bitmap.width / game_message.face_params[:num_col]
     game_message.face_params[:sole_h] = @eagle_face_bitmap.height / game_message.face_params[:num_line]
     # 脸图以底部中心为显示原点
+    @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
     @eagle_sprite_face.bitmap = Bitmap.new(game_message.face_params[:sole_w],
       game_message.face_params[:sole_h])
     @eagle_sprite_face.ox = @eagle_sprite_face.width / 2

@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-TextReview"] = true
 #==============================================================================
-# - 2019.3.24.0 整合 对话框扩展 插件
+# - 2019.4.15.19 再次整合 对话框扩展 插件
 #==============================================================================
 # - 本插件提供了一个完整的指定文本的临时重看系统
 # - 注意：
@@ -178,6 +178,9 @@ class << self
   end
 end # end of self-class
 end # end of module TextReview
+#===============================================================================
+# ○ Scene_Map
+#===============================================================================
 class Scene_Map < Scene_Base
   attr_reader :message_window
   #--------------------------------------------------------------------------
@@ -189,6 +192,9 @@ class Scene_Map < Scene_Base
     TextReview.update
   end
 end
+#===============================================================================
+# ○ SceneManager
+#===============================================================================
 class << SceneManager
   #--------------------------------------------------------------------------
   # ● 运行
@@ -199,6 +205,9 @@ class << SceneManager
     eagle_text_review_run
   end
 end
+#===============================================================================
+# ○ Game_System
+#===============================================================================
 class Game_System
   #--------------------------------------------------------------------------
   # ● 读档后的处理
@@ -209,7 +218,9 @@ class Game_System
     eagle_text_review_on_after_load
   end
 end
-
+#===============================================================================
+# ○ 存储单个文本块的数据
+#===============================================================================
 class TextReview_Data
   attr_reader :text, :params
   #--------------------------------------------------------------------------
@@ -217,12 +228,21 @@ class TextReview_Data
   #--------------------------------------------------------------------------
   def initialize(text = "", params = {})
     @text = text
-    if $imported["EAGLE-MessageEX"]
-      @text = SceneManager.scene.message_window.eagle_process_conv(@text)
+    message_window = SceneManager.scene.message_window rescue nil
+    if message_window
+      if $imported["EAGLE-MessageEX"]
+        @text = message_window.eagle_process_conv(@text)
+        @text = message_window.eagle_process_conv(@text)
+        @text = message_window.eagle_process_rb(@text)
+      end
+      @text = message_window.convert_escape_characters(@text)
     end
     @params = params
   end
 end # end of class Data
+#===============================================================================
+# ○ 单个文本块的窗口
+#===============================================================================
 class Window_TextReview_Block < Window_Base
   attr_accessor :speed
   #--------------------------------------------------------------------------
@@ -231,6 +251,7 @@ class Window_TextReview_Block < Window_Base
   def initialize(data)
     @data = data # TextReview_Data 的实例
     parse_window_params
+    parse_draw_params
     super(0, 0, @window_width, @window_height)
     self.back_opacity = 255
     parse_setting_params
@@ -274,9 +295,20 @@ class Window_TextReview_Block < Window_Base
     text_rect = get_text_rect
     @window_height = text_rect.height + standard_padding * 2
     @window_width = text_rect.width + standard_padding * 2
-    if t[:face] && t[:face][0] != ""
-      @window_height = 96 + standard_padding * 2
-      @window_width += (96 + 8)
+  end
+  #--------------------------------------------------------------------------
+  # ● 分析绘制相关参数Hash
+  #--------------------------------------------------------------------------
+  def parse_draw_params
+    t = @data.params
+    @flag_face = false
+    if t[:face] && t[:face][0] != "" # t[:face] = [face_name, face_index]
+      b = Cache.face(t[:face][0])
+      if b.width == 96*4 && b.height == 96*2 # 只绘制默认规格的脸图
+        @flag_face = true
+        @window_height = 96 + standard_padding * 2
+        @window_width += (96 + 8)
+      end
     end
   end
   #--------------------------------------------------------------------------
@@ -300,9 +332,8 @@ class Window_TextReview_Block < Window_Base
   #--------------------------------------------------------------------------
   def refresh
     contents.clear
-    t = @data.params[:face] # t = [face_name, face_index]
-    if t != nil && t[0] != ""
-      draw_face(t[0], t[1], 0, 0)
+    if @flag_face
+      draw_face(@data.params[:face][0], @data.params[:face][1], 0, 0)
       text_x = 96 + 8
     else
       text_x = 0
@@ -310,7 +341,6 @@ class Window_TextReview_Block < Window_Base
     draw_text_ex(text_x, 0, @data.text)
   end
 end
-
 #===============================================================================
 # ○ Add-On 对话文本临时重看
 # 将 事件指令-显示对话 放入临时文本重看系统
