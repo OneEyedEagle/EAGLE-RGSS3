@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.16.21 分离pop对象的判定，方便扩展
+# - 2019.4.16.23 新增按键跳过对话的设置
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -534,6 +534,13 @@ module MESSAGE_EX
   # （位于底部中央的4帧动画）
   #--------------------------------------------------------------------------
   NO_DEFAULT_PAUSE = true
+  #--------------------------------------------------------------------------
+  # ● 【设置】跳过对话判定成功？
+  # （请注意，该跳过会直接忽略掉还未被绘制的转义符，可能存在奇怪问题）
+  #--------------------------------------------------------------------------
+  def self.skip?
+    false #Input.trigger?(:CTRL)
+  end
 end
 
 #=============================================================================
@@ -1076,6 +1083,8 @@ class Window_Message
     @eagle_sprite_pause_width_add = 0 # 因pause精灵而扩展的窗口宽度
     # 重置auto的设置帧数
     @eagle_auto_continue_t = nil if game_message.auto_r # nil时为不自动继续
+    # 重置强制关闭flag
+    @eagle_force_close = false
     # 重置集体的z值
     eagle_reset_z
   end
@@ -1117,6 +1126,7 @@ class Window_Message
     eagle_face_update if game_message.face?
     @eagle_window_name.update
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
+    force_close if MESSAGE_EX.skip?
   end
   #--------------------------------------------------------------------------
   # ● 更新全部拷贝窗口
@@ -1452,8 +1462,19 @@ class Window_Message
     text = eagle_all_text; pos = {}
     new_page(text, pos)
     calc_charas_wh(text, pos) if eagle_dyn_fit_w? || eagle_dyn_fit_h?
-    process_character(text.slice!(0, 1), text, pos) until text.empty?
+    loop do
+      process_character(text.slice!(0, 1), text, pos)
+      break if text.empty?
+      break @pause_skip = true if @eagle_force_close
+    end
     eagle_process_draw_update if !@eagle_chara_sprites.empty?
+  end
+  #--------------------------------------------------------------------------
+  # ● 强制中断绘制
+  #--------------------------------------------------------------------------
+  def force_close
+    @eagle_force_close = true  # 若还在显示，则直接结束绘制并跳过最后的等待按键
+    @eagle_auto_continue_c = 0 # 若进入了按键等待，则将计数置0，并依靠auto跳过按键
   end
   #--------------------------------------------------------------------------
   # ● 翻页处理（覆盖）
@@ -1473,7 +1494,7 @@ class Window_Message
     clear_flags
   end
   #--------------------------------------------------------------------------
-  # ● 重置字体设置
+  # ● 重置字体设置（覆盖）
   #--------------------------------------------------------------------------
   def reset_font_settings
     change_color(normal_color)
@@ -1669,7 +1690,7 @@ class Window_Message
     end
   end
   #--------------------------------------------------------------------------
-  # ● 输出一个字符后的等待
+  # ● 输出一个字符后的等待（覆盖）
   #--------------------------------------------------------------------------
   def wait_for_one_character
     MESSAGE_EX.se(game_message.win_params[:se])
@@ -1680,7 +1701,7 @@ class Window_Message
     end
   end
   #--------------------------------------------------------------------------
-  # ● 处于快进显示？
+  # ● 处于快进显示？（覆盖）
   #--------------------------------------------------------------------------
   def show_fast?
     game_message.instant || @show_fast || @line_show_fast
@@ -1710,7 +1731,7 @@ class Window_Message
     eagle_process_hold
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）处理输入等待
+  # ● 处理输入等待（覆盖）
   #--------------------------------------------------------------------------
   def input_pause
     return if !game_message.draw
@@ -1738,11 +1759,10 @@ class Window_Message
   # ● 执行输入等待
   #--------------------------------------------------------------------------
   def process_input_pause
-    wait(1)
-    t = @eagle_auto_continue_t
+    @eagle_auto_continue_c = @eagle_auto_continue_t
     while true
       Fiber.yield
-      break if t && (t -= 1) <= 0
+      break if @eagle_auto_continue_c && (@eagle_auto_continue_c -= 1) <= 0
       break if Input.trigger?(:B) || Input.trigger?(:C)
     end
     Input.update
@@ -2210,12 +2230,11 @@ class Window_Message
     wait(h[:t])
   end
   #--------------------------------------------------------------------------
-  # ● 等待
+  # ● 等待（覆盖）
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_wait wait
   def wait(duration)
     return if !game_message.draw
-    eagle_message_ex_wait(duration)
+    duration.times { break if @eagle_force_close; Fiber.yield }
   end
   #--------------------------------------------------------------------------
   # ● 设置auto参数
