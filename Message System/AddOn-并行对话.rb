@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2019.4.10.17 新增指示
+# - 2019.4.16.16 优化pop绑定对象的方法，方便扩展
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话框
 #--------------------------------------------------------------------------
@@ -499,10 +499,9 @@ class Window_Message_Para < Window_Message
   #--------------------------------------------------------------------------
   # ● 获取pop的弹出对象（需要有x、y方法）
   #--------------------------------------------------------------------------
-  def eagle_pop_get_chara
-    if SceneManager.scene_is?(Scene_Map) && game_message.pop_params[:id] == 0
-      return $game_map.events[@para_params[:id]]
-    end
+  def eagle_get_pop_obj
+    id = game_message.pop_params[:id]
+    return $game_map.events[@para_params[:id]] if @in_map && id == 0
     super
   end
 end

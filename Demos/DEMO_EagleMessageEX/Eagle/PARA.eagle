@@ -1,1 +1,1 @@
-﻿<list test><msg>\win[dw1dh1fw1fh1]第一句台词</msg><msg>\win[dw1dh1fw1fh1]第二句台词</msg></list>
+﻿<list test_eagle><msg w120>\win[dw1dh1fw1fh1]欢迎来到这个DEMO！</msg><msg w120>\win[dw1dh1fw1fh1]这句话来自【Add-On并行对话】，\nl你可以在目录下的Eagle/PARA.eagle文件里看到。</msg><msg w120>\win[dw1dh1fw1fh1]悄悄说一句：\nl这个文件就是普通的文本文件，\nl你可以直接用文本文档打开hhhh</msg></list>

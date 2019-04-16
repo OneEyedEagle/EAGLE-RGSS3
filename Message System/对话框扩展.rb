@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.15.19 修复脸图未释放的BUG
+# - 2019.4.16.15 优化pop对象的检索，方便扩展
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -899,15 +899,16 @@ class Window_Message
     @eagle_sprite_face = Sprite.new # 初始化脸图精灵
     @eagle_window_name = Window_Base.new(0, 0, 1, 1) # 初始化姓名框窗口
     @eagle_sprite_pause = Sprite_EaglePauseTag.new(self) # 初始化等待按键的精灵
+    @eagle_dup_windows = [] # 存储全部拷贝的窗口
   end
   #--------------------------------------------------------------------------
   # ● 初始化参数
   #--------------------------------------------------------------------------
   def eagle_message_init_params
     self.arrows_visible = false # contents未完全显示时出现的箭头
+    @in_map = SceneManager.scene_is?(Scene_Map) # 地图场景中？
     @in_battle = SceneManager.scene_is?(Scene_Battle) # 战斗场景中？
     @last_windowskin_index = nil # 上一次所绘制的窗口皮肤的index
-    @windows_dup = [] # 存储全部拷贝的窗口
     eagle_reset_pop_tag_bitmap # 重置tag的位图
     eagle_message_reset
   end
@@ -949,7 +950,7 @@ class Window_Message
     t.eagle_sprite_pause.visible = true
     @eagle_sprite_pause.bind_window(t)
     # 拷贝pop对象
-    t.eagle_pop_chara = @eagle_pop_chara
+    t.eagle_pop_obj = @eagle_pop_obj
     # 集体更新z值
     t.eagle_reset_z
     # 自身初始化组件与重置
@@ -957,7 +958,9 @@ class Window_Message
     eagle_message_reset
     eagle_reset_pop_tag_bitmap
     # 重置之前存储的窗口的z值（确保最近的显示在最上面）
-    @windows_dup.each_with_index { |w, i| w.z = t.z - (i+1) * 5; w.eagle_reset_z }
+    @eagle_dup_windows.each_with_index { |w, i|
+      w.z = t.z - (i+1) * 5; w.eagle_reset_z
+    }
     t
   end
   #--------------------------------------------------------------------------
@@ -1118,8 +1121,8 @@ class Window_Message
   # ● 更新全部拷贝窗口
   #--------------------------------------------------------------------------
   def eagle_dup_windows_update
-    @windows_dup.delete_if { |w| w.disposed? }
-    @windows_dup.each { |w| w.update; w.dispose if w.openness <= 0 }
+    @eagle_dup_windows.delete_if { |w| w.disposed? }
+    @eagle_dup_windows.each { |w| w.update; w.dispose if w.openness <= 0 }
   end
   #--------------------------------------------------------------------------
   # ● 重置指定对象的显示原点位置
@@ -1234,14 +1237,14 @@ class Window_Message
   def eagle_pop_update
     eagle_change_windowskin(game_message.pop_params[:skin])
     # 对话框左上角定位到绑定对象位图的对应o位置
-    if !@in_battle # 定位到位图底部中心的屏幕位置
-      game_message.pop_params[:chara_x] = @eagle_pop_chara.real_x
-      game_message.pop_params[:chara_y] = @eagle_pop_chara.real_y
+    if @in_map # 如果在地图上，则定位到位图底部中心的屏幕位置
+      game_message.pop_params[:chara_x] = @eagle_pop_obj.real_x
+      game_message.pop_params[:chara_y] = @eagle_pop_obj.real_y
       self.x = (game_message.pop_params[:chara_x] - $game_map.display_x) * 32 + 16
       self.y = (game_message.pop_params[:chara_y] - $game_map.display_y + 1) * 32
-    else
-      game_message.pop_params[:chara_x] = @eagle_pop_chara.x
-      game_message.pop_params[:chara_y] = @eagle_pop_chara.y
+    else # 否则与对应精灵的坐标一致
+      game_message.pop_params[:chara_x] = @eagle_pop_obj.x
+      game_message.pop_params[:chara_y] = @eagle_pop_obj.y
       self.x = game_message.pop_params[:chara_x]
       self.y = game_message.pop_params[:chara_y]
     end
@@ -1802,14 +1805,14 @@ class Window_Message
   end
   def eagle_process_hold
     if game_message.hold
-      @windows_dup.unshift( self.clone )
+      @eagle_dup_windows.unshift( self.clone )
       self.openness = 0
     else
       eagle_release_hold
     end
   end
   def eagle_release_hold # 所有暂存窗口关闭
-    @windows_dup.each { |w| w.close }
+    @eagle_dup_windows.each { |w| w.close }
   end
   #--------------------------------------------------------------------------
   # ● 设置instant指令
@@ -2090,11 +2093,12 @@ class Window_Message
     #（0代表当前事件，正数代表事件，负数代表队列中数据库id号角色，若不存在则取队首）
     parse_param(game_message.pop_params, param, :id)
 
-    # 设置 Character 类的实例，方便直接调用其xy
-    @eagle_pop_chara = eagle_pop_get_chara
+    # 设置pop对话框所绑定的精灵对象，方便直接调用
+    # （特殊：在地图场景中，获得的是 Character 类的实例）
+    @eagle_pop_obj = eagle_get_pop_obj
     # 若设置了chara变量，则认定使用pop对话框
-    return game_message.pop_params[:id] = nil if @eagle_pop_chara.nil?
-    s = eagle_pop_get_sprite
+    return game_message.pop_params[:id] = nil if @eagle_pop_obj.nil?
+    s = eagle_get_pop_sprite
     game_message.pop_params[:chara_w] = s.width
     game_message.pop_params[:chara_h] = s.height
 
@@ -2114,11 +2118,18 @@ class Window_Message
     eagle_pop_update
   end
   #--------------------------------------------------------------------------
-  # ● 获取pop的弹出对象（需要有x、y方法）
+  # ● 获取pop的弹出对象（需要有x、y、width、height方法）
   #--------------------------------------------------------------------------
-  def eagle_pop_get_chara
+  def eagle_get_pop_obj
     return nil if game_message.pop_params[:id].nil?
-    return eagle_pop_get_chara_b if @in_battle
+    return eagle_get_pop_obj_m if @in_map
+    return eagle_get_pop_obj_b if @in_battle
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取pop的对象（地图场景中）
+  #--------------------------------------------------------------------------
+  def eagle_get_pop_obj_m
     id = game_message.pop_params[:id]
     if id == 0 # 当前事件
       return $game_map.events[$game_map.interpreter.event_id]
@@ -2131,12 +2142,11 @@ class Window_Message
       $game_player.followers.each { |f| return f.actor if f.actor && f.actor.actor.id == id }
       return $game_player
     end
-    return nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取pop的对象（需要有x、y的方法）（战斗场景中）
+  # ● 获取pop的对象（战斗场景中）
   #--------------------------------------------------------------------------
-  def eagle_pop_get_chara_b
+  def eagle_get_pop_obj_b
     id = game_message.pop_params[:id]
     return nil if id.nil?
     if id > 0 # 敌人index
@@ -2152,12 +2162,13 @@ class Window_Message
     return nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取pop的对象的精灵（用于计算坐标偏移值）
+  # ● 获取pop对象的精灵（用于计算偏移值）
   #--------------------------------------------------------------------------
-  def eagle_pop_get_sprite
-    return @eagle_pop_chara if @in_battle
+  def eagle_get_pop_sprite
+    # 地图场景中，所存储的并非精灵，需要再次检索
+    return @eagle_pop_obj if !@in_map
     SceneManager.scene.spriteset.character_sprites.each do |s|
-      return s if s.character == @eagle_pop_chara
+      return s if s.character == @eagle_pop_obj
     end
     return nil
   end
@@ -2267,7 +2278,7 @@ class Window_Message_Clone < Window_Message
   attr_accessor :back_bitmap, :back_sprite
   attr_accessor :eagle_chara_sprites, :eagle_sprite_pop_tag
   attr_accessor :eagle_sprite_face, :eagle_window_name, :eagle_sprite_pause
-  attr_accessor :eagle_pop_chara
+  attr_accessor :eagle_pop_obj
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
