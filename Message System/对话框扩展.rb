@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.16.15 优化pop对象的检索，方便扩展
+# - 2019.4.16.21 分离pop对象的判定，方便扩展
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -908,6 +908,7 @@ class Window_Message
     self.arrows_visible = false # contents未完全显示时出现的箭头
     @in_map = SceneManager.scene_is?(Scene_Map) # 地图场景中？
     @in_battle = SceneManager.scene_is?(Scene_Battle) # 战斗场景中？
+    @pop_on_map_chara = true # pop绑定的对象为地图场景上的行走图？
     @last_windowskin_index = nil # 上一次所绘制的窗口皮肤的index
     eagle_reset_pop_tag_bitmap # 重置tag的位图
     eagle_message_reset
@@ -1237,12 +1238,12 @@ class Window_Message
   def eagle_pop_update
     eagle_change_windowskin(game_message.pop_params[:skin])
     # 对话框左上角定位到绑定对象位图的对应o位置
-    if @in_map # 如果在地图上，则定位到位图底部中心的屏幕位置
+    if @pop_on_map_chara # 如果在地图上使用的行走图，定位到位图底部中心的屏幕位置
       game_message.pop_params[:chara_x] = @eagle_pop_obj.real_x
       game_message.pop_params[:chara_y] = @eagle_pop_obj.real_y
       self.x = (game_message.pop_params[:chara_x] - $game_map.display_x) * 32 + 16
       self.y = (game_message.pop_params[:chara_y] - $game_map.display_y + 1) * 32
-    else # 否则与对应精灵的坐标一致
+    else # 否则与对应精灵的坐标一致（注意：精灵底部中心为显示原点）
       game_message.pop_params[:chara_x] = @eagle_pop_obj.x
       game_message.pop_params[:chara_y] = @eagle_pop_obj.y
       self.x = game_message.pop_params[:chara_x]
@@ -2095,6 +2096,7 @@ class Window_Message
 
     # 设置pop对话框所绑定的精灵对象，方便直接调用
     # （特殊：在地图场景中，获得的是 Character 类的实例）
+    @pop_on_map_chara = false
     @eagle_pop_obj = eagle_get_pop_obj
     # 若设置了chara变量，则认定使用pop对话框
     return game_message.pop_params[:id] = nil if @eagle_pop_obj.nil?
@@ -2130,6 +2132,7 @@ class Window_Message
   # ● 获取pop的对象（地图场景中）
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj_m
+    @pop_on_map_chara = true
     id = game_message.pop_params[:id]
     if id == 0 # 当前事件
       return $game_map.events[$game_map.interpreter.event_id]
@@ -2166,7 +2169,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_get_pop_sprite
     # 地图场景中，所存储的并非精灵，需要再次检索
-    return @eagle_pop_obj if !@in_map
+    return @eagle_pop_obj if !@pop_on_map_chara
     SceneManager.scene.spriteset.character_sprites.each do |s|
       return s if s.character == @eagle_pop_obj
     end
