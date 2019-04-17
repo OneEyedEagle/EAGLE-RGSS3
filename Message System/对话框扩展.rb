@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.17.11 调整\hold转义符，使复制的对话框与主对话框表现一致
+# - 2019.4.17.16 修复参数为$时报错的BUG
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -655,7 +655,7 @@ module MESSAGE_EX
     while(param_text != "")
       t = param_text.slice!(/^[a-z]+/)
       if param_text[0] == "$"
-        param_text.slice!(/^$/)
+        param_text[0] = ''
         next param_hash[t.to_sym] = nil
       end
       param_hash[t.to_sym] = (param_text.slice!(/^\-?\d+/)).to_i
@@ -1485,7 +1485,7 @@ class Window_Message
   # ● 强制中断绘制
   #--------------------------------------------------------------------------
   def force_close
-    @eagle_force_close = true  # 若还在显示，则直接结束绘制并跳过最后的等待按键
+    @eagle_force_close = true  # 若还在绘制，则直接结束绘制并跳过最后的等待按键
     @eagle_auto_continue_c = 0 # 若进入了按键等待，则将计数置0，并依靠auto跳过按键
   end
   #--------------------------------------------------------------------------
