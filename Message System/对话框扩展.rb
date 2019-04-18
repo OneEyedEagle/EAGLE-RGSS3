@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.17.16 修复参数为$时报错的BUG
+# - 2019.4.18.22 修复背景透明失效的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -1408,6 +1408,11 @@ class Window_Message
       else
         @back_bitmap.dispose if @back_bitmap
         @back_bitmap = nil
+      end
+      if game_message.background == 2 # 透明背景
+        self.opacity = 0
+      else
+        self.opacity = 255
       end
     end
     return if @back_bitmap.nil?
