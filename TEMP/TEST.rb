@@ -5,12 +5,24 @@
 #（默认数据库上限999）
 DATABASE_MAX_DIGIT = 3
 
+a = [3, 2, 1, 0, 9]
 def a.[](id)
   max_id = self.size
   return Array.instance_method(:[]).bind(self).call(id) if id < max_id
   # 当id大于数据库上限时，后面部分为该装备内的独立数据索引
   id_s = id.to_s
-  # 获得id位数，裁剪出数据库内的索引id
-  # 获得item内的额外属性索引id部分
+  # 获得id的位数，裁剪出数据库内的索引id
+  d1 = (id_s[0..DATABASE_MAX_DIGIT]).to_i
+  item = Array.instance_method(:[]).bind(self).call(d1)
+  # 获得额外属性的索引id
+  d2 = (id_s[(DATABASE_MAX_DIGIT+1)..-1]).to_i
+
   # 将额外的属性添加入原始物品中
+end
+
+class RPG::EquipItem < RPG::BaseItem
+  alias eagle_item_ex_params params
+  def params
+
+  end
 end
