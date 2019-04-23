@@ -2,7 +2,7 @@
 # ■ Add-On 选择框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.4.15.20 优化
+# - 2019.4.23.21 修复嵌入时选择框宽度固定160的BUG
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #     i - 【默认】【重置】设置选择框光标初始所在的选择支
@@ -102,7 +102,7 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   CHOICE_PARAMS_INIT = {
   # \choice[]
-    :i => -1, # 初始光标位置
+    :i => 0, # 初始光标位置
     :o => 7, # 原点类型
     :x => nil,
     :y => nil,
@@ -374,7 +374,7 @@ class Window_ChoiceList < Window_Command
   def eagle_check_param_h(h)
     return 0 if h <= 0
     # 如果h小于行高，则判定其为行数
-    return line_height * h + standard_padding * 2 if h < line_height
+    return line_height * h if h < line_height
     return h
   end
   #--------------------------------------------------------------------------
@@ -399,13 +399,19 @@ class Window_ChoiceList < Window_Command
     @choices_num.times do |i|
       @choices_info[i][:width] = cal_width_line( command_name(i) )
     end
-    # 窗口宽度最小值（不含边界）
-    width_min = @choices_info.values.collect {|v| v[:width]}.max + 8
+    # 窗口高度
     self.height = fitting_height(@choices_num)
     h = eagle_check_param_h($game_message.choice_params[:h])
-    self.height = h if h > 0
+    self.height = h + standard_padding * 2 if h > 0
+    # 窗口宽度
+    width_min = @choices_info.values.collect {|v| v[:width]}.max + 8
+    self.width = width_min + standard_padding * 2
+    self.width = $game_message.choice_params[:w] if $game_message.choice_params[:w] > self.width
+    # 嵌入时宽度最小值（不含边界）
+    width_min = self.width - standard_padding * 2
 
-    if @message_window.open? && $game_message.choice_params[:do] == 0 # 嵌入对话框
+    # 嵌入对话框时的特别处理
+    if @message_window.open? && $game_message.choice_params[:do] == 0
       self.openness = 255
       win_w = @message_window.eagle_charas_w
       if @message_window.eagle_dynamic_w?
@@ -429,12 +435,7 @@ class Window_ChoiceList < Window_Command
         self.height = self.height/item_height*item_height + standard_padding*2
       end
       @message_window.eagle_process_draw_update
-    else
-      self.width = width_min + standard_padding * 2
-      self.width = $game_message.choice_params[:w] if $game_message.choice_params[:w] > self.width
     end
-
-    create_contents
   end
   #--------------------------------------------------------------------------
   # ● 更新窗口的位置（覆盖）

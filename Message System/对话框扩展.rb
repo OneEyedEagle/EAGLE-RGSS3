@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.23.20 新增win转义符的cdx参数；修复ali对齐错误bug
+# - 2019.4.23.21 新增win转义符的cdx参数；修复ali对齐错误bug；新增不可被绘制的额外宽高
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -1275,9 +1275,18 @@ class Window_Message
   # ● 额外增加的窗口宽度高度（右侧和下侧）
   #--------------------------------------------------------------------------
   def eagle_window_width_add(cur_width)
-    @eagle_sprite_pause_width_add
+    eagle_window_w_occupy
   end
   def eagle_window_height_add(cur_height)
+    eagle_window_h_occupy
+  end
+  #--------------------------------------------------------------------------
+  # ● 额外增加的窗口宽高中，无法被用于文本绘制的部分
+  #--------------------------------------------------------------------------
+  def eagle_window_w_occupy
+    @eagle_sprite_pause_width_add
+  end
+  def eagle_window_h_occupy
     0
   end
   #--------------------------------------------------------------------------
@@ -1590,13 +1599,13 @@ class Window_Message
     self.y + standard_padding + win_params[:cdy]
   end
   #--------------------------------------------------------------------------
-  # ● 计算可供文字绘制的总宽度
+  # ● 计算可供文字绘制的区域的总宽度
   #--------------------------------------------------------------------------
   def eagle_charas_max_w
     # 窗口内容宽度 - 脸图占用宽度 - 文字左侧间距
     v = contents_width - eagle_face_width - win_params[:cdx]
-    # - 额外增加的宽度
-    v -= eagle_window_width_add(self.width)
+    # - 其它必须占用宽度的内容
+    v -= eagle_window_w_occupy
     v
   end
   #--------------------------------------------------------------------------

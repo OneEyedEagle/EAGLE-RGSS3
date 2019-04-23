@@ -2,7 +2,7 @@
 # ■ Add-On 物品选择框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.3.22.12 精简
+# - 2019.4.23.21 修复嵌入时宽度异常的BUG
 #==============================================================================
 # - 在对话框中利用 \keyitem[param] 对物品选择框进行部分参数设置：
 #     type - 【默认】物品选择框的物品种类index（见 index → 物品种类的符号数组 的映射）
@@ -12,9 +12,9 @@
 #          （0为嵌入；1~9对话框外边界的九宫格位置；-1~-9屏幕外框的九宫格位置）
 #          （当对话框关闭时，0~9的设置均无效）
 #     dx/dy - x/y坐标的偏移增量（默认0）
-#     wmin - 设置选择框的最小宽度
-#     w - 设置选择框的宽度（默认0不设置）（嵌入时该设置无效）
-#     h - 设置选择框的高度（默认0不设置）（若小于行高，则为行数）
+#     wmin - 设置物品选择框的最小宽度
+#     w - 设置物品选择框的宽度（默认0不设置）（嵌入时该设置无效）
+#     h - 设置物品选择框的高度（默认0不设置）（若小于行高，则为行数）
 #     opa - 选择框的背景不透明度（默认255）（文字内容不透明度固定为255）（嵌入时不显示背景）
 #     skin - 选择框皮肤类型（每次默认取对话框皮肤）（见index → windowskin名称 的映射）
 #------------------------------------------------------------------------------
@@ -200,18 +200,22 @@ class Window_KeyItem < Window_ItemList
   def eagle_check_param_h(h)
     return 0 if h <= 0
     # 如果h小于行高，则判定其为行数
-    return line_height * h + standard_padding * 2 if h < line_height
+    return line_height * h if h < line_height
     return h
   end
   #--------------------------------------------------------------------------
   # ● 更新窗口的大小
   #--------------------------------------------------------------------------
   def update_size
-    width_min = self.width - standard_padding * 2 # 宽度最小值（不含边界）
+    # 宽度
+    self.width = $game_message.keyitem_params[:w] if $game_message.keyitem_params[:w] > self.width
+    # 嵌入时宽度最小值（不含边界）
+    width_min = self.width - standard_padding * 2
+    # 高度
     h = eagle_check_param_h($game_message.keyitem_params[:h])
-    self.height = h if h > 0
-
-    if @message_window.open? && $game_message.keyitem_params[:do] == 0 # 嵌入对话框
+    self.height = h + standard_padding * 2 if h > 0
+    # 嵌入对话框时的特别处理
+    if @message_window.open? && $game_message.keyitem_params[:do] == 0
       self.openness = 255
       win_w = @message_window.eagle_charas_w
       if @message_window.eagle_dynamic_w?
@@ -236,8 +240,6 @@ class Window_KeyItem < Window_ItemList
         self.height = self.height/item_height*item_height + standard_padding*2
       end
       @message_window.eagle_process_draw_update
-    else
-      self.width = $game_message.keyitem_params[:w] if $game_message.keyitem_params[:w] > self.width
     end
   end
   #--------------------------------------------------------------------------
