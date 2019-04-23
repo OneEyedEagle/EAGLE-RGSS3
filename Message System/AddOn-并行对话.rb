@@ -461,14 +461,10 @@ class Window_Message_Para < Window_Message
     game_message.visible = true
     update_background
     update_placement
-    loop do
-      process_all_text if game_message.has_text?
-      process_input
-      game_message.clear
-      @gold_window.close
-      Fiber.yield
-      break
-    end
+    process_all_text
+    process_input
+    game_message.clear
+    @gold_window.close
     close_and_wait
     game_message.visible = false
     @fiber = nil

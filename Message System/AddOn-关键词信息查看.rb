@@ -2,7 +2,7 @@
 # ■ Add-On 关键词信息查看 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.4.10.16 新增位图缓存
+# - 2019.4.23.19 整合
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，在对话框打开时，可以逐个查看 word 的详细信息文本
 # - 在对话框打开时，当已经有关键词 word 被绘制时，能够按下指定按键打开信息窗口
@@ -231,7 +231,8 @@ class Window_Keyword_Info < Window_Base
       text += MESSAGE_EX.get_keyword_info(keyword)
       text += MESSAGE_EX::KEYWORD_INFO_SURFIX
       dh = [line_height - contents.font.size, 0].max
-      w, h = @message_window.eagle_calculate_text_wh(text, 0, dh)
+      text = @message_window.convert_escape_characters(text)
+      w, h = MESSAGE_EX.calculate_text_wh(contents, text, 0, dh)
       h += dh # 最后一行补足高度
       self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
       create_contents_no_dispose

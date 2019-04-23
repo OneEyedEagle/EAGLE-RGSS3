@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.18.22 修复背景透明失效的bug
+# - 2019.4.23.20 新增win转义符的cdx参数；修复ali对齐错误bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -67,46 +67,51 @@ $imported["EAGLE-MessageEX"] = true
 #    uc - 设置下划线的颜色索引号（默认0）
 #
 #  \win[param] - 对话框的基本设置
-#    o - 【默认】设置对话框的显示原点位置的类型（对应九宫格小键盘位置）（默认左上角7）
+#  （窗口属性相关）
 #    z - 设置对话框的z值（仅正整数有效）（默认同va设置200）
-#    x/y - 设置对话框原点位置的x、y（默认nil，即按照va设置）
-#    do - 相对于屏幕的九宫格位置类型（覆盖x/y设置）（-1~-9为有效值）
-#    dx/dy - 指定x、y方向上的偏移量（默认0）
-#    w - 设置对话框的固定宽度（默认0不设置）
-#    dw - 设置对话框的宽度是否随着文字绘制而动态变更（默认false）
-#    fw - 设置对话框的宽度是否直接指定为全部文字所需宽度值（dw为true时有效）
-#    wmin/wmax - 设置对话框宽度的上下限（dw为true时生效）（默认0不设置）
-#    h - 设置对话框的固定高度（默认为0代表不设置）（若值小于line_height方法返回值，则认定为行数）
-#    dh - 设置对话框的高度是否随着文字绘制而动态变更（默认false）（不会自动翻页）
-#    fh - 设置对话框的高度是否直接指定为全部文字所需高度值（dh为true时有效）
-#    hmin/hmax - 设置对话框高度的上下限（dh为true时生效）（若值小于行高，则认定为行数）
-#    ali - 设置文本的对齐方式（0左对齐，1居中对齐，2右对齐；默认0）
-#    ck - 缩减的字符间距值（默认0）
-#    lh - 增加的行间距值（默认0）（默认行间距为0）（默认行高修改为当前行最大字号）
-#    cwait - 单个文字绘制完成后的等待帧数（默认1）
-#    cfast - 是否允许按键快进（默认true）
-#    se - 设置打字音类型index（默认0，按设置进行 index → 声效SE设置 映射）
 #    skin - 对话框所用windowskin的index（按设置进行 index → skin名称 映射）
 #    bg - 对话框背景图片的index（按设置进行 index → 图片名称 映射）（覆盖窗口皮肤）
 #         （若读取失败，仍然绘制窗口皮肤）（图片的左上角会与对话框的左上角对齐）
+#  （窗口位置相关）
+#    o - 【默认】设置对话框的显示原点位置的类型（对应九宫格小键盘位置）（默认左上角7）
+#    x/y - 设置对话框原点位置的x、y（默认nil，即按照va设置）
+#    do - 相对于屏幕的九宫格位置类型（覆盖x/y设置）（-1~-9为有效值）
+#    dx/dy - 指定x、y方向上的偏移量（默认0）
 #    fix - 设置对话框是否进行位置修正（保证对话框完整显示在屏幕内）
+#  （窗口大小相关）
+#    w - 设置窗口内容的固定宽度（默认0不设置）
+#    dw - 设置窗口内容宽度是否随文字绘制而动态变更（默认false）
+#    fw - 设置窗口内容宽度是否直接指定为全部文字所需宽度值（dw为true时有效）
+#    wmin/wmax - 设置窗口内容的宽度上下限（dw为true时生效）（默认0不设置）
+#    h - 设置窗口内容的固定高度（默认为0代表不设置）（若值小于line_height行高，则修正为行数）
+#    dh - 设置窗口内容高度是否随文字绘制而动态变更（默认false）（不会自动翻页）
+#    fh - 设置窗口内容高度是否直接指定为全部文字所需高度值（dh为true时有效）
+#    hmin/hmax - 设置窗口内容的高度上下限（dh为true时生效）（若值小于行高，则修正为行数）
+#  （文本显示相关）
+#    se - 设置打字音类型index（默认0，按设置进行 index → 声效SE设置 映射）
+#    ali - 设置文本的对齐方式（0左对齐，1居中对齐，2右对齐；默认0）
+#    ck - 缩减的字符间距值（默认0）
+#    lh - 增加的行间距值（默认0）（默认行间距为0）（默认行高为当前行最大字号）
+#    cwait - 单个文字绘制完成后的等待帧数（默认1）
+#    cfast - 是否允许按键快进（默认true）
+#    cdx/cdy - 文本区域与窗口左侧padding和上侧padding的间距（默认0）
 #
 #  \pop[param] - pop类型对话框的设置
 #    id - 【重置】【默认】所绑定的对象id
 #       （【地图】0为执行当前对话的事件；正数为当前地图id号事件，不存在时取当前事件；
 #                负数为队列中数据库id号角色，不存在时取队首）
 #       （【战斗】正数为敌人index序号；负数为数据库id号我方角色；不存在时则无效）
+#    skin - pop对话框所用皮肤的index（默认nil，随win参数）（按设置进行 index → skin名称 映射）
 #    do - 设置对话框相对于绑定对象的位置类型（对应九宫格小键盘）（默认事件顶部中间8）
 #    d - 对话框显示原点与所绑定事件格子中心的x与y方向上远离偏移值（默认0）
 #    dx/dy - 指定x、y方向上的偏移量（默认0）
+#    fix - 设置pop对话框是否进行位置修正（保证pop对话框完整显示在屏幕内）
 #    w - 指定pop对话框的固定宽度（覆盖win中的w）（默认0不设置）
 #    h - 指定pop对话框的固定高度（覆盖win中的h）（若值小于line_height方法返回值，则认定为行数）
 #    dw - 设置pop对话框的宽度是否随着文字绘制而动态变更（默认false）
 #    fw - 设置pop对话框的宽度是否直接指定为全部文字所需宽度值（dw为true时有效）
 #    dh - 设置pop对话框的高度是否随着文字绘制而动态变更（默认false）（不会自动翻页）
 #    fh - 设置pop对话框的高度是否直接指定为全部文字所需高度值（dw为true时有效）
-#    skin - pop对话框所用皮肤的index（默认nil，随win参数）（按设置进行 index → skin名称 映射）
-#    fix - 设置pop对话框是否进行位置修正（保证pop对话框完整显示在屏幕内）
 #
 #  \popt[param] - 【预先】pop对话框的箭头设置（当对话框为pop类型时才显示）
 #    tag - 【默认】设置tag的index（按设置进行 index → tag名称 映射）（默认0）
@@ -308,13 +313,19 @@ module MESSAGE_EX
   }
   WIN_PARAMS_INIT = {
   # \win[]
-    :o => 7, # 原点位置类型 未设置时为7左上角
+    # 窗口属性相关
     :z => 200,
+    :skin => 0, # 对话框所用windowskin的类型
+    :bg => nil, # 对话框背景所用图片（覆盖窗口皮肤）
+    # 窗口位置相关
+    :o => 7, # 原点位置类型 默认为7左上角
     :x => nil, # 原点坐标xy
     :y => nil,
     :do => 0, # 相较于屏幕的九宫格位置（覆盖x/y的设置）
     :dx => 0, # 坐标偏移值xy
     :dy => 0,
+    :fix => 1, # 是否进行位置修正，防止对话框跑出屏幕
+    # 窗口大小相关
     :w => 0,
     :h => 0,
     :dw => 0, # 若为1，则代表宽度会依据文字动态调整
@@ -325,30 +336,30 @@ module MESSAGE_EX
     :fh => 1, # 若为1，则窗口打开时即为文字绘制完成时所需高度值（当dh==1时生效）
     :hmin => 0, # 设置高度的上下限（当dh==1时生效）
     :hmax => 0,
+    # 文本显示相关
+    :se => 1, # 打字音类型（默认0，无声效）
     :ali => 0, # 设置文本对齐方式
     :ck => 0, # 缩减的字符间距值
     :lh => 4, # 增加的行间距值
     :cwait => 2, # 单个文字绘制后的等待帧数（最小值0）
     :cfast => 1, # 是否允许快进
-    :se => 1, # 打字音类型（默认0，无声效）
-    :skin => 0, # 对话框所用windowskin的类型
-    :bg => nil, # 对话框背景所用图片（覆盖窗口皮肤）
-    :fix => 1, # 是否进行位置修正
+    :cdx => 0, # 文本左侧与窗口padding的间距
+    :cdy => 0, # 文本上边距
   }
   POP_PARAMS_INIT = {
   # \pop[]
+    :skin => nil, # pop模式下所用skin类型
     :do => 8, # 对话框相对于绑定对象的位置（九宫格小键盘）
     :d => 0, # 指定原点距离事件格子中心的偏移量
     :dx => 0,  # 指定x、y方向上的偏移量
     :dy => 0,
+    :fix => 0, # 是否进行位置修正
     :w => 0, # 指定固定的宽度和高度（优先级高于win_params）
     :h => 0,
     :dw => 1, # 若为1，则代表宽度会依据文字动态调整
     :fw => 1, # 若为1，则窗口打开时将预绘制成文字区域最终大小（dw==1时有效）
     :dh => 1, # 若为1，则代表高度会依据文字动态调整
     :fh => 1, # 若为1，则窗口打开时将预绘制成文字区域最终大小（dh==1时有效）
-    :skin => nil, # pop模式下所用skin类型
-    :fix => 0, # 是否进行位置修正
   # \popt[]
     :tag => 1, # tag所用文件名index（0时表示不启用）
     :td => 3, # 与绑定事件格子中心位置的偏移值
@@ -716,6 +727,29 @@ module MESSAGE_EX
     when 7,8,9; obj.y = obj2.y
     end
   end
+  #--------------------------------------------------------------------------
+  # ● 基于指定位图，计算文本块所占宽高
+  # （只进行 \\ 到 \e 的文本替换、忽略除\i以外的全部转义符、未考虑字号变化）
+  #  k - 字符间距  lh - 行间距
+  #--------------------------------------------------------------------------
+  def self.calculate_text_wh(bitmap, text, k = 0, lh = 0)
+    text_clone, array_width, array_height = text.dup, [], []
+    # 转义符替换
+    text_clone.gsub!(/\\/)      { "\e" }
+    text_clone.gsub!(/\e\e/)    { "\\" }
+    text_clone.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i) { "" }
+    text_clone.gsub!(/\e\w+\[(\d|\w)+\]/i) { "" } # 清除掉全部的\w[wd]格式转义符
+    # 每一行计算宽度高度
+    text_clone.each_line do |line|
+      icon_count = 0; line.gsub!(/\ei\[\d+\]/i){ icon_count += 1; "" }
+      r = bitmap.text_size(line)
+      w = r.width + icon_count * 24 + (line.length - 1 + icon_count) * k
+      array_width.push(w)
+      h = icon_count > 0 ? [r.height, 24].max : r.height
+      array_height.push(h)
+    end
+    return [array_width.max, array_height.inject{|sum, v| sum = sum + v + lh}]
+  end
 #==============================================================================
 # ○ 定义能够响应的文字特效
 #==============================================================================
@@ -760,7 +794,7 @@ module CHARA_EFFECTS
   end
   end
 end
-end
+end # end of MESSAGE_EX
 #=============================================================================
 # ○ Game_Message
 #=============================================================================
@@ -1196,9 +1230,10 @@ class Window_Message
     if eagle_dynamic_w?
       w = @eagle_charas_w
       w = @eagle_charas_w_final if eagle_dyn_fit_w?
-      w += standard_padding * 2
       w = win_params[:wmin] if win_params[:wmin] > 0 && w < win_params[:wmin]
       w = win_params[:wmax] if win_params[:wmax] > 0 && w > win_params[:wmax]
+      w += standard_padding * 2
+      w += win_params[:cdx]
       w += eagle_face_width
       return w
     end
@@ -1210,9 +1245,10 @@ class Window_Message
     if eagle_dynamic_h?
       h = @eagle_charas_h
       h = @eagle_charas_h_final if eagle_dyn_fit_h?
-      h += standard_padding * 2
       h = win_params[:hmin] if win_params[:hmin] > 0 && h < win_params[:hmin]
       h = win_params[:hmax] if win_params[:hmax] > 0 && h > win_params[:hmax]
+      h += standard_padding * 2
+      h += win_params[:cdy]
       return h
     end
     window_height
@@ -1221,27 +1257,25 @@ class Window_Message
   # ● 动态调整宽度高度？
   #--------------------------------------------------------------------------
   def eagle_dynamic_w?
-    game_message.win_params[:dw] || (game_message.pop? && game_message.pop_params[:dw])
+    game_message.pop? ? game_message.pop_params[:dw] : game_message.win_params[:dw]
   end
   def eagle_dynamic_h?
-    game_message.win_params[:dh] || (game_message.pop? && game_message.pop_params[:dh])
+    game_message.pop? ? game_message.pop_params[:dh] : game_message.win_params[:dh]
   end
   #--------------------------------------------------------------------------
   # ● 动态调整宽度高度的前提下，预计算完整文字区域的宽度高度？
   #--------------------------------------------------------------------------
   def eagle_dyn_fit_w?
-    game_message.win_params[:fw] || (game_message.pop? && game_message.pop_params[:fw])
+    game_message.pop? ? game_message.pop_params[:fw] : game_message.win_params[:fw]
   end
   def eagle_dyn_fit_h?
-    game_message.win_params[:fh] || (game_message.pop? && game_message.pop_params[:fh])
+    game_message.pop? ? game_message.pop_params[:fh] : game_message.win_params[:fh]
   end
   #--------------------------------------------------------------------------
   # ● 额外增加的窗口宽度高度（右侧和下侧）
   #--------------------------------------------------------------------------
   def eagle_window_width_add(cur_width)
-    v = 0
-    v += @eagle_sprite_pause_width_add
-    v
+    @eagle_sprite_pause_width_add
   end
   def eagle_window_height_add(cur_height)
     0
@@ -1550,10 +1584,20 @@ class Window_Message
   # ● 文字区域的左上角位置（屏幕坐标系）
   #--------------------------------------------------------------------------
   def eagle_charas_x0
-    self.x + standard_padding + eagle_face_left_width
+    self.x + standard_padding + eagle_face_left_width + win_params[:cdx]
   end
   def eagle_charas_y0
-    self.y + standard_padding
+    self.y + standard_padding + win_params[:cdy]
+  end
+  #--------------------------------------------------------------------------
+  # ● 计算可供文字绘制的总宽度
+  #--------------------------------------------------------------------------
+  def eagle_charas_max_w
+    # 窗口内容宽度 - 脸图占用宽度 - 文字左侧间距
+    v = contents_width - eagle_face_width - win_params[:cdx]
+    # - 额外增加的宽度
+    v -= eagle_window_width_add(self.width)
+    v
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）普通文字的处理
@@ -1657,9 +1701,10 @@ class Window_Message
   # ● 绘制完成时的更新
   #--------------------------------------------------------------------------
   def eagle_process_draw_update
-    eagle_charas_reset_alignment(game_message.win_params[:ali])
     eagle_win_update # 当绘制完一个文字时，更新一次win参数
     eagle_pop_update if game_message.pop? # 当使用pop时，再覆盖一次
+    # 由于对齐需要用到对话框的属性，因此需要在调用更新后执行
+    eagle_charas_reset_alignment(game_message.win_params[:ali])
     eagle_open_and_wait # 第一个文字绘制完成时窗口打开
     # pause精灵重置位置
     @eagle_sprite_pause.bind_last_chara(@eagle_chara_sprites[-1])
@@ -1672,26 +1717,24 @@ class Window_Message
     charas = [] # 存储当前迭代行的全部文字精灵
     # 存储当前迭代行的y值（同y的为同一行）（未考虑列排文字）
     charas_y = @eagle_chara_sprites[0].origin_y  # 初始为第一行
-    # 如果窗口宽度比文字区域的宽度大，则需要将文字整体移动
-    d_w = (self.width - standard_padding * 2) - eagle_charas_w
-    d_w -= eagle_face_width # 减去脸图占用的宽度
-    d_w > 0 ? (dx1 = d_w / 2; dx2 = d_w) : (dx1 = dx2 = 0)
+    # 可供文字绘制区域的最大宽度
+    max_w = eagle_charas_max_w
     @eagle_chara_sprites.each do |s|
       next charas.push(s) if s.origin_y == charas_y # 第一行的首字符会存入
       # 对同一行的字符重排
-      eagle_charas_realign_line(charas, align, dx1, dx2)
+      eagle_charas_realign_line(charas, align, max_w)
       charas.clear
       # 将当前迭代的 下一行的首字符 存入
       charas.push(s)
       charas_y = s.origin_y
     end
     # 对最后一行进行重排列
-    eagle_charas_realign_line(charas, align, dx1, dx2) if !charas.empty?
+    eagle_charas_realign_line(charas, align, max_w) if !charas.empty?
   end
   #--------------------------------------------------------------------------
   # ● 重排列同一行上的文字精灵
   #--------------------------------------------------------------------------
-  def eagle_charas_realign_line(charas, align, dx1, dx2)
+  def eagle_charas_realign_line(charas, align, max_w)
     w_line = charas[-1].origin_x - charas[0].origin_x + charas[-1].width
     h_line = charas.collect{ |c| c.height }.max
     charas.each do |c|
@@ -1699,9 +1742,9 @@ class Window_Message
       when 0 # 左对齐（默认对齐方式）
         _x = c.origin_x
       when 1 # 居中排列
-        _x = c.origin_x + (eagle_charas_w - w_line) / 2 + dx1
+        _x = c.origin_x + (max_w - w_line) / 2
       when 2 # 右排列
-        _x = c.origin_x + eagle_charas_w - w_line + dx2
+        _x = c.origin_x + max_w - w_line
       end
       _y = c.origin_y + h_line - c.height # 底部对齐
       c.reset_xy(_x, _y)
@@ -1740,6 +1783,7 @@ class Window_Message
     return false if eagle_dynamic_h?
     eagle_message_ex_need_new_page?(text, pos)
   end
+
   #--------------------------------------------------------------------------
   # ● 输入处理（此处为全部绘制完成后，判定接下来的输入类型）
   #--------------------------------------------------------------------------
@@ -1881,7 +1925,8 @@ class Window_Message
     # 重设姓名窗口
     t = MESSAGE_EX.get_name_prefix + game_message.name_params[:name]
     t.gsub!(/<(.*?)>/) { "[" + $1 + "]" }
-    w, h = eagle_calculate_text_wh(t)
+    t = convert_escape_characters(t)
+    w, h = MESSAGE_EX.calculate_text_wh(@eagle_window_name.contents, t)
     h = [h, @eagle_window_name.line_height].max
     w += standard_padding * 2; h += standard_padding * 2
     @eagle_window_name.move(0, 0, w, h)
@@ -1900,26 +1945,6 @@ class Window_Message
     @eagle_window_name.openness = 0
     @eagle_window_name.show.open
     eagle_name_update
-  end
-  #--------------------------------------------------------------------------
-  # ● 计算指定文本块所占据的宽度和高度（未考虑转义符导致的字号变化）
-  #   k - 字符间距  lh - 行间距
-  #--------------------------------------------------------------------------
-  def eagle_calculate_text_wh(text, k = 0, lh = 0)
-    reset_font_settings
-    text_clone, array_width, array_height = text.dup, [], []
-    text_clone.each_line do |line|
-      line = convert_escape_characters(line)
-      line.gsub!(/\n/){ "" }; line.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i){ "" }
-      icon_count = 0; line.gsub!(/\ei\[\d+\]/i){ icon_count += 1; "" }
-      line.gsub!(/\e\w+\[(\d|\w)+\]/i){ "" } # 清除掉全部的\w[wd]格式转义符
-      r = text_size(line)
-      w = r.width + icon_count * 24 + (line.length - 1 + icon_count) * k
-      array_width.push(w)
-      h = icon_count > 0 ? [r.height, 24].max : r.height
-      array_height.push(h)
-    end
-    return [array_width.max, array_height.inject{|sum, v| sum = sum + v + lh}]
   end
 
   #--------------------------------------------------------------------------
@@ -2101,7 +2126,7 @@ class Window_Message
   def eagle_check_param_h(h)
     return 0 if h <= 0
     # 如果h小于行高，则判定其为行数
-    return line_height * h + standard_padding * 2 if h < line_height
+    return line_height * h if h < line_height
     return h
   end
   #--------------------------------------------------------------------------
