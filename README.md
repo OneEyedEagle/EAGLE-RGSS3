@@ -26,6 +26,8 @@
 
 - 点击进入脚本文件的预览页面后，右上有“Raw”字样的按钮，点击进入只含有文件内容的页面，可利用Ctrl+A进行全选，再复制黏贴到你的工程中的空白脚本页内
 
+- 【借助第三方工具】若你已经登录了GitHub，可以通过设置GitHub Key后利用第三方工具（如[这个](https://download-directory.github.io/)）下载仓库中的独立文件夹：点击your GitHub token后跳转到你自己账户下的key生成界面，拖至最底部点击绿色按键生成key，然后复制key的字符串（注意：该字符串以后无法再找到，请保存好）到原网页中的输入框；此时可以通过在浏览器地址栏输入比如 https://download-directory.github.io?url=https://github.com/OneEyedEagle/EAGLE-RGSS3/tree/master/Demos/DEMO_EagleMessageEX 下载本仓库的DEMO/DEMO_EagleMessageEX整个文件夹
+
 ## 利用规约
 
 ![GitHub](https://img.shields.io/github/license/OneEyedEagle/EAGLE-RGSS3.svg?style=flat-square)
