@@ -1,4 +1,18 @@
 #=============================================================================
+# Win32API
+# http://www.rubytips.org/2008/05/13/accessing-windows-api-from-ruby-using-win32api-library/
+#=============================================================================
+require "Win32API"
+# Returns current logged in Windows user name
+def getUserName
+  name = " " * 128
+  size = "128"
+  Win32API.new('advapi32','GetUserName', ['P','P'],'I').call(name,size)
+  return name.unpack("A*")
+end
+p getUserName
+
+#=============================================================================
 # 单件方法 - 重定义指定实例中的方法
 #=============================================================================
 class A
