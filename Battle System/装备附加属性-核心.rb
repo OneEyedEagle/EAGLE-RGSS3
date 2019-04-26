@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EquipEXCore"] = true
 #=============================================================================
-# - 2019.4.26.10 上限限制，防止溢出BUG
+# - 2019.4.27.0 优化
 #=============================================================================
 # - 本插件新增了一组处理装备附加属性的核心方法
 # - 本插件已为 $data_weapons 与 $data_armors 编写了绑定，可以适用于该两类
@@ -12,14 +12,14 @@ $imported["EAGLE-EquipEXCore"] = true
 # ○ 操作流程
 #--------------------------------------------------------------------------
 # - 生成一个含有指定信息的附加属性实例，并返回它的序号
-#     id_ex = EQUIP_EX.new_equip_ex(item, attrs)
+#     id_ex = EQUIP_EX.new_ex(item, attrs)
 #
 # - 为指定装备item追加一个id_ex号的附加属性，并返回附加后的装备item_ex
 #     item_ex = EQUIP_EX.get_equip(item, id_ex)
 #
 # -【可选/节约存储空间】删去不再需要的指定装备的附加属性
 #    （已判定是否持有相同附加属性的装备，若仍然持有，则不会删除）
-#     EQUIP_EX.delete_equip_ex(item_ex)
+#     EQUIP_EX.delete_ex(item_ex)
 #
 #--------------------------------------------------------------------------
 # ○ attrs 附加属性数组解析
@@ -35,7 +35,7 @@ $imported["EAGLE-EquipEXCore"] = true
 #   · data_id 为第一个下拉选择框的选项所对应的id
 #     （部分从1开始，部分从0开始，推荐利用 p item.features 对照查看理解）
 #   · value 为部分项所带有的第二个数值输入框的值
-#     （若数据库中为百分数，此处需手动转换为 0.0~1.0 范围内）
+#     （若数据库中为百分数，此处需手动转换为 0.0~1.0 范围内，且会强制保留2位小数）
 #
 # - 示例：
 #     attrs = [ [:mhp, +5], [:luk, -1], [22, 0, -0.1] ]
@@ -86,57 +86,87 @@ module EQUIP_EX
     param.is_a?(Symbol) ? PARAMS_TO_ID[param] : param
   end
   #--------------------------------------------------------------------------
-  # ○ 为指定装备增加附加属性
+  # ○ 获取物品的类型符号
+  #  返回nil - 该item不可以进行附加属性设置
+  #--------------------------------------------------------------------------
+  def self.get_sym(item)
+    return :weapon if item.class == RPG::Weapon
+    return :armor  if item.class == RPG::Armor
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ○ 指定附加属性的装备依然存在？
+  #--------------------------------------------------------------------------
+  def self.exist_equip_ex?(item)
+    return $game_party.weapon_ids.include?(item.id) if item.class == RPG::Weapon
+    return $game_party.armor_ids.include?(item.id) if item.class == RPG::Armor
+    return true # 当未找到对应类别时，认为还存在，即不处理删除
+  end
+
+  #--------------------------------------------------------------------------
+  # ○ 尝试为指定装备增加附加属性
   #  返回：装备实例
   #--------------------------------------------------------------------------
   def self.get_equip(item, id_ex)
-    ex = get_equip_ex(item, id_ex)
+    return item if !can_ex?(item)
+    ex = get_ex(item, id_ex)
     return item if ex.nil?
     item_ = item.dup
     item_.eagle_ex = ex
     item_
   end
   #--------------------------------------------------------------------------
+  # ○ 指定物品能够附加扩展？
+  #--------------------------------------------------------------------------
+  def self.can_ex?(item)
+    get_sym(item) != nil
+  end
+  #--------------------------------------------------------------------------
   # ○ 获取指定序号的附加属性实例
   #--------------------------------------------------------------------------
-  def self.get_equip_ex(item, id_ex)
-    @equips_ex.bind(item)
-    @equips_ex[id_ex]
+  def self.get_ex(item, id_ex)
+    @equips_exs.bind(item)
+    @equips_exs[id_ex]
   end
   #--------------------------------------------------------------------------
   # ○ 生成指定装备可用的附加属性实例
   #  返回：附加属性实例的序号id_ex
   #--------------------------------------------------------------------------
-  def self.new_equip_ex(item, attrs = [])
+  def self.new_ex(item, attrs = [])
     return 0 if attrs.empty?
-    @equips_ex.bind(item)
-    id_ex = nil
-    if EX_SINGLE_OBJ
-      @equips_ex.data.data.each { |d| break id_ex = d.id if d == attrs }
+    # 强制将小数类型的value转换成2位小数
+    attrs.each_with_index do |a, i|
+      attrs[i][-1] = a[-1].round(2) if a[-1].abs < 1
     end
-    id_ex = @equips_ex.new_id_ex if id_ex.nil?
+    @equips_exs.bind(item)
+    if EX_SINGLE_OBJ
+      id_ex = @equips_exs.find(attrs)
+      return id_ex if id_ex
+    end
+    id_ex = @equips_exs.new_id_ex
     return 0 if id_ex <= 0
-    @equips_ex[id_ex] = Data_Equip_EX.new(id_ex, attrs)
+    @equips_exs[id_ex] = Data_Equip_EX.new(id_ex, attrs)
     id_ex
+  end
+  #--------------------------------------------------------------------------
+  # ○ 查找指定装备中有指定属性的附加属性实例的id_ex
+  #  返回：附加属性实例的序号id_ex（未找到时返回nil）
+  #--------------------------------------------------------------------------
+  def self.find_ex(item, attrs = [])
+    @equips_exs.bind(item)
+    return @equips_exs.find(attrs)
   end
   #--------------------------------------------------------------------------
   # ○ 删去装备所含有的附加属性
   #--------------------------------------------------------------------------
-  def self.delete_equip_ex(item)
+  def self.delete_ex(item)
     return if exist_equip_ex?(item)
-    id_d, id_ex = get_equip_ex_ids(item.id)
+    id_d, id_ex = get_equip_ids(item.id)
     return if id_ex == 0
-    @equips_ex.bind(item)
-    @equips_ex.delete(id_ex)
+    @equips_exs.bind(item)
+    @equips_exs.delete(id_ex)
   end
-  #--------------------------------------------------------------------------
-  # ○ 含有相同附加属性的指定装备依然存在？
-  #--------------------------------------------------------------------------
-  def self.exist_equip_ex?(item)
-    return $game_party.weapon_ids.include?(item.id) if item.class == RPG::Weapon
-    return $game_party.armor_ids.include?(item.id) if item.class == RPG::Armor
-    return false
-  end
+
   #--------------------------------------------------------------------------
   # ○ 获取含有附加属性的装备的扩展序号
   #（若设置上限位数为3，则当默认装备id为2，附加属性id为1，则新装备id为2001）
@@ -171,28 +201,28 @@ module EQUIP_EX
   # ○ 数据初始化
   #--------------------------------------------------------------------------
   def self.init
-    @equips_ex = Equips_EXs.new
+    @equips_exs = Equips_EXs.new
   end
   #--------------------------------------------------------------------------
   # ○ 获取指定存档序号对应的附加属性文件名称
   #--------------------------------------------------------------------------
-  def self.get_filename(index)
+  def self.get_exs_filename(index)
     sprintf(FILE_NAME, index+1)
   end
   #--------------------------------------------------------------------------
   # ○ 存储附加属性文件
   #--------------------------------------------------------------------------
-  def self.save_equip_ex(index)
-    File.open(get_filename(index), "wb") do |file|
-      Marshal.dump(@equips_ex, file)
+  def self.save_equip_exs(index)
+    File.open(get_exs_filename(index), "wb") do |file|
+      Marshal.dump(@equips_exs, file)
     end
   end
   #--------------------------------------------------------------------------
   # ○ 读取附加属性文件
   #--------------------------------------------------------------------------
-  def self.load_equip_ex(index)
-    File.open(get_filename(index), "rb") do |file|
-      @equips_ex = Marshal.load(file)
+  def self.load_equip_exs(index)
+    File.open(get_exs_filename(index), "rb") do |file|
+      @equips_exs = Marshal.load(file)
     end rescue init
   end
 #=============================================================================
@@ -211,7 +241,7 @@ class Equips_EXs
   #--------------------------------------------------------------------------
   def bind(item)
     return if item.nil?
-    @item_class = item_class_sym(item)
+    @item_class = EQUIP_EX.get_sym(item)
     return if @item_class == nil
     @data[@item_class] ||= Equips_EX.new
     data.bind(item)
@@ -221,15 +251,6 @@ class Equips_EXs
   #--------------------------------------------------------------------------
   def bind?
     @item_class != nil
-  end
-  #--------------------------------------------------------------------------
-  # ○ 获取对应的类型
-  #  返回nil - 代表该item不接受附加属性
-  #--------------------------------------------------------------------------
-  def item_class_sym(item)
-    return :weapon if item.class == RPG::Weapon
-    return :armor  if item.class == RPG::Armor
-    return nil
   end
   #--------------------------------------------------------------------------
   # ○ 处理对应列表的内容
@@ -242,6 +263,9 @@ class Equips_EXs
   end
   def delete(id_ex)
     data.delete(id_ex) if bind?
+  end
+  def find(attrs)
+    data.find(attrs)
   end
   def [](i)
     data[i]
@@ -274,7 +298,7 @@ class Equips_EX
   #--------------------------------------------------------------------------
   # ○ 内容简写
   #--------------------------------------------------------------------------
-  def data; @data[@item_id]; end
+  def data; @data[@item_id]; end # 获取当前物品所对应的Data_Equip_EX数组
   def data=(v); @data[@item_id] = v; end
   def valid_ids; @valid_ids[@item_id]; end
   #--------------------------------------------------------------------------
@@ -298,6 +322,15 @@ class Equips_EX
     valid_ids.push(id)
   end
   #--------------------------------------------------------------------------
+  # ○ 查找具有相同attrs的附加属性实例所在位置
+  #  返回 nil 代表未找到相同的
+  #--------------------------------------------------------------------------
+  def find(attrs)
+    return 0 if attrs.empty?
+    data.each { |d| return d.id if d == attrs }
+    return nil
+  end
+  #--------------------------------------------------------------------------
   # ○ 读取
   #--------------------------------------------------------------------------
   def [](id)
@@ -314,7 +347,8 @@ end
 # ○ 存储附加属性的数据类
 #=============================================================================
 class Data_Equip_EX
-  attr_reader :id, :attrs, :features, :params
+  attr_accessor :id
+  attr_reader   :attrs, :features, :params
   #--------------------------------------------------------------------------
   # ○ 初始化
   #--------------------------------------------------------------------------
@@ -401,7 +435,7 @@ class << DataManager
   alias eagle_equip_ex_save_game save_game
   def save_game(index)
     eagle_equip_ex_save_game(index)
-    EQUIP_EX.save_equip_ex(index)
+    EQUIP_EX.save_equip_exs(index)
   end
   #--------------------------------------------------------------------------
   # ● 读取
@@ -409,7 +443,7 @@ class << DataManager
   alias eagle_equip_ex_load_game load_game
   def load_game(index)
     eagle_equip_ex_load_game(index)
-    EQUIP_EX.load_equip_ex(index)
+    EQUIP_EX.load_equip_exs(index)
   end
 end
 #=============================================================================
