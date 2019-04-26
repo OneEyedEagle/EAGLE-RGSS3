@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EquipEXRule"] = true
 #=============================================================================
-# - 2019.4.26.0 新增attr是否可以重复出现的参数
+# - 2019.4.26.10 修复无法正确读取feature特性的bug
 #=============================================================================
 # - 本插件依据装备备注栏中设置的规则，生成随机的attrs数组
 # - 生成的 attrs 数组可用于 装备附加属性-核心 by老鹰 中生成附加属性实例
@@ -28,9 +28,17 @@ $imported["EAGLE-EquipEXRule"] = true
 #        可以用 s 代替 $game_switches，可以用 v 代替 $game_variables
 #    · id_id 解析：由特性的code与data_id合并而成，具体请参考 装备附加属性-核心
 #
-# - 依据item的备注栏中所设置规则，生成含有n条attr的attrs数组
-#   若传入 no_dup 的值为 true，则返回的attrs数组中不会有重复属性（默认true）
-#     attrs = EQUIP_EX.get_attrs(item, n, no_dup=true)
+# - 依据item备注栏中所设置规则，生成含有n条attr的attrs数组
+#   若传入 uniq 的值为 true，则返回的attrs数组中不会有重复属性（默认true）
+#     attrs = EQUIP_EX.get_attrs(item, n, uniq=true)
+#
+# - 示例：
+#     在1号武器装备的备注栏中填写：
+#       <exr t 1 {true}><exr atk 1 {1+rand(2)}><exr 22_0 2 {-0.2}>
+#    → 读取1号模板的设置覆盖当前、覆盖设置atk的因子为1值为1+rand(2)、
+#      覆盖设置命中率因子为2值为-0.2
+#    → 在调用 attrs = EQUIP_EX.get_attrs($data_weapons[1], 2) 后的可能返回组合：
+#       [[:atk, 1], [22, 0, -0.2]] 或 [[22, 0, -0.2], [:atk, 2]]
 #
 #--------------------------------------------------------------------------
 # ○ 特别说明
@@ -49,7 +57,7 @@ module EQUIP_EX
   #--------------------------------------------------------------------------
   # ○ 基于物品note所含规则生成具有n条attr的数组
   #--------------------------------------------------------------------------
-  def self.get_attrs(item, n = 1, no_dup = true)
+  def self.get_attrs(item, n = 1, uniq = true)
     rule_hash = get_rules(item)
     return [] if rule_hash.empty?
     keys = rule_hash.keys.dup; values = rule_hash.values.collect { |e| e[0] }
@@ -61,10 +69,11 @@ module EQUIP_EX
       if key.is_a?(Symbol)
         attr = [key, eval(value_s)]
       elsif key.is_a?(String)
-        key.split(/_/).each {|t| attr = [t[0].to_i, t[1].to_i, eval(value_s)] }
+        ts = key.split(/_/)
+        attr = [ts[0].to_i, ts[1].to_i, eval(value_s)]
       end
       attrs.push(attr)
-      if no_dup
+      if uniq
         rule_hash.delete(key)
         break if rule_hash.empty?
       end
