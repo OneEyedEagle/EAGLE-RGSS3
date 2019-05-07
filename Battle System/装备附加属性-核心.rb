@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EquipEXCore"] = true
 #=============================================================================
-# - 2019.4.29.22 新增扩展项
+# - 2019.5.7.17 优化接口，方便扩展
 #=============================================================================
 # - 本插件新增了一组处理装备附加属性的核心方法
 # - 本插件已为 $data_weapons 与 $data_armors 编写了绑定，可以适用于该两类
@@ -145,14 +145,23 @@ module EQUIP_EX
       attrs[i][-1] = a[-1].round(2) if a[-1].abs < 1
     end
     @equips_exs.bind(item)
+    # 若找到了相同的，则直接返回
     if EX_SINGLE_OBJ
       id_ex = @equips_exs.find(attrs)
       return id_ex if id_ex
     end
+    # 创建新的实例
     id_ex = @equips_exs.new_id_ex
     return 0 if id_ex <= 0
-    @equips_exs[id_ex] = Data_Equip_EX.new(id_ex, attrs)
+    @equips_exs[id_ex] = new_data_equip_ex(item, id_ex, attrs)
     id_ex
+  end
+  #--------------------------------------------------------------------------
+  # ○【封装】生成附加属性实例并返回
+  # （在 new_ex 方法内部使用）
+  #--------------------------------------------------------------------------
+  def self.new_data_equip_ex(item, id_ex, attrs)
+    Data_Equip_EX.new(id_ex, attrs)
   end
   #--------------------------------------------------------------------------
   # ○ 查找指定装备中有指定属性的附加属性实例的id_ex
@@ -376,6 +385,7 @@ class Data_Equip_EX
   # ○ 添加一个新attr
   #  属性：[sym/id, value]
   #  特性：[code, data_id, value]
+  #  扩展：[:ex, sym, ...]
   #--------------------------------------------------------------------------
   def add(attr)
     @attrs.push(attr)
@@ -390,7 +400,7 @@ class Data_Equip_EX
     @params[EQUIP_EX.get_param_id(attr[0])] += attr[1]
   end
   #--------------------------------------------------------------------------
-  # ○ 解析额外attr数组项（扩展用）
+  # ○ 解析扩展attr数组项（扩展用）
   #--------------------------------------------------------------------------
   def parse_ex(attr)
   end
