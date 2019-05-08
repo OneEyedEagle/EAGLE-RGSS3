@@ -146,7 +146,7 @@ module EQUIP_EX
     s = $game_switches; v = $game_variables
     hash_ = {}; hash_q = {};
     attrs_count = eval(ATTRS_COUNT_TEXT); attrs_max = ATTRS_MAX
-    item.note.scan(/<exr (.*?) ?(\d+) ?\{(.*?)\}>/).each do |param|
+    item.note.scan(/<exr (.*?) (\d+) \{(.*?)\}>/).each do |param|
       if param[0] == "c" # 设置数目
         attrs_max = param[1].to_i
         attrs_count = eval(param[2])
