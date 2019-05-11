@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-EquipEXRule"] = true
 #=============================================================================
-# - 2019.5.7.17 新增随机品质
+# - 2019.5.11.11 优化
 #=============================================================================
 # - 本插件依据装备备注栏中设置的规则，生成随机的attrs数组
 # - 生成的 attrs 数组可用于 装备附加属性-核心 by老鹰 中生成附加属性实例
@@ -42,13 +42,14 @@ $imported["EAGLE-EquipEXRule"] = true
 #        若 prob 的值为 0，则表示该条一定会被只选中一次（无视上限，不计算占用）
 #    · id_id 解析：由特性的code与data_id合并而成，具体请参考 装备附加属性-核心
 #    · value 解析：被eval后返回的值将作为该项的（同上一部分中的value）
-#        若最终返回值为整数 0，则对应的属性会被自动删去（不计算占用）
+#        若最终返回值为 整数0，则会被自动删去（不计算占用）
 #
 # - 设置扩展规则
 #       <exr ex-sym prob {value_s}> → 添加一个概率因子为prob的扩展sym规则
 #    · 若该规则被随机中，会将 [:ex, :sym, v] 放入attrs数组
 #       其中 v = EQUIP_EX.ex_attr_value(:sym, value_s)，可alias该方法进行自定义
 #    · 默认 v = eval(value_s)
+#        若最终返回值为 整数0，则会被自动删去（不计算占用）
 #--------------------------------------------------------------------------
 # ○ 应用规则
 #--------------------------------------------------------------------------
@@ -217,7 +218,7 @@ module EQUIP_EX
   def self.new_attr(key, value_s)
     s = $game_switches; v = $game_variables
     if key.is_a?(Symbol) # 含有同名方法的属性
-      value = eval(value_s)
+      value = eval(value_s).to_i
       return [] if value == 0
       return [key, value]
     end
@@ -230,6 +231,7 @@ module EQUIP_EX
     if key.include?("ex-") # 扩展
       sym = key[3..-1].to_sym
       v = ex_attr_value(sym, value_s)
+      return [] if v == 0
       return [:ex, sym, v]
     end
     []
