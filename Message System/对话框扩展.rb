@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.4.23.21 新增win转义符的cdx参数；修复ali对齐错误bug；新增不可被绘制的额外宽高
+# - 2019.5.18.23 新增temp转义符来保证对话框的独立性
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -165,9 +165,11 @@ $imported["EAGLE-MessageEX"] = true
 #    参数字符串为按序排列的 c + Windowskin颜色索引号，无参数传入时代表取消渐变绘制
 #    如：\g[c1c2c1] 则表示用1号2号1号颜色由上至下进行渐变绘制
 #
+#  \ins - 【预先】当前对话框立即显示完毕（先打开，再全部显示内容）
+#
 #  \hold - 【结尾】保留当前对话框，直至没有该指令的对话框关闭，关闭所有保留的对话框
 #
-#  \instant - 【预先】当前对话框立即显示完毕（先打开，再全部显示内容）
+#  \temp - 【结尾】当前对话框对转义符参数的变更不会被保留（在对话框关闭前）
 #
 #----------------------------------------------------------------------------
 # - 文字特效类
@@ -263,19 +265,24 @@ $imported["EAGLE-MessageEX"] = true
 #----------------------------------------------------------------------------
 # ● 参数保存与读取
 #----------------------------------------------------------------------------
-# - 利用该脚本保存当前全部 param_sym 参数组的状态值（同时只能保存一个状态）
-#
-#         $game_message.save_params
+# - 利用该脚本保存当前全部 param_sym 参数组的状态值
+#   （当不传入 sym 时默认取 :default 类别）
+#   （由于涉及内部对话框临时参数的实现方式，请不要用 :temp 类别）
+#         $game_message.save_params(sym)
 #
 # - 利用该脚本使 param_sym 所对应的变量组恢复到上一次的保存状态
-#
-#         $game_message.load_params(param_sym)
+#   （当不传入 sym 时默认取 :default 类别）
+#         $game_message.load_params(param_sym, sym)
 #
 # - param_sym 解析：【Symbol】型常量
 #      具体见 参数重置 中的解析
 # - 示例：
-#     $game_message.load_params(:font) - 恢复字体里的全部参数
-#     $game_message.load_params(:pause) - 恢复pause精灵的全部参数
+#     $game_message.save_params
+#     $game_message.load_params(:font)
+#       → 按 :default 存储的状态，来恢复字体的全部参数
+#     $game_message.save_params("测试")
+#     $game_message.load_params(:pause, "测试")
+#       → 按 "测试" 存储的状态，来恢复pause精灵的全部参数
 #----------------------------------------------------------------------------
 # ● 特别感谢
 #----------------------------------------------------------------------------
@@ -799,6 +806,7 @@ end # end of MESSAGE_EX
 # ○ Game_Message
 #=============================================================================
 class Game_Message
+  attr_reader   :params_need_apply
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :chara_params, :chara_grad_colors, :escape_strings
@@ -810,6 +818,8 @@ class Game_Message
   def initialize
     eagle_message_ex_init
     set_default_params
+    @params_need_apply = [] # 存储需要被应用的params符号
+    @temp_game_messages = {} # sym => game_message
     @auto_r = true # 是否重置window.auto_continue_t
   end
   #--------------------------------------------------------------------------
@@ -827,8 +837,8 @@ class Game_Message
     @escape_strings = [] # 存储等待执行的转义符字符串
     eagle_params.each do |sym|
       self.send((sym.to_s+"_params=").to_sym, MESSAGE_EX.get_default_params(sym).dup)
-      add_escape("\\#{sym}") # 添加一次预定调用，用于应用初始值
     end
+    @params_need_apply = eagle_params.dup # 添加修改预定，用于应用初始值
   end
   #--------------------------------------------------------------------------
   # ● 清除（每次对话框开启时被调用）
@@ -865,6 +875,19 @@ class Game_Message
     @name_params[:name] != ""
   end
   #--------------------------------------------------------------------------
+  # ● 添加修改预定
+  #--------------------------------------------------------------------------
+  def add_apply(param_sym)
+    return if @params_need_apply.include?(param_sym)
+    @params_need_apply.push(param_sym)
+  end
+  #--------------------------------------------------------------------------
+  # ● 清空预定修改
+  #--------------------------------------------------------------------------
+  def clear_applys
+    @params_need_apply.clear
+  end
+  #--------------------------------------------------------------------------
   # ● 重置指定参数
   #--------------------------------------------------------------------------
   def reset_params(param_sym, code_string = nil)
@@ -879,22 +902,23 @@ class Game_Message
       }
     end
     self.send((param_sym.to_s+"_params=").to_sym, new_params)
-    add_escape("\\#{param_sym}") # 添加一次预定调用，用于应用结果
+    add_apply(param_sym) # 添加修改预定，应用结果
   end
   #--------------------------------------------------------------------------
   # ● 保存当前状态
   #--------------------------------------------------------------------------
-  def save_params
-    @last_save_game_message = clone
+  def save_params(sym = :default)
+    @temp_game_messages[sym] = clone
   end
   #--------------------------------------------------------------------------
   # ● 读取保存状态
   #--------------------------------------------------------------------------
-  def load_params(param_sym)
-    return false if @last_save_game_message.nil?
-    return eagle_params.each{|sym| load_params(sym)} if param_sym.nil?
+  def load_params(param_sym, sym = :default)
+    return false if @temp_game_messages[sym].nil?
+    return eagle_params.each{|psym| load_params(psym, sym)} if param_sym.nil?
     m = param_sym.to_s + "_params"
-    self.send( (m+"=").to_sym, @last_save_game_message.send(m.to_sym).clone )
+    self.send( (m+"=").to_sym, @temp_game_messages[sym].send(m.to_sym).clone )
+    add_apply(param_sym) # 添加修改预定
     return true
   end
   #--------------------------------------------------------------------------
@@ -952,6 +976,7 @@ class Window_Message
     @in_battle = SceneManager.scene_is?(Scene_Battle) # 战斗场景中？
     @pop_on_map_chara = true # pop绑定的对象为地图场景上的行走图？
     @last_windowskin_index = nil # 上一次所绘制的窗口皮肤的index
+    @temp_message = false # 当前对话框的转义符不会保存到$game_message中？
     eagle_reset_pop_tag_bitmap # 重置tag的位图
     eagle_message_reset
   end
@@ -1542,6 +1567,7 @@ class Window_Message
   def new_page(text, pos)
     close_and_wait
 
+    eagle_apply_params_changes
     eagle_check_pre_settings(text)
     eagle_draw_face(game_message.face_name, game_message.face_index)
     eagle_draw_name(text)
@@ -1552,6 +1578,16 @@ class Window_Message
     pos[:new_x] = new_line_x
     pos[:height] = calc_line_height(text)
     clear_flags
+  end
+  #--------------------------------------------------------------------------
+  # ● 应用预定的转义符修改
+  #--------------------------------------------------------------------------
+  def eagle_apply_params_changes
+    game_message.params_need_apply.each do |sym|
+      m_c = ("eagle_text_control_#{sym}").to_sym
+      method(m_c).call("") if respond_to?(m_c)
+    end
+    game_message.clear_applys
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）重置字体设置
@@ -1800,6 +1836,7 @@ class Window_Message
   def process_input
     eagle_message_ex_process_input
     eagle_process_hold
+    eagle_process_temp
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）处理输入等待
@@ -1843,10 +1880,50 @@ class Window_Message
   # ● 设置【预先】指令的参数
   #--------------------------------------------------------------------------
   def eagle_check_pre_settings(text)
-    eagle_check_popt(text)
-    eagle_check_facep(text)
+    eagle_check_temp(text)
     eagle_check_hold(text)
     eagle_check_instant(text)
+    eagle_check_popt(text)
+    eagle_check_facep(text)
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置/执行temp指令
+  #--------------------------------------------------------------------------
+  def eagle_check_temp(text)
+    text.gsub!(/\e(temp)/i) { "" }
+    if $1
+      game_message.save_params(:temp)
+      @temp_message = true
+    end
+  end
+  def eagle_process_temp
+    return if @temp_message == false
+    @temp_message = false
+    game_message.load_params(nil, :temp)
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置/执行hold指令
+  #--------------------------------------------------------------------------
+  def eagle_check_hold(text)
+    text.gsub!(/\e(hold)/i) { "" }
+    game_message.hold = $1 ? true : false
+  end
+  def eagle_process_hold
+    if game_message.hold
+      @eagle_dup_windows.unshift( self.clone )
+      self.openness = 0
+    else
+      eagle_release_hold
+    end
+  end
+  def eagle_release_hold # 所有暂存窗口关闭
+    @eagle_dup_windows.each { |w| w.close_clone }
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置instant指令
+  #--------------------------------------------------------------------------
+  def eagle_check_instant(text)
+    text.gsub!(/\e(ins|instant)/i) { game_message.instant = true if $1; "" }
   end
   #--------------------------------------------------------------------------
   # ● 分析【预先】转义符的全部参数（按出现顺序处理）
@@ -1887,30 +1964,6 @@ class Window_Message
 
     game_message.face_params[:dir] = MESSAGE_EX.check_bool(game_message.face_params[:dir])
     game_message.face_params[:m] = MESSAGE_EX.check_bool(game_message.face_params[:m])
-  end
-  #--------------------------------------------------------------------------
-  # ● 设置/执行hold指令
-  #--------------------------------------------------------------------------
-  def eagle_check_hold(text)
-    text.gsub!(/\e(hold)/i) { "" }
-    game_message.hold = $1 ? true : false
-  end
-  def eagle_process_hold
-    if game_message.hold
-      @eagle_dup_windows.unshift( self.clone )
-      self.openness = 0
-    else
-      eagle_release_hold
-    end
-  end
-  def eagle_release_hold # 所有暂存窗口关闭
-    @eagle_dup_windows.each { |w| w.close_clone }
-  end
-  #--------------------------------------------------------------------------
-  # ● 设置instant指令
-  #--------------------------------------------------------------------------
-  def eagle_check_instant(text)
-    text.gsub!(/\e(instant)/i) { game_message.instant = true if $1; "" }
   end
 
   #--------------------------------------------------------------------------
