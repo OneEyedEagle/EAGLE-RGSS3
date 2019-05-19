@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.5.18.23 新增temp转义符来保证对话框的独立性
+# - 2019.5.19.16 新增文本特效类转义符的重置
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -161,10 +161,6 @@ $imported["EAGLE-MessageEX"] = true
 #    t - 【默认】在t帧后自动结束按键等待，并继续之后处理（默认nil，不自动继续）
 #    r - 是否在每一次对话框打开时将t重置为nil（默认true）
 #
-#  \g[c1..] - 渐变描绘【需要前置Sion_GradientText插件】
-#    参数字符串为按序排列的 c + Windowskin颜色索引号，无参数传入时代表取消渐变绘制
-#    如：\g[c1c2c1] 则表示用1号2号1号颜色由上至下进行渐变绘制
-#
 #  \ins - 【预先】当前对话框立即显示完毕（先打开，再全部显示内容）
 #
 #  \hold - 【结尾】保留当前对话框，直至没有该指令的对话框关闭，关闭所有保留的对话框
@@ -223,6 +219,14 @@ $imported["EAGLE-MessageEX"] = true
 #    s - 粒子形状类型（0-正方向；1-圆形；2-三角形）
 #
 #----------------------------------------------------------------------------
+# - 扩展类
+#
+#  \g[c1..] - 渐变描绘文本【需要前置Sion_GradientText插件】
+#    变量参数字符串为按序排列的 c + Windowskin颜色索引号，未传入任何参数时取消渐变绘制
+#    如：\g[c1c2c1] → 用 1号 2号 1号颜色由上至下进行渐变绘制
+#    如：\g[] → 取消渐变绘制
+#
+#----------------------------------------------------------------------------
 # ● 文本预定
 #----------------------------------------------------------------------------
 # - 利用该脚本设置预定文本，下次打开对话框时，将自动将全部预定文本插到对话文本开头
@@ -254,14 +258,18 @@ $imported["EAGLE-MessageEX"] = true
 #     :face - 重置关于脸图显示的设置
 #     :name - 重置关于姓名框的设置
 #     :pause- 重置关于pause等待按键的精灵的设置
+#     :chara - 重置关于文字特效的设置（其参数为文字特效转义符）
+#     :ex - 重置扩展类转义符为预设的变量参数（其参数为扩展类转义符）
 #  【注意】若传入的param_sym为 nil，则将重置以上所有
 # - code_string 解析： 【String】型常量
-#     可利用 | 将多个指令参数名进行分割
-#     若未传入该参数，则识别为全部参数重置
+#     可利用 | 将多个变量进行分割
+#     若未传入该参数，则将重置全部变量
 # - 示例：
 #     $game_message.reset_params(:font, "i") - 重置字体里是否斜体的参数
-#     $game_message.reset_params(:win, "x|y") - 重置对话框的位置（变回默认va设置）
+#     $game_message.reset_params(:win, "x|y") - 重置对话框的xy位置（变回默认va设置）
 #     $game_message.reset_params(:pop) - 清除全部关于pop的设置
+#     $game_message.reset_params(:chara, "cin")
+#       - cin转义符的参数重置为CHARA_PARAMS_INIT中的:cin键值，若无该键，则取消cin特效
 #----------------------------------------------------------------------------
 # ● 参数保存与读取
 #----------------------------------------------------------------------------
@@ -294,7 +302,7 @@ $imported["EAGLE-MessageEX"] = true
 #=============================================================================
 module MESSAGE_EX
   #--------------------------------------------------------------------------
-  # ● 【设置】定义转义符各参数的预设值
+  # ● 【设置】定义控制类转义符各参数的预设值
   # （对于bool型变量，0与false等价，1与true等价）
   #--------------------------------------------------------------------------
   FONT_PARAMS_INIT = {
@@ -407,6 +415,13 @@ module MESSAGE_EX
     :v => 1,  # 是否显示
   }
   #--------------------------------------------------------------------------
+  # ● 【设置】定义初始激活的文字特效类转义符的变量参数字符串
+  #--------------------------------------------------------------------------
+  CHARA_PARAMS_INIT = {
+  # 文字特效类转义符sym => 变量参数字符串"code_string"
+    #:cin => "1",
+  }
+  #--------------------------------------------------------------------------
   # ● 【设置】定义文字特效类转义符各参数的初始值
   #--------------------------------------------------------------------------
   CIN_PARAMS_INIT = {
@@ -472,6 +487,13 @@ module MESSAGE_EX
     :o =>  1, # 透明度变更量的最小值
     :s =>  0, # 粒子的形状类型
     :dir => 4, # 消散方向类型
+  }
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义初始激活的扩展类转义符的预设变量参数字符串
+  #--------------------------------------------------------------------------
+  EX_PARAMS_INIT = {
+  # 渐变绘制转义符 \g => [颜色索引数组],
+    :g => [],
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义新游戏开始时对话框预定的转义字符串
@@ -807,10 +829,11 @@ end # end of MESSAGE_EX
 #=============================================================================
 class Game_Message
   attr_reader   :params_need_apply
+  attr_accessor :chara_params # 存储文字特效预设 code_symbol => param_string
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
-  attr_accessor :chara_params, :chara_grad_colors, :escape_strings
-  attr_accessor :hold, :instant, :draw, :auto_r
+  attr_accessor :ex_params # 存储扩展params
+  attr_accessor :escape_strings, :hold, :instant, :draw, :auto_r
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -826,19 +849,17 @@ class Game_Message
   # ● 获取全部可保存params的符号的数组
   #--------------------------------------------------------------------------
   def eagle_params
-    [:font, :win, :pop, :face, :name, :pause]
+    [:chara, :font, :win, :pop, :face, :name, :pause, :ex]
   end
   #--------------------------------------------------------------------------
   # ● 获取params的初始值
   #--------------------------------------------------------------------------
   def set_default_params
-    @chara_params = {} # 存储预设的文字精灵效果 # code_symbol => param_string
-    @chara_grad_colors = [] # 存储渐变绘制的颜色数组
-    @escape_strings = [] # 存储等待执行的转义符字符串
     eagle_params.each do |sym|
       self.send((sym.to_s+"_params=").to_sym, MESSAGE_EX.get_default_params(sym).dup)
     end
     @params_need_apply = eagle_params.dup # 添加修改预定，用于应用初始值
+    @escape_strings = [] # 存储等待执行的转义符字符串
   end
   #--------------------------------------------------------------------------
   # ● 清除（每次对话框开启时被调用）
@@ -892,6 +913,8 @@ class Game_Message
   #--------------------------------------------------------------------------
   def reset_params(param_sym, code_string = nil)
     return eagle_params.each{|sym| reset_params(sym)} if param_sym.nil?
+    return reset_params_c(code_string) if param_sym == :chara
+    return reset_params_ex(code_string) if param_sym == :ex
     default_params = MESSAGE_EX.get_default_params(param_sym)
     if code_string.nil? # 直接清除全部参数
       new_params = default_params.dup
@@ -902,7 +925,35 @@ class Game_Message
       }
     end
     self.send((param_sym.to_s+"_params=").to_sym, new_params)
-    add_apply(param_sym) # 添加修改预定，应用结果
+    add_escape("\\#{param_sym}") # 添加一次预定调用，用于应用结果
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置指定文字特效
+  #--------------------------------------------------------------------------
+  def reset_params_c(code_string = nil)
+    default_params = MESSAGE_EX.get_default_params(:chara)
+    return @chara_params = default_params if code_string.nil?
+    code_string.split("|").each { |c|
+      if default_params[c.to_sym]
+        @chara_params[c.to_sym] = default_params[c.to_sym]
+      else
+        @chara_params.delete(c.to_sym)
+      end
+    }
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置扩展转义符
+  #--------------------------------------------------------------------------
+  def reset_params_ex(code_string = nil)
+    default_params = MESSAGE_EX.get_default_params(:ex)
+    return @ex_params = default_params if code_string.nil?
+    code_string.split("|").each { |c|
+      if default_params[c.to_sym]
+        @ex_params[c.to_sym] = default_params[c.to_sym]
+      else
+        @ex_params.delete(c.to_sym)
+      end
+    }
   end
   #--------------------------------------------------------------------------
   # ● 保存当前状态
@@ -1651,7 +1702,9 @@ class Window_Message
     c_rect = text_size(c); c_w = c_rect.width; c_h = c_rect.height
     if game_message.draw
       s = eagle_new_chara_sprite(c, pos[:x], pos[:y], c_w, c_h)
+      eagle_draw_extra_background(s.bitmap, 0, 0, c_w, c_h, c, 0)
       eagle_draw_char(s.bitmap, 0, 0, c_w, c_h, c, 0)
+      eagle_draw_extra_foreground(s.bitmap)
     end
     eagle_process_draw_end(c_w, c_h, pos)
   end
@@ -1682,13 +1735,11 @@ class Window_Message
   # ● （封装）绘制文字
   #--------------------------------------------------------------------------
   def eagle_draw_char(bitmap, x, y, w, h, c, align = 0)
-    eagle_draw_extra_background(bitmap, x, y, w, h, c, align)
-    if game_message.chara_grad_colors.empty?
-      bitmap.draw_text(x, y, w* 2, h, c, align)
-    else
-      Sion_GradientText.draw_text(bitmap,x,y,w*2,h,c,align,game_message.chara_grad_colors)
+    if defined?(Sion_GradientText) && !game_message.ex_params[:g].empty?
+      Sion_GradientText.draw_text(bitmap,x,y,w*2,h,c,align,game_message.ex_params[:g])
+      return
     end
-    eagle_draw_extra_foreground(bitmap)
+    bitmap.draw_text(x, y, w* 2, h, c, align)
   end
   #--------------------------------------------------------------------------
   # ● 绘制背景额外内容
@@ -2388,11 +2439,11 @@ class Window_Message
   #--------------------------------------------------------------------------
   if defined?(Sion_GradientText)
   def eagle_text_control_g(param = '')
-    game_message.chara_grad_colors.clear
+    game_message.ex_params[:g].clear
     param = param.downcase
     while(param != "")
       param.slice!(/\D+/)
-      game_message.chara_grad_colors.push((param.slice!(/\d+/)).to_i)
+      game_message.game_message.ex_params[:g].push((param.slice!(/\d+/)).to_i)
     end
   end
   end

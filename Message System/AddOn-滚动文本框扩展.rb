@@ -2,7 +2,7 @@
 # ■ Add-On 滚动文本框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.3.22.21 新增\pic转义符
+# - 2019.5.19.15 优化
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -40,7 +40,7 @@
 #    o - 设置图片的显示原点（默认7）（九宫格小键盘位置）
 #    x/y - 设置图片原点的显示位置（描绘的第一个字的左上角为(0,0)原点）
 #------------------------------------------------------------------------------
-# - 特效类
+# - 文本特效类
 #     此项同 对话框扩展 中的全部内容
 #------------------------------------------------------------------------------
 # ● 标签对列表
@@ -126,7 +126,7 @@ module MESSAGE_EX
     :va => 0,  # 每帧角度增量
   }
   ST_COUT_PARAMS_INIT = {
-  # \cout[] 本插件中该设置未被使用
+  # \cout[]
     :t => 15, # 移出所用帧数
     :vx => 0,  # 每vxt帧x的增量
     :vxt => 1,
@@ -398,7 +398,9 @@ class Window_ScrollText < Window_Base
     eagle_reset_draw_pos(pos)
     c_rect = text_size(c); c_w = c_rect.width; c_h = c_rect.height
     s = eagle_new_chara_sprite(c, pos[:x], pos[:y], c_w, c_h)
+    eagle_draw_extra_background(s.bitmap, 0, 0, c_w, c_h, c, 0)
     eagle_draw_char(s.bitmap, 0, 0, c_w, c_h, c, 0)
+    eagle_draw_extra_foreground(s.bitmap)
     eagle_process_draw_end(c_w, c_h, pos)
   end
   #--------------------------------------------------------------------------
@@ -428,13 +430,7 @@ class Window_ScrollText < Window_Base
   # ● （封装）绘制文字
   #--------------------------------------------------------------------------
   def eagle_draw_char(bitmap, x, y, w, h, c, align = 0)
-    eagle_draw_extra_background(bitmap, x, y, w, h, c, align)
-    #if game_message.chara_grad_colors.empty?
-      bitmap.draw_text(x, y, w * 2, h, c, align)
-    #else
-    #  Sion_GradientText.draw_text(bitmap,x,y,w,h,c,align,game_message.chara_grad_colors)
-    #end
-    eagle_draw_extra_foreground(bitmap)
+    bitmap.draw_text(x, y, w * 2, h, c, align)
   end
   #--------------------------------------------------------------------------
   # ● 绘制背景额外内容
