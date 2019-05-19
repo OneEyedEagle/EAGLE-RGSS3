@@ -2,7 +2,7 @@
 # ■ Add-On 滚动文本框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.5.19.15 优化
+# - 2019.5.19.21 新增排列方式设置
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -30,8 +30,10 @@
 #  \pos[param] -【重置】直接指定下一个文字的绘制位置
 #    x/y - 直接指定x/y值（窗口内部绘制区域的左上角为(0, 0)）
 #    dx/dy - 以上一次成功绘制的文字的右上角为基准，加一个x/y的偏移值作为新绘制位置
+#            （若为一行的开头，则以行首位置为基准）
 #    c/l - 直接指定行号/列号（行高被定义为窗口的line_height，列宽为窗口的font.size）
 #    dc/dl - 以上一次成功绘制的文字的右上角为基准，加一个c/l的偏移值作为新绘制位置
+#            （若为一行的开头，则以行首位置为基准）
 #
 #  \wait[param] - 设置等待帧数（同 对话框扩展）
 #
@@ -63,12 +65,20 @@ module MESSAGE_EX
   SCROLL_PARAMS_INIT = {
     # \win[]
     :win => {
+      # 窗口自身相关
       :opa => 255, # 窗口的不透明度
+      :skin => 0, # 皮肤index
+      # 文字绘制属性
+      :xo => 0, # 第一个文字的绘制位置
+      :yo => 0,
+      :cdx => 1, # 默认下一个字的横轴偏移量（负数为往左侧移动相应单位，正数为往右）
+      :cdy => 0, # 默认下一个字的纵轴偏移量（负数为往上侧移动相应单位，正数为往下）
       :ck => 0, # 缩减的字符间距值（默认0）
+      :ldx => 0, # 默认下一行的横轴偏移量（负数为往左，正数为往右）
+      :ldy => 1, # 默认下一行的纵轴偏移量（负数为往上，正数为往下）
       :lh => 0, # 增加的行间距值
       :cwait => 7, # 绘制一个字完成后的等待帧数
       :cfast => 1, # 是否允许快进显示
-      :skin => 0, # 皮肤index
     }, # :win
     # \pos[]
     :pos => {
@@ -315,8 +325,11 @@ class Window_ScrollText < Window_Base
     clear_flags
 
     text = pre_process_all_text
-    pos = { :x => 0, :y => 0 }
+    pos = { :x_line => win_params[:xo], :y_line => win_params[:yo] }
+    pos[:x] = pos[:x_line]
+    pos[:y] = pos[:y_line]
     process_all_text(text, pos)
+
     input_pause
     @fiber = nil
     $game_message.clear
@@ -354,12 +367,6 @@ class Window_ScrollText < Window_Base
     process_character(text.slice!(0, 1), text, pos) until text.empty?
   end
   #--------------------------------------------------------------------------
-  # ● 获取行高
-  #--------------------------------------------------------------------------
-  def line_height
-    24 + win_params[:lh]
-  end
-  #--------------------------------------------------------------------------
   # ● 文字区域的左上角位置（屏幕坐标系）
   #--------------------------------------------------------------------------
   def eagle_charas_x0
@@ -368,11 +375,20 @@ class Window_ScrollText < Window_Base
   def eagle_charas_y0
     self.y + standard_padding
   end
+  #--------------------------------------------------------------------------
+  # ● 文字的标准宽度高度
+  #--------------------------------------------------------------------------
   def eagle_standard_cw
     contents.font.size - win_params[:ck]
   end
   def eagle_standard_ch
     line_height
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取行高
+  #--------------------------------------------------------------------------
+  def line_height
+    24 + win_params[:lh]
   end
   #--------------------------------------------------------------------------
   # ● 重置绘制位置
@@ -384,11 +400,16 @@ class Window_ScrollText < Window_Base
     pos[:x] = (pos_params[:l]-1) * eagle_standard_cw if pos_params[:l]
     pos[:y] = (pos_params[:c]-1) * eagle_standard_ch if pos_params[:c]
     if pos[:last_chara_sprite]
-      pos[:x] = pos[:last_chara_sprite]._x + pos_params[:dx] if pos_params[:dx]
-      pos[:y] = pos[:last_chara_sprite]._y + pos_params[:dy] if pos_params[:dy]
-      pos[:x] = pos[:last_chara_sprite]._x + pos_params[:dl] * eagle_standard_cw if pos_params[:dl]
-      pos[:y] = pos[:last_chara_sprite]._y + pos_params[:dc] * eagle_standard_ch if pos_params[:dc]
+      _x = pos[:last_chara_sprite]._x
+      _y = pos[:last_chara_sprite]._y
+    else
+      _x = pos[:x_line]
+      _y = pos[:y_line]
     end
+    pos[:x] = _x + pos_params[:dx] if pos_params[:dx]
+    pos[:y] = _y + pos_params[:dy] if pos_params[:dy]
+    pos[:x] = _x + pos_params[:dl] * eagle_standard_cw if pos_params[:dl]
+    pos[:y] = _y + pos_params[:dc] * eagle_standard_ch if pos_params[:dc]
     params.delete(:pos)
   end
   #--------------------------------------------------------------------------
@@ -475,7 +496,8 @@ class Window_ScrollText < Window_Base
     pos[:last_chara_sprite] = @eagle_chara_sprites[-1]
     @eagle_sprite_pause.bind_last_chara(pos[:last_chara_sprite])
     # 处理下一次绘制的参数
-    pos[:x] += (c_w - win_params[:ck])
+    pos[:x] += ((c_w - win_params[:ck]) * win_params[:cdx])
+    pos[:y] += ((c_h - win_params[:ck]) * win_params[:cdy])
     return if show_fast? # 如果是立即显示，则不更新
     wait_for_one_character
   end
@@ -506,8 +528,11 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   def process_new_line(text, pos)
     @line_show_fast = false
-    pos[:x] = 0#pos[:new_x]
-    pos[:y] += eagle_standard_ch
+    pos[:x] = pos[:x_line] + (contents.font.size + win_params[:lh]) * win_params[:ldx]
+    pos[:y] = pos[:y_line] + eagle_standard_ch * win_params[:ldy]
+    pos[:x_line] = pos[:x]
+    pos[:y_line] = pos[:y]
+    pos[:last_chara_sprite] = nil
   end
   #--------------------------------------------------------------------------
   # ● 等待
