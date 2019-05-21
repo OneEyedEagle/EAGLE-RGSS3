@@ -2,7 +2,10 @@
 # ■ Add-On 滚动文本框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.5.19.21 新增排列方式设置
+$imported ||= {}
+$imported["EAGLE-ScrollTextEX"] = true
+#=============================================================================
+# - 2019.5.21.20 细化注释
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -18,12 +21,19 @@
 #  \font[param] - 设置文字绘制的属性（同 对话框扩展）
 #
 #  \win[param] - 设置背景窗口的属性
+#  （窗口属性相关）
 #    opa - 设置窗口的不透明度
-#    ck - 设置缩减的字符间距值
-#    lh - 设置增加的行间距值
+#    skin - 设置窗口皮肤的index（同 对话框扩展）
+#  （文字摆放相关）
+#    xo 与 yo - 第一个文字的绘制位置
+#    cdx - 下一个字的横轴偏移量（负数为往左，正数为往右）（默认1，朝右侧前进一个文字）
+#    cdy - 下一个字的纵轴偏移量（负数为往上，正数为往下）（默认0，与前一个字高度对齐）
+#    ck - 设置缩减的字符间距值（默认0）
+#    ldx - 下一行的横轴偏移量（负数为往左，正数为往右）（默认0，与上一行行首对齐）
+#    ldy - 下一行的纵轴偏移量（负数为往上，正数为往下）（默认1，朝下侧移动一行）
+#    lh - 设置增加的行间距值（默认0）
 #    cwait - 设置绘制一个字完成后的等待帧数
 #    cfast - 是否允许快进显示
-#    skin - 设置窗口皮肤的index（同 对话框扩展）
 #
 #  \pause[param] - 设置pause等待按键精灵的属性（同 对话框扩展）
 #
@@ -47,11 +57,14 @@
 #------------------------------------------------------------------------------
 # ● 标签对列表
 #------------------------------------------------------------------------------
-# - 控制类
+# - 文本替换类
+#  <if {cond}>...</cond> - 如果eval(cond)返回true，则绘制标签对内部内容，否则跳过
+#                         可用 s 代替 $game_switches，用 v 代替 $game_variables
 #
+# - 控制类
 #  <para>...</para> - 指定需要并行绘制的文本
-#                     当主绘制进程绘制到该标签对时，这些文本将会同步开始绘制，
-#                     而主进程继续绘制标签对之后的内容
+#                     当主绘制进程绘制到 <para> 时，标签对中的文本将同步开始绘制，
+#                     同时主进程继续绘制 </para> 后面的内容
 #==============================================================================
 
 #==============================================================================
@@ -256,12 +269,22 @@ class Window_ScrollText < Window_Base
     Fiber.yield until open?
   end
   #--------------------------------------------------------------------------
-  # ● 关闭
+  # ● 关闭窗口并等待关闭完成
   #--------------------------------------------------------------------------
-  def close
+  def close_and_wait
     @eagle_last_thread_id = 0
-    @eagle_chara_sprites.each { |c| c.move_out; c.update }
-    super
+    chara_sprites_move_out
+    close
+    Fiber.yield until close?
+  end
+  #--------------------------------------------------------------------------
+  # ● 移出全部文字
+  #--------------------------------------------------------------------------
+  def chara_sprites_move_out(block = proc.new { |c| c.move_out })
+    @eagle_chara_sprites.each { |c|
+      block.call(c)
+      c.update
+    }
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -316,24 +339,34 @@ class Window_ScrollText < Window_Base
   def update_eagle_threads
     @eagle_threads.each { |id, thread| thread.resume }
   end
+
   #--------------------------------------------------------------------------
-  # ● 处理进程的主逻辑
+  # ● 主绘制的逻辑
   #--------------------------------------------------------------------------
   def fiber_main
     open_and_wait
+    text, pos = pre_process_all_text
+    process_all_text(text, pos)
+    after_process_all_text
+    close_and_wait
+    @fiber = nil
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 主绘制前的预处理
+  #--------------------------------------------------------------------------
+  def pre_process_all_text
+    # 预设置
     reset_font_settings
     clear_flags
-
-    text = pre_process_all_text
+    # 获取最终绘制文本
+    text = convert_escape_characters($game_message.all_text)
+    text = pre_process_tags(text)
+    t = MESSAGE_EX::SCROLL_PARAMS_INIT.keys.inject("") { |s, k| s + "\e#{k}" }
+    # 获取初始绘制参数
     pos = { :x_line => win_params[:xo], :y_line => win_params[:yo] }
-    pos[:x] = pos[:x_line]
-    pos[:y] = pos[:y_line]
-    process_all_text(text, pos)
-
-    input_pause
-    @fiber = nil
-    $game_message.clear
-    close
+    pos[:x] = pos[:x_line]; pos[:y] = pos[:y_line]
+    return t + text, pos
   end
   #--------------------------------------------------------------------------
   # ● 清除标志
@@ -343,22 +376,21 @@ class Window_ScrollText < Window_Base
     @line_show_fast = false     # 行单位快进的标志
   end
   #--------------------------------------------------------------------------
-  # ● 预处理全部文本
+  # ● 预处理TAGS
   #--------------------------------------------------------------------------
-  def pre_process_all_text
-    text = convert_escape_characters($game_message.all_text)
+  def pre_process_tags(text)
+    # 如果发现条件判断标签对，则检查
+    s = $game_switches; v = $game_variables
+    text.gsub!(/<if ?{(.*?)}>(.*?)<\/if>/) { eval($1) == true ? $2 : "" }
     # 如果发现并行绘制标签对，则创建线程，并替换成转义符来启动并行绘制
     text.gsub!(/<para>(.*?)<\/para>/) {
       @eagle_last_thread_id += 1
       @eagle_threads_params[@eagle_last_thread_id] = $1
       "\epara[#{@eagle_last_thread_id}]"
     }
-    t = ""
-    MESSAGE_EX::SCROLL_PARAMS_INIT.each do |key, params|
-      t = t + "\e#{key}"
-    end
-    t + text
+    text
   end
+
   #--------------------------------------------------------------------------
   # ● 处理指定内容的绘制
   #--------------------------------------------------------------------------
@@ -540,6 +572,14 @@ class Window_ScrollText < Window_Base
   def wait(duration)
     duration.times { Fiber.yield }
   end
+
+  #--------------------------------------------------------------------------
+  # ● 全部绘制完成后的处理
+  #--------------------------------------------------------------------------
+  def after_process_all_text
+    input_pause
+    $game_message.clear
+  end
   #--------------------------------------------------------------------------
   # ● 处理输入等待
   #--------------------------------------------------------------------------
@@ -552,7 +592,7 @@ class Window_ScrollText < Window_Base
   end
 
   #--------------------------------------------------------------------------
-  # ● 激活并行处理
+  # ● 激活并行绘制
   #--------------------------------------------------------------------------
   def eagle_activate_thread(id, pos)
     pos_ = { :x => pos[:x], :y => pos[:y] }
@@ -561,7 +601,7 @@ class Window_ScrollText < Window_Base
     @eagle_threads[id].resume
   end
   #--------------------------------------------------------------------------
-  # ● 并行处理的主逻辑
+  # ● 并行绘制的逻辑
   #--------------------------------------------------------------------------
   def eagle_thread_main(id, pos)
     process_all_text(@eagle_threads_params[id], pos)
