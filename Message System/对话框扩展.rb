@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.5.21.20 优化注释
+# - 2019.5.22.16 新增文字移出时的间隔等待；修复参数初始化失效的BUG
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、执行code相对应的指令
 # - 指令名 code 解析：
@@ -92,7 +92,8 @@ $imported["EAGLE-MessageEX"] = true
 #    ali - 设置文本的对齐方式（0左对齐，1居中对齐，2右对齐；默认0）
 #    ck - 缩减的字符间距值（默认0）
 #    lh - 增加的行间距值（默认0）（默认行间距为0）（默认行高为当前行最大字号）
-#    cwait - 单个文字绘制完成后的等待帧数（默认1）
+#    cwi - 单个文字绘制完成后的等待帧数（最小值0）
+#    cwo - 单个文字开始移出后的等待帧数（最小值0）
 #    cfast - 是否允许按键快进（默认true）
 #    cdx/cdy - 文本区域与窗口左侧padding和上侧padding的间距（默认0）
 #
@@ -356,7 +357,8 @@ module MESSAGE_EX
     :ali => 0, # 设置文本对齐方式
     :ck => 0, # 缩减的字符间距值
     :lh => 4, # 增加的行间距值
-    :cwait => 2, # 单个文字绘制后的等待帧数（最小值0）
+    :cwi => 2, # 单个文字绘制后的等待帧数（最小值0）
+    :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
     :cfast => 1, # 是否允许快进
     :cdx => 0, # 文本左侧与窗口padding的间距
     :cdy => 0, # 文本上边距
@@ -828,7 +830,7 @@ end # end of MESSAGE_EX
 # ○ Game_Message
 #=============================================================================
 class Game_Message
-  attr_reader   :params_need_apply
+  attr_reader   :params_need_apply # 存储需要被预定应用的符号（调用对应处理方法）
   attr_accessor :chara_params # 存储文字特效预设 code_symbol => param_string
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
@@ -840,9 +842,8 @@ class Game_Message
   alias eagle_message_ex_init initialize
   def initialize
     eagle_message_ex_init
-    set_default_params
-    @params_need_apply = [] # 存储需要被应用的params符号
     @temp_game_messages = {} # sym => game_message
+    set_default_params
     @auto_r = true # 是否重置window.auto_continue_t
   end
   #--------------------------------------------------------------------------
@@ -1121,8 +1122,8 @@ class Window_Message
   # ● （覆盖）关闭窗口并等待关闭结束
   #--------------------------------------------------------------------------
   def close_and_wait
-    close
     eagle_message_sprites_move_out
+    close
     Fiber.yield until (all_close? && eagle_message_sprites_all_out?)
     eagle_message_sprites_clear
   end
@@ -1130,7 +1131,10 @@ class Window_Message
   # ● 移出全部文字精灵
   #--------------------------------------------------------------------------
   def eagle_message_sprites_move_out
-    @eagle_chara_sprites.each { |c| c.move_out; c.update }
+    @eagle_chara_sprites.each do |c|
+      c.move_out
+      win_params[:cwo].times { Fiber.yield }
+    end
   end
   #--------------------------------------------------------------------------
   # ● 文字精灵全部移出？
@@ -1851,7 +1855,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def wait_for_one_character
     MESSAGE_EX.se(game_message.win_params[:se])
-    game_message.win_params[:cwait].times do
+    game_message.win_params[:cwi].times do
       return if show_fast?
       update_show_fast if game_message.win_params[:cfast]
       Fiber.yield
@@ -2256,7 +2260,8 @@ class Window_Message
     game_message.win_params[:fw] = MESSAGE_EX.check_bool(game_message.win_params[:fw])
     game_message.win_params[:dh] = MESSAGE_EX.check_bool(game_message.win_params[:dh])
     game_message.win_params[:fh] = MESSAGE_EX.check_bool(game_message.win_params[:fh])
-    game_message.win_params[:cwait] = 0 if game_message.win_params[:cwait] < 0
+    game_message.win_params[:cwi] = 0 if game_message.win_params[:cwi] < 0
+    game_message.win_params[:cwo] = 0 if game_message.win_params[:cwo] < 0
     game_message.win_params[:cfast] = MESSAGE_EX.check_bool(game_message.win_params[:cfast])
     game_message.win_params[:fix] = MESSAGE_EX.check_bool(game_message.win_params[:fix])
     eagle_reset_z

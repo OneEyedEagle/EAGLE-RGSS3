@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.5.21.20 细化注释
+# - 2019.5.22.16 新增控制移出等待的变量
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -32,7 +32,8 @@ $imported["EAGLE-ScrollTextEX"] = true
 #    ldx - 下一行的横轴偏移量（负数为往左，正数为往右）（默认0，与上一行行首对齐）
 #    ldy - 下一行的纵轴偏移量（负数为往上，正数为往下）（默认1，朝下侧移动一行）
 #    lh - 设置增加的行间距值（默认0）
-#    cwait - 设置绘制一个字完成后的等待帧数
+#    cwi - 单个文字绘制完成后的等待帧数（最小值0）
+#    cwo - 单个文字开始移出后的等待帧数（最小值0）
 #    cfast - 是否允许快进显示
 #
 #  \pause[param] - 设置pause等待按键精灵的属性（同 对话框扩展）
@@ -90,7 +91,8 @@ module MESSAGE_EX
       :ldx => 0, # 默认下一行的横轴偏移量（负数为往左，正数为往右）
       :ldy => 1, # 默认下一行的纵轴偏移量（负数为往上，正数为往下）
       :lh => 0, # 增加的行间距值
-      :cwait => 7, # 绘制一个字完成后的等待帧数
+      :cwi => 7, # 绘制一个字完成后的等待帧数
+      :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
       :cfast => 1, # 是否允许快进显示
     }, # :win
     # \pos[]
@@ -280,11 +282,11 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   # ● 移出全部文字
   #--------------------------------------------------------------------------
-  def chara_sprites_move_out(block = proc.new { |c| c.move_out })
-    @eagle_chara_sprites.each { |c|
-      block.call(c)
-      c.update
-    }
+  def chara_sprites_move_out
+    @eagle_chara_sprites.each do |c|
+      c.move_out
+      win_params[:cwo].times { Fiber.yield }
+    end
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -537,7 +539,7 @@ class Window_ScrollText < Window_Base
   # ● 输出一个字符后的等待
   #--------------------------------------------------------------------------
   def wait_for_one_character
-    win_params[:cwait].times do
+    win_params[:cwi].times do
       return if show_fast?
       update_show_fast if win_params[:cfast]
       Fiber.yield
