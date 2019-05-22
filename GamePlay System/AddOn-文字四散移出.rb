@@ -2,7 +2,7 @@
 # ■ Add-On 文字四散移出 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】与【Add-On 部分粒子模板 by老鹰】之下
 #==============================================================================
-# - 2019.5.22.15 适配【Add-On 滚动文本框扩展 by老鹰】
+# - 2019.5.22.19 适配【Add-On 滚动文本框扩展 by老鹰】
 #==============================================================================
 # - 本插件给 对话框扩展 中的对话框新增了\pout转义符，
 #   可控制对话文本调用简单粒子系统来进行文字移出效果操作（覆盖\cout的效果）
@@ -71,6 +71,7 @@ class Window_Message
 
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
+          next if s.finish?
           s.opacity = 0
           f.total = 1
           f.bitmaps = [s.bitmap.dup]
@@ -80,10 +81,11 @@ class Window_Message
           win_params[:cwo].times { Fiber.yield }
         end
       else
+        charas = @eagle_chara_sprites.select { |s| !s.finish? }
         @eagle_chara_sprites.each { |s| s.opacity = 0 }
-        f.total = @eagle_chara_sprites.size
-        f.bitmaps = @eagle_chara_sprites.collect { |s| s.bitmap.dup }
-        f.xys = @eagle_chara_sprites.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
+        f.total = charas.size
+        f.bitmaps = charas.collect { |s| s.bitmap.dup }
+        f.xys = charas.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
         ParticleManager.start(:charas_out)
       end
     else
@@ -116,13 +118,14 @@ class Window_ScrollText < Window_Base
       f.speed_var = pout_params[:vd] || 1
       f.life = pout_params[:t] || 40
       f.life_var = pout_params[:td] || 20
-      f.theta = pout_params[:a] || 135
+      f.theta = pout_params[:a] || 270
       f.theta_var = pout_params[:ad] || 30
       f.angle = pout_params[:va] || 0
       f.angle_var = pout_params[:vad] || 2
 
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
+          next if s.finish?
           s.opacity = 0
           f.total = 1
           f.bitmaps = [s.bitmap.dup]
@@ -132,10 +135,11 @@ class Window_ScrollText < Window_Base
           win_params[:cwo].times { Fiber.yield }
         end
       else
+        charas = @eagle_chara_sprites.select { |s| !s.finish? }
         @eagle_chara_sprites.each { |s| s.opacity = 0 }
-        f.total = @eagle_chara_sprites.size
-        f.bitmaps = @eagle_chara_sprites.collect { |s| s.bitmap.dup }
-        f.xys = @eagle_chara_sprites.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
+        f.total = charas.size
+        f.bitmaps = charas.collect { |s| s.bitmap.dup }
+        f.xys = charas.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
         ParticleManager.start(:charas_out)
       end
     else
