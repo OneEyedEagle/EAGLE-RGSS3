@@ -2715,7 +2715,7 @@ class Sprite_EagleCharacter < Sprite
     params[:vo] *= -1
   end
   def move_out
-    return move_out_uout(@parmas[:uout]) if !@parmas[:uout].nil?
+    return move_out_uout(@params[:uout]) if !@params[:uout].nil?
     return self.opacity = 0 if !need_move_out?
     @dx = @dy = @_zoom = 0
     self.ox = self.width / 2; self.oy = self.height / 2
