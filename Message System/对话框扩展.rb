@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.5.23.10 优化注释
+# - 2019.5.23.16 注释优化
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -201,6 +201,13 @@ $imported["EAGLE-MessageEX"] = true
 #    vzt/vz → 每zvt（最小值1）帧zoom放缩值增加vz的值（整数）
 #    va → 每帧内angle的增值
 #
+#  \uout[param] → 利用消散移出文字【需要前置Unravel_Bitmap插件】
+#    n → 消散的粒子总数（大约）
+#    d → 单个粒子的大小（直径/边长）
+#    o → 单个粒子消失时的透明度变更最小值
+#    dir → 整体消散方向类型（同九宫格小键盘）（1379-四角；5-四方向；46-左右向上）
+#    s → 粒子形状类型（0-正方向；1-圆形；2-三角形）
+#
 #  \csin[param] → 开启正弦波浪扭曲特效
 #    a → 正弦波浪的幅度（像素数）
 #    l → 正弦波浪的频度（像素数）
@@ -226,33 +233,30 @@ $imported["EAGLE-MessageEX"] = true
 #
 #  \cu[param] → 开启字符消散特效【叠加】【需要前置Unravel_Bitmap插件】
 #    t → 每两次执行消散之间的间隔帧数（正整数）
-#    n → 单次消散的粒子总数（估计）
-#    d → 单个粒子的大小（直径/边长）
-#    o → 单个粒子消失时的透明度变更最小值
-#    dir → 整体消散方向类型（同九宫格小键盘）（1379-四角；5-四方向；46-左右向上）
-#    s → 粒子形状类型（0-正方向；1-圆形；2-三角形）
+#    其余同 \uout 的变量
 #
 #----------------------------------------------------------------------------
 # - 扩展类
+#     此处放置整合其他插件效果的转义符，统一放置于 $game_message.ex_params 中
 #
 #  \g[c1..] → 渐变描绘文本【需要前置Sion_GradientText插件】
-#    变量参数字符串为按序排列的 c + Windowskin颜色索引号，未传入任何参数时取消渐变绘制
+#    变量参数字符串为按序排列的 c + Windowskin颜色索引号，无任何参数时取消渐变绘制
 #    示例：\g[c1c2c1] → 用 1号 2号 1号颜色由上至下进行渐变绘制
 #    示例：\g[] → 取消渐变绘制
 #
 #----------------------------------------------------------------------------
 # ● 文本预定
 #----------------------------------------------------------------------------
-# - 利用该脚本设置预定文本，下次打开对话框时，将自动将全部预定文本插到对话文本开头
+# - 利用该脚本存储预定文本，在下次打开对话框时，全部预定文本将按序插入到对话文本开头
 #
 #        $game_message.add_escape(param_string)
 #
 # - param_string 解析： 【String】型常量
 # - 示例：
 #     $game_message.add_escape("\\win[ali1]")
-#        → 在之后的对话框中 文本居中
+#        → 之后的对话框中 文本居中 绘制
 #     $game_message.add_escape("\\pop[0]")
-#        → 下一次的对话框为pop类型，在当前事件上
+#        → 下一次的对话框为pop类型，绑定在当前执行对话框的事件上
 # - 注意：
 #    ·由于解析问题，在 param_string 中请将 "\" 替换成 "\\"
 #    ·当存在多条预定文本，将按照预定时间的先后顺序，依次放入下一次对话框的开头
@@ -261,12 +265,13 @@ $imported["EAGLE-MessageEX"] = true
 #----------------------------------------------------------------------------
 # ● 参数重置
 #----------------------------------------------------------------------------
-# - 利用该脚本重置（用预设值覆盖）指定指令的指定变量
+# - 利用该脚本重置指定转义符的指定变量（用预设值覆盖）
 #
 #        $game_message.reset_params(param_sym, code_string)
 #
 # - param_sym 解析： 【Symbol】型常量
-#     :font → 重置关于字体的设置（取Font类的设置）
+#   【注意】若传入的 param_sym 为 nil，则将重置以下所有类型
+#     :font → 重置关于字体的设置
 #     :win  → 重置关于对话框的设置
 #     :pop  → 重置关于pop类型对话框与pop的tag类型的设置
 #     :face → 重置关于脸图显示的设置
@@ -274,16 +279,18 @@ $imported["EAGLE-MessageEX"] = true
 #     :pause- 重置关于pause等待按键的精灵的设置
 #     :chara → 重置关于文字特效的设置（其参数为文字特效转义符）
 #     :ex → 重置扩展类转义符为预设的变量参数（其参数为扩展类转义符）
-#  【注意】若传入的param_sym为 nil，则将重置以上所有
+#
 # - code_string 解析： 【String】型常量
 #     可利用 | 将多个变量进行分割
 #     若未传入该参数，则将重置全部变量
+#
 # - 示例：
-#     $game_message.reset_params(:font, "i") → 重置字体里是否斜体的参数
-#     $game_message.reset_params(:win, "x|y") → 重置对话框的xy位置（变回默认va设置）
-#     $game_message.reset_params(:pop) → 清除全部关于pop的设置
+#     $game_message.reset_params(:font, "i") → 重置字体是否斜体的参数
+#     $game_message.reset_params(:win, "x|y") → 重置对话框的xy坐标（取默认va设置）
+#     $game_message.reset_params(:pop) → 清除pop转义符的全部设置
 #     $game_message.reset_params(:chara, "cin")
-#       → cin转义符的参数重置为CHARA_PARAMS_INIT中的:cin键值，若无该键，则取消cin特效
+#       → cin转义符的参数重置为 CHARA_PARAMS_INIT 中的:cin键值，
+#         若常量中无该键，则取消cin特效
 #----------------------------------------------------------------------------
 # ● 参数保存与读取
 #----------------------------------------------------------------------------
@@ -461,6 +468,14 @@ module MESSAGE_EX
     :vzt => 1,
     :va => 0,  # 每帧角度增量
   }
+  UOUT_PARAMS_INIT = {
+  # \uout[]
+    :n => 300, # 消散的粒子总数
+    :d =>  2, # 消散的粒子的大小（直径/边长）
+    :o =>  1, # 透明度变更量的最小值
+    :dir => 4, # 消散方向类型
+    :s =>  0, # 粒子的形状类型
+  }
   CSIN_PARAMS_INIT = {
     :a => 6, # 幅度
     :l => 10, # 频度
@@ -500,8 +515,16 @@ module MESSAGE_EX
     :n => 20, # 消散的粒子总数
     :d =>  2, # 消散的粒子的大小（直径/边长）
     :o =>  1, # 透明度变更量的最小值
-    :s =>  0, # 粒子的形状类型
     :dir => 4, # 消散方向类型
+    :s =>  0, # 粒子的形状类型
+  }
+  CU_PARAM_DIR = { # 定义消散方向类型的id
+    1 => :LD, 3 => :RD, 4 => :LR, 5 => :LRUD, 6 => :LR, 7 => :LU, 9 => :RU
+  }
+  CU_PARAM_S = { # 定义粒子形状类型的id
+    0 => :S, # 正方形
+    1 => :C, # 圆形（耗时）
+    2 => :T  # 三角形
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义初始激活的扩展类转义符的预设变量参数字符串
@@ -534,7 +557,7 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   ESCAPE_STRING_NAME_PREFIX = "\ec<9>"
   #--------------------------------------------------------------------------
-  # ● 【设置】定义 index → windowskin名称 的映射
+  # ● 【设置】定义 index → 窗口皮肤文件名 的映射
   # （其中 index 必须为整数）
   # （图片存储于 Graphics/System 目录下）
   #--------------------------------------------------------------------------
@@ -542,7 +565,7 @@ module MESSAGE_EX
     0 => "Window", # 默认所用皮肤名称
   }
   #--------------------------------------------------------------------------
-  # ● 【设置】定义 index → windows背景图片名称 的映射
+  # ● 【设置】定义 index → 窗口背景图片名 的映射
   # （图片的左上角会与对话框的左上角对齐）
   # （其中 index 必须为整数）
   # （图片存储于 Graphics/System 目录下）
@@ -550,7 +573,7 @@ module MESSAGE_EX
   INDEX_TO_WINDOW_BG = {
   }
   #--------------------------------------------------------------------------
-  # ● 【设置】定义 index → 打字音设置 的映射
+  # ● 【设置】定义 index → 打字音效 的映射
   # （音效存储于 Audio/SE 目录下）
   #--------------------------------------------------------------------------
   INDEX_TO_SE = {
@@ -559,8 +582,8 @@ module MESSAGE_EX
     1 => ["Cursor1", 40, 150],
   }
   #--------------------------------------------------------------------------
-  # ● 【设置】定义 index → tag名称 的映射
-  # （其中 index 必须为正整数；为 0 时代表不启用tag）
+  # ● 【设置】定义 index → 指向性箭头文件名 的映射
+  # （其中 index 为正整数；为 0 时代表不启用tag）
   # （图片存储于 Graphics/System 目录下）
   # 【Tag图片解析】任意大小，3帧×3帧规格
   #    7 8 9
@@ -573,7 +596,7 @@ module MESSAGE_EX
     1 => "Window_Tag", # 默认所用tag名称
   }
   #--------------------------------------------------------------------------
-  # ● 【设置】定义 index → pause箭头帧动画参数组 的映射
+  # ● 【设置】定义 index → 等待按键帧动画参数组 的映射
   # （其中 index 必须为整数）
   # （图片存储于 Graphics/System 目录下）
   # 【注意】帧动画统一从左上开始计为0号位置，并按行优先从左往右遍历
@@ -831,9 +854,11 @@ module CHARA_EFFECTS
   def eagle_chara_effect_cmirror(param = '')
   end
   #--------------------------------------------------------------------------
-  # ● 字符消散特效切换
+  # ● 消散
   #--------------------------------------------------------------------------
   if defined?(Unravel_Bitmap)
+  def eagle_chara_effect_uout(param = '')
+  end
   def eagle_chara_effect_cu(param = '')
   end
   end
@@ -2690,6 +2715,7 @@ class Sprite_EagleCharacter < Sprite
     params[:vo] *= -1
   end
   def move_out
+    return move_out_uout(@parmas[:uout]) if !@parmas[:uout].nil?
     return self.opacity = 0 if !need_move_out?
     @dx = @dy = @_zoom = 0
     self.ox = self.width / 2; self.oy = self.height / 2
@@ -2772,25 +2798,27 @@ class Sprite_EagleCharacter < Sprite
   def start_effect_cu(params, param_s)
     parse_param(params, param_s)
     params[:t_c] = 0 # 间隔计数
-    params[:dir] = (case params[:dir]
-    when 1; :LD
-    when 3; :RD
-    when 5; :LRUD
-    when 7; :LU
-    when 9; :RU
-    when 4,6; :LR
-    end)
-    params[:s] = (case params[:s]
-    when 0; :S # 正方形
-    when 1; :C # 圆形（最耗时）
-    when 2; :T # 三角形
-    end)
+    params[:dir] = MESSAGE_EX::CU_PARAM_DIR[ params[:dir] ]
+    params[:s] = MESSAGE_EX::CU_PARAM_S[ params[:s] ]
   end
   def update_effect_cu(params)
     return if (params[:t_c] += 1) < params[:t]
     params[:t_c] = 0
     Unravel_Bitmap.new(self.x, self.y, self.bitmap.clone, 0, 0, self.width,
       self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
+  end
+  #--------------------------------------------------------------------------
+  # ● 消散移出
+  #--------------------------------------------------------------------------
+  def start_effect_uout(params, param_s)
+    parse_param(params, param_s)
+    params[:dir] = MESSAGE_EX::CU_PARAM_DIR[ params[:dir] ]
+    params[:s] = MESSAGE_EX::CU_PARAM_S[ params[:s] ]
+  end
+  def move_out_uout(parmas)
+    Unravel_Bitmap.new(self.x, self.y, self.bitmap.clone, 0, 0, self.width,
+      self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
+    self.opacity = 0
   end
 end
 #=============================================================================
