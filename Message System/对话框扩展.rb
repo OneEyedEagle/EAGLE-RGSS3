@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.5.23.16 注释优化
+# - 2019.5.23.17 注释优化
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1171,6 +1171,7 @@ class Window_Message
   def eagle_message_sprites_move_out
     @eagle_chara_sprites.each do |c|
       c.move_out
+      c.update
       win_params[:cwo].times { Fiber.yield }
     end
   end

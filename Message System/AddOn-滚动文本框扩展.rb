@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.5.23.16 注释优化
+# - 2019.5.23.17 统一pos变量效果
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -40,12 +40,11 @@ $imported["EAGLE-ScrollTextEX"] = true
 #  \pause[param] → 等待按键精灵的属性（同 对话框扩展）
 #
 #  \pos[param] -【重置】直接指定下一个文字的绘制位置
-#    x/y → 直接指定x/y值（窗口内部绘制区域的左上角为(0, 0)）
-#    dx/dy → 以上一次成功绘制的文字的右上角为基准，加一个x/y的偏移值作为新绘制位置
-#            （若为一行的开头，则以行首位置为基准）
-#    c/l → 直接指定行号/列号（行高被定义为窗口的line_height，列宽为窗口的font.size）
-#    dc/dl → 以上一次成功绘制的文字的右上角为基准，加一个c/l的偏移值作为新绘制位置
-#            （若为一行的开头，则以行首位置为基准）
+#    x/y → 直接指定x/y像素坐标值（窗口内部绘制区域的左上角为(0, 0)）
+#    c/l → 直接指定行号/列号（从1开始）
+#         （行高为窗口的 line_height，列宽为窗口的 font.size）
+#    dx/dy → x/y方向增加一个像素偏移值
+#    dc/dl → c/l行列增加一个偏移值
 #
 #  \wait[param] → 设置等待（同 对话框扩展）
 #
@@ -286,6 +285,7 @@ class Window_ScrollText < Window_Base
   def chara_sprites_move_out
     @eagle_chara_sprites.each do |c|
       c.move_out
+      c.update
       win_params[:cwo].times { Fiber.yield }
     end
   end
@@ -434,17 +434,10 @@ class Window_ScrollText < Window_Base
     pos[:y] = pos_params[:y] if pos_params[:y]
     pos[:x] = (pos_params[:l]-1) * eagle_standard_cw if pos_params[:l]
     pos[:y] = (pos_params[:c]-1) * eagle_standard_ch if pos_params[:c]
-    if pos[:last_chara_sprite]
-      _x = pos[:last_chara_sprite]._x
-      _y = pos[:last_chara_sprite]._y
-    else
-      _x = pos[:x_line]
-      _y = pos[:y_line]
-    end
-    pos[:x] = _x + pos_params[:dx] if pos_params[:dx]
-    pos[:y] = _y + pos_params[:dy] if pos_params[:dy]
-    pos[:x] = _x + pos_params[:dl] * eagle_standard_cw if pos_params[:dl]
-    pos[:y] = _y + pos_params[:dc] * eagle_standard_ch if pos_params[:dc]
+    pos[:x] += pos_params[:dx] if pos_params[:dx]
+    pos[:y] += pos_params[:dy] if pos_params[:dy]
+    pos[:x] += (pos_params[:dl] * eagle_standard_cw) if pos_params[:dl]
+    pos[:y] += (pos_params[:dc] * eagle_standard_ch) if pos_params[:dc]
     params.delete(:pos)
   end
   #--------------------------------------------------------------------------
@@ -527,6 +520,8 @@ class Window_ScrollText < Window_Base
   # ● 绘制完成时的处理
   #--------------------------------------------------------------------------
   def eagle_process_draw_end(c_w, c_h, pos)
+    # 存储行首位置
+    pos[:first_chara_sprite] = @eagle_chara_sprites[-1] if pos[:first_chara_sprite].nil?
     # pause精灵重置位置
     pos[:last_chara_sprite] = @eagle_chara_sprites[-1]
     @eagle_sprite_pause.bind_last_chara(pos[:last_chara_sprite])
@@ -563,11 +558,18 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   def process_new_line(text, pos)
     @line_show_fast = false
-    pos[:x] = pos[:x_line] + (contents.font.size + win_params[:lh]) * win_params[:ldx]
-    pos[:y] = pos[:y_line] + eagle_standard_ch * win_params[:ldy]
+    if pos[:first_chara_sprite] # 如果存储了行首文字，则以它为基准
+      x_ = pos[:first_chara_sprite]._x
+      y_ = pos[:first_chara_sprite]._y
+    else # 否则，以初始定下的行首位置为基准
+      x_ = pos[:x_line]
+      y_ = pos[:y_line]
+    end
+    pos[:x] = x_ + (contents.font.size + win_params[:lh]) * win_params[:ldx]
+    pos[:y] = y_ + eagle_standard_ch * win_params[:ldy]
     pos[:x_line] = pos[:x]
     pos[:y_line] = pos[:y]
-    pos[:last_chara_sprite] = nil
+    pos[:first_chara_sprite] = nil
   end
   #--------------------------------------------------------------------------
   # ● 等待
