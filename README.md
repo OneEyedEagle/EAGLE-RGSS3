@@ -10,11 +10,12 @@
 
 ### 文件夹说明
 
-- Message System：放置对默认对话框的扩展或其他与文本显示相关的插件
-- Battle System：放置和战斗相关（其中包含对VA数据库的扩展）的插件
-- GamePlay System：放置一些独立的附加小系统，能够用于改善体验或增加娱乐性
-- Demos：放置一些特定插件的范例工程，具体见各个子文件夹下的README文件
-- TEMP：放置一些仍然在完成中的或修改中的插件，不推荐使用
+- Message System → 对默认对话框的扩展 或 与文本显示相关的插件
+- Battle System → 战斗相关插件 或 对VA数据库的扩展
+- GamePlay System → 增加娱乐性的独立小系统 或 改善游戏体验的辅助插件
+- Effect System → 特效类的插件 或 对位图绘制的扩展
+- Demos → 一些特定插件的范例工程，具体见各个子文件夹下的README文件
+- TEMP → （不推荐使用）仍在设计中的或修改中的未完成品
 
 ### 插件版本
 
@@ -26,7 +27,7 @@
 
 - 点击进入脚本文件的预览页面后，右上有“Raw”字样的按钮，点击进入只含有文件内容的页面，可利用Ctrl+A进行全选，再复制黏贴到你的工程中的空白脚本页内
 
-- 【借助第三方工具】若你已经登录了GitHub，可以通过设置GitHub Key后利用第三方工具（如[这个](https://download-directory.github.io/)）下载仓库中的独立文件夹：点击your GitHub token后跳转到你自己账户下的key生成界面，拖至最底部点击绿色按键生成key，然后复制key的字符串（注意：该字符串以后无法再找到，请保存好）到原网页中的输入框；此时可以通过在浏览器地址栏输入比如 https://download-directory.github.io?url=https://github.com/OneEyedEagle/EAGLE-RGSS3/tree/master/Demos/DEMO_EagleMessageEX 下载本仓库的DEMO/DEMO_EagleMessageEX整个文件夹
+- 【借助第三方工具】若你已经登录了GitHub，可以通过设置GitHub Key后利用第三方工具（如[这个](https://download-directory.github.io/)）下载仓库中的独立文件夹：点击your GitHub token后跳转到你自己账户下的key生成界面，拖至最底部点击绿色按键生成key，然后复制key的字符串（注意：该字符串以后无法再找到，请保存好）到原网页中的输入框；此时可以通过在浏览器地址栏输入比如 https://download-directory.github.io?url=https://github.com/OneEyedEagle/EAGLE-RGSS3/tree/master/Demos/DEMO_EagleMessageEX 下载本仓库的Demos/DEMO_EagleMessageEX整个文件夹
 
 ## 利用规约
 
@@ -46,6 +47,6 @@
 
 ## 特别声明
 
-由于本人精力有限，此处分享的脚本不会对其余脚本进行特别的兼容与整合（除非自用）。
+由于本人精力有限，此处分享的脚本不会对其余脚本进行特别的兼容与整合（除非我自己在用）。
 
 如果需要付费将某些脚本与指定脚本进行兼容，请在[Project1论坛](https://rpg.blue/home.php?mod=space&uid=287268)私信联系我，或微博[@独眼老鹰](https://www.weibo.com/oneeyedeagle)短消息联系我。
