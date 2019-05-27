@@ -11,6 +11,7 @@
 ### 文件夹说明
 
 - Message System → 对默认对话框的扩展 或 与文本显示相关的插件
+- Event System → 对事件的扩展 或 对地图的扩展
 - Battle System → 战斗相关插件 或 对VA数据库的扩展
 - GamePlay System → 增加娱乐性的独立小系统 或 改善游戏体验的辅助插件
 - Effect System → 特效类的插件 或 对位图绘制的扩展
