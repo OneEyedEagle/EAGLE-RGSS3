@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-TimerEX"] = true
 #=============================================================================
-# - 2019.6.1.17 初版
+# - 2019.6.1.22 优化显示
 #=============================================================================
 # - 本插件对计时器进行了扩展（但不改动默认计时器）
 #-----------------------------------------------------------------------------
@@ -15,8 +15,9 @@ $imported["EAGLE-TimerEX"] = true
 #    count  → 倒计时的总帧数（在默认系统中 1秒 = 60帧）
 #    params → 【可选】扩展参数的Hash
 #  【扩展参数】
-#     :sid  → 与 sid 号开关绑定，记录倒计时开始时开关状态，倒计时结束时反转开关
-#     :eval → 当倒计时结束时，执行的脚本
+#     :map  → 是否只在地图场景上进行更新
+#     :sid  → 与 sid 号开关绑定；记录倒计时开始时开关状态，倒计时结束时反转开关
+#     :eval → 当倒计时结束时，将会执行的脚本字符串
 #     :icon → 显示在倒计时文本后面的图标的index
 #     :text → 一句话的文本介绍，将会显示在倒计时文本下方
 #
@@ -35,7 +36,7 @@ $imported["EAGLE-TimerEX"] = true
 #=============================================================================
 
 class Game_Timer_EX
-  attr_reader :params, :display
+  attr_reader :params, :display, :no_update
   attr_accessor :need_refresh
   #--------------------------------------------------------------------------
   # ● 初始化
@@ -47,9 +48,19 @@ class Game_Timer_EX
   # ● 更新
   #--------------------------------------------------------------------------
   def update
-    return if !working?
+    if @params[:map] && !SceneManager.scene_is?(Scene_Map) # 不更新
+      @no_update = true
+      return @need_refresh = true
+    end
+    if !working?
+      return if @count > 0 # 单纯的暂停
+      return if (@count_temp -= 1) > 0 # 结束后的暂停
+      return @display = false
+    end
+    @no_update = false
     @count -= 1
-    @need_refresh = true if @count % 60 == 0
+    @need_refresh = true if @count_temp == 0
+    @count_temp = (@count_temp + 1) % 60
     self.stop if @count <= 0
   end
   #--------------------------------------------------------------------------
@@ -59,14 +70,22 @@ class Game_Timer_EX
     @working == true
   end
   #--------------------------------------------------------------------------
+  # ● 结束工作？
+  #--------------------------------------------------------------------------
+  def finish?
+    @count == 0
+  end
+  #--------------------------------------------------------------------------
   # ● 开始
   #--------------------------------------------------------------------------
   def start(count, params = {})
     @params = params
-    @working = true
-    @display = true
-    @need_refresh = true
+    @working = true  # 正在倒计时？
+    @no_update = false # 停止更新
+    @display = true  # 开启显示？
+    @need_refresh = true # 需要刷新显示？
     @count = count
+    @count_temp = 0 # 临时用计数
     @params[:total] = count
     @params[:s] = $game_switches[ @params[:sid] ] if @params[:sid]
   end
@@ -75,8 +94,9 @@ class Game_Timer_EX
   #--------------------------------------------------------------------------
   def stop
     @working = false
-    @display = false
+    @need_refresh = true
     @count = 0
+    @count_temp = 90
     on_expire
   end
   #--------------------------------------------------------------------------
@@ -84,12 +104,14 @@ class Game_Timer_EX
   #--------------------------------------------------------------------------
   def halt
     @working = false
+    @need_refresh = true
   end
   #--------------------------------------------------------------------------
   # ● 继续
   #--------------------------------------------------------------------------
   def continue
     @working = true
+    @need_refresh = true
   end
   #--------------------------------------------------------------------------
   # ● 获取当前秒数
@@ -259,7 +281,7 @@ class Sprite_Timer_EX < Sprite
   #     enabled : 有效的标志。false 的时候使用半透明效果绘制
   #--------------------------------------------------------------------------
   def draw_icon(bitmap, icon_index, x, y, enabled = true)
-    _bitmap = Cache.system( "Iconset" )
+    _bitmap = Cache.system( "Iconset")
     rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
     bitmap.blt(x, y, _bitmap, rect, enabled ? 255 : 120)
   end
@@ -296,19 +318,29 @@ class Sprite_Timer_EX < Sprite
 
     icon = $game_timer[@id].params[:icon]
     t = $game_timer[@id].params[:text]
-    cy = t ? 0 : 12
+    cy = t ? 0 : 10 # 偏移倒计时文本
     w = icon ? self.width - 30 : self.width - 15
 
+    # 绘制倒计时文本
     self.bitmap.font.size = 24
     self.bitmap.font.color.set(255, 255, 255)
-    sec = $game_timer[@id].second
+    if !$game_timer[@id].working? || $game_timer[@id].no_update
+      self.bitmap.font.color.alpha = 100
+    end
+    sec = $game_timer[@id].second + 1 # 0~1秒之间，显示为1s
+    sec = 0 if $game_timer[@id].finish?
     text = sprintf("%02d:%02d", sec / 60, sec % 60)
     self.bitmap.draw_text(0, cy, w, 24, text, 2)
 
-    if icon
-      draw_icon(self.bitmap, icon, self.width - 24 - 3, cy, true)
+    if icon # 绘制图标
+     icon_v = $game_timer[@id].working? # 如果停止工作/不更新，则半透明绘制
+     icon_v = false if $game_timer[@id].no_update
+     draw_icon(bitmap, icon, self.width-24-3, cy, icon_v)
     end
-    if t
+    if $game_timer[@id].finish? # 绘制删除线
+      bitmap.fill_rect(self.width-95-2, cy+13, 95, 1, Color.new(180,180,180))
+    end
+    if t # 绘制简介
       self.bitmap.font.size = 12
       self.bitmap.font.color.set(200, 200, 200)
       self.bitmap.draw_text(0, 24, self.width, 26, t, 2)
