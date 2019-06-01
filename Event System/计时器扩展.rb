@@ -4,154 +4,104 @@
 $imported ||= {}
 $imported["EAGLE-TimerEX"] = true
 #=============================================================================
-# - 2019.4.7.22
+# - 2019.6.1.17 初版
 #=============================================================================
-# - TODO id => Data_Timer
+# - 本插件对计时器进行了扩展（但不改动默认计时器）
 #-----------------------------------------------------------------------------
-# ●
+# - 创建一个新的计时器：
+#     $game_timer[id].start(count[, params])
+#  【参数】
+#    id     → 该计时器的唯一标识符，推荐使用方便记忆的字符串、数字等
+#    count  → 倒计时的总帧数（在默认系统中 1秒 = 60帧）
+#    params → 【可选】扩展参数的Hash
+#  【扩展参数】
+#     :sid  → 与 sid 号开关绑定，记录倒计时开始时开关状态，倒计时结束时反转开关
+#     :eval → 当倒计时结束时，执行的脚本
+#     :icon → 显示在倒计时文本后面的图标的index
+#     :text → 一句话的文本介绍，将会显示在倒计时文本下方
+#
+# - 示例：
+#     $game_timer[1].start(5 * 60, {:sid => 2})
+#   → 开始标识符为 1 的计时器，5s的倒计时结束后，2号开关取倒计时开始时它的反值
+#
+#     $game_timer["逃跑"].start(10 * 60, {:icon => 121, :eval => "v[1]+=1"})
+#   → 开始标识符为 "逃跑" 的 10s 计时器，显示121号图标，倒计时结束1号变量自加1
+#
 #-----------------------------------------------------------------------------
+# - 对计时器进行控制：
+#     $game_timer[id].stop → 强制结束id标识符的计时器
+#     $game_timer[id].halt → 暂停id标识符的计时器
+#     $game_timer[id].continue → 继续id标识符的计时器
 #=============================================================================
 
-module Timer
+class Game_Timer_EX
+  attr_reader :params, :display
+  attr_accessor :need_refresh
   #--------------------------------------------------------------------------
-  # ● 设定指定ID计时器的对应ICON和显示帮助信息
-  #--------------------------------------------------------------------------
-  INFO = {
-    # switch_id => [icon_id, help_text],
-    0 => [0, ""], # 默认计时器
-    1 => [1, "测试用帮助"],
-  }
-  #--------------------------------------------------------------------------
-  # ● 获取对应信息
-  #--------------------------------------------------------------------------
-  def self.get_icon(id)
-    return INFO[id][0] if INFO.has_key?(id) && INFO[id][0]
-    return INFO[0][0]
-  end
-  def self.get_info(id)
-    return INFO[id][1] if INFO.has_key?(id) && INFO[id][1]
-    return INFO[0][1]
-  end
-  #--------------------------------------------------------------------------
-  # ● 开始id号的计时器
-  #  id - 不为0的整数
-  #   id为正时，计时器开始时开启开关，结束时关闭
-  #   id为负时，计时器结束时才开启开关
-  #  sec_count - 存在的秒数
-  #  icon_id - 指定显示的图标
-  #--------------------------------------------------------------------------
-  def self.start(id, sec_count)
-    $game_timer.start(sec_count * 60, id, get_icon(id))
-  end
-  #--------------------------------------------------------------------------
-  # ● 暂停id号的计时器
-  #--------------------------------------------------------------------------
-  def self.halt(id)
-    $game_timer.halt(id)
-  end
-  #--------------------------------------------------------------------------
-  # ● 重新开始id号计时器
-  #--------------------------------------------------------------------------
-  def self.restart(id)
-    $game_timer.restart(id)
-  end
-  #--------------------------------------------------------------------------
-  # ● 停止指定id号的计时器
-  #--------------------------------------------------------------------------
-  def self.stop(id)
-    $game_timer.stop(id)
-  end
-end
-
-class Scene_Map < Scene_Base
-  #--------------------------------------------------------------------------
-  # ● 结束处理
-  #--------------------------------------------------------------------------
-  alias eagle_timer_terminate terminate
-  def terminate
-    @spriteset.timer_sprite.hide
-    eagle_timer_terminate
-  end
-end
-class Spriteset_Map
-  attr_reader :timer_sprite
-end
-
-class Game_Timer
-  attr_reader :timers
-  #--------------------------------------------------------------------------
-  # ● 初始化对象
+  # ● 初始化
   #--------------------------------------------------------------------------
   def initialize
-    # switch_id => { :working => bool, :count => int, :icon_id => int }
-    @timers = {}
     start(0)
-    stop(0)
   end
   #--------------------------------------------------------------------------
-  # ● 更新画面
+  # ● 更新
   #--------------------------------------------------------------------------
   def update
-    @timers.each do |id, value|
-      next if !value[:working]
-      next stop(id) if value[:count] <= 0
-      value[:count] -= 1
-      #on_expire if @count == 0
-    end
+    return if !working?
+    @count -= 1
+    @need_refresh = true if @count % 60 == 0
+    self.stop if @count <= 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 正在工作？
+  #--------------------------------------------------------------------------
+  def working?
+    @working == true
   end
   #--------------------------------------------------------------------------
   # ● 开始
   #--------------------------------------------------------------------------
-  def start(count, id = 0, icon_id = 0)
-    @timers.delete_if { |k, v| k.abs == id.abs }
-    @timers[id] = { :working => true, :count => count, :icon_id => icon_id }
-    $game_switches[id.abs] = id > 0 if id != 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 暂停
-  #--------------------------------------------------------------------------
-  def halt(id = 0)
-    @timers[id][:working] = false
-    $game_switches[id.abs] = id > 0 if id != 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 重开
-  #--------------------------------------------------------------------------
-  def restart(id = 0)
-    @timers[id][:working] = true
-    $game_switches[id.abs] = id > 0 if id != 0
+  def start(count, params = {})
+    @params = params
+    @working = true
+    @display = true
+    @need_refresh = true
+    @count = count
+    @params[:total] = count
+    @params[:s] = $game_switches[ @params[:sid] ] if @params[:sid]
   end
   #--------------------------------------------------------------------------
   # ● 停止
   #--------------------------------------------------------------------------
-  def stop(id = 0)
-    @timers[id][:working] = false
-    @timers[id][:count] = 0
-    $game_switches[id.abs] = id < 0 if id != 0
+  def stop
+    @working = false
+    @display = false
+    @count = 0
+    on_expire
   end
   #--------------------------------------------------------------------------
-  # ● 判定是否正在工作
+  # ● 暂停
   #--------------------------------------------------------------------------
-  def working?(id = 0)
-    @timers[id][:working]
+  def halt
+    @working = false
   end
   #--------------------------------------------------------------------------
-  # ● 获取图标
+  # ● 继续
   #--------------------------------------------------------------------------
-  def icon(id = 0)
-    @timers[id][:icon_id]
+  def continue
+    @working = true
   end
   #--------------------------------------------------------------------------
-  # ● 获取秒数
+  # ● 获取当前秒数
   #--------------------------------------------------------------------------
-  def sec(id = 0)
-    @timers[id][:count] / Graphics.frame_rate
+  def second
+    @count / Graphics.frame_rate
   end
   #--------------------------------------------------------------------------
-  # ● 获取毫秒数
+  # ● 获取当前毫秒数
   #--------------------------------------------------------------------------
-  def msec(id = 0)
-    f = @timers[id][:count] - sec(id) * Graphics.frame_rate
+  def msec
+    f = @count - self.second * Graphics.frame_rate
     # 3 帧 = 50 ms
     #f * 50 / 3
     f * 17 - f / 3
@@ -160,100 +110,131 @@ class Game_Timer
   # ● 计时器为 0 时的处理
   #--------------------------------------------------------------------------
   def on_expire
-    #BattleManager.abort
+    $game_switches[ @params[:sid] ] = !@params[:s] if @params[:sid]
+    s = $game_switches; v = $game_variables
+    eval( @params[:eval] ) if @params[:eval]
   end
 end
-
+#==============================================================================
+# ○ Game_Timer
+#==============================================================================
+class Game_Timer
+  attr_reader :timers_ex
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  alias eagle_timer_ex_init initialize
+  def initialize
+    eagle_timer_ex_init
+    @timers_ex = {}
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  alias eagle_timer_ex_update update
+  def update
+    eagle_timer_ex_update
+    @timers_ex.each { |id, d| d.update }
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取扩展计时器
+  #--------------------------------------------------------------------------
+  def [](id)
+    @timers_ex[id] ||= Game_Timer_EX.new
+    @timers_ex[id]
+  end
+end
+#==============================================================================
+# ○ Sprite_Timer
+#==============================================================================
 class Sprite_Timer < Sprite
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
+  alias eagle_timer_ex_init initialize
   def initialize(viewport)
-    super(viewport)
-    @viewport = viewport
     @timers = {}
-    update
+    eagle_timer_ex_init(viewport)
   end
   #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
+  alias eagle_timer_ex_dispose dispose
   def dispose
+    eagle_timer_ex_dispose
     @timers.each { |id, t| t.dispose }
-    super
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新画面
-  #--------------------------------------------------------------------------
-  def update
-    super
-    update_new
-    update_position
-  end
-  #--------------------------------------------------------------------------
-  # ● 新加入计数器精灵
-  #--------------------------------------------------------------------------
-  def update_new
-    $game_timer.timers.each do |id, t|
-      next if @timers.has_key?(id)
-      @timers[id] = Sprite_Timer_Single.new(@viewport, id, -1)
-      @timers[id].set_xy(Graphics.width - 2 - @timers[id].width,Graphics.height)
-      @timers[id].z = 200
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新位置
-  #--------------------------------------------------------------------------
-  def update_position
-    # 从屏幕右下角开始，逐渐向上增加
-    index = -1 # 用于暂存当前屏幕坐标index
-    @timers.each do |id, t|
-      t.update
-      t.visible = $game_timer.working?(id)
-      if t.visible
-        # 此处更新帮助信息显示
-        if t.chosen_by_mouse? && ((text = Timer.get_info(id)) != "")
-          p = { :text => text, :dir => :RD }
-          p[:window_skin] = "Window_Help"
-          p[:tag] = "Window_Help_Tag"
-          HintManager.add(p, :block_zoom_instant2)
-        else
-          HintManager.move_out(:block_zoom_instant2)
-        end
-        # 此处更新显示位置
-        index += 1
-        next if t.window_index == index
-        t.window_index = index
-        _y = Graphics.height- t.height * (t.window_index + 1) - 2
-        _y -= (2 * t.window_index)
-        t.set_des_xy(Graphics.width - t.width - 2, _y)
-      end
-    end
+    @timers.clear
   end
   #--------------------------------------------------------------------------
   # ● 显示
   #--------------------------------------------------------------------------
   def show
     @timers.each { |id, t| t.visible = true }
+    self.visible = true
   end
   #--------------------------------------------------------------------------
   # ● 隐藏
   #--------------------------------------------------------------------------
   def hide
     @timers.each { |id, t| t.visible = false }
+    self.visible = false
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新画面
+  #--------------------------------------------------------------------------
+  alias eagle_timer_ex_update update
+  def update
+    eagle_timer_ex_update
+    update_ex_new
+    update_ex_position
+  end
+  #--------------------------------------------------------------------------
+  # ● 新加入计数器精灵
+  #--------------------------------------------------------------------------
+  def update_ex_new
+    $game_timer.timers_ex.each do |id, t|
+      next if @timers.has_key?(id) || !t.working?
+      @timers[id] = Sprite_Timer_EX.new(@viewport, id, -1)
+      @timers[id].z = 200
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新显示位置
+  #--------------------------------------------------------------------------
+  def update_ex_position
+    # 从屏幕左上角开始，逐渐向下增加
+    index = -1 # 用于暂存当前屏幕坐标index
+    @timers.each do |id, t|
+      t.visible = $game_timer[id].display
+      next if !t.visible
+      t.update
+      index += 1
+      next if t.window_index == index # 位置不需要变动
+      t.window_index = index
+      _y = 50 + (t.height + 4) * t.window_index
+      if t.flag_new # 对于新创建的精灵，调整坐标
+        t.flag_new = false
+        t.set_xy(Graphics.width, _y)
+      end
+      t.set_des_xy(Graphics.width - t.width, _y)
+    end
   end
 end
-
-class Sprite_Timer_Single < Sprite
-  attr_accessor :window_index
+#==============================================================================
+# ○ Sprite_Timer_EX
+#==============================================================================
+class Sprite_Timer_EX < Sprite
+  attr_accessor :window_index, :flag_new
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
   def initialize(viewport, id, index)
+    @flag_new = true
     super(viewport)
     @id = id
     @window_index = index
-    @des_x = @des_y = 0
     create_bitmap
+    set_des_xy(0, 0)
     update
   end
   #--------------------------------------------------------------------------
@@ -267,26 +248,18 @@ class Sprite_Timer_Single < Sprite
   # ● 生成位图
   #--------------------------------------------------------------------------
   def create_bitmap
-    @bg_bitmap = Bitmap.new(90, 40)
-    EAGLE::DRAW_WINDOWSKIN.draw(@bg_bitmap, "Window_Timer")
-    _bitmap = Cache.system("Window_Timer"); _x = 48
-    while(_x < @bg_bitmap.width - 16)
-      @bg_bitmap.clear_rect(_x, 0, 16, 7)
-      @bg_bitmap.blt(_x, 2, _bitmap, Rect.new(0, 0, 16, 5))
-      @bg_bitmap.blt(_x, 0, _bitmap, Rect.new(90, 0, 16,7))
-      _x += 16
-    end
-    draw_icon(@bg_bitmap, $game_timer.icon(@id), 8, 8, true)
-    self.bitmap = Bitmap.new(90, 40)
-    #self.bitmap.font.size = 20
-    self.bitmap.font.color.set(255, 255, 255)
+    self.bitmap = Bitmap.new(130, 48)
+    @bg_bitmap = Bitmap.new(self.width, self.height)
+    # 生成背景
+    @bg_bitmap.gradient_fill_rect(@bg_bitmap.rect,
+      Color.new(0,0,0,0), Color.new(0,0,0))
   end
   #--------------------------------------------------------------------------
   # ● 绘制图标
   #     enabled : 有效的标志。false 的时候使用半透明效果绘制
   #--------------------------------------------------------------------------
   def draw_icon(bitmap, icon_index, x, y, enabled = true)
-    _bitmap = Cache.system("Iconset")
+    _bitmap = Cache.system( "Iconset" )
     rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
     bitmap.blt(x, y, _bitmap, rect, enabled ? 255 : 120)
   end
@@ -313,26 +286,43 @@ class Sprite_Timer_Single < Sprite
     update_xy
   end
   #--------------------------------------------------------------------------
-  # ● 更新源位图（Source Bitmap）
+  # ● 重绘
   #--------------------------------------------------------------------------
   def update_bitmap
-    if $game_timer.sec(@id) != @total_sec
-      @total_sec = $game_timer.sec(@id)
-      self.bitmap.clear
-      self.bitmap.blt(0, 0, @bg_bitmap, Rect.new(0,0,self.width,self.height))
-      text = sprintf("%02d:%02d", @total_sec / 60, @total_sec % 60)
-      self.bitmap.draw_text(34, 8, 48, 24, text, 1)
+    return if !$game_timer[@id].need_refresh
+    $game_timer[@id].need_refresh = false
+    self.bitmap.clear
+    self.bitmap.blt(0, 0, @bg_bitmap, self.bitmap.rect)
+
+    icon = $game_timer[@id].params[:icon]
+    t = $game_timer[@id].params[:text]
+    cy = t ? 0 : 12
+    w = icon ? self.width - 30 : self.width - 15
+
+    self.bitmap.font.size = 24
+    self.bitmap.font.color.set(255, 255, 255)
+    sec = $game_timer[@id].second
+    text = sprintf("%02d:%02d", sec / 60, sec % 60)
+    self.bitmap.draw_text(0, cy, w, 24, text, 2)
+
+    if icon
+      draw_icon(self.bitmap, icon, self.width - 24 - 3, cy, true)
+    end
+    if t
+      self.bitmap.font.size = 12
+      self.bitmap.font.color.set(200, 200, 200)
+      self.bitmap.draw_text(0, 24, self.width, 26, t, 2)
     end
   end
   #--------------------------------------------------------------------------
   # ● 更新位置
   #--------------------------------------------------------------------------
   def update_xy
-    3.times do
+    6.times do
       break if @des_x == self.x
       self.x += (@des_x > self.x ? 1 : -1)
     end
-    4.times do
+    5.times do
       break if @des_y == self.y
       self.y += (@des_y > self.y ? 1 : -1)
     end
