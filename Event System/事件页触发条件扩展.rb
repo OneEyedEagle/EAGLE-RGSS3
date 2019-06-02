@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventCondEX"] = true
 #=============================================================================
-# - 2019.5.27.23
+# - 2019.6.2.11 新增当前事件对象的引用
 #=============================================================================
 # - 本插件对事件页的出现条件进行了扩展，并新增了事件的独立变量（与独立开关一致）
 #----------------------------------------------------------------------------
@@ -31,6 +31,7 @@ $imported["EAGLE-EventCondEX"] = true
 #
 #   其中...替换成需要满足的条件的脚本字符串
 #   当 eval(...) 返回false时认为未满足条件
+#     可用 se 获取当前事件对象（如 se.id 为事件id，se.name 为事件名称）
 #     可用 s 代替 $game_switches，用 v 代替 $game_variables
 #     可用 p 代替 $game_player，用 m 代替 $game_party.members
 #     可用 e 代替 $game_map.events 或 $game_troop.members
@@ -115,6 +116,7 @@ class Game_Event
   def conditions_met?(page)
     return false if !eagle_event_cond_met(page)
     text = EAGLE.event_comment_head( page.list )
+    se = @event
     p = $game_player
     m = $game_party.members
     e = $game_map.events if SceneManager.scene_is?(Scene_Map)
