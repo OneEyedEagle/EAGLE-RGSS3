@@ -26,6 +26,9 @@
 #  示例：
 #     $game_message.choice_params[:i] = 1 # 下一次选项框的光标默认在第二个分支
 #------------------------------------------------------------------------------
+# - 在选择支内容中使用【对话框扩展】的转义符：
+#    可用 文本替换类 转义符
+#    可用 文本特效类 转义符
 #------------------------------------------------------------------------------
 # - 在选择支内容中新增条件扩展：
 #
@@ -226,8 +229,6 @@ class Window_ChoiceList < Window_Command
   def process_choice(text, i_e, i_w, apply_if = true)
     # 缩写
     s = $game_switches; v = $game_variables
-    # 替换rb{}
-    text.gsub!(/(?i:rb){(.*?)}/) { eval($1).to_s }
     # 判定if{}
     text.gsub!(/(?i:if){(.*?)}/) { "" }
     return false if apply_if && $1 && eval($1) == false # 跳过该选项的增加
@@ -254,7 +255,6 @@ class Window_ChoiceList < Window_Command
   def parse_extra_info(params, param_s, default_type)
     MESSAGE_EX.parse_param(params, param_s, default_type)
   end
-
   #--------------------------------------------------------------------------
   # ● 检查高度参数
   #--------------------------------------------------------------------------
@@ -380,18 +380,7 @@ class Window_ChoiceList < Window_Command
   # ● 获取指令名称
   #--------------------------------------------------------------------------
   def command_name(i)
-    t = @choices_info[i][:text] #@list[i][:name]
-    if i == @choice_auto_index
-      t = MESSAGE_EX.get_auto_cd_choice_text(t, @choice_auto_t) if @choice_auto_show
-      return MESSAGE_EX::CHOICE_AUTO_TEXT_OK_PREFIX + t if @choice_auto_ok
-    end
-    if @choices_auto_unable.has_key?(i) && @choices_auto_unable[i][:show]
-      t = MESSAGE_EX.get_auto_unable_choice_text(t, @choices_auto_unable[i][:t])
-    end
-    if @choices_auto_goto.has_key?(i) && @choices_auto_goto[i][:show]
-      t = MESSAGE_EX.get_auto_goto_choice_text(t, @choices_auto_goto[i][:t])
-    end
-    t
+    @choices_info[i][:text]
   end
   #--------------------------------------------------------------------------
   # ● 绘制项目
@@ -413,6 +402,14 @@ class Window_ChoiceList < Window_Command
   end
 
   #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    super
+    return if !self.active
+    @choices.each { |i, s| s.update }
+  end
+  #--------------------------------------------------------------------------
   # ● 更新光标
   #--------------------------------------------------------------------------
   alias eagle_choice_ex_update_cursor update_cursor
@@ -425,7 +422,6 @@ class Window_ChoiceList < Window_Command
       s.set_xy( r.x, y_ )
     end
   end
-
   #--------------------------------------------------------------------------
   # ● “确定”和“取消”的处理
   #--------------------------------------------------------------------------
@@ -454,111 +450,26 @@ class Window_ChoiceList < Window_Command
     $game_message.method_choice_result.call($game_message.choice_cancel_index)
     close
   end
-
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    super
-    return if !self.active
-    @choices.each { |i, s| s.update }
-    #update_auto_cd_choice if @choice_auto_t != 0
-    #update_auto_unable_choices if !@choices_auto_unable.empty?
-    #update_auto_goto_choices if !@choices_auto_goto.empty?
-  end
-=begin
-  #--------------------------------------------------------------------------
-  # ● 更新倒计时选项
-  #--------------------------------------------------------------------------
-  def update_auto_cd_choice
-    if @choice_auto_t > 0
-      @choice_auto_t -= 1
-      redraw_item(@choice_auto_index) if @choice_auto_show && @choice_auto_t % 60 == 0
-      process_auto_cd_choice(@choice_auto_index) if @choice_auto_t == 0
-    else
-      @choice_auto_t += 1
-      process_auto_cd_choice_ok if @choice_auto_t == 0
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 选择倒计时选项
-  #--------------------------------------------------------------------------
-  def process_auto_cd_choice(i)
-    @choice_auto_show = false
-    @choice_auto_ok = true
-    @list[@choice_auto_index][:enabled] = true
-
-    #update_size; refresh; update_placement # 重置大小的重绘
-    redraw_item(@choice_auto_index) # 单纯重绘
-
-    Sound.play_cursor
-    select(i)
-    self.top_row = i - (page_row_max - 1) / 2
-    @choice_auto_t = -60
-    @cursor_fix = true
-    @func_key_freeze = true
-  end
-  #--------------------------------------------------------------------------
-  # ● 决定倒计时选项
-  #--------------------------------------------------------------------------
-  def process_auto_cd_choice_ok
-    @choice_auto_t = 0
-    @choice_auto_ok = false
-    @cursor_fix = false
-    @func_key_freeze = false
-    deactivate
-    Sound.play_ok
-    $game_message.method_choice_result.call(@choices_info[@choice_auto_index][:i_e])
-    close
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新倒计时后禁选的选项
-  #--------------------------------------------------------------------------
-  def update_auto_unable_choices
-    temp = []
-    @choices_auto_unable.each do |i, v|
-      next temp.push(i) if v[:t] == 0
-      redraw_item(i) if v[:show] && v[:t] % 60 == 0
-      @choices_auto_unable[i][:t] -= 1
-    end
-    temp.each do |i|
-      @list[i][:enabled] = false
-      @choices_auto_unable.delete(i)
-      redraw_item(i)
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新倒计时后变换的选项
-  #--------------------------------------------------------------------------
-  def update_auto_goto_choices
-    temp = []
-    @choices_auto_goto.each do |i, v|
-      next temp.push(i) if v[:t] == 0
-      redraw_item(i) if v[:show] && v[:t] % 60 == 0
-      @choices_auto_goto[i][:t] -= 1
-    end
-    temp.each do |i|
-      i_e_new = @choices_auto_goto[i][:i_e]
-      process_choice($game_message.choices[i_e_new].dup, i_e_new, i, false)
-      @choices_auto_goto.delete(i)
-      cursor_rect.empty
-      update_size; refresh; update_placement
-      select(self.index)
-    end
-  end
-=end
 end
-
+#==============================================================================
+# ○ Spriteset_Choice
+#==============================================================================
 class Spriteset_Choice
   include MESSAGE_EX::CHARA_EFFECTS
+  #--------------------------------------------------------------------------
+  # ● 初始化
+  #--------------------------------------------------------------------------
   def initialize(choice_window, params = {})
     @choice_window = choice_window
     @charas = []
-    @chara_params = {}
+    @chara_effect_params = {}
     @chara_win_dx = 0
     @chara_win_dy = 0
     @visible = true
   end
+  #--------------------------------------------------------------------------
+  # ● 绑定
+  #--------------------------------------------------------------------------
   def message_window
     @choice_window.message_window
   end
@@ -568,30 +479,47 @@ class Spriteset_Choice
   def z
     @choice_window.z + 1
   end
-  def set_xy(x = nil, y = nil) # 设置文字组的起始位置（相对于窗口左上角）
+  #--------------------------------------------------------------------------
+  # ● 设置文字的左侧起始位置（相对于选项窗口的左上角）
+  #--------------------------------------------------------------------------
+  def set_xy(x = nil, y = nil)
     @chara_win_dx = x if x
     @chara_win_dy = y if y
   end
+  #--------------------------------------------------------------------------
+  # ● 绑定
+  #--------------------------------------------------------------------------
   def eagle_charas_x0
     @choice_window.x + @choice_window.standard_padding + @chara_win_dx
   end
   def eagle_charas_y0
     @choice_window.y + @choice_window.standard_padding + @chara_win_dy
   end
-  def set_visible(bool) # 设置文字组的显示状态
+  #--------------------------------------------------------------------------
+  # ● 设置文字的显示状态
+  #--------------------------------------------------------------------------
+  def set_visible(bool)
     @visible = bool
     @charas.each { |s| s.visible = bool }
   end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
   def update
     return unless @visible
     @fiber.resume if @fiber
     @charas.each { |s| s.update }
   end
+  #--------------------------------------------------------------------------
+  # ● 全部移出
+  #--------------------------------------------------------------------------
   def move_out
     @charas.each { |s| s.opacity = 0 if !s.visible; s.move_out }
     @charas.clear
   end
-
+  #--------------------------------------------------------------------------
+  # ● 绘制
+  #--------------------------------------------------------------------------
   def draw_text_ex(x, y, text, enabled = true)
     change_color(message_window.normal_color, enabled)
     text = message_window.convert_escape_characters(text)
@@ -633,7 +561,7 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   def eagle_new_chara_sprite(c, c_x, c_y, c_w, c_h)
     s = Sprite_EagleCharacter.new(self, c, c_x, c_y, c_w, c_h)
-    s.start_effects(@chara_params)
+    s.start_effects(@chara_effect_params)
     @charas.push(s)
     s
   end
@@ -649,8 +577,8 @@ class Spriteset_Choice
     if respond_to?(m_e)
       param = message_window.obtain_escape_param_string(text)
       # 当只传入 0 时，代表关闭该特效
-      return @chara_params.delete(temp_code.to_sym) if param == '0'
-      @chara_params[temp_code.to_sym] = param
+      return @chara_effect_params.delete(temp_code.to_sym) if param == '0'
+      @chara_effect_params[temp_code.to_sym] = param
       method(m_e).call(param)
       return
     end
