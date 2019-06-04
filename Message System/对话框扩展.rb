@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.5.23.17 注释优化
+# - 2019.6.4.17 新增文字池模块，用于接管需要移出的文字精灵的更新
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -863,7 +863,60 @@ module CHARA_EFFECTS
   end
   end
 end
+#==============================================================================
+# ○ 文字池（用于更新需要移出的文字精灵）
+#==============================================================================
+  #--------------------------------------------------------------------------
+  # ● 重置（每次Scene新建/释放时调用）
+  #--------------------------------------------------------------------------
+  def self.charapool_reset
+    @pool_charas ||= []
+    @pool_charas.each { |s| s.dispose }
+    @pool_charas.clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def self.charapool_update
+    @pool_charas.each { |s| s.update if !s.finish? }
+  end
+  #--------------------------------------------------------------------------
+  # ● 放入文字池中
+  #--------------------------------------------------------------------------
+  def self.charapool_push(s)
+    return s.dispose if s.finish?
+    @pool_charas.push(s)
+  end
 end # end of MESSAGE_EX
+#=============================================================================
+# ○ Scene_Base
+#=============================================================================
+class Scene_Base
+  #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  alias eagle_charapool_post_start post_start
+  def post_start
+    eagle_charapool_post_start
+    MESSAGE_EX.charapool_reset
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新画面（基础）
+  #--------------------------------------------------------------------------
+  alias eagle_charapool_update_basic update_basic
+  def update_basic
+    eagle_charapool_update_basic
+    MESSAGE_EX.charapool_update
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束处理
+  #--------------------------------------------------------------------------
+  alias eagle_charapool_terminate terminate
+  def terminate
+    eagle_charapool_terminate
+    MESSAGE_EX.charapool_reset
+  end
+end
 #=============================================================================
 # ○ Game_Message
 #=============================================================================
@@ -1162,8 +1215,7 @@ class Window_Message
   def close_and_wait
     eagle_message_sprites_move_out
     close
-    Fiber.yield until (all_close? && eagle_message_sprites_all_out?)
-    eagle_message_sprites_clear
+    Fiber.yield until all_close?
   end
   #--------------------------------------------------------------------------
   # ● 移出全部文字精灵
@@ -1171,22 +1223,10 @@ class Window_Message
   def eagle_message_sprites_move_out
     @eagle_chara_sprites.each do |c|
       c.move_out
-      c.update
+      c.update if !c.disposed?
       win_params[:cwo].times { Fiber.yield }
     end
-  end
-  #--------------------------------------------------------------------------
-  # ● 文字精灵全部移出？
-  #--------------------------------------------------------------------------
-  def eagle_message_sprites_all_out?
-    @eagle_chara_sprites.all? { |c| c.finish? }
-  end
-  #--------------------------------------------------------------------------
-  # ● 清除文字精灵
-  #--------------------------------------------------------------------------
-  def eagle_message_sprites_clear
-    @eagle_chara_sprites.each { |s| s.dispose }
-    @eagle_chara_sprites.clear
+    @eagle_chara_sprites.clear # 已经交由文字池进行后续更新释放
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -1194,7 +1234,6 @@ class Window_Message
   alias eagle_message_ex_dispose dispose
   def dispose
     eagle_message_ex_dispose
-    eagle_message_sprites_clear
     @eagle_face_bitmap.dispose if @eagle_face_bitmap
     @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
     @eagle_sprite_face.dispose
@@ -1601,10 +1640,23 @@ class Window_Message
       text = game_message.escape_strings.inject("") { |sum, s| sum = sum + s } + text
       game_message.escape_strings.clear
     end
-    text = eagle_process_conv(text)
-    text = eagle_process_rb(text)
-    text = convert_escape_characters(text) # 此处将 \\ 替换成了 \e
+    text = convert_escape_characters(text)
     text
+  end
+  #--------------------------------------------------------------------------
+  # ● 进行控制符的事前变换
+  #    在实际绘制前、将控制符替换为实际的内容。
+  #    为了减少歧异，文字「\」会被首先替换为转义符（\e）。
+  #--------------------------------------------------------------------------
+  alias eagle_convert_escape_characters convert_escape_characters
+  def convert_escape_characters(text)
+    result = text.to_s.clone
+    result = eagle_process_conv(result)
+    result = eagle_process_rb(result)
+    result = eagle_convert_escape_characters(result) # 此处将 \\ 替换成了 \e
+    result.gsub!(/\eINFO\[(\w)(\d+)\]/i) { MESSAGE_EX.get_data_info($1, $2.to_i) }
+    result.gsub!(/\enl|\enew_line/i) { "\n" } # 替换换行转义符
+    result
   end
   #--------------------------------------------------------------------------
   # ● 替换转义符（此时依旧是 \\ 开头的转义符）
@@ -1620,18 +1672,6 @@ class Window_Message
     s = $game_switches; v = $game_variables
     text.gsub!(/\\RB\{(.*?)\}/i) { eval($1).to_s }
     text
-  end
-  #--------------------------------------------------------------------------
-  # ● 进行控制符的事前变换
-  #    在实际绘制前、将控制符替换为实际的内容。
-  #    为了减少歧异，文字「\」会被首先替换为转义符（\e）。
-  #--------------------------------------------------------------------------
-  alias eagle_convert_escape_characters convert_escape_characters
-  def convert_escape_characters(text)
-    result = eagle_convert_escape_characters(text)
-    result.gsub!(/\eINFO\[(\w)(\d+)\]/i) { MESSAGE_EX.get_data_info($1, $2.to_i) }
-    result.gsub!(/\enl|\enew_line/i) { "\n" } # 替换换行转义符
-    result
   end
 
   #--------------------------------------------------------------------------
@@ -2716,12 +2756,17 @@ class Sprite_EagleCharacter < Sprite
     params[:vo] *= -1
   end
   def move_out
-    return move_out_uout(@params[:uout]) if !@params[:uout].nil?
-    return self.opacity = 0 if !need_move_out?
-    @dx = @dy = @_zoom = 0
-    self.ox = self.width / 2; self.oy = self.height / 2
-    @dx += self.ox; @dy += self.oy
-    @flag_move = :out
+    if need_move_out?
+      @dx = @dy = @_zoom = 0
+      self.ox = self.width / 2; self.oy = self.height / 2
+      @dx += self.ox; @dy += self.oy
+      @flag_move = :out
+    elsif !@params[:uout].nil?
+      move_out_uout(@params[:uout])
+    else
+      self.opacity = 0
+    end
+    MESSAGE_EX.charapool_push(self) # 由文字池接管后续更新
   end
   def need_move_out?
     !(@params[:cout].nil? || @params[:cout].empty?)
@@ -2956,7 +3001,7 @@ class Sprite_EaglePauseTag < Sprite
 end
 
 #=============================================================================
-# ○ 其余整合
+# ○ 其余修改
 #=============================================================================
 class << DataManager
   #--------------------------------------------------------------------------

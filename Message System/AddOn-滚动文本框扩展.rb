@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.5.23.17 统一pos变量效果
+# - 2019.6.4.16 新增文字池模块，用于接管需要移出的文字精灵的更新
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -285,24 +285,10 @@ class Window_ScrollText < Window_Base
   def chara_sprites_move_out
     @eagle_chara_sprites.each do |c|
       c.move_out
-      c.update
+      c.update if !c.disposed?
       win_params[:cwo].times { Fiber.yield }
     end
-  end
-  #--------------------------------------------------------------------------
-  # ● 释放
-  #--------------------------------------------------------------------------
-  def dispose
-    eagle_sprites_clear
-    super
-  end
-  #--------------------------------------------------------------------------
-  # ● 清除精灵
-  #--------------------------------------------------------------------------
-  def eagle_sprites_clear
-    @eagle_chara_sprites.each { |c| c.dispose }
-    @eagle_chara_sprites.clear
-    @eagle_sprite_pause.dispose
+    @eagle_chara_sprites.clear # 文字池接管更新
   end
   #--------------------------------------------------------------------------
   # ● 更新画面
@@ -330,11 +316,7 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   def update_eagle_sprites
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
-    if !@eagle_chara_sprites.empty?
-      flag = true
-      @eagle_chara_sprites.each { |c| (c.update; flag = false) if c.visible }
-      eagle_charas_clear if flag
-    end
+    @eagle_chara_sprites.each { |c| c.update }
   end
   #--------------------------------------------------------------------------
   # ● 更新并行线程

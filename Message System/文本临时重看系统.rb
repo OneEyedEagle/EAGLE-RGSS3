@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-TextReview"] = true
 #==============================================================================
-# - 2019.4.15.19 再次整合 对话框扩展 插件
+# - 2019.6.4.17 删去重复语句
 #==============================================================================
 # - 本插件提供了一个完整的指定文本的临时重看系统
 # - 注意：
@@ -230,11 +230,6 @@ class TextReview_Data
     @text = text
     message_window = SceneManager.scene.message_window rescue nil
     if message_window
-      if $imported["EAGLE-MessageEX"]
-        @text = message_window.eagle_process_conv(@text)
-        @text = message_window.eagle_process_conv(@text)
-        @text = message_window.eagle_process_rb(@text)
-      end
       @text = message_window.convert_escape_characters(@text)
     end
     @params = params
