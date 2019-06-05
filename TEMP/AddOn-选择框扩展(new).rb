@@ -2,11 +2,14 @@
 # ■ Add-On 选择框扩展(new) by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.6.4.21
+# - 2019.6.5.11
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
+#
 #     i → 【默认】【重置】设置选择框光标初始所在的选择支
 #         （从0开始计数，-1代表不选择）（按实际显示顺序）
+#
+#   （窗口属性）
 #     o → 选择框的显示原点类型（九宫格小键盘）（默认7）（嵌入时固定为7）
 #     x/y → 直接指定选择框的坐标（默认不设置）（利用参数重置进行清除）
 #     do → 选择框的显示位置类型（覆盖x/y）（默认-10无效）
@@ -16,10 +19,20 @@
 #     w → 选择框的宽度（默认0不设置）（嵌入时该设置无效）
 #         （不小于全部选项完整显示的最小宽度）
 #     h → 选择框的高度（默认0不设置）（若小于行高，则识别为行数）
-#     ali → 选项文本的对齐方式（0左对齐，1居中，2右对齐）（默认0左对齐）
 #     opa → 选择框的背景不透明度（默认255）（文字内容不透明度固定为255）
 #         （嵌入时不显示窗口背景）
 #     skin → 选择框皮肤类型（默认取对话框皮肤）（见index → 窗口皮肤文件名 的映射）
+#
+#   （选项属性）
+#     cd  → 设置倒计时的秒数，倒计时结束时，自动选择取消选项（取消项必须有效）
+#     ali → 选项文本的对齐方式（0左对齐，1居中，2右对齐）（默认0左对齐）
+#     cit → 选项移入时，字与字的间隔帧数
+#
+#   （特殊）
+#     charas → 定义预设开启的文字特效（文字特效转义符sym 到 变量参数字符串 的hash）
+#              （只能在脚本中进行赋值）
+#              （如：$game_message.choice_params[:charas][:cin] = 1
+#                    # 用 对话框扩展 中的预设参数设置选择支移入方式）
 #
 #------------------------------------------------------------------------------
 # - 在脚本中利用 $game_message.choice_params[sym] = value 对指定参数赋值
@@ -76,6 +89,7 @@ module MESSAGE_EX
   CHOICE_PARAMS_INIT = {
   # \choice[]
     :i => 0, # 初始光标位置
+    # 窗口属性
     :o => 7, # 原点类型
     :x => nil,
     :y => nil,
@@ -84,9 +98,14 @@ module MESSAGE_EX
     :dy => 0,
     :w => 0,
     :h => 0,
-    :ali => 0, # 选项对齐方式
     :opa => 255, # 背景不透明度
     :skin => nil, # 皮肤类型（nil时代表跟随对话框）
+    # 选项属性
+    :cd => 0, # 倒计时结束后选择取消项（秒数）
+    :ali => 0, # 选项对齐方式
+    :cit => 0, # 文字显示的间隔帧数
+    # 文字特效预设
+    :charas => { :cin => "", :cout => "" },
   }
 end
 #==============================================================================
@@ -171,6 +190,7 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   alias eagle_choicelist_ex_close close
   def close
+    @choices.each { |i, s| s.move_out }
     eagle_reset
     eagle_choicelist_ex_close
   end
@@ -178,7 +198,6 @@ class Window_ChoiceList < Window_Command
   # ● 重置
   #--------------------------------------------------------------------------
   def eagle_reset
-    @choices.each { |i, s| s.move_out }
     @choices_info.clear
     # 重置对话框wh增量
     @message_window_w_add = @message_window_h_add = 0
@@ -189,7 +208,6 @@ class Window_ChoiceList < Window_Command
   # ● 开始输入的处理（覆盖）
   #--------------------------------------------------------------------------
   def start
-    self.z = @message_window.z + 10
     process_choice_list
     update_size
     refresh
@@ -323,6 +341,7 @@ class Window_ChoiceList < Window_Command
       end
       @message_window.eagle_process_draw_update
     end
+    self.z = @message_window.z + 10 # 在文字绘制之前，保证文字精灵的z值
   end
   #--------------------------------------------------------------------------
   # ● 更新窗口的位置（覆盖）
@@ -366,6 +385,15 @@ class Window_ChoiceList < Window_Command
     self.opacity = $game_message.choice_params[:opa]
     self.opacity = 0 if @message_window.open? && $game_message.choice_params[:do] == 0
     self.contents_opacity = 255
+    if cancel_enabled? && $game_message.choice_params[:cd] > 0
+      if $imported["EAGLE-TimerEX"]
+        p1 = { :text => "选择倒计时...", :icon => 280, :eval => "v[1]+=1" }
+        $game_timer[:choice_cd].start($game_message.choice_params[:cd] * 60, p1)
+      else
+      end
+    else
+      $game_message.choice_params[:cd] = 0
+    end
   end
 
   #--------------------------------------------------------------------------
@@ -395,19 +423,10 @@ class Window_ChoiceList < Window_Command
     when 2; x_ = rect.x + dw
     end
     @choices[index] = Spriteset_Choice.new(self)
-    @choices[index].set_xy(rect.x, rect.y)
-    @choices[index].draw_text_ex(2, 3, command_name(index), command_enabled?(index))
+    @choices[index].set_xy(x_, rect.y)
+    @choices[index].set_enabled(command_enabled?(index))
+    @choices[index].draw_text_ex(2, 3, command_name(index))
     @choices[index].update
-    @choices[index].set_visible(false) if rect.y > self.height
-  end
-
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    super
-    return if !self.active
-    @choices.each { |i, s| s.update }
   end
   #--------------------------------------------------------------------------
   # ● 更新光标
@@ -422,6 +441,28 @@ class Window_ChoiceList < Window_Command
       s.set_xy( r.x, y_ )
     end
   end
+
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    super
+    return if !self.active
+    @choices.each { |i, s| s.update }
+    check_countdown if $game_message.choice_params[:cd] > 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查倒计时
+  #--------------------------------------------------------------------------
+  def check_countdown
+    if $imported["EAGLE-TimerEX"]
+      return if !$game_timer[:choice_cd].finish?
+      deactivate
+      call_cancel_handler
+    else
+    end
+  end
+
   #--------------------------------------------------------------------------
   # ● “确定”和“取消”的处理
   #--------------------------------------------------------------------------
@@ -456,25 +497,25 @@ end
 #==============================================================================
 class Spriteset_Choice
   include MESSAGE_EX::CHARA_EFFECTS
+  attr_reader :font
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
-  def initialize(choice_window, params = {})
+  def initialize(choice_window)
     @choice_window = choice_window
     @charas = []
-    @chara_effect_params = {}
+    @chara_effect_params = $game_message.choice_params[:charas].dup
     @chara_win_dx = 0
     @chara_win_dy = 0
+    @font = @choice_window.contents.font.dup # 每个选项存储独立的font对象
     @visible = true
+    @enabled = true
   end
   #--------------------------------------------------------------------------
   # ● 绑定
   #--------------------------------------------------------------------------
   def message_window
     @choice_window.message_window
-  end
-  def contents
-    @choice_window.contents
   end
   def z
     @choice_window.z + 1
@@ -503,12 +544,18 @@ class Spriteset_Choice
     @charas.each { |s| s.visible = bool }
   end
   #--------------------------------------------------------------------------
-  # ● 更新
+  # ● 设置选项的可选状态
   #--------------------------------------------------------------------------
-  def update
-    return unless @visible
-    @fiber.resume if @fiber
-    @charas.each { |s| s.update }
+  def set_enabled(bool)
+    @enabled = bool
+    change_color(font.color)
+  end
+  #--------------------------------------------------------------------------
+  # ● 更改内容绘制颜色
+  #--------------------------------------------------------------------------
+  def change_color(color)
+    font.color.set(color)
+    font.color.alpha = 120 unless @enabled
   end
   #--------------------------------------------------------------------------
   # ● 全部移出
@@ -518,13 +565,21 @@ class Spriteset_Choice
     @charas.clear
   end
   #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    return unless @visible
+    @fiber.resume if @fiber
+    @charas.each { |s| s.update }
+  end
+  #--------------------------------------------------------------------------
   # ● 绘制
   #--------------------------------------------------------------------------
-  def draw_text_ex(x, y, text, enabled = true)
-    change_color(message_window.normal_color, enabled)
-    text = message_window.convert_escape_characters(text)
-    pos = {:x => x, :y => y, :height => 24}
+  def draw_text_ex(x, y, text)
     @fiber = Fiber.new {
+      change_color(message_window.normal_color)
+      text = message_window.convert_escape_characters(text)
+      pos = {:x => x, :y => y, :height => 24}
       process_character(text.slice!(0, 1), text, pos) until text.empty?
       @fiber = nil
     }
@@ -543,6 +598,7 @@ class Spriteset_Choice
       process_escape_character(message_window.obtain_escape_code(text), text, pos)
     else        # 普通文字
       process_normal_character(c, pos)
+      process_draw_success
     end
   end
   #--------------------------------------------------------------------------
@@ -554,7 +610,6 @@ class Spriteset_Choice
     s = eagle_new_chara_sprite(c, pos[:x], pos[:y], c_w, c_h)
     s.bitmap.draw_text(0, 0, c_w, c_h, c, 0)
     pos[:x] += c_w
-    5.times { Fiber.yield }
   end
   #--------------------------------------------------------------------------
   # ● （封装）生成一个新的文字精灵
@@ -587,6 +642,7 @@ class Spriteset_Choice
       change_color(@choice_window.text_color(message_window.obtain_escape_param(text)))
     when 'I'
       process_draw_icon(message_window.obtain_escape_param(text), pos)
+      process_draw_success
     end
   end
   #--------------------------------------------------------------------------
@@ -600,12 +656,10 @@ class Spriteset_Choice
     pos[:x] += 24
   end
   #--------------------------------------------------------------------------
-  # ● 更改内容绘制颜色
-  #     enabled : 有效的标志。false 的时候使用半透明效果绘制
+  # ● 成功绘制后的处理
   #--------------------------------------------------------------------------
-  def change_color(color, enabled = true)
-    @choice_window.contents.font.color.set(color)
-    @choice_window.contents.font.color.alpha = 120 unless enabled
+  def process_draw_success
+    $game_message.choice_params[:cit].times { Fiber.yield }
   end
 end
 
@@ -623,7 +677,10 @@ class Game_Interpreter
     # 绑定返回方法
     $game_message.method_choice_result = method(:eagle_choice_result)
     # 设置取消分支的类型
+    #（对于params[1]）
     # 0 代表取消无效，1 ~ size 代表取消时进入对应分支，size+1 代表进入取消专用分支
+    #（对于choice_cancel_index）
+    # -1 代表无效，0 ~ size-1 代表对应分支，size代表取消分支
     $game_message.choice_cancel_index = params[1] - 1
     $game_message.choice_cancel_index = params[0].size if index_cancel >= 0
   end

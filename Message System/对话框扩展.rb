@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.6.4.17 新增文字池模块，用于接管需要移出的文字精灵的更新
+# - 2019.6.5.11 文字精灵调用独立Font对象
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1114,7 +1114,7 @@ class Window_Message
   # ● 初始化参数
   #--------------------------------------------------------------------------
   def eagle_message_init_params
-    self.arrows_visible = false # contents未完全显示时出现的箭头
+    self.arrows_visible = false # 内容位图未完全显示时出现的箭头
     @in_map = SceneManager.scene_is?(Scene_Map) # 地图场景中？
     @in_battle = SceneManager.scene_is?(Scene_Battle) # 战斗场景中？
     @pop_on_map_chara = true # pop绑定的对象为地图场景上的行走图？
@@ -1128,6 +1128,12 @@ class Window_Message
   #--------------------------------------------------------------------------
   def game_message
     $game_message
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取字体对象
+  #--------------------------------------------------------------------------
+  def font
+    self.contents.font
   end
   #--------------------------------------------------------------------------
   # ● 拷贝自身
@@ -1739,7 +1745,7 @@ class Window_Message
   # ● （覆盖）计算行高
   #--------------------------------------------------------------------------
   def calc_line_height(text, restore_font_size = true)
-    contents.font.size
+    self.font.size
   end
   #--------------------------------------------------------------------------
   # ● 计算文字区域最终绘制完成时的宽度高度
@@ -2281,13 +2287,13 @@ class Window_Message
   def eagle_text_control_font(param = "")
     parse_param(game_message.font_params, param, :size)
 
-    self.contents.font.size = game_message.font_params[:size]
-    self.contents.font.italic = MESSAGE_EX.check_bool(game_message.font_params[:i])
-    self.contents.font.bold = MESSAGE_EX.check_bool(game_message.font_params[:b])
-    self.contents.font.shadow = MESSAGE_EX.check_bool(game_message.font_params[:s])
-    self.contents.font.color.alpha = game_message.font_params[:ca]
-    self.contents.font.outline = MESSAGE_EX.check_bool(game_message.font_params[:o])
-    self.contents.font.out_color.set(game_message.font_params[:or],
+    font.size = game_message.font_params[:size]
+    font.italic = MESSAGE_EX.check_bool(game_message.font_params[:i])
+    font.bold = MESSAGE_EX.check_bool(game_message.font_params[:b])
+    font.shadow = MESSAGE_EX.check_bool(game_message.font_params[:s])
+    font.color.alpha = game_message.font_params[:ca]
+    font.outline = MESSAGE_EX.check_bool(game_message.font_params[:o])
+    font.out_color.set(game_message.font_params[:or],
       game_message.font_params[:og],game_message.font_params[:ob],
       game_message.font_params[:oa])
     game_message.font_params[:l] = MESSAGE_EX.check_bool(game_message.font_params[:l])
@@ -2298,15 +2304,15 @@ class Window_Message
   # ● （覆盖）放大字体尺寸
   #--------------------------------------------------------------------------
   def make_font_bigger
-    contents.font.size += 4 if contents.font.size <= 64
-    game_message.font_params[:size] = contents.font.size
+    font.size += 4 if font.size <= 64
+    game_message.font_params[:size] = font.size
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）缩小字体尺寸
   #--------------------------------------------------------------------------
   def make_font_smaller
-    contents.font.size -= 4 if contents.font.size >= 16
-    game_message.font_params[:size] = contents.font.size
+    font.size -= 4 if font.size >= 16
+    game_message.font_params[:size] = font.size
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）更改内容绘制颜色
@@ -2314,7 +2320,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def change_color(color, enabled = true)
     super(color, enabled)
-    game_message.font_params[:ca] = self.contents.font.color.alpha
+    game_message.font_params[:ca] = font.color.alpha
   end
   #--------------------------------------------------------------------------
   # ● 检查高度参数
@@ -2624,7 +2630,7 @@ class Sprite_EagleCharacter < Sprite
   def reset(x, y, w, h)
     self.bitmap.dispose if self.bitmap
     self.bitmap = Bitmap.new(w, h)
-    self.bitmap.font = @message_window.contents.font.dup
+    self.bitmap.font = @message_window.font.dup
     @origin_x = x; @origin_y = y # 存储左对齐时，文字的显示位置（作为标准位置）
     reset_xy(x, y)
     @dx = @dy = 0 # 移动的实时偏移值
