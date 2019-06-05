@@ -2,7 +2,7 @@
 # ■ Add-On 选择框扩展(new) by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.6.5.11
+# - 2019.6.5.15 新增倒计时自动选择
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -25,6 +25,7 @@
 #
 #   （选项属性）
 #     cd  → 设置倒计时的秒数，倒计时结束时，自动选择取消选项（取消项必须有效）
+#          （使用默认计时器；若有【计时器扩展 by老鹰】，则占用 :choice_cd 标志符）
 #     ali → 选项文本的对齐方式（0左对齐，1居中，2右对齐）（默认0左对齐）
 #     cit → 选项移入时，字与字的间隔帧数
 #
@@ -40,7 +41,8 @@
 #     $game_message.choice_params[:i] = 1 # 下一次选项框的光标默认在第二个分支
 #------------------------------------------------------------------------------
 # - 在选择支内容中使用【对话框扩展】的转义符：
-#    可用 文本替换类 转义符
+#    可用 \c[i] 与 \i[i] 转义符
+#    可用 文本替换类 转义符（换行转义符无效）
 #    可用 文本特效类 转义符
 #------------------------------------------------------------------------------
 # - 在选择支内容中新增条件扩展：
@@ -74,7 +76,7 @@
 #      $game_message.reset_params(:choice, code_string)
 #------------------------------------------------------------------------------
 # - 注意：
-#    ·VA默认选择框位置与对话框相关，而 对话框扩展 中对话框初始位置未知，
+#    ·VA默认选择框位置与对话框相关，而【对话框扩展 by老鹰】中对话框初始位置未知，
 #      本插件将选择框的默认位置改成了o7时屏幕居中偏下的位置
 #==============================================================================
 
@@ -186,15 +188,6 @@ class Window_ChoiceList < Window_Command
     eagle_choicelist_ex_init(message_window)
   end
   #--------------------------------------------------------------------------
-  # ● 关闭
-  #--------------------------------------------------------------------------
-  alias eagle_choicelist_ex_close close
-  def close
-    @choices.each { |i, s| s.move_out }
-    eagle_reset
-    eagle_choicelist_ex_close
-  end
-  #--------------------------------------------------------------------------
   # ● 重置
   #--------------------------------------------------------------------------
   def eagle_reset
@@ -209,24 +202,13 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   def start
     process_choice_list
-    update_size
+    reset_size
     refresh
     update_placement
-    update_params_ex
+    reset_params_ex
     set_init_select
     open
     activate
-  end
-  #--------------------------------------------------------------------------
-  # ● 设置初始选项位置
-  #--------------------------------------------------------------------------
-  def set_init_select
-    i = $game_message.choice_params[:i]
-    if i < 0
-      unselect
-      return self.oy = 0
-    end
-    select(i)
   end
   #--------------------------------------------------------------------------
   # ● 处理选项列表
@@ -262,34 +244,20 @@ class Window_ChoiceList < Window_Command
     # 判定ex{}
     @choices_info[i_w][:extra] = {}
     text.gsub!(/(?i:ex){(.*?)}/) { "" }
-    parse_extra_info(@choices_info[i_w][:extra], $1, :ali) if $1
+    MESSAGE_EX.parse_param(@choices_info[i_w][:extra], $1, :ali) if $1
     # 存储绘制的原始文本（去除全部判定文本）
     @choices_info[i_w][:text] = text
+    # 计算原始文本占用的绘制宽度
+    @choices_info[i_w][:width] = cal_width_line(text)
     return true # 成功设置一个需要显示的选项的信息
-  end
-  #--------------------------------------------------------------------------
-  # ● 分析额外设置参数
-  #--------------------------------------------------------------------------
-  def parse_extra_info(params, param_s, default_type)
-    MESSAGE_EX.parse_param(params, param_s, default_type)
-  end
-  #--------------------------------------------------------------------------
-  # ● 检查高度参数
-  #--------------------------------------------------------------------------
-  def eagle_check_param_h(h)
-    return 0 if h <= 0
-    # 如果h小于行高，则判定其为行数
-    return line_height * h if h < line_height
-    return h
   end
   #--------------------------------------------------------------------------
   # ● 计算文本块的最大宽度（不计算\{\}转义符造成的影响）
   #--------------------------------------------------------------------------
   def cal_width_line(text)
-    reset_font_settings
     text_clone, array_width = text.dup, []
     text_clone.each_line do |line|
-      line = convert_escape_characters(line)
+      line = @message_window.convert_escape_characters(line)
       line.gsub!(/\n/){ "" }; line.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i){ "" }
       icon_length = 0; line.gsub!(/\ei\[\d+\]/i){ icon_length += 24; "" }
       line.gsub!(/\e\w+\[.*?\]/i){ "" } # 清除掉全部的\w[wd]格式转义符
@@ -298,15 +266,12 @@ class Window_ChoiceList < Window_Command
     array_width.max
   end
   #--------------------------------------------------------------------------
-  # ● 更新窗口的大小
+  # ● 设置窗口大小
   #--------------------------------------------------------------------------
-  def update_size
-    @choices_num.times do |i|
-      @choices_info[i][:width] = cal_width_line( command_name(i) )
-    end
+  def reset_size
     # 窗口高度
     self.height = fitting_height(@choices_num)
-    h = eagle_check_param_h($game_message.choice_params[:h])
+    h = @message_window.eagle_check_param_h($game_message.choice_params[:h])
     self.height = h + standard_padding * 2 if h > 0
     # 窗口宽度
     width_min = @choices_info.values.collect {|v| v[:width]}.max + 8
@@ -341,7 +306,7 @@ class Window_ChoiceList < Window_Command
       end
       @message_window.eagle_process_draw_update
     end
-    self.z = @message_window.z + 10 # 在文字绘制之前，保证文字精灵的z值
+    self.z = @message_window.z + 10 # 在文字绘制之前设置，保证文字精灵的z值
   end
   #--------------------------------------------------------------------------
   # ● 更新窗口的位置（覆盖）
@@ -370,11 +335,12 @@ class Window_ChoiceList < Window_Command
     MESSAGE_EX.reset_xy_origin(self, o)
     self.x += $game_message.choice_params[:dx]
     self.y += $game_message.choice_params[:dy]
+    self.ox = self.oy = 0
   end
   #--------------------------------------------------------------------------
-  # ● 更新其他属性
+  # ● 设置其他属性
   #--------------------------------------------------------------------------
-  def update_params_ex
+  def reset_params_ex
     skin = $game_message.choice_params[:skin]
     if $game_message.pop? && !$game_message.pop_params[:skin].nil?
       skin ||= $game_message.pop_params[:skin]
@@ -385,33 +351,48 @@ class Window_ChoiceList < Window_Command
     self.opacity = $game_message.choice_params[:opa]
     self.opacity = 0 if @message_window.open? && $game_message.choice_params[:do] == 0
     self.contents_opacity = 255
+
     if cancel_enabled? && $game_message.choice_params[:cd] > 0
+      count = $game_message.choice_params[:cd] * 60
       if $imported["EAGLE-TimerEX"]
-        p1 = { :text => "选择倒计时...", :icon => 280, :eval => "v[1]+=1" }
-        $game_timer[:choice_cd].start($game_message.choice_params[:cd] * 60, p1)
+        p1 = { :text => "选择倒计时...", :icon => 280 }
+        $game_timer[:choice_cd].start(count, p1)
       else
+        $game_timer.start(count)
       end
     else
       $game_message.choice_params[:cd] = 0
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置初始选项位置
+  #--------------------------------------------------------------------------
+  def set_init_select
+    i = $game_message.choice_params[:i]
+    return unselect if i < 0
+    select(i)
   end
 
   #--------------------------------------------------------------------------
   # ● 生成指令列表（覆盖）
   #--------------------------------------------------------------------------
   def make_command_list
-    @choices_info.each do |i, v|
-      add_command(v[:text], :choice, v[:enable])
-    end
+    @choices_info.each { |i, v| add_command(v[:text], :choice, v[:enable]) }
   end
   #--------------------------------------------------------------------------
-  # ● 获取指令名称
+  # ● 获取指令名称（覆盖）
   #--------------------------------------------------------------------------
-  def command_name(i)
-    @choices_info[i][:text]
+  def command_name(index)
+    @choices_info[index][:text]
   end
   #--------------------------------------------------------------------------
-  # ● 绘制项目
+  # ● 获取指令的有效状态（覆盖）
+  #--------------------------------------------------------------------------
+  def command_enabled?(index)
+    @choices_info[index][:enable]
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制项目（覆盖）
   #--------------------------------------------------------------------------
   def draw_item(index)
     rect = item_rect_for_text(index)
@@ -443,26 +424,48 @@ class Window_ChoiceList < Window_Command
   end
 
   #--------------------------------------------------------------------------
-  # ● 更新
+  # ● 更新（覆盖）
   #--------------------------------------------------------------------------
   def update
     super
     return if !self.active
     @choices.each { |i, s| s.update }
-    check_countdown if $game_message.choice_params[:cd] > 0
+    check_cd_auto if $game_message.choice_params[:cd] > 0
+    #check_cd_replace if $game_message.choice_params[:cd] > 0
   end
   #--------------------------------------------------------------------------
-  # ● 检查倒计时
+  # ● 检查倒计时后自动选择
   #--------------------------------------------------------------------------
-  def check_countdown
+  def check_cd_auto
     if $imported["EAGLE-TimerEX"]
       return if !$game_timer[:choice_cd].finish?
-      deactivate
-      call_cancel_handler
     else
+      return if $game_timer.sec > 0
     end
+    deactivate
+    call_cancel_handler
   end
-
+  #--------------------------------------------------------------------------
+  # ● 检查倒计时后替换 #TODO
+  #--------------------------------------------------------------------------
+  def check_cd_replace
+    if $imported["EAGLE-TimerEX"]
+      return if !$game_timer[:choice_cd].finish?
+    else
+      return if $game_timer.sec > 0
+    end
+    replace_choice(3, 2)
+    $game_message.choice_params[:cd] = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 用事件中i_e_new号选项分支替换窗口中i_w号选项
+  #--------------------------------------------------------------------------
+  def replace_choice(i_e_new, i_w)
+    @choices[i_w].move_out
+    process_choice($game_message.choices[i_e_new].dup, i_e_new, i_w, false)
+    redraw_item(i_w)
+    reset_size; update_placement # 更新窗口大小和位置
+  end
   #--------------------------------------------------------------------------
   # ● “确定”和“取消”的处理
   #--------------------------------------------------------------------------
@@ -490,6 +493,20 @@ class Window_ChoiceList < Window_Command
   def call_cancel_handler
     $game_message.method_choice_result.call($game_message.choice_cancel_index)
     close
+  end
+  #--------------------------------------------------------------------------
+  # ● 关闭
+  #--------------------------------------------------------------------------
+  alias eagle_choicelist_ex_close close
+  def close
+    @choices.each { |i, s| s.move_out }
+    eagle_reset
+    eagle_choicelist_ex_close
+    if $imported["EAGLE-TimerEX"]
+      $game_timer[:choice_cd].stop
+    else
+      $game_timer.stop
+    end
   end
 end
 #==============================================================================
@@ -563,6 +580,12 @@ class Spriteset_Choice
   def move_out
     @charas.each { |s| s.opacity = 0 if !s.visible; s.move_out }
     @charas.clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 应用文本特效
+  #--------------------------------------------------------------------------
+  def start_effects(params)
+    @charas.each { |s| s.start_effects(params) }
   end
   #--------------------------------------------------------------------------
   # ● 更新
