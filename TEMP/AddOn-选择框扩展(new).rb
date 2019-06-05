@@ -2,7 +2,7 @@
 # ■ Add-On 选择框扩展(new) by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.6.5.15 新增倒计时自动选择
+# - 2019.6.6.0 新增 倒计时后选项替换
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -24,7 +24,8 @@
 #     skin → 选择框皮肤类型（默认取对话框皮肤）（见index → 窗口皮肤文件名 的映射）
 #
 #   （选项属性）
-#     cd  → 设置倒计时的秒数，倒计时结束时，自动选择取消选项（取消项必须有效）
+#     cd  → 设置倒计时的秒数，倒计时结束时，自动选择取消选项
+#          （必须有被设置为 取消 情况的分支；同时该分支的可选条件en{}需要为true）
 #          （使用默认计时器；若有【计时器扩展 by老鹰】，则占用 :choice_cd 标志符）
 #     ali → 选项文本的对齐方式（0左对齐，1居中，2右对齐）（默认0左对齐）
 #     cit → 选项移入时，字与字的间隔帧数
@@ -65,6 +66,12 @@
 #
 # - 对 params 的解析：由 变量名 + 数字 构成（同 对话框扩展 中的变量参数字符串）
 #     ali → 【默认】设置该选择支的对齐方式（覆盖选择框的设置）
+#   （选项替换）
+#     ri → 设置替换的目标选项的事件中序号
+#          （从0开始计数，只看事件列表中的顺序，未显示的也计算）
+#          （取消分支的序号为事件列表的最后一个，中途的取消分支请全部忽略）
+#          （若传入 -1 则代表该选项变为无效）
+#     rt → 设置倒计时的秒数，在倒计时结束后，当前选项将替换成事件中ri号选项
 #
 # - 示例：
 #     选项内容ex{ali1} → 该选择支居中对齐绘制
@@ -114,7 +121,8 @@ end
 # ○ Game_Message
 #==============================================================================
 class Game_Message
-  attr_accessor :choice_params, :method_choice_result, :choice_cancel_index
+  attr_accessor :choice_params, :method_choice_result
+  attr_accessor :choice_cancel_i_e, :choice_cancel_i_w
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -122,7 +130,8 @@ class Game_Message
   def initialize
     eagle_choicelist_ex_init
     set_default_params
-    @choice_cancel_index = -1 # 取消分支的判别序号（事件中序号）
+    @choice_cancel_i_e = -1 # 取消分支的判别序号（事件中序号）
+    @choice_cancel_i_w = -1 # 取消分支的序号（窗口中序号）
   end
   #--------------------------------------------------------------------------
   # ● 清除
@@ -178,7 +187,7 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   alias eagle_choicelist_ex_init initialize
   def initialize(message_window)
-    @choices = {}
+    @choices = {} # 选择支的窗口序号 => 选择支精灵组
     @choices_info = {} # 选择支的窗口序号 => 信息组
     @choices_num = 0 # 存储总共显示出的选项数目
 
@@ -219,6 +228,10 @@ class Window_ChoiceList < Window_Command
       i += 1 if process_choice(text.dup, index, i, true)
     end
     @choices_num = i
+    # 查找取消分支的窗口序号
+    #（若取消分支为独立分支，则不改变i_w的值，仍然为 -1）
+    choice = @choices_info.find{|i, e| e[:i_e] == $game_message.choice_cancel_i_e}
+    $game_message.choice_cancel_i_w = choice[0] if choice
   end
   #--------------------------------------------------------------------------
   # ● 处理指定选项
@@ -237,10 +250,10 @@ class Window_ChoiceList < Window_Command
     @choices_info[i_w][:i_e] = i_e # 存储该选择支在事件页里的序号
     # 判定en{}
     text.gsub!(/(?i:en){(.*?)}/) { "" }
-    @choices_info[i_w][:enable] = $1.nil? || eval($1) == true # 初始的启用状态
+    @choices_info[i_w][:enable] = $1.nil? || eval($1) == true # 可选状态
     # 判定cl{}
     text.gsub!(/(?i:cl){(.*?)}/) { "" }
-    $game_message.choice_cancel_index = i_e if $1 && eval($1) == true
+    $game_message.choice_cancel_i_e = i_e if $1 && eval($1) == true
     # 判定ex{}
     @choices_info[i_w][:extra] = {}
     text.gsub!(/(?i:ex){(.*?)}/) { "" }
@@ -263,7 +276,7 @@ class Window_ChoiceList < Window_Command
       line.gsub!(/\e\w+\[.*?\]/i){ "" } # 清除掉全部的\w[wd]格式转义符
       array_width.push(text_size(line).width + icon_length)
     end
-    array_width.max
+    array_width.max || 0
   end
   #--------------------------------------------------------------------------
   # ● 设置窗口大小
@@ -276,7 +289,8 @@ class Window_ChoiceList < Window_Command
     # 窗口宽度
     width_min = @choices_info.values.collect {|v| v[:width]}.max + 8
     self.width = width_min + standard_padding * 2
-    self.width = $game_message.choice_params[:w] if $game_message.choice_params[:w] > self.width
+    w_limit = $game_message.choice_params[:w]
+    self.width = w_limit if w_limit > self.width
     # 嵌入时宽度最小值（不含边界）
     width_min = self.width - standard_padding * 2
 
@@ -349,7 +363,9 @@ class Window_ChoiceList < Window_Command
     end
     self.windowskin = MESSAGE_EX.windowskin(skin)
     self.opacity = $game_message.choice_params[:opa]
-    self.opacity = 0 if @message_window.open? && $game_message.choice_params[:do] == 0
+    if @message_window.open? && $game_message.choice_params[:do] == 0
+      self.opacity = 0
+    end
     self.contents_opacity = 255
 
     if cancel_enabled? && $game_message.choice_params[:cd] > 0
@@ -395,19 +411,25 @@ class Window_ChoiceList < Window_Command
   # ● 绘制项目（覆盖）
   #--------------------------------------------------------------------------
   def draw_item(index)
-    rect = item_rect_for_text(index)
-    dw = self.width - standard_padding*2 - 8 - @choices_info[index][:width]
-    ali = @choices_info[index][:extra][:ali] || $game_message.choice_params[:ali]
-    case ali
-    when 0; x_ = rect.x
-    when 1; x_ = rect.x + dw / 2
-    when 2; x_ = rect.x + dw
+    rect = item_rect(index)
+    s = Spriteset_Choice.new(self, index)
+    s.set_rect(rect)
+    s.set_enabled(command_enabled?(index))
+    # 绘制选择支文本
+    dw = self.contents_width - @choices_info[index][:width]
+    case @choices_info[index][:extra][:ali] || $game_message.choice_params[:ali]
+    when 0; x_ = 0
+    when 1; x_ = dw / 2
+    when 2; x_ = dw
     end
-    @choices[index] = Spriteset_Choice.new(self)
-    @choices[index].set_xy(x_, rect.y)
-    @choices[index].set_enabled(command_enabled?(index))
-    @choices[index].draw_text_ex(2, 3, command_name(index))
-    @choices[index].update
+    s.draw_text_ex(x_ + 2, 3, command_name(index))
+    # 设置计时器
+    if @choices_info[index][:extra][:ri]
+      t = @choices_info[index][:extra][:rt] || 5
+      s.set_timer(:replace, t * 60, @choices_info[index][:extra][:ri])
+    end
+
+    s.update; @choices[index] = s
   end
   #--------------------------------------------------------------------------
   # ● 更新光标
@@ -416,11 +438,28 @@ class Window_ChoiceList < Window_Command
   def update_cursor
     eagle_choice_ex_update_cursor
     @choices.each do |i, s|
-      r = item_rect_for_text(i)
+      r = item_rect(i)
       y_ = r.y - self.oy
       s.set_visible( y_ >= 0 && y_ < (self.height-line_height) )
-      s.set_xy( r.x, y_ )
+      s.set_xywh( nil, y_ )
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 用事件列表中i_e_new号选项分支替换窗口中i_w号选项
+  #--------------------------------------------------------------------------
+  def replace_choice(i_e_new, i_w)
+    @choices[i_w].move_out
+    if i_e_new < 0
+      process_choice("", i_e_new, i_w, false)
+      @choices_info[i_w][:enable] = false
+      @list[i_w][:enabled] = false # 修改 add_command 中的数据
+    else
+      process_choice($game_message.choices[i_e_new].dup, i_e_new, i_w, false)
+    end
+    cursor_rect.empty
+    redraw_item(i_w)
+    reset_size; update_placement # 更新窗口大小和位置
+    select(self.index)
   end
 
   #--------------------------------------------------------------------------
@@ -431,7 +470,6 @@ class Window_ChoiceList < Window_Command
     return if !self.active
     @choices.each { |i, s| s.update }
     check_cd_auto if $game_message.choice_params[:cd] > 0
-    #check_cd_replace if $game_message.choice_params[:cd] > 0
   end
   #--------------------------------------------------------------------------
   # ● 检查倒计时后自动选择
@@ -445,27 +483,7 @@ class Window_ChoiceList < Window_Command
     deactivate
     call_cancel_handler
   end
-  #--------------------------------------------------------------------------
-  # ● 检查倒计时后替换 #TODO
-  #--------------------------------------------------------------------------
-  def check_cd_replace
-    if $imported["EAGLE-TimerEX"]
-      return if !$game_timer[:choice_cd].finish?
-    else
-      return if $game_timer.sec > 0
-    end
-    replace_choice(3, 2)
-    $game_message.choice_params[:cd] = 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 用事件中i_e_new号选项分支替换窗口中i_w号选项
-  #--------------------------------------------------------------------------
-  def replace_choice(i_e_new, i_w)
-    @choices[i_w].move_out
-    process_choice($game_message.choices[i_e_new].dup, i_e_new, i_w, false)
-    redraw_item(i_w)
-    reset_size; update_placement # 更新窗口大小和位置
-  end
+
   #--------------------------------------------------------------------------
   # ● “确定”和“取消”的处理
   #--------------------------------------------------------------------------
@@ -478,7 +496,9 @@ class Window_ChoiceList < Window_Command
   # ● 获取“取消处理”的有效状态（覆盖）
   #--------------------------------------------------------------------------
   def cancel_enabled?
-    $game_message.choice_cancel_index >= 0
+    $game_message.choice_cancel_i_e >= 0 &&  # 设置了取消分支
+    ($game_message.choice_cancel_i_w < 0 ||  # 取消分支为独立分支
+    @choices_info[$game_message.choice_cancel_i_w][:enable]) # 取消分支可选
   end
   #--------------------------------------------------------------------------
   # ● 调用“确定”的处理方法（覆盖）
@@ -491,7 +511,7 @@ class Window_ChoiceList < Window_Command
   # ● 调用“取消”的处理方法（覆盖）
   #--------------------------------------------------------------------------
   def call_cancel_handler
-    $game_message.method_choice_result.call($game_message.choice_cancel_index)
+    $game_message.method_choice_result.call($game_message.choice_cancel_i_e)
     close
   end
   #--------------------------------------------------------------------------
@@ -518,15 +538,16 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
-  def initialize(choice_window)
+  def initialize(choice_window, i_w)
     @choice_window = choice_window
+    @i_w = i_w # 在选项窗口中的index
     @charas = []
     @chara_effect_params = $game_message.choice_params[:charas].dup
-    @chara_win_dx = 0
-    @chara_win_dy = 0
+    @chara_dwin_rect = nil
     @font = @choice_window.contents.font.dup # 每个选项存储独立的font对象
     @visible = true
     @enabled = true
+    @timer = nil
   end
   #--------------------------------------------------------------------------
   # ● 绑定
@@ -535,23 +556,28 @@ class Spriteset_Choice
     @choice_window.message_window
   end
   def z
-    @choice_window.z + 1
+    @choice_window.z + 10
   end
   #--------------------------------------------------------------------------
-  # ● 设置文字的左侧起始位置（相对于选项窗口的左上角）
+  # ● 设置文字的绘制矩形（相对于选项窗口的左上角）
   #--------------------------------------------------------------------------
-  def set_xy(x = nil, y = nil)
-    @chara_win_dx = x if x
-    @chara_win_dy = y if y
+  def set_xywh(x = nil, y = nil, w = nil, h = nil)
+    @chara_dwin_rect.x = x if x
+    @chara_dwin_rect.y = y if y
+    @chara_dwin_rect.width = w if w
+    @chara_dwin_rect.height = h if h
+  end
+  def set_rect(rect)
+    @chara_dwin_rect = rect
   end
   #--------------------------------------------------------------------------
   # ● 绑定
   #--------------------------------------------------------------------------
   def eagle_charas_x0
-    @choice_window.x + @choice_window.standard_padding + @chara_win_dx
+    @choice_window.x + @choice_window.standard_padding + @chara_dwin_rect.x
   end
   def eagle_charas_y0
-    @choice_window.y + @choice_window.standard_padding + @chara_win_dy
+    @choice_window.y + @choice_window.standard_padding + @chara_dwin_rect.y
   end
   #--------------------------------------------------------------------------
   # ● 设置文字的显示状态
@@ -574,12 +600,60 @@ class Spriteset_Choice
     font.color.set(color)
     font.color.alpha = 120 unless @enabled
   end
+
+  #--------------------------------------------------------------------------
+  # ● 设置选项的计时器
+  #--------------------------------------------------------------------------
+  def set_timer(type, count, i_e_target)
+    # [计数, 总计, 类型, 目标选项的事件中序号]
+    @timer = [count, count, type, i_e_target]
+    @timer_viewport = Viewport.new(@chara_dwin_rect)
+    @timer_viewport.z = self.z - 1
+    @timer_s = Sprite.new(@timer_viewport)
+    @timer_s.bitmap = Bitmap.new(@chara_dwin_rect.width, @chara_dwin_rect.height)
+    @timer_s.bitmap.fill_rect(@timer_s.bitmap.rect, Color.new(180,180,180,50))
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新计时器
+  #--------------------------------------------------------------------------
+  def update_timer
+    @timer_viewport.rect.x = eagle_charas_x0
+    @timer_viewport.rect.y = eagle_charas_y0
+    @timer_viewport.rect.width = @timer_s.width * @timer[0] * 1.0 / @timer[1]
+    return if (@timer[0] -= 1) > 0
+    case @timer[2]
+    when :replace
+      @choice_window.replace_choice(@timer[3], @i_w)
+    end
+    dispose_timer
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放计时器
+  #--------------------------------------------------------------------------
+  def dispose_timer
+    return if @timer.nil?
+    @timer_viewport.dispose
+    @timer_s.bitmap.dispose
+    @timer_s.dispose
+    @timer = nil
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    update_timer if @timer
+    return unless @visible
+    @fiber.resume if @fiber
+    @charas.each { |s| s.update }
+  end
   #--------------------------------------------------------------------------
   # ● 全部移出
   #--------------------------------------------------------------------------
   def move_out
     @charas.each { |s| s.opacity = 0 if !s.visible; s.move_out }
     @charas.clear
+    dispose_timer
   end
   #--------------------------------------------------------------------------
   # ● 应用文本特效
@@ -587,14 +661,7 @@ class Spriteset_Choice
   def start_effects(params)
     @charas.each { |s| s.start_effects(params) }
   end
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    return unless @visible
-    @fiber.resume if @fiber
-    @charas.each { |s| s.update }
-  end
+
   #--------------------------------------------------------------------------
   # ● 绘制
   #--------------------------------------------------------------------------
@@ -662,7 +729,8 @@ class Spriteset_Choice
     end
     case code.upcase
     when 'C'
-      change_color(@choice_window.text_color(message_window.obtain_escape_param(text)))
+      param = message_window.obtain_escape_param(text)
+      change_color( @choice_window.text_color(param) )
     when 'I'
       process_draw_icon(message_window.obtain_escape_param(text), pos)
       process_draw_success
@@ -694,18 +762,21 @@ class Game_Interpreter
   # ● 设置选项（覆盖）
   #--------------------------------------------------------------------------
   def setup_choices(params)
-    index_cancel = eagle_merge_choices
+    cancel_index = eagle_merge_choices
     params = @list[@index].parameters
     params[0].each {|s| $game_message.choices.push(s) }
     # 绑定返回方法
     $game_message.method_choice_result = method(:eagle_choice_result)
-    # 设置取消分支的类型
+    # 设置取消分支的类型（事件中序号）
     #（对于params[1]）
     # 0 代表取消无效，1 ~ size 代表取消时进入对应分支，size+1 代表进入取消专用分支
-    #（对于choice_cancel_index）
+    #（对于choice_cancel_i_e）
     # -1 代表无效，0 ~ size-1 代表对应分支，size代表取消分支
-    $game_message.choice_cancel_index = params[1] - 1
-    $game_message.choice_cancel_index = params[0].size if index_cancel >= 0
+    #（对于choice_cancel_i_w）
+    # -1 代表有独立取消分支，0 ~ win_size-1 代表对应窗口中分支
+    $game_message.choice_cancel_i_e = params[1] - 1
+    $game_message.choice_cancel_i_e = params[0].size if cancel_index >= 0
+    $game_message.choice_cancel_i_w = -1 # 初始时取-1，在选项生成时重置
   end
   #--------------------------------------------------------------------------
   # ● 合并相邻选项指令
@@ -754,7 +825,7 @@ class Game_Interpreter
   # ● 取消的时候（覆盖）
   #--------------------------------------------------------------------------
   def command_403
-    command_skip if @branch[@indent] != $game_message.choice_cancel_index
+    command_skip if @branch[@indent] != $game_message.choice_cancel_i_e
   end
   def command_4031
     command_skip
