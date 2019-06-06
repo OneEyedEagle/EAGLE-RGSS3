@@ -161,3 +161,51 @@ class Window_ScrollText < Window_Base
   end
 end
 end
+
+#==============================================================================
+# ○ Spriteset_Choice
+#==============================================================================
+if $imported["EAGLE-ChoiceEX"]
+class Spriteset_Choice
+  attr_reader :pout_params
+  #--------------------------------------------------------------------------
+  # ● 移出
+  #--------------------------------------------------------------------------
+  alias eagle_particle_out_move_out move_out
+  def move_out
+    if @pout_params && pout_params[:type] > 0
+      f = ParticleManager.emitters[:charas_out].template
+      f.speed = pout_params[:v] || 2
+      f.speed_var = pout_params[:vd] || 1
+      f.life = pout_params[:t] || 40
+      f.life_var = pout_params[:td] || 20
+      f.theta = pout_params[:a] || 270
+      f.theta_var = pout_params[:ad] || 30
+      f.angle = pout_params[:va] || 0
+      f.angle_var = pout_params[:vad] || 2
+
+      charas = @charas.select { |s| !s.finish? }
+      @charas.each { |s| s.opacity = 0 }
+      f.total = charas.size
+      f.bitmaps = charas.collect { |s| s.bitmap.dup }
+      f.xys = charas.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
+      ParticleManager.start(:charas_out)
+    end
+    eagle_particle_out_move_out
+  end
+  #--------------------------------------------------------------------------
+  # ● 控制符的处理
+  #--------------------------------------------------------------------------
+  alias eagle_particle_out_escape_chara process_escape_character
+  def process_escape_character(code, text, pos)
+    case code.upcase
+    when 'POUT'
+      @pout_params = { :type => 0 }
+      MESSAGE_EX.parse_param(@pout_params,
+        message_window.obtain_escape_param_string(text), :type)
+    else
+      eagle_particle_out_escape_chara(code, text, pos)
+    end
+  end
+end
+end
