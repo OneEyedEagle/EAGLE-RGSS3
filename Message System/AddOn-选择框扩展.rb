@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2019.6.6.23 重写
+# - 2019.6.7.23 嵌入后将跟随对话框移动
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -470,8 +470,9 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   def update
     super
-    return if !self.active
+    update_placement if @message_window.open? && $game_message.choice_params[:do] == 0
     @choices.each { |i, s| s.update }
+    return if !self.active
     check_cd_auto if $game_message.choice_params[:cd] > 0
   end
   #--------------------------------------------------------------------------
@@ -701,7 +702,7 @@ class Spriteset_Choice
     c_rect = message_window.text_size(c)
     c_w = c_rect.width; c_h = c_rect.height
     s = eagle_new_chara_sprite(c, pos[:x], pos[:y], c_w, c_h)
-    s.bitmap.draw_text(0, 0, c_w, c_h, c, 0)
+    s.bitmap.draw_text(0, 0, c_w*2, c_h, c, 0)
     pos[:x] += c_w
   end
   #--------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 # ■ Add-On 物品选择框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.5.23.16 注释优化
+# - 2019.6.7.23 嵌入后将跟随对话框移动
 #==============================================================================
 # - 在对话框中利用 \keyitem[param] 对物品选择框进行部分参数设置：
 #     type → 【默认】物品选择范围的类型index（见 index → 物品种类的符号数组 的映射）
@@ -287,5 +287,13 @@ class Window_KeyItem < Window_ItemList
     self.opacity = $game_message.keyitem_params[:opa]
     self.opacity = 0 if $game_message.keyitem_params[:do] == 0
     self.contents_opacity = 255
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 更新（覆盖）
+  #--------------------------------------------------------------------------
+  def update
+    super
+    update_placement if @message_window.open? && $game_message.choice_params[:do] == 0
   end
 end
