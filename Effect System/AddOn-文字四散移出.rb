@@ -1,44 +1,95 @@
 #==============================================================================
 # ■ Add-On 文字四散移出 by 老鹰（http://oneeyedeagle.lofter.com/）
-# ※ 本插件需要放置在【对话框扩展 by老鹰】与【Add-On 部分粒子模板 by老鹰】之下
+# ※ 本插件需要放置在【Add-On 部分粒子模板 by老鹰】之下
 #==============================================================================
-# - 2019.6.4.16 新增文字池模块，用于接管需要移出的文字精灵的更新
+# - 2019.6.7.12 重写
 #==============================================================================
-# - 本插件给 对话框扩展 中的对话框新增了\pout转义符，
-#   可控制对话文本调用简单粒子系统来进行文字移出效果操作（覆盖\cout的效果）
+# - 本插件为 文字精灵组的粒子化 实现了一个简单便捷的调用接口
+#----------------------------------------------------------------------------
+# - 若使用了【对话框扩展 by老鹰】，将本插件置于其下，可为其增加 \pout 转义符，
+#   对话文本将调用预设粒子模板，来进行文字移出（覆盖 \cout 效果）
 #      type -【默认】设置选用的粒子移出类型（0为取消）
-#      v - 每帧移动像素值
-#      vd - 每帧移动像素值的随机增减量
-#      t - opacity减为0前的持续运动时间（帧）
-#      td - 持续时间的随机增减量
-#      a - 初始运动朝向角度（270为竖直向上方向）（0~360）
-#      ad - 初始朝向角度的随机增减量
-#      va - 每帧旋转的角度
-#      vad - 旋转角度的随机增减量
+#      其余见 ParticleManager#pout_set_template 方法中 params 所取的值
+#----------------------------------------------------------------------------
+# - 若使用了【Add-On 选择框扩展 by老鹰】，将本插件置于其下，同样可为
+#   选择支新增 \pout 转义符，具体同上
+#----------------------------------------------------------------------------
 # - 若使用了【Add-On 滚动文本框扩展 by老鹰】，将本插件置于其下，同样可为其
-#   新增 \pout 转义符用于调用简单粒子系统来进行文字移出效果操作（覆盖\cout）
-#   具体参数同上
+#   新增 \pout 转义符，具体同上
 #==============================================================================
 
 #==============================================================================
 # ○ ParticleManager
 #==============================================================================
-class << ParticleManager
-  alias eagle_particle_message_out_init init
-  def init
-    eagle_particle_message_out_init
-    f = Particle_Template_BitmapNoDup.new
+module ParticleManager
+  #--------------------------------------------------------------------------
+  # ● 设置文字粒子移出的模板
+  #  f 为粒子模板
+  #  params 为变量参数的hash（一般由 pout 转义符获得）
+  #--------------------------------------------------------------------------
+  def self.pout_set_template(f, params)
+    # v - 每帧移动像素值
+    f.speed = params[:v] || 2
+    # vd - 每帧移动像素值的随机增减量
+    f.speed_var = params[:vd] || 1
+    # t - opacity减为0前的持续运动时间（帧）
+    f.life = params[:t] || 40
+    # td - 持续时间的随机增减量
+    f.life_var = params[:td] || 20
+    # a - 初始运动朝向角度（270为竖直向上方向）（0~360）
+    f.theta = params[:a] || 270
+    # ad - 初始朝向角度的随机增减量
+    f.theta_var = params[:ad] || 90
+    # va - 每帧旋转的角度
+    f.angle = params[:va] || 0
+    # vad - 旋转角度的随机增减量
+    f.angle_var = params[:vad] || 3
+
+    # 依据type变量，来进行额外的自定义设置
+    case params[:type]
+    when 1 # 无变更
+    when 2 # 下坠
+      f.global_force = Vector.new(0, 2)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 启用文字粒子
+  #--------------------------------------------------------------------------
+  def self.pout(sym, charas, params)
+    if ParticleManager.emitters[sym]
+      f = ParticleManager.emitters[sym].template
+    else
+      f = Particle_Template_BitmapNoDup.new
+    end
+    # 一次性生成完
     f.for_once = true
+    # 结束后释放位图
     f.bitmap_dispose = true
-    vp = Viewport.new
+    # 设置显示端口
+    if ParticleManager.emitters[sym]
+      vp = ParticleManager.emitters[sym].viewport
+    else
+      vp = Viewport.new
+    end
     vp.z = 1000
-    vp.add_fast_layer(1, 0) if $RGD
-    ParticleManager.setup(:charas_out, f, vp)
+    vp.add_fast_layer(1, 0) if $RGD # 整合RGD加速
+    # 初始化
+    ParticleManager.setup(sym, f, vp)
+    # 设置模板属性
+    pout_set_template(f, params)
+    # 将文字精灵的拷贝放入模板
+    f.total = charas.size
+    f.bitmaps = charas.collect { |s| s.bitmap.dup }
+    f.xys = charas.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
+    # 发射器开始工作
+    ParticleManager.start(sym)
   end
 end
+
 #==============================================================================
-# ○ Game_Message
+# ○ 整合 对话框扩展
 #==============================================================================
+if $imported["EAGLE-MessageEX"]
 class Game_Message
   attr_accessor :pout_params
   #--------------------------------------------------------------------------
@@ -49,9 +100,6 @@ class Game_Message
     eagle_particle_out_params + [:pout]
   end
 end
-#==============================================================================
-# ○ Window_Message
-#==============================================================================
 class Window_Message
   #--------------------------------------------------------------------------
   # ● 移出全部文字精灵
@@ -59,37 +107,18 @@ class Window_Message
   alias eagle_particle_out_sprites_move_out eagle_message_sprites_move_out
   def eagle_message_sprites_move_out
     if game_message.pout_params[:type] && game_message.pout_params[:type] > 0
-      f = ParticleManager.emitters[:charas_out].template
-      f.speed = game_message.pout_params[:v] || 2
-      f.speed_var = game_message.pout_params[:vd] || 1
-      f.life = game_message.pout_params[:t] || 40
-      f.life_var = game_message.pout_params[:td] || 20
-      f.theta = game_message.pout_params[:a] || 270
-      f.theta_var = game_message.pout_params[:ad] || 90
-      f.angle = game_message.pout_params[:va] || 0
-      f.angle_var = game_message.pout_params[:vad] || 3
-
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
           next if s.finish?
+          ParticleManager.pout(:msg_charas, [s], game_message.pout_params)
           s.opacity = 0
-          f.total = 1
-          f.bitmaps = [s.bitmap.dup]
-          # 粒子精灵的显示原点为位图中心
-          f.xys = [Vector.new(s.x + s.width/2, s.y + s.height/2)]
-          ParticleManager.start(:charas_out)
           win_params[:cwo].times { Fiber.yield }
         end
       else
         charas = @eagle_chara_sprites.select { |s| !s.finish? }
-        @eagle_chara_sprites.each { |s| s.opacity = 0 }
-        f.total = charas.size
-        f.bitmaps = charas.collect { |s| s.bitmap.dup }
-        f.xys = charas.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
-        ParticleManager.start(:charas_out)
+        ParticleManager.pout(:msg_charas, charas, game_message.pout_params)
       end
-      # 文字池接管移出更新
-      @eagle_chara_sprites.each { |s| s.move_out }
+      @eagle_chara_sprites.each { |s| s.opacity = 0; s.move_out }
       @eagle_chara_sprites.clear
     else
       eagle_particle_out_sprites_move_out
@@ -102,51 +131,32 @@ class Window_Message
     parse_param(game_message.pout_params, param, :type)
   end
 end
+end
+
 #==============================================================================
-# ○ Window_ScrollText
+# ○ 整合 AddOn 滚动文本框扩展
 #==============================================================================
 if $imported["EAGLE-ScrollTextEX"]
-module MESSAGE_EX
-  SCROLL_PARAMS_INIT[:pout] = {}
-end
+module MESSAGE_EX; SCROLL_PARAMS_INIT[:pout] = {}; end
 class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
-  # ● 移出全部文字
+  # ● 移出全部文字精灵
   #--------------------------------------------------------------------------
   alias eagle_particle_out_charas_move_out chara_sprites_move_out
   def chara_sprites_move_out
     if pout_params[:type] && pout_params[:type] > 0
-      f = ParticleManager.emitters[:charas_out].template
-      f.speed = pout_params[:v] || 2
-      f.speed_var = pout_params[:vd] || 1
-      f.life = pout_params[:t] || 40
-      f.life_var = pout_params[:td] || 20
-      f.theta = pout_params[:a] || 270
-      f.theta_var = pout_params[:ad] || 30
-      f.angle = pout_params[:va] || 0
-      f.angle_var = pout_params[:vad] || 2
-
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
           next if s.finish?
           s.opacity = 0
-          f.total = 1
-          f.bitmaps = [s.bitmap.dup]
-          # 粒子精灵的显示原点为位图中心
-          f.xys = [Vector.new(s.x + s.width/2, s.y + s.height/2)]
-          ParticleManager.start(:charas_out)
+          ParticleManager.pout(:st_charas, [s], pout_params)
           win_params[:cwo].times { Fiber.yield }
         end
       else
         charas = @eagle_chara_sprites.select { |s| !s.finish? }
-        @eagle_chara_sprites.each { |s| s.opacity = 0 }
-        f.total = charas.size
-        f.bitmaps = charas.collect { |s| s.bitmap.dup }
-        f.xys = charas.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
-        ParticleManager.start(:charas_out)
+        ParticleManager.pout(:st_charas, charas, pout_params)
       end
-      # 文字池接管移出更新
-      @eagle_chara_sprites.each { |s| s.move_out }
+      @eagle_chara_sprites.each { |s| s.opacity = 0; s.move_out }
       @eagle_chara_sprites.clear
     else
       eagle_particle_out_charas_move_out
@@ -163,7 +173,7 @@ end
 end
 
 #==============================================================================
-# ○ Spriteset_Choice
+# ○ 整合 AddOn 选择框扩展
 #==============================================================================
 if $imported["EAGLE-ChoiceEX"]
 class Spriteset_Choice
@@ -174,22 +184,9 @@ class Spriteset_Choice
   alias eagle_particle_out_move_out move_out
   def move_out
     if @pout_params && pout_params[:type] > 0
-      f = ParticleManager.emitters[:charas_out].template
-      f.speed = pout_params[:v] || 2
-      f.speed_var = pout_params[:vd] || 1
-      f.life = pout_params[:t] || 40
-      f.life_var = pout_params[:td] || 20
-      f.theta = pout_params[:a] || 270
-      f.theta_var = pout_params[:ad] || 30
-      f.angle = pout_params[:va] || 0
-      f.angle_var = pout_params[:vad] || 2
-
       charas = @charas.select { |s| !s.finish? }
+      ParticleManager.pout("choice_#{@i_w}".to_sym, charas, @pout_params)
       @charas.each { |s| s.opacity = 0 }
-      f.total = charas.size
-      f.bitmaps = charas.collect { |s| s.bitmap.dup }
-      f.xys = charas.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
-      ParticleManager.start(:charas_out)
     end
     eagle_particle_out_move_out
   end
