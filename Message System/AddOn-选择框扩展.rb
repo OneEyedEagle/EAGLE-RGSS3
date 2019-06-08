@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2019.6.7.23 嵌入后将跟随对话框移动
+# - 2019.6.8.23 修复由跟随移动造成的光标复位bug
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -324,6 +324,7 @@ class Window_ChoiceList < Window_Command
       @message_window.eagle_process_draw_update
     end
     self.z = @message_window.z + 10 # 在文字绘制之前设置，保证文字精灵的z值
+    self.ox = self.oy = 0
   end
   #--------------------------------------------------------------------------
   # ● 更新窗口的位置（覆盖）
@@ -352,7 +353,6 @@ class Window_ChoiceList < Window_Command
     MESSAGE_EX.reset_xy_origin(self, o)
     self.x += $game_message.choice_params[:dx]
     self.y += $game_message.choice_params[:dy]
-    self.ox = self.oy = 0
   end
   #--------------------------------------------------------------------------
   # ● 设置其他属性
@@ -589,6 +589,7 @@ class Spriteset_Choice
   def set_visible(bool)
     @visible = bool
     @charas.each { |s| s.visible = bool }
+    @timer_s.visible = bool if @timer_s
   end
   #--------------------------------------------------------------------------
   # ● 设置选项的可选状态
@@ -639,6 +640,7 @@ class Spriteset_Choice
     @timer_viewport.dispose
     @timer_s.bitmap.dispose
     @timer_s.dispose
+    @timer_s = nil
     @timer = nil
   end
 
