@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.6.5.11 文字精灵调用独立Font对象
+# - 2019.7.4.24 新增para变量
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -244,6 +244,17 @@ $imported["EAGLE-MessageEX"] = true
 #    示例：\g[c1c2c1] → 用 1号 2号 1号颜色由上至下进行渐变绘制
 #    示例：\g[] → 取消渐变绘制
 #
+#----------------------------------------------------------------------------
+# ● 并行选择
+#----------------------------------------------------------------------------
+# - 利用脚本开关设置对话框与下一条指令的 选择框/数字输入框/物品选择框 并行处理
+#
+#         $game_message.para = true
+#
+# - 当开关开启时，若当前对话框的下一条指令为 选择支/数字输入/物品选择，
+#     则会在对话框打开、开始绘制文字时，同步打开选择框。
+# - 当选择框的输入处理结束时，对话框也将强行关闭
+#    【注意】未被绘制的转义符可能不会生效！
 #----------------------------------------------------------------------------
 # ● 文本预定
 #----------------------------------------------------------------------------
@@ -926,7 +937,8 @@ class Game_Message
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :ex_params # 存储扩展params
-  attr_accessor :escape_strings, :hold, :instant, :draw, :auto_r
+  attr_accessor :escape_strings, :auto_r
+  attr_accessor :hold, :instant, :draw, :para
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -962,6 +974,7 @@ class Game_Message
     @draw = true # 开启绘制？
     @hold = false # 当前对话框要保留显示？
     @instant = false # 当前对话框立即显示？
+    @para = false # 并行显示选择框等
   end
   #--------------------------------------------------------------------------
   # ● 判定是否需要进入等待按键状态
@@ -1180,6 +1193,7 @@ class Window_Message
     }
     t
   end
+
   #--------------------------------------------------------------------------
   # ● 打开直至完成（当有文字绘制完成时执行）
   #--------------------------------------------------------------------------
@@ -1213,6 +1227,7 @@ class Window_Message
   alias eagle_message_ex_close close
   def close
     eagle_message_reset
+    @gold_window.close
     eagle_message_ex_close
   end
   #--------------------------------------------------------------------------
@@ -1638,6 +1653,27 @@ class Window_Message
   end
 
   #--------------------------------------------------------------------------
+  # ● 处理纤程的主逻辑（覆盖）
+  #--------------------------------------------------------------------------
+  def fiber_main
+    game_message.visible = true
+    update_background
+    update_placement
+    if game_message.has_text?
+      if game_message.para && !game_message.input_pause?
+        @fiber_para = Fiber.new { process_all_text; @fiber_para = nil }
+      else
+        process_all_text
+      end
+    end
+    process_input
+    close_and_wait
+    game_message.clear
+    game_message.visible = false
+    @fiber = nil
+  end
+
+  #--------------------------------------------------------------------------
   # ● 获取即将绘制的所有文本内容
   #--------------------------------------------------------------------------
   def eagle_all_text
@@ -1705,7 +1741,7 @@ class Window_Message
   # ● （覆盖）翻页处理
   #--------------------------------------------------------------------------
   def new_page(text, pos)
-    close_and_wait
+    eagle_message_sprites_move_out
 
     eagle_apply_params_changes
     eagle_check_pre_settings(text)
@@ -1775,14 +1811,17 @@ class Window_Message
     self.y + standard_padding + win_params[:cdy]
   end
   #--------------------------------------------------------------------------
-  # ● 计算可供文字绘制的区域的总宽度
+  # ● 计算可供文字显示的区域的宽度和高度
   #--------------------------------------------------------------------------
   def eagle_charas_max_w
-    # 窗口内容宽度 - 脸图占用宽度 - 文字左侧间距
-    v = contents_width - eagle_face_width - win_params[:cdx]
+    # 窗口内容可视宽度 - 脸图占用宽度 - 文字左侧间距
+    v = self.width - standard_padding * 2 - eagle_face_width - win_params[:cdx]
     # - 其它必须占用宽度的内容
     v -= eagle_window_w_occupy
     v
+  end
+  def eagle_charas_max_h
+    self.height - standard_padding * 2
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）普通文字的处理
@@ -1897,7 +1936,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   # ● 重排列全部文字精灵
   #--------------------------------------------------------------------------
-  def eagle_charas_reset_alignment(align = 1)
+  def eagle_charas_reset_alignment(align)
     return if @eagle_chara_sprites.empty?
     charas = [] # 存储当前迭代行的全部文字精灵
     # 存储当前迭代行的y值（同y的为同一行）（未考虑列排文字）
@@ -2014,6 +2053,39 @@ class Window_Message
       break if Input.trigger?(:B) || Input.trigger?(:C)
     end
     Input.update
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理选项的输入（覆盖）
+  #  选择框不可嵌入
+  #--------------------------------------------------------------------------
+  def input_choice
+    @choice_window.start
+    input_wait_while_active(@choice_window)
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理数值的输入（覆盖）
+  #--------------------------------------------------------------------------
+  def input_number
+    @number_window.start
+    input_wait_while_active(@number_window)
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理物品的选择（覆盖）
+  #  物品选择框不可嵌入
+  #--------------------------------------------------------------------------
+  def input_item
+    @item_window.start
+    input_wait_while_active(@item_window)
+  end
+  #--------------------------------------------------------------------------
+  # ● 并行等待窗口处理结束
+  #--------------------------------------------------------------------------
+  def input_wait_while_active(window)
+    while window.active
+      @fiber_para.resume if @fiber_para
+      Fiber.yield
+    end
+    @fiber_para = nil
   end
 
   #--------------------------------------------------------------------------
@@ -2631,6 +2703,7 @@ class Sprite_EagleCharacter < Sprite
     self.bitmap.dispose if self.bitmap
     self.bitmap = Bitmap.new(w, h)
     self.bitmap.font = @message_window.font.dup
+    @x0 = 0; @y0 = 0 # 存储显示坐标轴的原点（当绑定窗口时，每帧随之更新）
     @origin_x = x; @origin_y = y # 存储左对齐时，文字的显示位置（作为标准位置）
     reset_xy(x, y)
     @dx = @dy = 0 # 移动的实时偏移值
@@ -2684,8 +2757,12 @@ class Sprite_EagleCharacter < Sprite
   # ● 更新位置
   #--------------------------------------------------------------------------
   def update_position
-    self.x = @message_window.eagle_charas_x0 + @_x + @dx
-    self.y = @message_window.eagle_charas_y0 + @_y + @dy
+    if @message_window
+      @x0 = @message_window.eagle_charas_x0
+      @y0 = @message_window.eagle_charas_y0
+    end
+    self.x = @x0 + @_x + @dx
+    self.y = @y0 + @_y + @dy
   end
   #--------------------------------------------------------------------------
   # ● 更新特效（整合）
@@ -2772,6 +2849,7 @@ class Sprite_EagleCharacter < Sprite
     else
       self.opacity = 0
     end
+    @message_window = nil # 取消窗口的绑定
     MESSAGE_EX.charapool_push(self) # 由文字池接管后续更新
   end
   def need_move_out?
