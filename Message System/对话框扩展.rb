@@ -388,7 +388,7 @@ module MESSAGE_EX
     :se => 1, # 打字音类型（默认0，无声效）
     :ali => 0, # 设置文本对齐方式
     :ck => 0, # 缩减的字符间距值
-    :lh => 0, # 基础行高
+    :lh => Font.default_size, # 基础行高
     :ld => 4, # 增加的行间距值
     :cwi => 2, # 单个文字绘制后的等待帧数（最小值0）
     :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
@@ -2049,7 +2049,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def process_line_scroll(text, pos)
     d = pos[:y] + pos[:height] - self.height + standard_padding * 2 - self.oy
-    self.oy = d if d > 0 # 向下卷动
+    self.oy += d if d > 0 # 向下卷动
   end
 
   #--------------------------------------------------------------------------
@@ -2923,6 +2923,11 @@ class Sprite_EagleCharacter < Sprite
     elsif !@params[:uout].nil?
       move_out_uout(@params[:uout])
     else
+      self.opacity = 0
+    end
+    # 若精灵在视图外，则直接结束
+    if(self.viewport && self.x < 0 || self.x > self.viewport.rect.width ||
+       self.y < 0 || self.y > self.viewport.rect.height)
       self.opacity = 0
     end
     @window_bind = nil # 取消窗口的绑定

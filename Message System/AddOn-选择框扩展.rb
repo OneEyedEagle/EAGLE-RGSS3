@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2019.7.6.17 整合对话框扩展
+# - 2019.7.6.20 整合对话框扩展
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -43,6 +43,13 @@ $imported["EAGLE-ChoiceEX"] = true
 # - 在脚本中利用 $game_message.choice_params[sym] = value 对指定参数赋值
 #  示例：
 #     $game_message.choice_params[:i] = 1 # 下一次选项框的光标默认在第二个分支
+#------------------------------------------------------------------------------
+# - 在选择支内容中调用脚本输出：
+#
+#     rb{string} → eval(string) 的返回值将替换该内容
+#
+# - 对 string 的解析：可用下列缩写进行简写
+#     s 代替 $game_switches   v 代替 $game_variables
 #------------------------------------------------------------------------------
 # - 在选择支内容中使用【对话框扩展】的转义符：
 #    可用 \c[i] 与 \i[i] 转义符
@@ -107,7 +114,7 @@ module MESSAGE_EX
     :y => nil,
     :do => -5, # 显示位置类型
     :dx => 0,
-    :dy => 20,
+    :dy => 0,
     :w => 0,
     :h => 0,
     :opa => 255, # 背景不透明度
@@ -245,6 +252,8 @@ class Window_ChoiceList < Window_Command
   def process_choice(text, i_e, i_w, apply_if = true)
     # 缩写
     s = $game_switches; v = $game_variables
+    # 判定rb{}
+    text.gsub!(/(?i:rb){(.*?)}/) { eval($1) }
     # 判定if{}
     text.gsub!(/(?i:if){(.*?)}/) { "" }
     return false if apply_if && $1 && eval($1) == false # 跳过该选项的增加
