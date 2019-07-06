@@ -2,7 +2,7 @@
 # ■ Add-On 文字四散移出 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【Add-On 部分粒子模板 by老鹰】之下
 #==============================================================================
-# - 2019.6.7.12 重写
+# - 2019.7.6.17 整合对话框扩展
 #==============================================================================
 # - 本插件为 文字精灵组的粒子化 实现了一个简单便捷的调用接口
 #----------------------------------------------------------------------------
@@ -110,15 +110,16 @@ class Window_Message
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
           next if s.finish?
+          s.finish
           ParticleManager.pout(:msg_charas, [s], game_message.pout_params)
-          s.opacity = 0
           win_params[:cwo].times { Fiber.yield }
         end
       else
         charas = @eagle_chara_sprites.select { |s| !s.finish? }
+        charas.each { |s| s.finish }
         ParticleManager.pout(:msg_charas, charas, game_message.pout_params)
       end
-      @eagle_chara_sprites.each { |s| s.opacity = 0; s.move_out }
+      @eagle_chara_sprites.each { |s| s.move_out }
       @eagle_chara_sprites.clear
     else
       eagle_particle_out_sprites_move_out
@@ -148,15 +149,16 @@ class Window_ScrollText < Window_Base
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
           next if s.finish?
-          s.opacity = 0
+          s.finish
           ParticleManager.pout(:st_charas, [s], pout_params)
           win_params[:cwo].times { Fiber.yield }
         end
       else
         charas = @eagle_chara_sprites.select { |s| !s.finish? }
+        charas.each { |s| s.finish }
         ParticleManager.pout(:st_charas, charas, pout_params)
       end
-      @eagle_chara_sprites.each { |s| s.opacity = 0; s.move_out }
+      @eagle_chara_sprites.each { |s| s.move_out }
       @eagle_chara_sprites.clear
     else
       eagle_particle_out_charas_move_out
@@ -185,8 +187,8 @@ class Spriteset_Choice
   def move_out
     if @pout_params && pout_params[:type] > 0
       charas = @charas.select { |s| !s.finish? }
+      charas.each { |s| s.finish }
       ParticleManager.pout("choice_#{@i_w}".to_sym, charas, @pout_params)
-      @charas.each { |s| s.opacity = 0 }
     end
     eagle_particle_out_move_out
   end

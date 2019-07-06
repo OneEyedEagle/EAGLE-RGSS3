@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2019.6.8.23 修复由跟随移动造成的光标复位bug
+# - 2019.7.6.17 整合对话框扩展
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -102,12 +102,12 @@ module MESSAGE_EX
   # \choice[]
     :i => 0, # 初始光标位置
     # 窗口属性
-    :o => 7, # 原点类型
+    :o => 5, # 原点类型
     :x => nil,
     :y => nil,
-    :do => 0, # 显示位置类型
+    :do => -5, # 显示位置类型
     :dx => 0,
-    :dy => 0,
+    :dy => 20,
     :w => 0,
     :h => 0,
     :opa => 255, # 背景不透明度
@@ -583,6 +583,14 @@ class Spriteset_Choice
   def eagle_charas_y0
     @choice_window.y + @choice_window.standard_padding + @chara_dwin_rect.y
   end
+  def eagle_charas_max_w
+    self.width - standard_padding * 2
+  end
+  def eagle_charas_max_h
+    0
+  end
+  def eagle_charas_ox; 0; end
+  def eagle_charas_oy; 0; end
   #--------------------------------------------------------------------------
   # ● 设置文字的显示状态
   #--------------------------------------------------------------------------
