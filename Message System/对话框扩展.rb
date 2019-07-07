@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.7.7.12 文字可视区域（上下左右）
+# - 2019.7.7.22 新增对话框内容滚动
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -248,15 +248,22 @@ $imported["EAGLE-MessageEX"] = true
 #    示例：\g[] → 取消渐变绘制
 #
 #----------------------------------------------------------------------------
+# ● 内容滚动
+#----------------------------------------------------------------------------
+# - 当设置了 win 或者 pop 转义符的 w 或 h 变量时，即锁定对话框的宽度或高度
+#     若所绘制的文字超出对话框范围，将自动开启内容滚动效果
+# - 当进入 等待按键 状态时，按住 方向键 即可朝对应方向滚动浏览对话框全部内容
+#
+#----------------------------------------------------------------------------
 # ● 并行选择
 #----------------------------------------------------------------------------
-# - 利用脚本开关设置对话框与下一条指令的 选择框/数字输入框/物品选择框 并行处理
+# - 利用脚本设置对话框与下一条指令的 选择框/数字输入框/物品选择框 进行并行处理
 #
 #         $game_message.para = true
 #
 # - 当开关开启时，若当前对话框的下一条指令为 选择支/数字输入/物品选择，
-#     则会在对话框打开、开始绘制文字时，同步打开选择框。
-# - 当选择框的输入处理结束时，对话框也将强行关闭
+#     则会在对话框打开、开始绘制文字时，同步打开并激活选择框
+# - 当选择框的按键处理结束并关闭时，对话框将同步强制关闭
 #    【注意】未被绘制的转义符可能不会生效！
 #----------------------------------------------------------------------------
 # ● 文本预定
@@ -1037,7 +1044,7 @@ class Game_Message
       }
     end
     self.send((param_sym.to_s+"_params=").to_sym, new_params)
-    add_escape("\\#{param_sym}") # 添加一次预定调用，用于应用结果
+    add_apply(param_sym) # 添加修改预定，用于应用结果
   end
   #--------------------------------------------------------------------------
   # ● 重置指定文字特效
@@ -1124,7 +1131,7 @@ class Window_Message
   # ● 初始化组件
   #--------------------------------------------------------------------------
   def eagle_message_init_assets
-    @eagle_chara_viewport = Viewport.new # 文字精灵的视图
+    @eagle_chara_viewport = Viewport.new # 文字精灵的显示区域
     @eagle_chara_sprites = [] # 存储全部的文字精灵
     @eagle_sprite_pop_tag = Sprite.new # 初始化pop状态下的tag精灵
     @eagle_sprite_face = Sprite.new # 初始化脸图精灵
@@ -1422,7 +1429,6 @@ class Window_Message
       w = win_params[:wmin] if win_params[:wmin] > 0 && w < win_params[:wmin]
       w = win_params[:wmax] if win_params[:wmax] > 0 && w > win_params[:wmax]
       w += standard_padding * 2
-      w += win_params[:cdx]
       w += eagle_face_width
       return w
     end
@@ -1441,7 +1447,6 @@ class Window_Message
       h = win_params[:hmin] if win_params[:hmin] > 0 && h < win_params[:hmin]
       h = win_params[:hmax] if win_params[:hmax] > 0 && h > win_params[:hmax]
       h += standard_padding * 2
-      h += win_params[:cdy]
       return h
     end
     window_height
@@ -1478,19 +1483,19 @@ class Window_Message
   # ● 额外增加的窗口宽度高度（右侧和下侧）
   #--------------------------------------------------------------------------
   def eagle_window_width_add(cur_width)
-    eagle_window_w_occupy
+    eagle_window_w_empty
   end
   def eagle_window_height_add(cur_height)
-    eagle_window_h_occupy
+    eagle_window_h_empty
   end
   #--------------------------------------------------------------------------
-  # ● 额外增加的窗口宽高中，无法被用于文本绘制的部分
+  # ● 窗口内容中，无法被用于文本绘制的宽高
   #--------------------------------------------------------------------------
-  def eagle_window_w_occupy
-    @eagle_sprite_pause_width_add
+  def eagle_window_w_empty
+    win_params[:cdx] + @eagle_sprite_pause_width_add
   end
-  def eagle_window_h_occupy
-    0
+  def eagle_window_h_empty
+    win_params[:cdy]
   end
   #--------------------------------------------------------------------------
   # ● 修正位置（确保对话框完整显示）
@@ -1764,7 +1769,7 @@ class Window_Message
     pos[:x] = new_line_x
     pos[:y] = 0
     pos[:new_x] = new_line_x
-    pos[:height] = self.contents.font.size
+    pos[:height] = font.size
     reset_font_settings
     clear_flags
 
@@ -1806,7 +1811,7 @@ class Window_Message
   end
 
   #--------------------------------------------------------------------------
-  # ● 文字区域的左上角位置（屏幕坐标系）
+  # ● 文字显示区域的左上角位置（屏幕坐标系）
   #--------------------------------------------------------------------------
   def eagle_charas_x0
     self.x + standard_padding + eagle_face_left_width + win_params[:cdx]
@@ -1815,38 +1820,36 @@ class Window_Message
     self.y + standard_padding + win_params[:cdy]
   end
   #--------------------------------------------------------------------------
-  # ● 计算可供文字显示的区域的宽度和高度
+  # ● 计算文字显示区域的宽度和高度
   #--------------------------------------------------------------------------
   def eagle_charas_max_w
-    # 窗口内容可视宽度 - 脸图占用宽度 - 文字左侧间距
-    v = self.width - standard_padding * 2 - eagle_face_width - win_params[:cdx]
-    # - 其它必须占用宽度的内容
-    v -= eagle_window_w_occupy
-    v
+    self.width - standard_padding * 2 - eagle_face_width - eagle_window_w_empty
   end
   def eagle_charas_max_h
-    self.height - standard_padding * 2 - win_params[:cdy]
+    self.height - standard_padding * 2 - eagle_window_h_empty
   end
   #--------------------------------------------------------------------------
-  # ● 文字可视区域左上点在文字区域中的坐标
+  # ● 文字显示区域的显示原点
   #--------------------------------------------------------------------------
   def eagle_charas_ox; self.ox; end
   def eagle_charas_oy; self.oy; end
   #--------------------------------------------------------------------------
-  # ● 重置文字可视区域
+  # ● 重置文字显示区域
   #--------------------------------------------------------------------------
   def eagle_reset_charas_oxy
     self.ox = self.oy = 0
     @eagle_chara_viewport.rect.set(0,0,Graphics.width,Graphics.height)
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）获取基础行高
+  # ● 重新生成适合全部文字的位图
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_line_height line_height
-  def line_height
-    h = game_message.win_params[:lh]
-    return h if h > 0
-    return eagle_message_ex_line_height
+  def recreate_contents_for_charas
+    f = font.dup
+    self.contents.dispose if self.contents
+    w = @eagle_charas_w + eagle_window_w_empty
+    h = @eagle_charas_h + eagle_window_h_empty
+    self.contents = Bitmap.new(w, h)
+    self.contents.font = f
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）普通文字的处理
@@ -1941,7 +1944,7 @@ class Window_Message
     # 处理文字区域大小更改
     @eagle_charas_w = pos[:x] if @eagle_charas_w < pos[:x]
     @eagle_charas_h = pos[:y] + pos[:height] if @eagle_charas_h < pos[:y] + pos[:height]
-    # 确保当前文字在可视区域内
+    # 确保当前文字在视图区域内
     ensure_character_visible(pos)
     return if !game_message.draw
     return if show_fast? # 如果是立即显示，则不更新
@@ -1949,7 +1952,7 @@ class Window_Message
     wait_for_one_character
   end
   #--------------------------------------------------------------------------
-  # ● 确保最后绘制完成的文字在可视区域内
+  # ● 确保最后绘制完成的文字在视图内
   #--------------------------------------------------------------------------
   def ensure_character_visible(pos)
     self.ox = 0 if pos[:x] < self.ox
@@ -1968,10 +1971,10 @@ class Window_Message
     # 由于对齐需要用到对话框的属性，因此需要在调用更新后执行
     eagle_charas_reset_alignment(game_message.win_params[:ali])
     eagle_open_and_wait # 第一个文字绘制完成时窗口打开
-    # 设置文字区域视图（屏幕坐标）
+    # 设置文字显示区域的矩形（屏幕坐标）
     @eagle_chara_viewport.rect.set(eagle_charas_x0, eagle_charas_y0,
-      eagle_charas_max_w + eagle_window_w_occupy,
-      eagle_charas_max_h + eagle_window_h_occupy)
+      eagle_charas_max_w + eagle_window_w_empty,
+      eagle_charas_max_h + eagle_window_h_empty)
     # pause精灵重置位置
     @eagle_sprite_pause.bind_last_chara(@eagle_chara_sprites[-1])
   end
@@ -2091,6 +2094,8 @@ class Window_Message
     @eagle_auto_continue_c = @eagle_auto_continue_t
     ox_des = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
     oy_des = self.oy
+    recreate_contents_for_charas
+    self.arrows_visible = true
     while true
       Fiber.yield
       break if @eagle_auto_continue_c && (@eagle_auto_continue_c -= 1) <= 0
@@ -2110,8 +2115,7 @@ class Window_Message
         self.ox = ox_des if self.ox > ox_des
       end
     end
-    self.ox = ox_des
-    self.oy = oy_des
+    self.arrows_visible = false
     Input.update
   end
   #--------------------------------------------------------------------------
@@ -2491,6 +2495,15 @@ class Window_Message
     eagle_reset_z
   end
   #--------------------------------------------------------------------------
+  # ● （覆盖）获取基础行高
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_line_height line_height
+  def line_height
+    h = game_message.win_params[:lh]
+    return h if h > 0
+    return eagle_message_ex_line_height
+  end
+  #--------------------------------------------------------------------------
   # ● 设置pop参数
   #--------------------------------------------------------------------------
   def eagle_text_control_pop(param = "")
@@ -2748,8 +2761,8 @@ class Sprite_EagleCharacter < Sprite
   #  window_bind ：所绑定的显示窗口，需要有以下方法
   #    .z 返回窗口的z值（当前文字精灵将高于该值）
   #    .font 返回绘制字体实例
-  #    .eagle_charas_x0 .eagle_charas_y0 返回文字区域的左上点（屏幕坐标）
-  #    .eagle_charas_ox .eagle_charas_oy 返回文字可视区域的左上点（文字区域坐标）
+  #    .eagle_charas_x0 .eagle_charas_y0 返回文字显示区域的左上角坐标（屏幕坐标）
+  #    .eagle_charas_ox .eagle_charas_oy 返回文字显示区域的显示原点（文字区域坐标）
   #    .eagle_charas_max_h 返回文字区域的最大高度
   #--------------------------------------------------------------------------
   def initialize(window_bind, c, x, y, w, h, viewport = nil)
