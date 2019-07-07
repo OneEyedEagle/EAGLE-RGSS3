@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.7.7.22 新增对话框内容滚动
+# - 2019.7.7.23 新增对话框内容滚动
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -250,7 +250,7 @@ $imported["EAGLE-MessageEX"] = true
 #----------------------------------------------------------------------------
 # ● 内容滚动
 #----------------------------------------------------------------------------
-# - 当设置了 win 或者 pop 转义符的 w 或 h 变量时，即锁定对话框的宽度或高度
+# - 当对话框的宽度或高度被固定时，
 #     若所绘制的文字超出对话框范围，将自动开启内容滚动效果
 # - 当进入 等待按键 状态时，按住 方向键 即可朝对应方向滚动浏览对话框全部内容
 #
@@ -1944,23 +1944,10 @@ class Window_Message
     # 处理文字区域大小更改
     @eagle_charas_w = pos[:x] if @eagle_charas_w < pos[:x]
     @eagle_charas_h = pos[:y] + pos[:height] if @eagle_charas_h < pos[:y] + pos[:height]
-    # 确保当前文字在视图区域内
-    ensure_character_visible(pos)
     return if !game_message.draw
     return if show_fast? # 如果是立即显示，则不更新
     eagle_process_draw_update
     wait_for_one_character
-  end
-  #--------------------------------------------------------------------------
-  # ● 确保最后绘制完成的文字在视图内
-  #--------------------------------------------------------------------------
-  def ensure_character_visible(pos)
-    self.ox = 0 if pos[:x] < self.ox
-    d = pos[:x] - @eagle_chara_viewport.rect.width
-    self.ox = d if d > 0
-    self.oy = 0 if pos[:y] < self.oy
-    d = pos[:y] + pos[:height] - @eagle_chara_viewport.rect.height
-    self.oy = d if d > 0
   end
   #--------------------------------------------------------------------------
   # ● 绘制完成时的更新
@@ -1977,6 +1964,8 @@ class Window_Message
       eagle_charas_max_h + eagle_window_h_empty)
     # pause精灵重置位置
     @eagle_sprite_pause.bind_last_chara(@eagle_chara_sprites[-1])
+    # 确保最后绘制的文字在视图区域内
+    ensure_character_visible
   end
   #--------------------------------------------------------------------------
   # ● 重排列全部文字精灵
@@ -1986,8 +1975,8 @@ class Window_Message
     charas = [] # 存储当前迭代行的全部文字精灵
     # 存储当前迭代行的y值（同y的为同一行）（未考虑列排文字）
     charas_y = @eagle_chara_sprites[0].origin_y  # 初始为第一行
-    # 可供文字绘制区域的最大宽度
-    max_w = eagle_charas_max_w
+    # 最大宽度 = [可供文字绘制区域的最大宽度, 文字占据宽度].max
+    max_w = [eagle_charas_max_w, @eagle_charas_w].max
     @eagle_chara_sprites.each do |s|
       next charas.push(s) if s.origin_y == charas_y # 第一行的首字符会存入
       # 对同一行的字符重排
@@ -2018,6 +2007,18 @@ class Window_Message
       _y = c.origin_y + h_line - c.height # 底部对齐
       c.reset_xy(_x, _y)
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 确保最后绘制完成的文字在视图内
+  #--------------------------------------------------------------------------
+  def ensure_character_visible
+    c = @eagle_chara_sprites[-1]
+    self.ox = 0 if c._x < self.ox
+    d = c._x + c.width - @eagle_chara_viewport.rect.width
+    self.ox = d if d > 0
+    self.oy = 0 if c._y < self.oy
+    d = c._y + c.height - @eagle_chara_viewport.rect.height
+    self.oy = d if d > 0
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）处于快进显示？
