@@ -2,7 +2,7 @@
 # ■ Add-On 文字四散移出 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【Add-On 部分粒子模板 by老鹰】之下
 #==============================================================================
-# - 2019.7.6.17 整合对话框扩展
+# - 2019.7.7.12 整合对话框扩展
 #==============================================================================
 # - 本插件为 文字精灵组的粒子化 实现了一个简单便捷的调用接口
 #----------------------------------------------------------------------------
@@ -109,13 +109,14 @@ class Window_Message
     if game_message.pout_params[:type] && game_message.pout_params[:type] > 0
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
+          s.check_move_out
           next if s.finish?
           s.finish
           ParticleManager.pout(:msg_charas, [s], game_message.pout_params)
           win_params[:cwo].times { Fiber.yield }
         end
       else
-        charas = @eagle_chara_sprites.select { |s| !s.finish? }
+        charas = @eagle_chara_sprites.select { |s| s.check_move_out; !s.finish? }
         charas.each { |s| s.finish }
         ParticleManager.pout(:msg_charas, charas, game_message.pout_params)
       end
@@ -148,13 +149,14 @@ class Window_ScrollText < Window_Base
     if pout_params[:type] && pout_params[:type] > 0
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
+          s.check_move_out
           next if s.finish?
           s.finish
           ParticleManager.pout(:st_charas, [s], pout_params)
           win_params[:cwo].times { Fiber.yield }
         end
       else
-        charas = @eagle_chara_sprites.select { |s| !s.finish? }
+        charas = @eagle_chara_sprites.select { |s| s.check_move_out; !s.finish? }
         charas.each { |s| s.finish }
         ParticleManager.pout(:st_charas, charas, pout_params)
       end
@@ -186,7 +188,7 @@ class Spriteset_Choice
   alias eagle_particle_out_move_out move_out
   def move_out
     if @pout_params && pout_params[:type] > 0
-      charas = @charas.select { |s| !s.finish? }
+      charas = @charas.select { |s| s.check_move_out; !s.finish? }
       charas.each { |s| s.finish }
       ParticleManager.pout("choice_#{@i_w}".to_sym, charas, @pout_params)
     end
