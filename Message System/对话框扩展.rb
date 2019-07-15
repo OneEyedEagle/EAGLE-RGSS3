@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.7.15.17 新增文字摇摆特效
+# - 2019.7.15.21 新增文字摇摆特效与匀加速内容滚动
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -222,10 +222,11 @@ $imported["EAGLE-MessageEX"] = true
 #    t → 每隔t帧进行一次1像素的偏移
 #    vy → 起始时的y方向移动速度（正数为向下）
 #
-#  \cswing[param] → 开启左右摇摆特效（底部中心为摇摆不动点）
+#  \cswing[param] → 开启左右摇摆特效（该特效本质为精灵旋转）
 #    d → 每次更新增加的角度值（0时随机取正负1）
 #    t → 每次角度更新后等待t帧
 #    a → 角度可到达的最大值（左右对称）
+#    o → 摇摆不动点所在位置类型（键盘九宫格）
 #
 #  \cshake[param] → 开启抖动特效
 #    l/r/u/d → 设置 左右上下 四个方向的最大移动偏移值
@@ -522,6 +523,7 @@ module MESSAGE_EX
     :d => 0, # 每次更新增加的角度值（0时随机取正负1）
     :t => 1, # 每次角度更新后等待t帧
     :a => 15, # 角度可到达的最大值（左右对称）
+    :o => 2, # 摇摆不动点所在位置类型（键盘九宫格）（2为底部中心）
   }
   CSHAKE_PARAMS_INIT = {
   # \cshake[]
@@ -1978,8 +1980,6 @@ class Window_Message
     @eagle_chara_viewport.rect.set(eagle_charas_x0, eagle_charas_y0,
       eagle_charas_max_w + eagle_window_w_empty,
       eagle_charas_max_h + eagle_window_h_empty)
-    # pause精灵重置位置
-    @eagle_sprite_pause.bind_last_chara(@eagle_chara_sprites[-1])
     # 确保最后绘制的文字在视图区域内
     ensure_character_visible
   end
@@ -2086,6 +2086,8 @@ class Window_Message
     return if !game_message.draw
     before_input_pause
     eagle_process_draw_update # 统一更新一次
+    # pause精灵重置位置
+    @eagle_sprite_pause.bind_last_chara(@eagle_chara_sprites[-1])
     @eagle_sprite_pause.show
     self.pause = true unless MESSAGE_EX::NO_DEFAULT_PAUSE
     process_input_pause
@@ -2112,6 +2114,7 @@ class Window_Message
     ox_des = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
     oy_des = self.oy
     recreate_contents_for_charas
+    d_oxy = 1; last_input = nil; last_input_c = 0
     self.arrows_visible = true
     while true
       Fiber.yield
@@ -2119,18 +2122,26 @@ class Window_Message
       break if Input.trigger?(:B) || Input.trigger?(:C)
       # 处理文本滚动
       if Input.press?(:UP)
-        self.oy -= 1
+        self.oy -= d_oxy
         self.oy = 0 if self.oy < 0
       elsif Input.press?(:DOWN)
-        self.oy += 1
+        self.oy += d_oxy
         self.oy = oy_des if self.oy > oy_des
       elsif Input.press?(:LEFT)
-        self.ox -= 1
+        self.ox -= d_oxy
         self.ox = 0 if self.ox < 0
       elsif Input.press?(:RIGHT)
-        self.ox += 1
+        self.ox += d_oxy
         self.ox = ox_des if self.ox > ox_des
       end
+      if last_input == Input.dir4
+        last_input_c += 1
+        d_oxy += 1 if last_input_c % 10 == 0
+      else
+        d_oxy = 1
+        last_input_c = 0
+      end
+      last_input = Input.dir4
     end
     self.arrows_visible = false
     Input.update
@@ -2814,6 +2825,7 @@ class Sprite_EagleCharacter < Sprite
     @_ox = @_oy = 0
     @origin_x = x; @origin_y = y # 存储左对齐时，文字的显示位置（作为标准位置）
     reset_xy(x, y)
+    reset_oxy(7)
     @dx = @dy = 0 # 移动的实时偏移值
     @effects = {} # effect_sym => param_string
     @params = {} # effect_sym => param_hash
@@ -2825,6 +2837,23 @@ class Sprite_EagleCharacter < Sprite
   def reset_xy(x, y)
     @_x = x # 存储文字相对对话框左上角的显示位置
     @_y = y
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置显示原点
+  #--------------------------------------------------------------------------
+  def reset_oxy(o)
+    w = self.width; h = self.height
+    case o
+    when 1; self.ox = 0; self.oy = h
+    when 2; self.ox = w/2; self.oy = h
+    when 3; self.ox = w; self.oy = h
+    when 4; self.ox = 0; self.oy = h/2
+    when 5; self.ox = w/2; self.oy = h/2
+    when 6; self.ox = w; self.oy = h/2
+    when 7; self.ox = 0; self.oy = 0
+    when 8; self.ox = w/2; self.oy = 0
+    when 9; self.ox = w; self.oy = 0
+    end
   end
   #--------------------------------------------------------------------------
   # ● 结束
@@ -2924,9 +2953,8 @@ class Sprite_EagleCharacter < Sprite
     @_zoom = -(params[:t]/params[:vzt]) * params[:vz]
     self.angle = -params[:t] * params[:va]
     self.opacity = 0
-    self.ox = self.width / 2; self.oy = self.height / 2
-    @dx += self.ox; @dy += self.oy
     self.zoom_x = self.zoom_y = 1.0 + @_zoom/100.0
+    reset_oxy(5)
     @flag_move = :in
   end
   #--------------------------------------------------------------------------
@@ -2944,8 +2972,7 @@ class Sprite_EagleCharacter < Sprite
     move_end(sym) if params[:t] == 0
   end
   def move_end(sym = :cin)
-    @dx -= self.ox; @dy -= self.oy
-    self.ox = 0; self.oy = 0
+    reset_oxy(7)
     if sym == :cin
       self.zoom_x = self.zoom_y = 1.0
       self.opacity = 255
@@ -2965,7 +2992,7 @@ class Sprite_EagleCharacter < Sprite
   def move_out
     if !(@params[:cout].nil? || @params[:cout].empty?)
       @dx = @dy = @_zoom = 0
-      self.ox = self.width / 2; self.oy = self.height / 2
+      reset_oxy(5)
       @flag_move = :out
     elsif !@params[:uout].nil?
       move_out_uout(@params[:uout])
@@ -3049,8 +3076,7 @@ class Sprite_EagleCharacter < Sprite
     params[:d] = rand(2) * 2 - 1 if params[:d] == 0
     params[:tc] = 0
     params[:ac] = 0 # 当前偏移角度和
-    self.ox = self.width / 2
-    self.oy = self.height
+    reset_oxy(params[:o])
     self.angle = 0
   end
   def update_effect_cswing(params)
@@ -3201,6 +3227,7 @@ class Sprite_EaglePauseTag < Sprite
   # ● 更新位置
   #--------------------------------------------------------------------------
   def reset_position
+    self.viewport = nil
     if params[:do] > 0
       MESSAGE_EX.reset_xy_dorigin(self, @window_bind, params[:do])
     elsif @last_chara
@@ -3221,7 +3248,7 @@ class Sprite_EaglePauseTag < Sprite
   def update
     super
     update_index
-    reset_position if @last_chara
+    reset_position if self.viewport && @last_chara
   end
   #--------------------------------------------------------------------------
   # ● 更新帧动画
