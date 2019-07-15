@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.7.7.23 新增对话框内容滚动
+# - 2019.7.15.17 新增文字摇摆特效
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -221,6 +221,11 @@ $imported["EAGLE-MessageEX"] = true
 #    h → 上下浮动的最大偏移像素值
 #    t → 每隔t帧进行一次1像素的偏移
 #    vy → 起始时的y方向移动速度（正数为向下）
+#
+#  \cswing[param] → 开启左右摇摆特效（底部中心为摇摆不动点）
+#    d → 每次更新增加的角度值（0时随机取正负1）
+#    t → 每次角度更新后等待t帧
+#    a → 角度可到达的最大值（左右对称）
 #
 #  \cshake[param] → 开启抖动特效
 #    l/r/u/d → 设置 左右上下 四个方向的最大移动偏移值
@@ -511,6 +516,12 @@ module MESSAGE_EX
     :h  => 2,  # Y方向上的最大偏移值
     :t  => 4,  # 移动一像素所耗帧数
     :vy => -1, # 起始速度的Y方向分量（正数向下）
+  }
+  CSWING_PARAMS_INIT = {
+  # \cswing[]
+    :d => 0, # 每次更新增加的角度值（0时随机取正负1）
+    :t => 1, # 每次角度更新后等待t帧
+    :a => 15, # 角度可到达的最大值（左右对称）
   }
   CSHAKE_PARAMS_INIT = {
   # \cshake[]
@@ -861,6 +872,11 @@ module CHARA_EFFECTS
   # ● 波浪特效预定
   #--------------------------------------------------------------------------
   def eagle_chara_effect_cwave(param = '')
+  end
+  #--------------------------------------------------------------------------
+  # ● 摇摆特效预定
+  #--------------------------------------------------------------------------
+  def eagle_chara_effect_cswing(param = '')
   end
   #--------------------------------------------------------------------------
   # ● 抖动特效预定
@@ -2838,8 +2854,8 @@ class Sprite_EagleCharacter < Sprite
   # ● 更新位置
   #--------------------------------------------------------------------------
   def update_position
-    self.x = @_x + @dx
-    self.y = @_y + @dy
+    self.x = @_x + @dx + self.ox
+    self.y = @_y + @dy + self.oy
     if @window_bind
       @x0 = @window_bind.eagle_charas_x0
       @y0 = @window_bind.eagle_charas_y0
@@ -2950,7 +2966,6 @@ class Sprite_EagleCharacter < Sprite
     if !(@params[:cout].nil? || @params[:cout].empty?)
       @dx = @dy = @_zoom = 0
       self.ox = self.width / 2; self.oy = self.height / 2
-      @dx += self.ox; @dy += self.oy
       @flag_move = :out
     elsif !@params[:uout].nil?
       move_out_uout(@params[:uout])
@@ -3025,6 +3040,28 @@ class Sprite_EagleCharacter < Sprite
       @dy += params[:vy]
       params[:vy] *= -1 if @dy < -params[:u] || @dy > params[:d]
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 摇摆特效
+  #--------------------------------------------------------------------------
+  def start_effect_cswing(params, param_s)
+    parse_param(params, param_s)
+    params[:d] = rand(2) * 2 - 1 if params[:d] == 0
+    params[:tc] = 0
+    params[:ac] = 0 # 当前偏移角度和
+    self.ox = self.width / 2
+    self.oy = self.height
+    self.angle = 0
+  end
+  def update_effect_cswing(params)
+    return if (params[:tc] -= 1) > 0
+    params[:tc] = params[:t]
+    params[:ac] += params[:d]
+    if params[:ac].abs > params[:a]
+      params[:ac] = params[:a] * (params[:ac] > 0 ? 1 : -1)
+      params[:d] *= -1
+    end
+    self.angle = params[:ac]
   end
   #--------------------------------------------------------------------------
   # ● 闪烁特效
