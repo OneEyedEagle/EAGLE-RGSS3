@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.7.15.21 新增文字摇摆特效与匀加速内容滚动
+# - 2019.7.16.11 新增文字缩放特效
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -227,6 +227,16 @@ $imported["EAGLE-MessageEX"] = true
 #    t → 每次角度更新后等待t帧
 #    a → 角度可到达的最大值（左右对称）
 #    o → 摇摆不动点所在位置类型（键盘九宫格）
+#
+#  \czoom[param] → 开启缩放特效（该特效本质为精灵缩放）
+#    t → 在进行一次缩放变更后的等待帧数
+#    dx → x方向的每次缩放增量
+#    dy → y方向的每次缩放增量
+#    o → 缩放不动点所在位置类型（键盘九宫格）
+#    min → x和y方向上缩放总量的最小值
+#          （在RGSS3中，负数的缩放量不会显示，推荐设置为自然数）
+#          （在RGD中，负数的缩放量将反向显示，推荐设置为最大值的相反数）
+#    max → x和y方向上缩放总量的最大值
 #
 #  \cshake[param] → 开启抖动特效
 #    l/r/u/d → 设置 左右上下 四个方向的最大移动偏移值
@@ -524,6 +534,15 @@ module MESSAGE_EX
     :t => 1, # 每次角度更新后等待t帧
     :a => 15, # 角度可到达的最大值（左右对称）
     :o => 2, # 摇摆不动点所在位置类型（键盘九宫格）（2为底部中心）
+  }
+  CZOOM_PARAMS_INIT = {
+  # \czoom[]
+    :t => 0, # 在进行一次缩放变更后的等待帧数
+    :dx => 2, # x方向的每次缩放增量（缩放总量在-100~100之间，整数）
+    :dy => 0, # y方向的每次缩放增量
+    :o => 5, # 缩放不动点所在位置类型（键盘九宫格）（5为中心）
+    :min => 0, # xy缩放总量的最小值
+    :max => 100, # xy缩放总量的最大值
   }
   CSHAKE_PARAMS_INIT = {
   # \cshake[]
@@ -879,6 +898,11 @@ module CHARA_EFFECTS
   # ● 摇摆特效预定
   #--------------------------------------------------------------------------
   def eagle_chara_effect_cswing(param = '')
+  end
+  #--------------------------------------------------------------------------
+  # ● 缩放特效预定
+  #--------------------------------------------------------------------------
+  def eagle_chara_effect_czoom(param = '')
   end
   #--------------------------------------------------------------------------
   # ● 抖动特效预定
@@ -3027,7 +3051,6 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def start_effect_csin(params, param_s)
     parse_param(params, param_s)
-
     self.wave_amp    = params[:a]
     self.wave_length = params[:l]
     self.wave_speed  = params[:s]
@@ -3072,10 +3095,10 @@ class Sprite_EagleCharacter < Sprite
   # ● 摇摆特效
   #--------------------------------------------------------------------------
   def start_effect_cswing(params, param_s)
+    params[:ac] = 0 # 当前偏移角度和
+    params[:tc] = 0
     parse_param(params, param_s)
     params[:d] = rand(2) * 2 - 1 if params[:d] == 0
-    params[:tc] = 0
-    params[:ac] = 0 # 当前偏移角度和
     reset_oxy(params[:o])
     self.angle = 0
   end
@@ -3090,11 +3113,35 @@ class Sprite_EagleCharacter < Sprite
     self.angle = params[:ac]
   end
   #--------------------------------------------------------------------------
+  # ● 缩放特效
+  #--------------------------------------------------------------------------
+  def start_effect_czoom(params, param_s)
+    params[:tc] = 0 # 计时
+    parse_param(params, param_s)
+    params[:zoom_x] = 100 # 初始的总缩放量
+    params[:zoom_y] = 100
+    reset_oxy(params[:o])
+  end
+  def update_effect_czoom(params)
+    return if (params[:tc] -= 1) > 0
+    params[:tc] = params[:t]
+    if params[:dx] != 0
+      params[:zoom_x] += params[:dx]
+      params[:dx] *= -1 if params[:zoom_x] > params[:max] || params[:zoom_x] < params[:min]
+      self.zoom_x = params[:zoom_x] * 1.0 / 100
+    end
+    if params[:dy] != 0
+      params[:zoom_y] += params[:dy]
+      params[:dy] *= -1 if params[:zoom_y] > params[:max] || params[:zoom_y] < params[:min]
+      self.zoom_y = params[:zoom_y] * 1.0 / 100
+    end
+  end
+  #--------------------------------------------------------------------------
   # ● 闪烁特效
   #--------------------------------------------------------------------------
   def start_effect_cflash(params, param_s)
-    parse_param(params, param_s)
     params[:tc] = 0  # 闪烁后的等待时间计数
+    parse_param(params, param_s)
     params[:color] = Color.new(params[:r], params[:g], params[:b], params[:a])
   end
   def update_effect_cflash(params)
@@ -3114,8 +3161,8 @@ class Sprite_EagleCharacter < Sprite
   # ● 消散特效
   #--------------------------------------------------------------------------
   def start_effect_cu(params, param_s)
-    parse_param(params, param_s)
     params[:t_c] = 0 # 间隔计数
+    parse_param(params, param_s)
     params[:dir] = MESSAGE_EX::CU_PARAM_DIR[ params[:dir] ]
     params[:s] = MESSAGE_EX::CU_PARAM_S[ params[:s] ]
   end
