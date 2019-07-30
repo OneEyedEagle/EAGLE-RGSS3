@@ -853,9 +853,9 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   # ● 基于指定位图，计算文本块所占宽高
   # （只进行 \\ 到 \e 的文本替换、忽略除\i以外的全部转义符、未考虑字号变化）
-  #  k → 字符间距  lh → 行间距
+  #  k → 字符间距  ld → 行间距
   #--------------------------------------------------------------------------
-  def self.calculate_text_wh(bitmap, text, k = 0, lh = 0)
+  def self.calculate_text_wh(bitmap, text, k = 0, ld = 0)
     text_clone, array_width, array_height = text.dup, [], []
     # 转义符替换
     text_clone.gsub!(/\\/)      { "\e" }
@@ -871,7 +871,7 @@ module MESSAGE_EX
       h = icon_count > 0 ? [r.height, 24].max : r.height
       array_height.push(h)
     end
-    return [array_width.max, array_height.inject{|sum, v| sum = sum + v + lh}]
+    return [array_width.max, array_height.inject{|sum, v| sum = sum + v + ld}]
   end
 #==============================================================================
 # ○ 定义能够响应的文字特效

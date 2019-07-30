@@ -1,25 +1,31 @@
 #
-module BUTTON
-  # BUTTON.new(:test, {:touch => {:evals=>{:start=>"v[1]+=1"}}})
-  #
+ss = {:bitmap => "Window"}
+ps = { :touch =>
+  {:start => { :eval => "v[1]+=1" }}
+}
+BUTTON.new(:test, ss, ps)
 
-  # touchs[:axis] = Symbol  【可选】
-  # touchs[:touch] = { type => params }
-  #   params = { :methods => {:start => method} }
-  def self.new(sym, touchs = {})
-    s = new_sprite(Button, touchs[:axis])
-    if touchs[:touch]
-      touchs[:touch].each { |t, ps| s.bind_touch(t, ps[:methods], ps[:evals], ps[:cond]) }
-    end
+module BUTTON
+  # sym    Symbol 唯一标识符
+  # settings  Hash 精灵相关参数
+  #   :axis => Symbol 【可选】绑定位置（默认屏幕）
+  # params   Hash 接触判定相关参数
+  #   type => {    # 接触判定类型 => 接触判定时机与所执行方法
+  #     time_sym => { :method => method, :eval => "" }
+  #   }
+  def self.new(sym, settings = {}, params = {})
+    s = new_sprite(Button, settings)
+    params.each { |t, ps| ps.each { |tt, pss| s.bind_touch(t, tt, pss) } }
     add_sprite(sym, s)
   end
   def self.[](sym)
     @buttons_all[sym] || @buttons_map[sym] || nil
   end
-  def self.new_sprite(button_class = Button, axis = :screen)
+  def self.new_sprite(button_class = Button, settings = {})
     button_class = Button
     s = button_class.new(nil)
-    s.bind_axis(axis) if axis # 绑定显示轴
+    s.bind_axis(settings[:axis]) if settings[:axis] # 绑定显示轴
+    s.bitmap = Cache.system(settings[:bitmap]) if settings[:bitmap]
     s
   end
   def self.add_sprite(sym, sprite)
@@ -29,13 +35,13 @@ module BUTTON
       @buttons_all[sym] = sprite
     end
   end
-  def self.delete(sym)
+  def self.delete(sym, f_dispose = true)
     if @buttons_all[sym]
-      @buttons_all[sym].dispose
+      @buttons_all[sym].dispose if f_dispose
       @buttons_all.delete_key(sym)
     end
-    if if @buttons_map[sym]
-      @buttons_map[sym].dispose
+    if @buttons_map[sym]
+      @buttons_map[sym].dispose if f_dispose
       @buttons_map.delete_key(sym)
     end
   end
@@ -46,11 +52,20 @@ module BUTTON
     # 当离开地图时隐藏，返回时再显示
     @buttons_map = {}
   end
+
   def self.update
+    @buttons_all.each { |k, s| s.update; s.update_button }
   end
 end # end of BUTTON
 
+BUTTON.init # TODO
+
 class Scene_Base
+  alias eagle_button_update_basic update_basic
+  def update_basic
+    eagle_button_update_basic
+    BUTTON.update
+  end
 end
 
 class Button < Sprite
@@ -63,6 +78,7 @@ class Button < Sprite
     @touchs = {} # type => { }
   end
   def dispose
+    self.bitmap.dispose if self.bitmap
     super
   end
 
@@ -76,109 +92,135 @@ class Button < Sprite
     @y_ = y_ if y_
   end
 
-  # type  Symbol
+  # type  Symbol 类型
   #   :mouse 绑定鼠标
   #   :event_id 绑定当前地图的id号事件
   #   :player 绑定队首（玩家控制的角色）
-  #   :chara_id 绑定队伍中的id号角色
-  # methods Symbol => method(:sym)
-  # evals  Symbol => eval_string
-  #   :start
-  #   :on
-  #   :end
-  #   :click
-  # cond  eval_string
-  #   a 代表目标对象， b 代表自身
-  #   eval后返回值为true时，代表接触成功
-  #   传入nil时按类调用默认的接触判定方法
-  def bind_touch(type, methods = {}, evals = {}, cond = nil)
-    @touchs[type] = {}
-    @touchs[type][:methods] = methods || {}
-    @touchs[type][:evals] = evals || {}
-    @touchs[type][:cond] = cond if cond
-    @touchs[type][:last_flag_touch] = false
+  #   :chara_id 绑定队列中的第id位角色
+  # time_type  Symbol 执行时机
+  #   :start  刚从未接触到接触时
+  #   :on     一直接触时
+  #   :click  接触并按下确定键时
+  #   :end    接触结束时
+  # params  Hash 参数组
+  #   :method => method(:sym) 时机达成时，执行的方法
+  #   :eval   => eval_string  时机达成时，执行的字符串
+  # f_merge  Bool 是否以上一次的参数组为初值
+  def bind_touch(type, time_type, params = {}, f_merge = false)
+    @touchs[type] ||= {}
+    if( f_merge )
+      @touchs[type][time_type] ||= {}
+      @touchs[type][time_type].merge!( params )
+    else
+      @touchs[type][time_type] = params
+    end
+    @touchs[type][:f_last_touch] = false
   end
-  def delete_touch(type)
-    @touchs.delete_key(type)
+
+  def delete_touch(type, time_type = nil)
+    if( time_type )
+      @touchs[type].delete_key(time_type)
+    else
+      @touchs.delete_key(type)
+    end
+  end
+
+  #  cond   => eval_string  判定是否接触成功的字符串
+  #     a 代表自身， b 代表接触判定的目标对象
+  #     eval后返回值为 true ，代表接触成功
+  #    传入 nil 则按类调用默认的接触判定方法
+  def bind_cond(type, cond = nil)
+    @touchs[type].delete_key(:cond)
+    @touchs[type][:cond] = cond if cond
   end
 
   def update
     super
-    return if !self.visible
     update_axis
     update_xy
-    update_touch
   end
-
   def update_axis
     if @axis == :map && SceneManager.scene_is?(Scene_Map)
       @x0 = 0 - $game_map.display_x * 32
       @y0 = 0 - $game_map.display_y * 32
-      return
+    else
+      @x0 = @y0 = 0
     end
-    @x0 = @y0 = 0
   end
   def update_xy
     self.x = @x0 + @x_
     self.y = @y0 + @y_
   end
 
+  # 当作为按钮精灵时，额外进行的更新
+  #  只在BUTTON模块内部调用
+  def update_button
+    return if !self.visible
+    update_touch
+  end
   def update_touch
     @touchs.each do |k, v|
-      flag_touch = check_touch?(k, v)
-      if flag_touch == true
-        if v[:last_flag_touch] == false # 上一帧false，本帧true，激活接触开始时方法
-          v[:methods][:start].call if v[:methods][:start]
-          eval_string(v[:evals][:start]) if v[:evals][:start]
-        else # 激活持续方法
-          v[:methods][:on].call if v[:methods][:on]
-          eval_string(v[:evals][:on]) if v[:evals][:on]
-          if Input.trigger?(:C)
-            v[:methods][:click].call if v[:methods][:click]
-            eval_string(v[:evals][:click]) if v[:evals][:click]
-          end
+      # k => type
+      # v => { time_type => params, :cond => eval, :f_last_touch => bool }
+      f_touch = check_touch?(k, v)
+      if f_touch == true
+        # 上一帧false，本帧true，激活接触开始方法
+        if v[:f_last_touch] == false
+          call_method(k, v[:start]) if v[:start]
+        else
+          call_method(k, v[:on]) if v[:on]
+          call_method(k, v[:click]) if v[:click] && Input.trigger?(:C)
         end
-      else
-        if v[:last_flag_touch] == true # 上一帧true，本帧false，激活接触结束时方法
-          v[:methods][:end].call if v[:methods][:end]
-          eval_string(v[:evals][:end]) if v[:evals][:end]
-        end
+      else # 上一帧true，本帧false，激活接触结束时方法
+        call_method(k, v[:end]) if v[:f_last_touch] == true && v[:end]
       end
-      @touchs[k][:last_flag_touch] = flag_touch
+      @touchs[k][:f_last_touch] = f_touch
     end
   end
+
+  def call_method(type, v)
+    v[:method].call if v[:method]
+    eval_string(type, v[:eval]) if v[:eval]
+  end
+  def eval_string(type, str)
+    s = $game_swtiches; v = $game_variables
+    a = self; b = get_character(type)
+    eval(str)
+  end
+
+  def get_character(type)
+    return $game_player if type == :player
+    str = type.to_s
+    if str =~ /event_(\d+)/
+      return $game_map.events[$1.to_i]
+    end
+    if str =~ /chara_(\d+)/
+      return $game_party.members[$1.to_i]
+    end
+    return nil
+  end
+
   def check_touch?(k, v)
-    return (eval(v[:cond]) == true) if v[:cond]
-    return touch_mouse?(v) if k == :mouse
-    return touch_player?(v) if k == :player
-    k_s = k.to_s
-    return touch_event?(v, $1.to_i) if k_s =~ /event_(\d+)/
-    return touch_chara?(v, $1.to_i) if k_s =~ /chara_(\d+)/
+    return (eval_string(k, v[:cond]) == true) if v[:cond]
+    return touch_mouse? if k == :mouse
+    chara = get_character(k)
+    return touch_chara?(chara) if chara
     return false
   end
   # 以下全部按照屏幕坐标进行计算
-  def touch_mouse?(v)
+  def touch_mouse?
     in_self_rect?(Mouse.x, Mouse.y)
   end
-  def touch_player?(v)
-    return false
-  end
-  def touch_event?(v，id)
-    return false
-  end
-  def touch_chara?(v, id)
+  def touch_chara?(chara)
     return false
   end
 
   def in_self_rect?(x, y)
-    return false if x < self.x || x > self.x + self.width
-    return false if y < self.y || y > self.y + self.height
+    x_ = self.x - self.ox
+    y_ = self.y - self.oy
+    return false if x < x_ || x > x_ + self.width
+    return false if y < y_ || y > y_ + self.height
     return true
   end
 
-  def eval_string(str)
-    s = $game_swtiches
-    v = $game_variables
-    eval(str)
-  end
 end # end of class
