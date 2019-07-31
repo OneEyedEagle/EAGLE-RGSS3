@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.7.16.11 新增文字缩放特效
+# - 2019.7.31.14 新增文字切换特效
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -222,13 +222,13 @@ $imported["EAGLE-MessageEX"] = true
 #    t → 每隔t帧进行一次1像素的偏移
 #    vy → 起始时的y方向移动速度（正数为向下）
 #
-#  \cswing[param] → 开启左右摇摆特效（该特效本质为精灵旋转）
+#  \cswing[param] → 开启左右摇摆特效（本质为精灵旋转）
 #    d → 每次更新增加的角度值（0时随机取正负1）
 #    t → 每次角度更新后等待t帧
 #    a → 角度可到达的最大值（左右对称）
 #    o → 摇摆不动点所在位置类型（键盘九宫格）
 #
-#  \czoom[param] → 开启缩放特效（该特效本质为精灵缩放）
+#  \czoom[param] → 开启缩放特效（本质为精灵缩放）
 #    t → 在进行一次缩放变更后的等待帧数
 #    dx → x方向的每次缩放增量
 #    dy → y方向的每次缩放增量
@@ -253,6 +253,12 @@ $imported["EAGLE-MessageEX"] = true
 #  \cu[param] → 开启字符消散特效【叠加】【需要前置Unravel_Bitmap插件】
 #    t → 每两次执行消散之间的间隔帧数（正整数）
 #    其余同 \uout 的变量
+#
+#  \ctog[param] → 开启文字切换特效（本质为位图切换）
+#    i → 使用 i 号对应的文字组
+#    n → 从文字组中挑选出 n 个字符作为切换文字
+#    t → 文字切换一次后的等待帧数
+#    r → 是否启用随机切换
 #
 #----------------------------------------------------------------------------
 # - 扩展类
@@ -582,6 +588,16 @@ module MESSAGE_EX
     1 => :C, # 圆形（耗时）
     2 => :T  # 三角形
   }
+  CTOG_PARAMS_INIT = {
+  # \ctog[]
+    :i => 0,  # 选取i号文字组
+    :n => 4,  # 从文字组中选取n个字符
+    :t => 10, # 文字切换的等待帧数
+    :r => 0,  # 是否随机选择下一个文字？
+  }
+  CTOG_CHARAS = { # 定义文字切换特效的文字组
+    0 => ['♬', '♪', '♪', '♭', '♪'],
+  }
   #--------------------------------------------------------------------------
   # ● 【设置】定义初始激活的扩展类转义符的预设变量参数字符串
   #--------------------------------------------------------------------------
@@ -687,6 +703,14 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   def self.get_default_params(param_sym)
     MESSAGE_EX.const_get("#{param_sym.to_s.upcase}_PARAMS_INIT".to_sym) rescue {}
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取文字切换特效的文字组
+  #--------------------------------------------------------------------------
+  def self.get_tog_charas(index, num)
+    array = CTOG_CHARAS[index]
+    return [] if array.nil?
+    return array.sample(num)
   end
   #--------------------------------------------------------------------------
   # ● 获取\conv[string]的替换字符串
@@ -804,6 +828,21 @@ module MESSAGE_EX
     return true
   end
   #--------------------------------------------------------------------------
+  # ● 应用font参数到font对象上
+  #--------------------------------------------------------------------------
+  def self.apply_font_params(font, params)
+    font.size = params[:size]
+    font.italic = MESSAGE_EX.check_bool(params[:i])
+    font.bold = MESSAGE_EX.check_bool(params[:b])
+    font.shadow = MESSAGE_EX.check_bool(params[:s])
+    font.color.alpha = params[:ca]
+    font.outline = MESSAGE_EX.check_bool(params[:o])
+    font.out_color.set(params[:or],params[:og],params[:ob],params[:oa])
+    params[:l] = MESSAGE_EX.check_bool(params[:l])
+    params[:d] = MESSAGE_EX.check_bool(params[:d])
+    params[:u] = MESSAGE_EX.check_bool(params[:u])
+  end
+  #--------------------------------------------------------------------------
   # ● 重置指定对象的显示原点位置
   #--------------------------------------------------------------------------
   def self.reset_xy_origin(obj, o)
@@ -874,9 +913,86 @@ module MESSAGE_EX
     return [array_width.max, array_height.inject{|sum, v| sum = sum + v + ld}]
   end
 #==============================================================================
+# ○ 文字池（用于更新需要移出的文字精灵）
+#==============================================================================
+  #--------------------------------------------------------------------------
+  # ● 重置（每次Scene新建/释放时调用）
+  #--------------------------------------------------------------------------
+  def self.charapool_reset
+    @pool_charas ||= []
+    @pool_charas.each { |s| s.dispose }
+    @pool_charas.clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def self.charapool_update
+    @pool_charas.each { |s| s.update if !s.finish? }
+  end
+  #--------------------------------------------------------------------------
+  # ● 放入文字池中
+  #--------------------------------------------------------------------------
+  def self.charapool_push(s)
+    return s.dispose if s.finish?
+    @pool_charas.push(s)
+  end
+end # end of MESSAGE_EX
+#=============================================================================
+# ○ DataManager
+#=============================================================================
+class << DataManager
+  #--------------------------------------------------------------------------
+  # ● 设置新游戏
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_setup_new_game setup_new_game
+  def setup_new_game
+    eagle_message_ex_setup_new_game
+    $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
+  end
+end
+#=============================================================================
+# ○ Scene_Base
+#=============================================================================
+class Scene_Base
+  #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  alias eagle_charapool_post_start post_start
+  def post_start
+    eagle_charapool_post_start
+    MESSAGE_EX.charapool_reset
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新画面（基础）
+  #--------------------------------------------------------------------------
+  alias eagle_charapool_update_basic update_basic
+  def update_basic
+    eagle_charapool_update_basic
+    MESSAGE_EX.charapool_update
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束处理
+  #--------------------------------------------------------------------------
+  alias eagle_charapool_terminate terminate
+  def terminate
+    eagle_charapool_terminate
+    MESSAGE_EX.charapool_reset
+  end
+end
+#=============================================================================
+# ○ Scene_Map
+#=============================================================================
+class Spriteset_Map; attr_reader :character_sprites; end
+class Scene_Map; attr_reader :spriteset; end
+#=============================================================================
+# ○ Scene_Battle
+#=============================================================================
+class Scene_Battle; attr_reader :spriteset; end
+
+#==============================================================================
 # ○ 定义能够响应的文字特效
 #==============================================================================
-module CHARA_EFFECTS
+module MESSAGE_EX::CHARA_EFFECTS
   #--------------------------------------------------------------------------
   # ● 移入移出特效预定
   #--------------------------------------------------------------------------
@@ -928,59 +1044,10 @@ module CHARA_EFFECTS
   def eagle_chara_effect_cu(param = '')
   end
   end
-end
-#==============================================================================
-# ○ 文字池（用于更新需要移出的文字精灵）
-#==============================================================================
   #--------------------------------------------------------------------------
-  # ● 重置（每次Scene新建/释放时调用）
+  # ● 文字切换特效预定
   #--------------------------------------------------------------------------
-  def self.charapool_reset
-    @pool_charas ||= []
-    @pool_charas.each { |s| s.dispose }
-    @pool_charas.clear
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def self.charapool_update
-    @pool_charas.each { |s| s.update if !s.finish? }
-  end
-  #--------------------------------------------------------------------------
-  # ● 放入文字池中
-  #--------------------------------------------------------------------------
-  def self.charapool_push(s)
-    return s.dispose if s.finish?
-    @pool_charas.push(s)
-  end
-end # end of MESSAGE_EX
-#=============================================================================
-# ○ Scene_Base
-#=============================================================================
-class Scene_Base
-  #--------------------------------------------------------------------------
-  # ● 开始后处理
-  #--------------------------------------------------------------------------
-  alias eagle_charapool_post_start post_start
-  def post_start
-    eagle_charapool_post_start
-    MESSAGE_EX.charapool_reset
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新画面（基础）
-  #--------------------------------------------------------------------------
-  alias eagle_charapool_update_basic update_basic
-  def update_basic
-    eagle_charapool_update_basic
-    MESSAGE_EX.charapool_update
-  end
-  #--------------------------------------------------------------------------
-  # ● 结束处理
-  #--------------------------------------------------------------------------
-  alias eagle_charapool_terminate terminate
-  def terminate
-    eagle_charapool_terminate
-    MESSAGE_EX.charapool_reset
+  def eagle_chara_effect_ctog(param = '')
   end
 end
 
@@ -1199,12 +1266,6 @@ class Window_Message
   #--------------------------------------------------------------------------
   def game_message
     $game_message
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取字体对象
-  #--------------------------------------------------------------------------
-  def font
-    self.contents.font
   end
   #--------------------------------------------------------------------------
   # ● 拷贝自身
@@ -1458,6 +1519,17 @@ class Window_Message
     @last_windowskin_index = index
     self.windowskin = MESSAGE_EX.windowskin(index)
     change_color(text_color(0))
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取当前窗口皮肤的序号
+  #--------------------------------------------------------------------------
+  def get_cur_windowskin_index(index = nil)
+    return index if index
+    if game_message.pop? && !game_message.pop_params[:skin].nil?
+      return game_message.pop_params[:skin]
+    else
+      return game_message.win_params[:skin]
+    end
   end
   #--------------------------------------------------------------------------
   # ● 获取窗口宽度高度
@@ -1811,7 +1883,7 @@ class Window_Message
     pos[:x] = new_line_x
     pos[:y] = 0
     pos[:new_x] = new_line_x
-    pos[:height] = font.size
+    pos[:height] = line_height
     reset_font_settings
     clear_flags
 
@@ -1886,10 +1958,10 @@ class Window_Message
   # ● 重新生成适合全部文字的位图
   #--------------------------------------------------------------------------
   def recreate_contents_for_charas
-    f = font.dup
-    self.contents.dispose if self.contents
     w = @eagle_charas_w + eagle_window_w_empty
     h = @eagle_charas_h + eagle_window_h_empty
+    f = self.contents.font.dup
+    self.contents.dispose if self.contents
     self.contents = Bitmap.new(w, h)
     self.contents.font = f
   end
@@ -1899,10 +1971,8 @@ class Window_Message
   def process_normal_character(c, pos)
     c_rect = text_size(c); c_w = c_rect.width; c_h = c_rect.height
     if game_message.draw
-      s = eagle_new_chara_sprite(c, pos[:x], pos[:y], c_w, c_h)
-      eagle_draw_extra_background(s.bitmap, 0, 0, c_w, c_h, c, 0)
-      eagle_draw_char(s.bitmap, 0, 0, c_w, c_h, c, 0)
-      eagle_draw_extra_foreground(s.bitmap)
+      s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
+      s.eagle_font.draw(s.bitmap, 0, 0, c_w, c_h, c, 0)
     end
     eagle_process_draw_end(c_w, c_h, pos)
   end
@@ -1911,68 +1981,23 @@ class Window_Message
   #--------------------------------------------------------------------------
   def process_draw_icon(icon_index, pos)
     if game_message.draw
-      s = eagle_new_chara_sprite(' ', pos[:x], pos[:y], 24, 24)
-      _bitmap = Cache.system("Iconset")
-      rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
-      eagle_draw_extra_background(s.bitmap, 0, 0, 24, 24, ' ', 0)
-      s.bitmap.blt(0, 0, _bitmap, rect, 255)
-      eagle_draw_extra_foreground(s.bitmap)
+      s = eagle_new_chara_sprite(pos[:x], pos[:y], 24, 24)
+      s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index)
     end
     eagle_process_draw_end(24, 24, pos)
   end
   #--------------------------------------------------------------------------
   # ● （封装）生成一个新的文字精灵
   #--------------------------------------------------------------------------
-  def eagle_new_chara_sprite(c, c_x, c_y, c_w, c_h)
-    s = Sprite_EagleCharacter.new(self, c, c_x, c_y, c_w, c_h, @eagle_chara_viewport)
+  def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
+    f = Font_EagleCharacter.new(self.contents.font.dup, font_params)
+    f.set_param(:skin, game_message.win_params[:skin])
+    f.set_param(:g, game_message.ex_params[:g])
+
+    s = Sprite_EagleCharacter.new(self, f, c_x, c_y, c_w, c_h, @eagle_chara_viewport)
     s.start_effects(game_message.chara_params)
     @eagle_chara_sprites.push(s)
     s
-  end
-  #--------------------------------------------------------------------------
-  # ● （封装）绘制文字
-  #--------------------------------------------------------------------------
-  def eagle_draw_char(bitmap, x, y, w, h, c, align = 0)
-    if defined?(Sion_GradientText) && !game_message.ex_params[:g].empty?
-      Sion_GradientText.draw_text(bitmap,x,y,w*2,h,c,align,game_message.ex_params[:g])
-      return
-    end
-    bitmap.draw_text(x, y, w* 2, h, c, align)
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制背景额外内容
-  #--------------------------------------------------------------------------
-  def eagle_draw_extra_background(bitmap, x, y, w, h, c, align)
-    if font_params[:p] > 0 # 底纹
-      color = text_color(font_params[:pc])
-      case game_message.font_params[:p]
-      when 1 # 边框
-        bitmap.fill_rect(x, y, w, h, color)
-        bitmap.clear_rect(x+1, y+1, w-2, h-2)
-      when 2 # 纯色方块
-        bitmap.fill_rect(x, y, w, h, color)
-      end
-    end
-    if font_params[:l] # 外发光
-      color = bitmap.font.color.dup
-      bitmap.font.color = text_color(font_params[:lc])
-      bitmap.draw_text(x, y, w, h, c, align)
-      bitmap.blur
-      bitmap.font.color = color
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制前景额外内容
-  #--------------------------------------------------------------------------
-  def eagle_draw_extra_foreground(bitmap)
-    if font_params[:d] # 绘制删除线
-      c = text_color(font_params[:dc])
-      bitmap.fill_rect(0, bitmap.height/2 - 1, bitmap.width, 1, c)
-    end
-    if font_params[:u] # 绘制下划线
-      c = text_color(font_params[:uc])
-      bitmap.fill_rect(0, bitmap.height - 1, bitmap.width, 1, c)
-    end
   end
   #--------------------------------------------------------------------------
   # ● 绘制完成时的处理
@@ -2485,19 +2510,7 @@ class Window_Message
   def font_params; game_message.font_params; end
   def eagle_text_control_font(param = "")
     parse_param(game_message.font_params, param, :size)
-
-    font.size = game_message.font_params[:size]
-    font.italic = MESSAGE_EX.check_bool(game_message.font_params[:i])
-    font.bold = MESSAGE_EX.check_bool(game_message.font_params[:b])
-    font.shadow = MESSAGE_EX.check_bool(game_message.font_params[:s])
-    font.color.alpha = game_message.font_params[:ca]
-    font.outline = MESSAGE_EX.check_bool(game_message.font_params[:o])
-    font.out_color.set(game_message.font_params[:or],
-      game_message.font_params[:og],game_message.font_params[:ob],
-      game_message.font_params[:oa])
-    game_message.font_params[:l] = MESSAGE_EX.check_bool(game_message.font_params[:l])
-    game_message.font_params[:d] = MESSAGE_EX.check_bool(game_message.font_params[:d])
-    game_message.font_params[:u] = MESSAGE_EX.check_bool(game_message.font_params[:u])
+    MESSAGE_EX.apply_font_params(self.contents.font, game_message.font_params)
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）重置字体设置
@@ -2509,15 +2522,15 @@ class Window_Message
   # ● （覆盖）放大字体尺寸
   #--------------------------------------------------------------------------
   def make_font_bigger
-    font.size += 4 if font.size <= 64
-    game_message.font_params[:size] = font.size
+    self.contents.font.size += 4 if self.contents.font.size <= 64
+    game_message.font_params[:size] = self.contents.font.size
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）缩小字体尺寸
   #--------------------------------------------------------------------------
   def make_font_smaller
-    font.size -= 4 if font.size >= 16
-    game_message.font_params[:size] = font.size
+    self.contents.font.size -= 4 if self.contents.font.size >= 16
+    game_message.font_params[:size] = self.contents.font.size
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）更改内容绘制颜色
@@ -2525,7 +2538,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def change_color(color, enabled = true)
     super(color, enabled)
-    game_message.font_params[:ca] = font.color.alpha
+    game_message.font_params[:ca] = self.contents.font.color.alpha
   end
   #--------------------------------------------------------------------------
   # ● 设置win参数
@@ -2736,7 +2749,7 @@ class Window_Message
     param = param.downcase
     while(param != "")
       param.slice!(/\D+/)
-      game_message.game_message.ex_params[:g].push((param.slice!(/\d+/)).to_i)
+      game_message.ex_params[:g].push((param.slice!(/\d+/)).to_i)
     end
   end
   end
@@ -2804,22 +2817,255 @@ class Window_Message_Clone < Window_Message
 end
 
 #=============================================================================
+# ○ 等待按键的精灵
+#=============================================================================
+class Sprite_EaglePauseTag < Sprite
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  def initialize(window_bind)
+    super(nil)
+    bind_window(window_bind)
+    @type_source = 0 # 记录当前源位图的类型（见module中对应【设置】）
+    @type_pos = 0 # 记录当前相对于对话框的位置类型
+    @last_chara = nil
+    @last_pause_index = nil
+    reset
+    hide
+  end
+  #--------------------------------------------------------------------------
+  # ● 绑定window
+  #--------------------------------------------------------------------------
+  def bind_window(window_bind)
+    @window_bind = window_bind
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  def dispose
+    @s_bitmap.dispose
+    self.bitmap.dispose
+    super
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取参数组
+  #--------------------------------------------------------------------------
+  def params
+    @window_bind.pause_params
+  end
+  #--------------------------------------------------------------------------
+  # ● 绑定文末精灵
+  #--------------------------------------------------------------------------
+  def bind_last_chara(sprite_chara)
+    @last_chara = sprite_chara
+    reset_position
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置
+  #--------------------------------------------------------------------------
+  def reset
+    reset_source if @last_pause_index != params[:pause]
+    reset_bitmap
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置源位图
+  #--------------------------------------------------------------------------
+  def reset_source
+    @s_bitmap.dispose if @s_bitmap
+    @last_pause_index = params[:pause]
+    _params = MESSAGE_EX.pause_params(@last_pause_index)
+    _bitmap = Cache.system(_params[0])
+    _rect = _params[1].nil? ? _bitmap.rect : _params[1]
+    @s_bitmap_row = _params[2] # 源位图中一行中帧数目
+    @s_bitmap_col = _params[3] # 源位图中一列中帧数目
+    @s_bitmap_n = @s_bitmap_row * @s_bitmap_col # 总帧数
+
+    @s_bitmap = Bitmap.new(_rect.width, _rect.height)
+    @s_bitmap.blt(0, 0, _bitmap, _rect)
+    @s_rect = Rect.new(0, 0, @s_bitmap.width / @s_bitmap_row,
+      @s_bitmap.height / @s_bitmap_col)
+
+    self.bitmap.dispose if self.bitmap
+    self.bitmap = Bitmap.new(@s_rect.width, @s_rect.height)
+    @index = 0 # 当前index
+  end
+  #--------------------------------------------------------------------------
+  # ● 重绘位图
+  #--------------------------------------------------------------------------
+  def reset_bitmap
+    self.bitmap.clear
+    @s_rect.x = (@index % @s_bitmap_row) * @s_rect.width
+    @s_rect.y = (@index / @s_bitmap_col) * @s_rect.height
+    self.bitmap.blt(0, 0, @s_bitmap, @s_rect)
+    @count = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新位置
+  #--------------------------------------------------------------------------
+  def reset_position
+    self.viewport = nil
+    if params[:do] > 0
+      MESSAGE_EX.reset_xy_dorigin(self, @window_bind, params[:do])
+    elsif @last_chara
+      self.viewport = @last_chara.viewport
+      self.x = @last_chara._x + @last_chara.width - @window_bind.eagle_charas_ox
+      self.y = @last_chara._y + @last_chara.height/2 - @window_bind.eagle_charas_oy
+    else
+      self.x = @window_bind.eagle_charas_x0
+      self.y = @window_bind.eagle_charas_y0
+    end
+    self.x += params[:dx]
+    self.y += params[:dy]
+    MESSAGE_EX.reset_xy_origin(self, params[:o])
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    super
+    update_index
+    reset_position if self.viewport && @last_chara
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新帧动画
+  #--------------------------------------------------------------------------
+  def update_index
+    return if (@count += 1) < params[:t]
+    @index = (@index + 1) % @s_bitmap_n
+    reset_bitmap
+  end
+  #--------------------------------------------------------------------------
+  # ● 显示
+  #--------------------------------------------------------------------------
+  def show
+    return if params[:v] == 0
+    reset_position
+    self.visible = true
+    self
+  end
+  #--------------------------------------------------------------------------
+  # ● 隐藏
+  #--------------------------------------------------------------------------
+  def hide
+    self.visible = false
+    self
+  end
+end
+
+#=============================================================================
+# ○ 文字绘制类
+#=============================================================================
+class Font_EagleCharacter
+  #--------------------------------------------------------------------------
+  # ● 初始化
+  #--------------------------------------------------------------------------
+  def initialize(font, params)
+    @font = font
+    @params = params
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置参数
+  #--------------------------------------------------------------------------
+  def set_param(sym, value)
+    @params[sym] = value
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取文字颜色
+  #     n : 文字颜色编号（0..31）
+  #--------------------------------------------------------------------------
+  def text_color(n)
+    MESSAGE_EX.windowskin(@params[:skin]).get_pixel(64 + (n % 8) * 8, 96 + (n / 8) * 8)
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行文字绘制
+  #--------------------------------------------------------------------------
+  def draw(bitmap, x, y, w, h, c, ali = 0)
+    bitmap.font = @font
+    draw_param_p(bitmap, x, y, w, h) if @params[:p]
+    draw_param_l(bitmap, x, y, w, h, c, ali) if @params[:l]
+    if defined?(Sion_GradientText) && @params[:g] && !@params[:g].empty?
+      Sion_GradientText.draw_text(bitmap,x,y,w*2,h,c,ali,@params[:g])
+    else
+      bitmap.draw_text(x, y, w*2, h, c, ali)
+    end
+    draw_param_d(bitmap) if @params[:d]
+    draw_param_u(bitmap) if @params[:u]
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行图标绘制
+  #--------------------------------------------------------------------------
+  def draw_icon(bitmap, x, y, icon_index)
+    draw_param_p(bitmap, x, y, 24, 24) if @params[:p]
+    draw_param_l_rect(bitmap, x, y, 24, 24) if @params[:l]
+    _bitmap = Cache.system("Iconset")
+    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
+    s.bitmap.blt(x, y, _bitmap, rect, 255)
+    draw_param_d(bitmap) if @params[:d]
+    draw_param_u(bitmap) if @params[:u]
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制底纹
+  #--------------------------------------------------------------------------
+  def draw_param_p(bitmap, x, y, w, h)
+    color = text_color(@params[:pc])
+    case @params[:p]
+    when 1 # 边框
+      bitmap.fill_rect(x, y, w, h, color)
+      bitmap.clear_rect(x+1, y+1, w-2, h-2)
+    when 2 # 纯色方块
+      bitmap.fill_rect(x, y, w, h, color)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制外发光
+  #--------------------------------------------------------------------------
+  def draw_param_l(bitmap, x, y, w, h, c, ali)
+    color = bitmap.font.color.dup
+    bitmap.font.color = text_color(@params[:lc])
+    bitmap.font.size += 1
+    bitmap.draw_text(x, y, w*2, h, c, ali)
+    bitmap.blur
+    bitmap.font.size -= 1
+    bitmap.font.color = color
+  end
+  def draw_param_l_rect(bitmap, x, y, w, h)
+    c = text_color(@params[:lc])
+    bitmap.fill_rect(x, y, w, h, c)
+    bitmap.blur
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制删除线
+  #--------------------------------------------------------------------------
+  def draw_param_d(bitmap)
+    c = text_color(@params[:dc])
+    bitmap.fill_rect(0, bitmap.height/2 - 1, bitmap.width, 1, c)
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制下划线
+  #--------------------------------------------------------------------------
+  def draw_param_u(bitmap)
+    c = text_color(@params[:uc])
+    bitmap.fill_rect(0, bitmap.height - 1, bitmap.width, 1, c)
+  end
+end
+#=============================================================================
 # ○ 单个文字的精灵
 #=============================================================================
 class Sprite_EagleCharacter < Sprite
-  attr_reader :origin_x, :origin_y, :_x, :_y
+  attr_reader :origin_x, :origin_y, :_x, :_y, :eagle_font
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #  window_bind ：所绑定的显示窗口，需要有以下方法
   #    .z 返回窗口的z值（当前文字精灵将高于该值）
-  #    .font 返回绘制字体实例
   #    .eagle_charas_x0 .eagle_charas_y0 返回文字显示区域的左上角坐标（屏幕坐标）
   #    .eagle_charas_ox .eagle_charas_oy 返回文字显示区域的显示原点（文字区域坐标）
   #    .eagle_charas_max_h 返回文字区域的最大高度
+  #  font_bind ：所绑定的字符绘制类 Font_EagleCharacter 的对象
   #--------------------------------------------------------------------------
-  def initialize(window_bind, c, x, y, w, h, viewport = nil)
+  def initialize(window_bind, font_bind, x, y, w, h, viewport = nil)
     super(viewport)
     bind_window(window_bind)
+    bind_font(font_bind)
     reset(x, y, w, h)
   end
   #--------------------------------------------------------------------------
@@ -2830,10 +3076,17 @@ class Sprite_EagleCharacter < Sprite
     self.z = @window_bind.z + 1
   end
   #--------------------------------------------------------------------------
+  # ● 设置绑定的绘制参数
+  #--------------------------------------------------------------------------
+  def bind_font(font_bind)
+    @eagle_font = font_bind
+  end
+  #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    self.bitmap.dispose
+    @bitmaps.each { |b| b.dispose }
+    self.bitmap.dispose if !self.bitmap.disposed?
     super
   end
   #--------------------------------------------------------------------------
@@ -2842,7 +3095,6 @@ class Sprite_EagleCharacter < Sprite
   def reset(x, y, w, h)
     self.bitmap.dispose if self.bitmap
     self.bitmap = Bitmap.new(w, h)
-    self.bitmap.font = @window_bind.font.dup
     # (x0,y0) 为文字区域左上点的屏幕坐标
     @x0 = 0; @y0 = 0
     # (_ox,_oy) 为当前可视区域的左上点的坐标（文字区域坐标系中）
@@ -2853,6 +3105,7 @@ class Sprite_EagleCharacter < Sprite
     @dx = @dy = 0 # 移动的实时偏移值
     @effects = {} # effect_sym => param_string
     @params = {} # effect_sym => param_hash
+    @bitmaps = [] # 备用位图
     @flag_move = nil # 在移动中？
   end
   #--------------------------------------------------------------------------
@@ -3185,157 +3438,31 @@ class Sprite_EagleCharacter < Sprite
       self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
     self.opacity = 0
   end
-end
-
-#=============================================================================
-# ○ 等待按键的精灵
-#=============================================================================
-class Sprite_EaglePauseTag < Sprite
   #--------------------------------------------------------------------------
-  # ● 初始化对象
+  # ● 位图切换特效
   #--------------------------------------------------------------------------
-  def initialize(window_bind)
-    super(nil)
-    bind_window(window_bind)
-    @type_source = 0 # 记录当前源位图的类型（见module中对应【设置】）
-    @type_pos = 0 # 记录当前相对于对话框的位置类型
-    @last_chara = nil
-    @last_pause_index = nil
-    reset
-    hide
-  end
-  #--------------------------------------------------------------------------
-  # ● 绑定window
-  #--------------------------------------------------------------------------
-  def bind_window(window_bind)
-    @window_bind = window_bind
-  end
-  #--------------------------------------------------------------------------
-  # ● 释放
-  #--------------------------------------------------------------------------
-  def dispose
-    @s_bitmap.dispose
-    self.bitmap.dispose
-    super
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取参数组
-  #--------------------------------------------------------------------------
-  def params
-    @window_bind.pause_params
-  end
-  #--------------------------------------------------------------------------
-  # ● 绑定文末精灵
-  #--------------------------------------------------------------------------
-  def bind_last_chara(sprite_chara)
-    @last_chara = sprite_chara
-    reset_position
-  end
-  #--------------------------------------------------------------------------
-  # ● 重置
-  #--------------------------------------------------------------------------
-  def reset
-    reset_source if @last_pause_index != params[:pause]
-    reset_bitmap
-  end
-  #--------------------------------------------------------------------------
-  # ● 重置源位图
-  #--------------------------------------------------------------------------
-  def reset_source
-    @s_bitmap.dispose if @s_bitmap
-    @last_pause_index = params[:pause]
-    _params = MESSAGE_EX.pause_params(@last_pause_index)
-    _bitmap = Cache.system(_params[0])
-    _rect = _params[1].nil? ? _bitmap.rect : _params[1]
-    @s_bitmap_row = _params[2] # 源位图中一行中帧数目
-    @s_bitmap_col = _params[3] # 源位图中一列中帧数目
-    @s_bitmap_n = @s_bitmap_row * @s_bitmap_col # 总帧数
-
-    @s_bitmap = Bitmap.new(_rect.width, _rect.height)
-    @s_bitmap.blt(0, 0, _bitmap, _rect)
-    @s_rect = Rect.new(0, 0, @s_bitmap.width / @s_bitmap_row,
-      @s_bitmap.height / @s_bitmap_col)
-
-    self.bitmap.dispose if self.bitmap
-    self.bitmap = Bitmap.new(@s_rect.width, @s_rect.height)
-    @index = 0 # 当前index
-  end
-  #--------------------------------------------------------------------------
-  # ● 重绘位图
-  #--------------------------------------------------------------------------
-  def reset_bitmap
-    self.bitmap.clear
-    @s_rect.x = (@index % @s_bitmap_row) * @s_rect.width
-    @s_rect.y = (@index / @s_bitmap_col) * @s_rect.height
-    self.bitmap.blt(0, 0, @s_bitmap, @s_rect)
-    @count = 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新位置
-  #--------------------------------------------------------------------------
-  def reset_position
-    self.viewport = nil
-    if params[:do] > 0
-      MESSAGE_EX.reset_xy_dorigin(self, @window_bind, params[:do])
-    elsif @last_chara
-      self.viewport = @last_chara.viewport
-      self.x = @last_chara._x + @last_chara.width - @window_bind.eagle_charas_ox
-      self.y = @last_chara._y + @last_chara.height/2 - @window_bind.eagle_charas_oy
-    else
-      self.x = @window_bind.eagle_charas_x0
-      self.y = @window_bind.eagle_charas_y0
+  def start_effect_ctog(params, param_s)
+    parse_param(params, param_s)
+    @bitmaps.push(self.bitmap)
+    charas = MESSAGE_EX.get_tog_charas(params[:i], params[:n])
+    charas.each do |c|
+      s = Bitmap.new(self.width, self.height)
+      @eagle_font.draw(s, 0, 0, s.width*2, s.height, c, 0)
+      @bitmaps.push(s)
     end
-    self.x += params[:dx]
-    self.y += params[:dy]
-    MESSAGE_EX.reset_xy_origin(self, params[:o])
+    params[:i_cur] = 0
+    params[:i_max] = @bitmaps.size
+    params[:tc] = 0
   end
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    super
-    update_index
-    reset_position if self.viewport && @last_chara
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新帧动画
-  #--------------------------------------------------------------------------
-  def update_index
-    return if (@count += 1) < params[:t]
-    @index = (@index + 1) % @s_bitmap_n
-    reset_bitmap
-  end
-  #--------------------------------------------------------------------------
-  # ● 显示
-  #--------------------------------------------------------------------------
-  def show
-    return if params[:v] == 0
-    reset_position
-    self.visible = true
-    self
-  end
-  #--------------------------------------------------------------------------
-  # ● 隐藏
-  #--------------------------------------------------------------------------
-  def hide
-    self.visible = false
-    self
+  def update_effect_ctog(params)
+    return if (params[:tc] += 1) < params[:t]
+    params[:tc] = 0
+    if(params[:r] > 0)
+      params[:i_cur] = rand(params[:i_max])
+    else
+      params[:i_cur] += 1
+      params[:i_cur] %= params[:i_max]
+    end
+    self.bitmap = @bitmaps[params[:i_cur]]
   end
 end
-
-#=============================================================================
-# ○ 其余修改
-#=============================================================================
-class << DataManager
-  #--------------------------------------------------------------------------
-  # ● 设置新游戏
-  #--------------------------------------------------------------------------
-  alias eagle_message_ex_setup_new_game setup_new_game
-  def setup_new_game
-    eagle_message_ex_setup_new_game
-    $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
-  end
-end
-class Spriteset_Map; attr_reader :character_sprites; end
-class Scene_Map; attr_reader :spriteset; end
-class Scene_Battle; attr_reader :spriteset; end

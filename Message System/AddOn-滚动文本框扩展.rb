@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.7.15.21 整合文字摇摆特效与内容滚动
+# - 2019.7.31.15 整合文字切换特效
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -238,19 +238,13 @@ class Window_ScrollText < Window_Base
     @eagle_chara_viewport.dispose
   end
   #--------------------------------------------------------------------------
-  # ● 获取字体对象
-  #--------------------------------------------------------------------------
-  def font
-    self.contents.font
-  end
-  #--------------------------------------------------------------------------
   # ● 重新生成适合全部文字的位图
   #--------------------------------------------------------------------------
   def recreate_contents_for_charas
-    f = font.dup
-    self.contents.dispose if self.contents
-    w = @eagle_charas_w
-    h = @eagle_charas_h
+    w = @eagle_charas_w; h = @eagle_charas_h
+    return if w < eagle_charas_max_w && h < eagle_charas_max_h
+    f = self.contents.font.dup
+    self.contents.dispose
     self.contents = Bitmap.new(w, h)
     self.contents.font = f
   end
@@ -437,10 +431,8 @@ class Window_ScrollText < Window_Base
   def process_normal_character(c, pos)
     eagle_reset_draw_pos(pos)
     c_rect = text_size(c); c_w = c_rect.width; c_h = c_rect.height
-    s = eagle_new_chara_sprite(c, pos[:x], pos[:y], c_w, c_h)
-    eagle_draw_extra_background(s.bitmap, 0, 0, c_w, c_h, c, 0)
-    eagle_draw_char(s.bitmap, 0, 0, c_w, c_h, c, 0)
-    eagle_draw_extra_foreground(s.bitmap)
+    s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
+    s.eagle_font.draw(s.bitmap, 0, 0, c_w, c_h, c, 0)
     eagle_process_draw_end(c_w, c_h, pos)
   end
   #--------------------------------------------------------------------------
@@ -448,19 +440,18 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   def process_draw_icon(icon_index, pos)
     eagle_reset_draw_pos(pos)
-    s = eagle_new_chara_sprite(' ', pos[:x], pos[:y], 24, 24)
-    _bitmap = Cache.system("Iconset")
-    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
-    eagle_draw_extra_background(s.bitmap, 0, 0, 24, 24, ' ', 0)
-    s.bitmap.blt(0, 0, _bitmap, rect, 255)
-    eagle_draw_extra_foreground(s.bitmap)
+    s = eagle_new_chara_sprite(pos[:x], pos[:y], 24, 24)
+    s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index)
     eagle_process_draw_end(24, 24, pos)
   end
   #--------------------------------------------------------------------------
   # ● （封装）生成一个新的文字精灵
   #--------------------------------------------------------------------------
-  def eagle_new_chara_sprite(c, c_x, c_y, c_w, c_h)
-    s = Sprite_EagleCharacter_ScrollText.new(self, c, c_x, c_y, c_w, c_h,
+  def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
+    f = Font_EagleCharacter.new(self.contents.font.dup, font_params)
+    f.set_param(:skin, win_params[:skin])
+
+    s = Sprite_EagleCharacter_ScrollText.new(self, f, c_x, c_y, c_w, c_h,
       @eagle_chara_viewport)
     s.start_effects(params[:charas])
     s.update
@@ -468,57 +459,17 @@ class Window_ScrollText < Window_Base
     s
   end
   #--------------------------------------------------------------------------
-  # ● （封装）绘制文字
-  #--------------------------------------------------------------------------
-  def eagle_draw_char(bitmap, x, y, w, h, c, align = 0)
-    bitmap.draw_text(x, y, w * 2, h, c, align)
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制背景额外内容
-  #--------------------------------------------------------------------------
-  def eagle_draw_extra_background(bitmap, x, y, w, h, c, align)
-    if font_params[:p] > 0 # 底纹
-      color = text_color(font_params[:pc])
-      case font_params[:p]
-      when 1 # 边框
-        bitmap.fill_rect(x, y, w, h, color)
-        bitmap.clear_rect(x+1, y+1, w-2, h-2)
-      when 2 # 纯色方块
-        bitmap.fill_rect(x, y, w, h, color)
-      end
-    end
-    if font_params[:l] # 外发光
-      color = bitmap.font.color.dup
-      bitmap.font.color = text_color(font_params[:lc])
-      bitmap.draw_text(x, y, w, h, c, align)
-      bitmap.blur
-      bitmap.font.color = color
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制前景额外内容
-  #--------------------------------------------------------------------------
-  def eagle_draw_extra_foreground(bitmap)
-    if font_params[:d] # 绘制删除线
-      c = text_color(font_params[:dc])
-      bitmap.fill_rect(0, bitmap.height/2 - 1, bitmap.width, 1, c)
-    end
-    if font_params[:u] # 绘制下划线
-      c = text_color(font_params[:uc])
-      bitmap.fill_rect(0, bitmap.height - 1, bitmap.width, 1, c)
-    end
-  end
-  #--------------------------------------------------------------------------
   # ● 绘制完成时的处理
   #--------------------------------------------------------------------------
   def eagle_process_draw_end(c_w, c_h, pos)
     # 存储行首位置
     pos[:first_chara_sprite] = @eagle_chara_sprites[-1] if pos[:first_chara_sprite].nil?
+    # 存储当前所占用宽高
+    @eagle_charas_w = pos[:x] + c_w if pos[:x] + c_w > @eagle_charas_w
+    @eagle_charas_h = pos[:y] + c_h if pos[:y] + c_h > @eagle_charas_h
     # 处理下一次绘制的参数
     pos[:x] += ((c_w - win_params[:ck]) * win_params[:cdx])
     pos[:y] += ((c_h - win_params[:ck]) * win_params[:cdy])
-    @eagle_charas_w = pos[:x] if pos[:x] > @eagle_charas_w
-    @eagle_charas_h = pos[:y] if pos[:y] > @eagle_charas_h
     return if show_fast? # 如果是立即显示，则不更新
     eagle_process_draw_update
     wait_for_one_character
@@ -715,19 +666,7 @@ class Window_ScrollText < Window_Base
   def font_params; params[:font]; end
   def eagle_text_control_font(param = "")
     parse_param(params[:font], param, :size)
-
-    self.contents.font.size = font_params[:size]
-    self.contents.font.italic = MESSAGE_EX.check_bool(font_params[:i])
-    self.contents.font.bold = MESSAGE_EX.check_bool(font_params[:b])
-    self.contents.font.shadow = MESSAGE_EX.check_bool(font_params[:s])
-    self.contents.font.color.alpha = font_params[:ca]
-    self.contents.font.outline = MESSAGE_EX.check_bool(font_params[:o])
-    self.contents.font.out_color.set(font_params[:or],
-      font_params[:og],font_params[:ob],
-      font_params[:oa])
-    params[:font][:l] = MESSAGE_EX.check_bool(font_params[:l])
-    params[:font][:d] = MESSAGE_EX.check_bool(font_params[:d])
-    params[:font][:u] = MESSAGE_EX.check_bool(font_params[:u])
+    MESSAGE_EX.apply_font_params(self.contents.font, params[:font])
   end
   #--------------------------------------------------------------------------
   # ● 放大字体尺寸（覆盖）

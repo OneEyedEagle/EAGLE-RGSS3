@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2019.7.6.20 整合对话框扩展
+# - 2019.7.31.15 整合文字切换特效
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -53,6 +53,7 @@ $imported["EAGLE-ChoiceEX"] = true
 #------------------------------------------------------------------------------
 # - 在选择支内容中使用【对话框扩展】的转义符：
 #    可用 \c[i] 与 \i[i] 转义符
+#    可用 \f[param] 来设置 font 相关参数（同 对话框扩展 中的 \font 转义符）
 #    可用 文本替换类 转义符（换行转义符无效）
 #    可用 文本特效类 转义符
 #------------------------------------------------------------------------------
@@ -190,7 +191,7 @@ end
 # ○ Window_ChoiceList
 #==============================================================================
 class Window_ChoiceList < Window_Command
-  attr_reader :message_window
+  attr_reader :message_window, :skin
   attr_reader :message_window_w_add, :message_window_h_add
   #--------------------------------------------------------------------------
   # ● 初始化对象
@@ -202,6 +203,7 @@ class Window_ChoiceList < Window_Command
     @choices_num = 0 # 存储总共显示出的选项数目
 
     @func_key_freeze = false # 冻结功能按键
+    @skin = 0 # 当前所用窗口皮肤的index
 
     @message_window_w_add = @message_window_h_add = 0
     eagle_choicelist_ex_init(message_window)
@@ -367,13 +369,8 @@ class Window_ChoiceList < Window_Command
   # ● 设置其他属性
   #--------------------------------------------------------------------------
   def reset_params_ex
-    skin = $game_message.choice_params[:skin]
-    if $game_message.pop? && !$game_message.pop_params[:skin].nil?
-      skin ||= $game_message.pop_params[:skin]
-    else
-      skin ||= $game_message.win_params[:skin]
-    end
-    self.windowskin = MESSAGE_EX.windowskin(skin)
+    @skin = @message_window.get_cur_windowskin_index($game_message.choice_params[:skin])
+    self.windowskin = MESSAGE_EX.windowskin(@skin)
     self.opacity = $game_message.choice_params[:opa]
     if @message_window.open? && $game_message.choice_params[:do] == 0
       self.opacity = 0
@@ -547,7 +544,6 @@ end
 #==============================================================================
 class Spriteset_Choice
   include MESSAGE_EX::CHARA_EFFECTS
-  attr_reader :font
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -558,6 +554,7 @@ class Spriteset_Choice
     @chara_effect_params = $game_message.choice_params[:charas].dup
     @chara_dwin_rect = nil
     @font = @choice_window.contents.font.dup # 每个选项存储独立的font对象
+    @font_params = $game_message.font_params.dup # font转义符参数
     @visible = true
     @enabled = true
     @timer = nil
@@ -613,16 +610,26 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   def set_enabled(bool)
     @enabled = bool
-    change_color(font.color)
+    change_color(@font.color)
   end
   #--------------------------------------------------------------------------
-  # ● 更改内容绘制颜色
+  # ● 全部移出
   #--------------------------------------------------------------------------
-  def change_color(color)
-    font.color.set(color)
-    font.color.alpha = 120 unless @enabled
+  def move_out
+    @charas.each { |s| s.opacity = 0 if !s.visible; s.move_out }
+    @charas.clear
+    dispose_timer
   end
 
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    update_timer if @timer
+    return unless @visible
+    @fiber.resume if @fiber
+    @charas.each { |s| s.update }
+  end
   #--------------------------------------------------------------------------
   # ● 设置选项的计时器
   #--------------------------------------------------------------------------
@@ -662,29 +669,11 @@ class Spriteset_Choice
   end
 
   #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    update_timer if @timer
-    return unless @visible
-    @fiber.resume if @fiber
-    @charas.each { |s| s.update }
-  end
-  #--------------------------------------------------------------------------
-  # ● 全部移出
-  #--------------------------------------------------------------------------
-  def move_out
-    @charas.each { |s| s.opacity = 0 if !s.visible; s.move_out }
-    @charas.clear
-    dispose_timer
-  end
-  #--------------------------------------------------------------------------
   # ● 应用文本特效
   #--------------------------------------------------------------------------
   def start_effects(params)
     @charas.each { |s| s.start_effects(params) }
   end
-
   #--------------------------------------------------------------------------
   # ● 绘制
   #--------------------------------------------------------------------------
@@ -696,6 +685,13 @@ class Spriteset_Choice
       process_character(text.slice!(0, 1), text, pos) until text.empty?
       @fiber = nil
     }
+  end
+  #--------------------------------------------------------------------------
+  # ● 更改内容绘制颜色
+  #--------------------------------------------------------------------------
+  def change_color(color)
+    @font.color.set(color)
+    @font.color.alpha = 120 unless @enabled
   end
   #--------------------------------------------------------------------------
   # ● 文字的处理
@@ -720,15 +716,18 @@ class Spriteset_Choice
   def process_normal_character(c, pos)
     c_rect = message_window.text_size(c)
     c_w = c_rect.width; c_h = c_rect.height
-    s = eagle_new_chara_sprite(c, pos[:x], pos[:y], c_w, c_h)
-    s.bitmap.draw_text(0, 0, c_w*2, c_h, c, 0)
+    s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
+    s.eagle_font.draw(s.bitmap, 0, 0, c_w*2, c_h, c, 0)
     pos[:x] += c_w
   end
   #--------------------------------------------------------------------------
   # ● （封装）生成一个新的文字精灵
   #--------------------------------------------------------------------------
-  def eagle_new_chara_sprite(c, c_x, c_y, c_w, c_h)
-    s = Sprite_EagleCharacter.new(self, c, c_x, c_y, c_w, c_h)
+  def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
+    f = Font_EagleCharacter.new(@font.dup, @font_params)
+    f.set_param(:skin, @choice_window.skin)
+
+    s = Sprite_EagleCharacter.new(self, f, c_x, c_y, c_w, c_h)
     s.start_effects(@chara_effect_params)
     @charas.push(s)
     s
@@ -754,6 +753,10 @@ class Spriteset_Choice
     when 'C'
       param = message_window.obtain_escape_param(text)
       change_color( @choice_window.text_color(param) )
+    when 'F'
+      param = message_window.obtain_escape_param_string(text)
+      MESSAGE_EX.parse_param(@font_params, param, :size)
+      MESSAGE_EX.apply_font_params(@font, @font_params)
     when 'I'
       process_draw_icon(message_window.obtain_escape_param(text), pos)
       process_draw_success
@@ -763,10 +766,8 @@ class Spriteset_Choice
   # ● 处理控制符指定的图标绘制
   #--------------------------------------------------------------------------
   def process_draw_icon(icon_index, pos)
-    s = eagle_new_chara_sprite(' ', pos[:x], pos[:y], 24, 24)
-    _bitmap = Cache.system("Iconset")
-    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
-    s.bitmap.blt(0, 0, _bitmap, rect, 255)
+    s = eagle_new_chara_sprite(pos[:x], pos[:y], 24, 24)
+    s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index)
     pos[:x] += 24
   end
   #--------------------------------------------------------------------------
