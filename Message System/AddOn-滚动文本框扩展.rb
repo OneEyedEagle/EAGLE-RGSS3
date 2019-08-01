@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.7.31.15 整合文字切换特效
+# - 2019.8.1.9 整合RGD
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -448,7 +448,7 @@ class Window_ScrollText < Window_Base
   # ● （封装）生成一个新的文字精灵
   #--------------------------------------------------------------------------
   def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
-    f = Font_EagleCharacter.new(self.contents.font.dup, font_params)
+    f = Font_EagleCharacter.new(font_params)
     f.set_param(:skin, win_params[:skin])
 
     s = Sprite_EagleCharacter_ScrollText.new(self, f, c_x, c_y, c_w, c_h,

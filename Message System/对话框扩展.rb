@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.7.31.16 新增文字切换特效
+# - 2019.8.1.9 整合RGD
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1990,7 +1990,7 @@ class Window_Message
   # ● （封装）生成一个新的文字精灵
   #--------------------------------------------------------------------------
   def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
-    f = Font_EagleCharacter.new(self.contents.font.dup, font_params)
+    f = Font_EagleCharacter.new(font_params)
     f.set_param(:skin, game_message.win_params[:skin])
     f.set_param(:g, game_message.ex_params[:g])
 
@@ -2475,6 +2475,9 @@ class Window_Message
       return eagle_chara_effect_clear(temp_code.to_sym) if param == '0'
       game_message.chara_params[temp_code.to_sym] = param
       method(m_e).call(param)
+    elsif code.upcase == 'C'
+      game_message.font_params[:c] = obtain_escape_param(text)
+      change_color(text_color(game_message.font_params[:c]))
     else
       eagle_message_ex_process_escape_character(code, text, pos)
     end
@@ -2511,12 +2514,14 @@ class Window_Message
   def eagle_text_control_font(param = "")
     parse_param(game_message.font_params, param, :size)
     MESSAGE_EX.apply_font_params(self.contents.font, game_message.font_params)
+    change_color(text_color(game_message.font_params[:c]))
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）重置字体设置
   #--------------------------------------------------------------------------
   def reset_font_settings
     change_color(normal_color)
+    game_message.font_params[:c] = 0
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）放大字体尺寸
@@ -2959,9 +2964,8 @@ class Font_EagleCharacter
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
-  def initialize(font, params)
-    @font = font
-    @params = params
+  def initialize(font_params)
+    @params = font_params.dup
   end
   #--------------------------------------------------------------------------
   # ● 设置参数
@@ -2980,7 +2984,9 @@ class Font_EagleCharacter
   # ● 执行文字绘制
   #--------------------------------------------------------------------------
   def draw(bitmap, x, y, w, h, c, ali = 0)
-    bitmap.font = @font
+    MESSAGE_EX.apply_font_params(bitmap.font, @params)
+    bitmap.font.color = text_color(@params[:c])
+
     draw_param_p(bitmap, x, y, w, h) if @params[:p]
     draw_param_l(bitmap, x, y, w, h, c, ali) if @params[:l]
     if defined?(Sion_GradientText) && @params[:g] && !@params[:g].empty?

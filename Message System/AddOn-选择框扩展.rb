@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2019.7.31.15 整合文字切换特效
+# - 2019.8.1.9 整合RGD
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -724,7 +724,7 @@ class Spriteset_Choice
   # ● （封装）生成一个新的文字精灵
   #--------------------------------------------------------------------------
   def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
-    f = Font_EagleCharacter.new(@font.dup, @font_params)
+    f = Font_EagleCharacter.new(@font_params)
     f.set_param(:skin, @choice_window.skin)
 
     s = Sprite_EagleCharacter.new(self, f, c_x, c_y, c_w, c_h)
