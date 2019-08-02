@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2019.5.23.16 注释优化
+# - 2019.8.2.11 新增跨场景对话
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话框
 #--------------------------------------------------------------------------
@@ -48,9 +48,12 @@ $imported["EAGLE-MessagePara"] = true
 #--------------------------------------------------------------------------
 # ○ 任意场合新增“并行对话序列”
 #--------------------------------------------------------------------------
-# - 利用脚本 MESSAGE_PARA.add(name, list_msg) 生成立即更新、只显示一次的序列
+# - 利用脚本 MESSAGE_PARA.add(name, list_msg[, ensure_fin])
+#   生成立即更新、只显示一次的序列
 #     name → 任意的唯一标识符（若有重名，则先前存在的会被删除）
 #     list_msg → “对话标签对”的字符串（其中转义符需要用 \\ 代替 \）
+#     ensure_fin → 【可选】当传入 true 时，将保证当前对话序列完全显示
+#                    （场景切换时只暂停，之后将继续）
 #
 #   示例：MESSAGE_PARA.add(:test, "<call test1><msg>...</msg>")
 #      → 生成一个占位:test的并行对话序列，内容如字符串，并开始更新
@@ -83,8 +86,8 @@ $imported["EAGLE-MessagePara"] = true
 #--------------------------------------------------------------------------
 # ○ 任意场合呼叫预设的“并行对话序列”
 #--------------------------------------------------------------------------
-# - 利用脚本 MESSAGE_PARA.call(name) 呼叫名为 name 的并行对话序列
-#   在激活并完全显示一次后结束
+# - 利用脚本 MESSAGE_PARA.call(name, [, ensure_fin])
+#   呼叫名为 name 的并行对话序列，若传入的 ensure_fin 为 true，则将保证必定显示完
 #
 #--------------------------------------------------------------------------
 # ○ 地图事件页中设置“并行对话序列”
@@ -101,7 +104,7 @@ $imported["EAGLE-MessagePara"] = true
 #      → 为该事件页添加 EVENT_MSG_TYPE_ID_DEFAULT 类型的对话组，
 #         使用预设参数，依次显示这两句台词
 #
-# -【可选】<list> 中的 [ params] 替换成 参数名+参数值 的参数字符串
+# -【可选】<list> 中的 [ params] 替换成 变量名+参数值 的变量参数字符串
 #      type → 设置该组并行对话的类型（0玩家接近事件时触发，1自动触发，2鼠标停留触发）
 #    （玩家接近时触发）（每次玩家接近只触发一次）
 #      d → 玩家与事件的距离（x差值的绝对值+y差值的绝对值）小于等于d时触发
@@ -143,7 +146,7 @@ module MESSAGE_PARA
   #--------------------------------------------------------------------------
   # ●【常量】预设文本文件的路径（用 / 分隔）与文件名（含后缀名）的数组
   #--------------------------------------------------------------------------
-  FILE_MSG_LIST_NAMES = ["Eagle/PARA.eagle"]
+  FILES_MSG_LIST = ["Eagle/PARA.eagle"]
   #--------------------------------------------------------------------------
   # ●【常量】事件页注释里的并行对话类型
   # type_id => type_sym
@@ -232,18 +235,18 @@ module MESSAGE_PARA
   #--------------------------------------------------------------------------
   # ● 新增预设的并行对话序列
   #--------------------------------------------------------------------------
-  def self.call(name_sym)
+  def self.call(name_sym, ensure_fin = false)
     name_sym = name_sym.to_sym if !name_sym.is_a?(Symbol)
     v = @lists_msgs[name_sym]
     return if v.nil?
     return if v[0] && eval(v[0]) != true
-    add(name_sym, v[1])
+    add(name_sym, v[1], ensure_fin)
   end
   #--------------------------------------------------------------------------
   # ● 新增一个并行对话序列
   #--------------------------------------------------------------------------
   # list_msg - "<msg params>foo</msg><msg params>foo</msg>"
-  def self.add(id, list_msg)
+  def self.add(id, list_msg, ensure_fin = false)
     list = []
     # 执行快捷替换
     list_msg.gsub!(/<call (.*?)>/) {
@@ -262,6 +265,7 @@ module MESSAGE_PARA
     end
     @lists[id].dispose if @lists[id]
     @lists[id] = MessagePara_List.new(list)
+    @lists[id].f_ensure_fin = ensure_fin
     return true
   end
   #--------------------------------------------------------------------------
@@ -283,7 +287,7 @@ module MESSAGE_PARA
     @lists = {} # 存储当前正在更新的并行对话列表
     @lock_count = [] # 当前锁定类型汇总
     @lists_msgs = {} # 存储预读取的全部并行对话序列 name_sym => [cond, list_msg]
-    FILE_MSG_LIST_NAMES.each do |filename|
+    FILES_MSG_LIST.each do |filename|
       @lists_msgs.merge!( parse_list_file(filename) )
     end
   end
@@ -306,6 +310,22 @@ module MESSAGE_PARA
   #--------------------------------------------------------------------------
   def self.all_finish(dispose = false)
     @lists.each { |id, l| l.finish; l.dispose if dispose }
+  end
+  #--------------------------------------------------------------------------
+  # ● 全部结束（跳过需要显示完的list）
+  #--------------------------------------------------------------------------
+  def self.all_finish_sys(dispose = false)
+    @lists.each do |id, l|
+      next l.halt if l.f_ensure_fin
+      l.finish
+      l.dispose if dispose
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 全部继续
+  #--------------------------------------------------------------------------
+  def self.all_go_on
+    @lists.each { |id, l| l.go_on }
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -378,14 +398,15 @@ end
 # ○ 并行对话列表
 #==============================================================================
 class MessagePara_List # 该list中每一时刻只显示一个对话框
+  attr_accessor  :f_ensure_fin
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
   def initialize(list)
-    @list = list
-    # 待处理的窗口信息队列 [[string, {infos}, {sym => value}]]
-    @window = nil
-    @wait = 0 # 在处理队列下一个需要显示的窗口前需要等待的时间
+    @list = list   # 待处理的窗口信息队列 [[string, {infos}, {sym => value}]]
+    @window = nil  # 当前正在处理的window
+    @wait = 0      # 在处理队列下一个窗口前需要等待的时间
+    @f_ensure_fin = false # 保证必定显示完？（场景切换时只暂时暂停并关闭）
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -393,10 +414,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   def update
     if @window
       @window.update
-      if !@window.game_message.visible
-        @window.dispose
-        @window = nil
-      end
+      dispose if !@window.game_message.visible
     end
     if @window.nil? && !@list.empty?
       return if (@wait -= 1) > 0
@@ -410,6 +428,15 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     info = @list.shift # [string, params]
     @window = MESSAGE_PARA.get_new_window(info)
     @wait = info[-1][:t]
+  end
+  #--------------------------------------------------------------------------
+  # ● 对话暂停与继续
+  #--------------------------------------------------------------------------
+  def halt
+    @window.halt
+  end
+  def go_on
+    @window.go_on if @window
   end
   #--------------------------------------------------------------------------
   # ● 对话结束？
@@ -440,7 +467,7 @@ class Window_Message_Para < Window_Message
   # ● 初始化对象
   #--------------------------------------------------------------------------
   def initialize(game_message, para_params)
-    @game_message = game_message
+    @game_message = game_message.dup
     @para_params = para_params.dup
     super()
   end
@@ -455,6 +482,7 @@ class Window_Message_Para < Window_Message
   #--------------------------------------------------------------------------
   def update_fiber
     if @fiber
+      return if @para_params[:halt]
       @fiber.resume
     elsif game_message.busy? && !game_message.scroll_mode
       @fiber = Fiber.new { fiber_main }
@@ -464,15 +492,32 @@ class Window_Message_Para < Window_Message
     end
   end
   #--------------------------------------------------------------------------
+  # ● 暂停更新
+  #--------------------------------------------------------------------------
+  def halt
+    @para_params[:halt] = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 继续更新
+  #--------------------------------------------------------------------------
+  def go_on
+    @para_params[:halt] = false
+  end
+  #--------------------------------------------------------------------------
+  # ● 强制结束当前对话框的更新
+  #--------------------------------------------------------------------------
+  def finish
+    @fiber_para = nil
+  end
+  #--------------------------------------------------------------------------
   # ● 处理纤程的主逻辑
   #--------------------------------------------------------------------------
   def fiber_main
     game_message.visible = true
     update_background
     update_placement
-    process_all_text
+    @fiber_para = Fiber.new { process_all_text; @fiber_para = nil }
     process_input
-    game_message.clear
     @gold_window.close
     close_and_wait
     game_message.visible = false
@@ -483,10 +528,10 @@ class Window_Message_Para < Window_Message
   #--------------------------------------------------------------------------
   def process_input
     c = @para_params[:w]
-    loop do
+    while @fiber_para || c > 0
       Fiber.yield
-      break if c && (c -= 1) <= 0
-      break if @para_params[:finish]
+      next @fiber_para.resume if @fiber_para
+      c -= 1
     end
   end
   #--------------------------------------------------------------------------
@@ -498,13 +543,6 @@ class Window_Message_Para < Window_Message
   # ● 监听“确定”键的按下，更新快进的标志
   #--------------------------------------------------------------------------
   def update_show_fast
-  end
-  #--------------------------------------------------------------------------
-  # ● 强制结束当前对话框的更新
-  #--------------------------------------------------------------------------
-  def finish
-    game_message.instant = true
-    @para_params[:finish] = true
   end
   #--------------------------------------------------------------------------
   # ● 获取pop的弹出对象（需要有x、y方法）
@@ -536,22 +574,38 @@ end
 #==============================================================================
 class Game_Player
   #--------------------------------------------------------------------------
+  # ● 预定场所移动的位置
+  #     d : 移动后的方向（2,4,6,8）
+  #--------------------------------------------------------------------------
+  alias eagle_message_para_reserve_transfer reserve_transfer
+  def reserve_transfer(map_id, x, y, d = 2)
+    eagle_message_para_reserve_transfer(map_id, x, y, d)
+    MESSAGE_PARA.all_finish_sys(true)
+    MESSAGE_PARA.lock(:player)
+  end
+  #--------------------------------------------------------------------------
   # ● 执行场所移动
   #--------------------------------------------------------------------------
   alias eagle_message_para_perform_transfer perform_transfer
   def perform_transfer
-    if transfer?
-      MESSAGE_PARA.all_finish(true)
-      MESSAGE_PARA.lock(:player)
-    end
     eagle_message_para_perform_transfer
     MESSAGE_PARA.unlock(:player)
+    MESSAGE_PARA.all_go_on
   end
 end
 #==============================================================================
 # ○ Scene_Base
 #==============================================================================
 class Scene_Base
+  #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  alias eagle_message_para_post_start post_start
+  def post_start
+    eagle_message_para_post_start
+    MESSAGE_PARA.all_go_on
+    MESSAGE_PARA.unlock(:scene_end)
+  end
   #--------------------------------------------------------------------------
   # ● 基础更新
   #--------------------------------------------------------------------------
@@ -565,10 +619,9 @@ class Scene_Base
   #--------------------------------------------------------------------------
   alias eagle_message_para_pre_terminate pre_terminate
   def pre_terminate
-    MESSAGE_PARA.all_finish(true)
+    MESSAGE_PARA.all_finish_sys(true)
     MESSAGE_PARA.lock(:scene_end)
     eagle_message_para_pre_terminate
-    MESSAGE_PARA.unlock(:scene_end)
   end
 end
 
