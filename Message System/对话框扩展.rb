@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.8.1.9 整合RGD
+# - 2019.8.2.9 修复图标绘制bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -3005,7 +3005,7 @@ class Font_EagleCharacter
     draw_param_l_rect(bitmap, x, y, 24, 24) if @params[:l]
     _bitmap = Cache.system("Iconset")
     rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
-    s.bitmap.blt(x, y, _bitmap, rect, 255)
+    bitmap.blt(x, y, _bitmap, rect, 255)
     draw_param_d(bitmap) if @params[:d]
     draw_param_u(bitmap) if @params[:u]
   end
