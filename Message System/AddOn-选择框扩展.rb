@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2019.8.1.9 整合RGD
+# - 2019.8.3.11 修复颜色bug
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -680,6 +680,7 @@ class Spriteset_Choice
   def draw_text_ex(x, y, text)
     @fiber = Fiber.new {
       change_color(message_window.normal_color)
+      @font_params[:c] = 0
       text = message_window.convert_escape_characters(text)
       pos = {:x => x, :y => y, :height => 24}
       process_character(text.slice!(0, 1), text, pos) until text.empty?
@@ -691,7 +692,10 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   def change_color(color)
     @font.color.set(color)
-    @font.color.alpha = 120 unless @enabled
+    if !@enabled
+      @font.color.alpha = 120
+      @font_params[:ca] = 120
+    end
   end
   #--------------------------------------------------------------------------
   # ● 文字的处理
@@ -752,11 +756,13 @@ class Spriteset_Choice
     case code.upcase
     when 'C'
       param = message_window.obtain_escape_param(text)
+      @font_params[:c] = param
       change_color( @choice_window.text_color(param) )
     when 'F'
       param = message_window.obtain_escape_param_string(text)
       MESSAGE_EX.parse_param(@font_params, param, :size)
       MESSAGE_EX.apply_font_params(@font, @font_params)
+      change_color( @choice_window.text_color(@font_params[:c]) )
     when 'I'
       process_draw_icon(message_window.obtain_escape_param(text), pos)
       process_draw_success

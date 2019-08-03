@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.8.1.9 整合RGD
+# - 2019.8.3.11 修复颜色bug
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -350,6 +350,13 @@ class Window_ScrollText < Window_Base
     return t + text, pos
   end
   #--------------------------------------------------------------------------
+  # ● 重置字体设置
+  #--------------------------------------------------------------------------
+  def reset_font_settings
+    change_color(normal_color)
+    font_params[:c] = 0
+  end
+  #--------------------------------------------------------------------------
   # ● 预处理标签对
   #--------------------------------------------------------------------------
   def pre_process_tags(text)
@@ -615,6 +622,9 @@ class Window_ScrollText < Window_Base
     when '>'; @line_show_fast = true
     when '<'; @line_show_fast = false
     when 'PARA'; eagle_activate_thread(obtain_escape_param(text), pos)
+    when 'C'
+      font_params[:c] = obtain_escape_param(text)
+      change_color(text_color(font_params[:c]))
     else
       temp_code = code.downcase
       m_c = ("eagle_text_control_" + temp_code).to_sym
@@ -667,6 +677,7 @@ class Window_ScrollText < Window_Base
   def eagle_text_control_font(param = "")
     parse_param(params[:font], param, :size)
     MESSAGE_EX.apply_font_params(self.contents.font, params[:font])
+    change_color(text_color(font_params[:c]))
   end
   #--------------------------------------------------------------------------
   # ● 放大字体尺寸（覆盖）
