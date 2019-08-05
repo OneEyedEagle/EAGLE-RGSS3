@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-Counter"] = true
 #=============================================================================
-# - 2019.6.9.23 换行\n转义符不需要重复
+# - 2019.8.5.14 修复重新进入地图时报错bug
 #=============================================================================
 # - 本插件提供了一组绑定于默认变量 $game_variables 的计数器
 # - 在地图上时，指定的文本将显示于屏幕指定位置，当变量值变更时将自动重绘
@@ -272,12 +272,13 @@ end
 # ○ Spriteset_Map
 #==============================================================================
 class Spriteset_Map
+  attr_reader  :counters
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
-  alias eagle_counter_create_timer create_timer
-  def create_timer
-    eagle_counter_create_timer
+  alias eagle_counter_init initialize
+  def initialize
+    eagle_counter_init
     @counters = Spriteset_Counters.new(@viewport2)
   end
   #--------------------------------------------------------------------------
@@ -285,19 +286,29 @@ class Spriteset_Map
   #--------------------------------------------------------------------------
   alias eagle_counter_dispose_timer dispose_timer
   def dispose_timer
-    @counters.dispose
     eagle_counter_dispose_timer
+    @counters.dispose
   end
   #--------------------------------------------------------------------------
-  # ● 更新画面
+  # ● 更新计时器精灵
   #--------------------------------------------------------------------------
-  alias eagle_counter_update update
-  def update
-    eagle_counter_update
-    @counters.update
+  alias eagle_counter_update_timer update_timer
+  def update_timer
+    eagle_counter_update_timer
+    @counters.update if @counters
   end
 end
 #==============================================================================
 # ○ Scene_Map
 #==============================================================================
-class Scene_Map; attr_reader :message_window; end
+class Scene_Map
+  attr_reader :message_window
+  #--------------------------------------------------------------------------
+  # ● 生成信息窗口
+  #--------------------------------------------------------------------------
+  alias eagle_counter_create_message_window create_message_window
+  def create_message_window
+    eagle_counter_create_message_window
+    @spriteset.counters.update
+  end
+end

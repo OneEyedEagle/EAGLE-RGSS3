@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-TimerEX"] = true
 #=============================================================================
-# - 2019.6.5.14 优化stop后的显示
+# - 2019.8.5.13 优化显示
 #=============================================================================
 # - 本插件对计时器进行了扩展（但不改动默认计时器）
 #-----------------------------------------------------------------------------
@@ -60,8 +60,6 @@ class Game_Timer_EX
     else
       @no_update = false
       @count -= 1
-      @need_refresh = true if @count_temp == 0
-      @count_temp = (@count_temp + 1) % 60
       self.stop if @count <= 0
     end
   end
@@ -120,7 +118,8 @@ class Game_Timer_EX
   # ● 获取当前秒数
   #--------------------------------------------------------------------------
   def second
-    @count / Graphics.frame_rate
+    c = @count % Graphics.frame_rate
+    @count / Graphics.frame_rate + (c > 0 ? 1 : 0)
   end
   #--------------------------------------------------------------------------
   # ● 获取当前毫秒数
@@ -260,6 +259,7 @@ class Sprite_Timer_EX < Sprite
     @window_index = index
     create_bitmap
     set_des_xy(0, 0)
+    @last_sec = -1 # 上一次更新的秒数
     update
   end
   #--------------------------------------------------------------------------
@@ -307,14 +307,14 @@ class Sprite_Timer_EX < Sprite
   #--------------------------------------------------------------------------
   def update
     super
-    update_bitmap
+    sec = $game_timer[@id].second
+    update_bitmap(sec) if $game_timer[@id].need_refresh || @last_sec != sec
     update_xy
   end
   #--------------------------------------------------------------------------
   # ● 重绘
   #--------------------------------------------------------------------------
-  def update_bitmap
-    return if !$game_timer[@id].need_refresh
+  def update_bitmap(sec)
     $game_timer[@id].need_refresh = false
     self.bitmap.clear
     self.bitmap.blt(0, 0, @bg_bitmap, self.bitmap.rect)
@@ -330,10 +330,9 @@ class Sprite_Timer_EX < Sprite
     if !$game_timer[@id].working? || $game_timer[@id].no_update
       self.bitmap.font.color.alpha = 100
     end
-    sec = $game_timer[@id].second + 1 # 0~1秒之间，显示为1s
-    sec = 0 if $game_timer[@id].count == 0
     text = sprintf("%02d:%02d", sec / 60, sec % 60)
     self.bitmap.draw_text(0, cy, w, 24, text, 2)
+    @last_sec = sec
 
     if icon # 绘制图标
      icon_v = $game_timer[@id].working? # 如果停止工作/不更新，则半透明绘制

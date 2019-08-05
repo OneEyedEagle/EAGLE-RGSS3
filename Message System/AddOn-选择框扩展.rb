@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2019.8.3.11 修复颜色bug
+# - 2019.8.5.14 修改选项实现方式
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -132,7 +132,7 @@ end
 # ○ Game_Message
 #==============================================================================
 class Game_Message
-  attr_accessor :choice_params, :method_choice_result
+  attr_accessor :choice_params, :choice_result
   attr_accessor :choice_cancel_i_e, :choice_cancel_i_w
   #--------------------------------------------------------------------------
   # ● 初始化对象
@@ -143,15 +143,7 @@ class Game_Message
     set_default_params
     @choice_cancel_i_e = -1 # 取消分支的判别序号（事件中序号）
     @choice_cancel_i_w = -1 # 取消分支的序号（窗口中序号）
-  end
-  #--------------------------------------------------------------------------
-  # ● 清除
-  # 注：该方法在对话框处理完输入后被调用，所以默认的两个选项参数都被重置了
-  #--------------------------------------------------------------------------
-  alias eagle_choicelist_ex_clear clear
-  def clear
-    eagle_choicelist_ex_clear
-    @method_choice_result = nil
+    @choice_result = -1     # 结果分支的序号（事件中序号）
   end
   #--------------------------------------------------------------------------
   # ● 获取全部可保存params的符号的数组
@@ -514,14 +506,14 @@ class Window_ChoiceList < Window_Command
   # ● 调用“确定”的处理方法（覆盖）
   #--------------------------------------------------------------------------
   def call_ok_handler
-    $game_message.method_choice_result.call(@choices_info[index][:i_e])
+    $game_message.choice_result = @choices_info[index][:i_e]
     close
   end
   #--------------------------------------------------------------------------
   # ● 调用“取消”的处理方法（覆盖）
   #--------------------------------------------------------------------------
   def call_cancel_handler
-    $game_message.method_choice_result.call($game_message.choice_cancel_i_e)
+    $game_message.choice_result = $game_message.choice_cancel_i_e
     close
   end
   #--------------------------------------------------------------------------
@@ -537,6 +529,13 @@ class Window_ChoiceList < Window_Command
     else
       $game_timer.stop
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  def dispose
+    super
+    @choices.each { |i, s| s.move_out }
   end
 end
 #==============================================================================
@@ -795,8 +794,6 @@ class Game_Interpreter
     cancel_index = eagle_merge_choices
     params = @list[@index].parameters
     params[0].each {|s| $game_message.choices.push(s) }
-    # 绑定返回方法
-    $game_message.method_choice_result = method(:eagle_choice_result)
     # 设置取消分支的类型（事件中序号）
     #（对于params[1]）
     # 0 代表取消无效，1 ~ size 代表取消时进入对应分支，size+1 代表进入取消专用分支
@@ -807,6 +804,11 @@ class Game_Interpreter
     $game_message.choice_cancel_i_e = params[1] - 1
     $game_message.choice_cancel_i_e = params[0].size if cancel_index >= 0
     $game_message.choice_cancel_i_w = -1 # 初始时取-1，在选项生成时重置
+    $game_message.choice_result = -1 # 重置结果分支序号
+    # 新增等待选择框结束
+    wait_for_message
+    # 应用选项结果
+    eagle_choice_result($game_message.choice_result)
   end
   #--------------------------------------------------------------------------
   # ● 合并相邻选项指令

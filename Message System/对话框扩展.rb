@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.8.2.9 修复图标绘制bug
+# - 2019.8.5.14 修复文字绘制时透明度调整失效的bug；窗口移动时文字显示视图错位的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1508,6 +1508,7 @@ class Window_Message
     self.y += game_message.win_params[:dy]
     eagle_fix_position if game_message.win_params[:fix]
     eagle_recreate_back_bitmap
+    eagle_set_charas_viewport
     eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
@@ -1612,6 +1613,14 @@ class Window_Message
     win_params[:cdy]
   end
   #--------------------------------------------------------------------------
+  # ● 设置文字显示区域的矩形（屏幕坐标）
+  #--------------------------------------------------------------------------
+  def eagle_set_charas_viewport
+    @eagle_chara_viewport.rect.set(eagle_charas_x0, eagle_charas_y0,
+      eagle_charas_max_w + eagle_window_w_empty,
+      eagle_charas_max_h + eagle_window_h_empty)
+  end
+  #--------------------------------------------------------------------------
   # ● 修正位置（确保对话框完整显示）
   #--------------------------------------------------------------------------
   def eagle_fix_position
@@ -1661,6 +1670,7 @@ class Window_Message
     self.y += game_message.pop_params[:dy]
     eagle_pop_tag_update if game_message.pop_params[:tag] > 0
     eagle_fix_position if game_message.pop_params[:fix]
+    eagle_set_charas_viewport
     eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
@@ -2025,10 +2035,6 @@ class Window_Message
     # 由于对齐需要用到对话框的属性，因此需要在调用更新后执行
     eagle_charas_reset_alignment(game_message.win_params[:ali])
     eagle_open_and_wait # 第一个文字绘制完成时窗口打开
-    # 设置文字显示区域的矩形（屏幕坐标）
-    @eagle_chara_viewport.rect.set(eagle_charas_x0, eagle_charas_y0,
-      eagle_charas_max_w + eagle_window_w_empty,
-      eagle_charas_max_h + eagle_window_h_empty)
     # 确保最后绘制的文字在视图区域内
     ensure_character_visible
   end
@@ -2984,8 +2990,8 @@ class Font_EagleCharacter
   # ● 执行文字绘制
   #--------------------------------------------------------------------------
   def draw(bitmap, x, y, w, h, c, ali = 0)
-    MESSAGE_EX.apply_font_params(bitmap.font, @params)
     bitmap.font.color = text_color(@params[:c])
+    MESSAGE_EX.apply_font_params(bitmap.font, @params)
 
     draw_param_p(bitmap, x, y, w, h) if @params[:p]
     draw_param_l(bitmap, x, y, w, h, c, ali) if @params[:l]
