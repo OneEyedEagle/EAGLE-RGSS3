@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.8.5.14 修复文字绘制时透明度调整失效的bug；窗口移动时文字显示视图错位的bug
+# - 2019.8.5.15 修复文字绘制时透明度调整失效的bug；窗口移动时文字显示视图错位的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -2174,7 +2174,7 @@ class Window_Message
     while true
       Fiber.yield
       break if @eagle_auto_continue_c && (@eagle_auto_continue_c -= 1) <= 0
-      break if Input.trigger?(:B) || Input.trigger?(:C)
+      break if check_input_pause?
       # 处理文本滚动
       if Input.press?(:UP)
         self.oy -= d_oxy
@@ -2200,6 +2200,12 @@ class Window_Message
     end
     self.arrows_visible = false
     Input.update
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查输入等待的按键
+  #--------------------------------------------------------------------------
+  def check_input_pause?
+    Input.trigger?(:B) || Input.trigger?(:C)
   end
   #--------------------------------------------------------------------------
   # ● 处理选项的输入（覆盖）

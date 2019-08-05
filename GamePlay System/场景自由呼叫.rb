@@ -86,6 +86,7 @@ module SceneManager
     if @eagle_scene
       eagle_load
       @eagle_reserve_scene = scene_class
+      return
     end
     @scene = scene_class.new
   end
