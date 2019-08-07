@@ -5,66 +5,85 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2019.8.5.14 修复对话框无法立即关闭的bug
+# - 2019.8.7.14 逻辑重写
 #==============================================================================
-# - 本插件利用 对话框扩展 中的工具生成新的并行显示对话框
+# - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
-# ○ 设置“并行对话序列”
+# ○ 编写“标签序列”
 #--------------------------------------------------------------------------
-# - 利用下列格式进行编写，其中...替换成任意数目个“对话标签对”
-#
-#       <list[ {cond}][ ex]>...</list>
-#
-# -【可选】 [ {cond}] 替换成该并行对话序列产生所需要的条件脚本，
-#     被eval后返回值不为false时，该并行对话序列才会激活
-#     可用 s 代替 $game_switches， v 代替 $game_variables
-#         p 代替 $game_player， e 代替 $game_map.events 或 $game_troop.members
-#
-# -【可选】 [ ex] 依据其它详细说明，替换成指定内容
-#
-#--------------------------------------------------------------------------
-# ○ 设置“对话标签对”
-#--------------------------------------------------------------------------
-# - 利用下列格式进行编写，其中...替换成事件编辑器中显示文字时所写的文本内容即可
-#
-#       <msg[ {face_info}][ params]>...</msg>
-#
-# -【可选】 [ {face_info}] 替换成脸图的信息设置
-#      face_info 为 face_name 与 face_index （用英语逗号或空格分隔开）
-#      face_name → 替换成 Graphics/Faces 目录下的指定脸图名称（后缀名可以省略）
-#      face_index → 替换成指定脸图的序号id（0-7）
-#    示例： <msg {face_example, 5}>...</msg> → 对话显示face_example.png的5号脸图
-#
-# -【可选】 [ params] 替换成 变量名+参数值 的字符串
-#      bg → 对话框的背景类型id（0普通，1暗色，2透明）（同VA默认）
-#      pos → 设置对话框的显示位置类型id（0居上，1居中，2居下）（同VA默认）
-#      w → 设置对话框绘制完成后、关闭前的等待帧数（nil为不自动关闭）
-#      t → 设置对话框关闭后、下一次对话开启前的等待帧数
-#    示例： <msg w10>...</msg> → 设置该对话框绘制完成后，等待10帧后关闭
-#
+# - 由指定的标签/标签对进行任意排列而组成的字符串，并逐个解析执行
 # - 注意：
-#    ·在生成每一个对话框时，将会应用 Game_Message 的全部转义符参数作为初始值
+#    ·在解析的准备阶段，将应用 $game_message 的全部转义符参数作为并行对话框的初值
+#    ·所有标签均大小写敏感，在默认情况下，全部为小写字母
+#
+# - 可用标签一览：
+#    <msg>...</msg>  → 预设对话文本，当执行该标签对时，解析将暂停，直至对话框关闭
+#         其中...替换成所需的对话文本
+#
+#    <face face_name [face_index]>  → 预设之后对话框所显示脸图的参数
+#         其中 face_name 替换成 Graphics/Faces 目录下的脸图文件名，可省略后缀
+#         其中 face_index 替换成脸图的序号id（0-7）（该项可省略，默认重置为 0）
+#
+#    <params param_str>  → 预设之后对话框的参数
+#         其中 param_str 替换成 变量名+参数值 的字符串（同 对话框扩展 中）
+#         可设置变量一览：
+#           bg → 对话框的背景类型id（0普通，1暗色，2透明）（同VA默认）
+#           pos → 设置对话框的显示位置类型id（0居上，1居中，2居下）（同VA默认）
+#           w → 设置对话框绘制完成后、关闭前的等待帧数（nil为不自动关闭）
+#           t → 设置对话框关闭后、下一次对话开启前的等待帧数
+#         示例： <params w10> → 之后的对话框在绘制完成后，均额外等待10帧才关闭
+#
+#    <wait count> → 直接等待 count 帧数
+#
+#    <break> → 直接结束当前序列
+#
+#    <call list_name>  → 呼叫预设的“标签序列”
+#         在文本文件预设的序列中查找名为 list_name 的序列，并开始解析它
+#
+#    <if cond_str> → 如果 eval(cond_str) 返回 false，则跳过下一个标签
+#         可用 s 代替 $game_switches， v 代替 $game_variables
+#              p 代替 $game_player， e 代替 当前事件 或 当前敌人
+#         由于解析问题，请不要在 cond_str 中使用 > 符号
+#
+#    <rb str> → 执行脚本 eval(str)
 #
 #--------------------------------------------------------------------------
-# ○ 任意场合新增“并行对话序列”
+# ○ 呼叫“标签序列”
 #--------------------------------------------------------------------------
-# - 利用脚本 MESSAGE_PARA.add(name, list_msg[, ensure_fin])
-#   生成立即更新、只显示一次的序列
-#     name → 任意的唯一标识符（若有重名，则先前存在的会被删除）
-#     list_msg → “对话标签对”的字符串（其中转义符需要用 \\ 代替 \）
-#     ensure_fin → 【可选】当传入 true 时，将保证当前对话序列完全显示
-#                    （场景切换时只暂停，之后将继续）
+# - 利用下述脚本启动立即更新、只执行一遍的标签序列
+#
+#        MESSAGE_PARA.add(name, list_str[, ensure_fin])
+#
+#    其中 name 为任意的唯一标识符（若有重名，则先前存在的会被删除）
+#       推荐使用 Symbol 或 String 类型
+#    其中 list_str 为“标签序列”字符串（注意！转义符需要用 \\ 代替 \）
+#    其中 ensure_fin 传入 true 时，将保证当前对话序列完全显示【可选】
+#      （场景切换时只暂停，之后将继续）
 #
 #   示例：MESSAGE_PARA.add(:test, "<call test1><msg>...</msg>")
-#      → 生成一个占位:test的并行对话序列，内容如字符串，并开始更新
+#      → 生成一个占位:test的“标签序列”，内容如字符串，并开始更新
 #
 #--------------------------------------------------------------------------
-# ○ 文本文件中预设“并行对话序列”
+# ○ 预设“标签序列”
 #--------------------------------------------------------------------------
-# - 在指定的文本文件中，按下述格式填写，其中...替换成任意数目个“对话标签对”
-#        <list[ {cond}][ name]>...</list>
+# - 利用脚本将指定的“标签序列”字符串以指定名称存入预设
 #
-# -【推荐】 name 替换成该并行对话序列的唯一名称，便于进行调用
+#        MESSAGE_PARA.reserve(name, list_str)
+#
+#    其中 name 为任意的唯一标识符（将覆盖原有的预设）
+#    其中 list_str 为“标签序列”字符串（注意！转义符需要用 \\ 代替 \）
+#
+#--------------------------------------------------------------------------
+# ○ 呼叫预设的“标签序列”
+#--------------------------------------------------------------------------
+# - 利用脚本 MESSAGE_PARA.call(name, [, ensure_fin]) 呼叫预设中 name 名称的序列
+#
+#--------------------------------------------------------------------------
+# ○ 文本文件中预设“标签序列”
+#--------------------------------------------------------------------------
+# - 在指定的文本文件中，按 <list name>...</list> 填写
+#     其中 name 替换成该“标签序列”的唯一名称，便于进行调用
+#     其中 ... 替换成“标签序列”（转义符正常写法）
 #
 # - 注意：
 #    ·文本文件的编码必须为 UTF-8
@@ -73,56 +92,48 @@ $imported["EAGLE-MessagePara"] = true
 #      若已经有了能够读取加密档案路径下纯文本文件的方法，请替换全部EAGLE.load_text
 #
 #--------------------------------------------------------------------------
-# ○ 导入预设的“并行对话序列”
+# ○ 地图事件页中设置“标签序列”
 #--------------------------------------------------------------------------
-# - 在任意 “并行对话序列” 的 <list>...</list> 标签对中，
-#   插入 <call name> ，其中 name 替换成对应名称，
-#   若 name 所对应的并行对话序列的cond判定为真，则会将它的全部内容复制导入
+# - 事件页第一个指令为 注释 时，按下述格式填入该事件页的“标签序列”：
 #
-#    示例：<list><call test1><msg>...</msg></list>
-#       → （若test1的eval(cond)为true）导入名为test1的并行对话序列中的全部对话，
-#          并在最后加上一个设置的msg对话
-#
-#--------------------------------------------------------------------------
-# ○ 任意场合呼叫预设的“并行对话序列”
-#--------------------------------------------------------------------------
-# - 利用脚本 MESSAGE_PARA.call(name, [, ensure_fin])
-#   呼叫名为 name 的并行对话序列，若传入的 ensure_fin 为 true，则将保证必定显示完
-#
-#--------------------------------------------------------------------------
-# ○ 地图事件页中设置“并行对话序列”
-#--------------------------------------------------------------------------
-# - 事件页第一个指令为 注释 时，按下述格式填入该事件页的 “并行对话序列”：
 #        <list[ {cond}][ params]>...</list>
 #
-#    ·其中...替换成任意数目个 “对话标签对”
-#    ·若文本量超出单个注释窗口，可以拆分成多个连续的 注释 指令，脚本将一并读取
-#    ·对于每个事件，同时只会执行一个并行对话序列
+#   其中 ... 替换成“标签序列”（转义符正常写法）
+#   其中 {cond} 替换成触发条件，若被 eval 后返回 false，则不触发
+#     可用 s 代替 $game_switches， v 代替 $game_variables
+#          p 代替 $game_player， e 代替 $game_map.events 或 $game_troop.members
+#   其中 params 替换成 变量名+参数值 的字符串（可选）
+#      可设置变量一览：
+#       type → 设置该组并行对话的类型
+#             （0玩家接近事件时触发，1自动触发，2鼠标停留触发）
+#    （玩家接近时触发）（每次玩家接近只触发一次）
+#       d → 玩家与事件的距离（x差值的绝对值+y差值的绝对值）小于等于d时触发
+#    （自动触发）
+#       t → 显示完成后的等待帧数
+#       tc → 第一次触发前的等待帧数
+#    （鼠标停留触发【需 鼠标系统】）
+#       d → 与鼠标（所在格子）距离小于等于d时触发
 #
-# - 示例（无参数）：
+#   示例（无参数）：
 #      <list><msg>第一句台词</msg><msg>第二句台词</msg></list>
 #      → 为该事件页添加 EVENT_MSG_TYPE_ID_DEFAULT 类型的对话组，
-#         使用预设参数，依次显示这两句台词
+#         使用当前对话框的参数，依次显示这两句台词
 #
-# -【可选】<list> 中的 [ params] 替换成 变量名+参数值 的变量参数字符串
-#      type → 设置该组并行对话的类型（0玩家接近事件时触发，1自动触发，2鼠标停留触发）
-#    （玩家接近时触发）（每次玩家接近只触发一次）
-#      d → 玩家与事件的距离（x差值的绝对值+y差值的绝对值）小于等于d时触发
-#    （自动触发）
-#      t → 显示完成后的等待帧数
-#      tc → 第一次触发前的等待帧数
-#    （鼠标停留触发【需 鼠标系统】）
-#      d → 与鼠标（所在格子）距离小于等于d时触发
+#   示例（含参数）：
+#      <list {s[1]}>...</list> → 当1号开关关闭时，不触发该并行对话
+#      <list type0d3>...</list> → 设置玩家与事件间的距离不大于3时触发
+#      <list type1t60>...</list> → 设置为自动触发，两次触发间隔60帧
 #
-#   示例： <list type0d3>...</list> - 设置玩家与事件间的距离不大于3时触发
-#   示例： <list type1t60>...</list> - 设置为自动触发，两次触发间隔60帧
+# - 注意：
+#    ·若文本量超出单个注释窗口，可以拆分成多个连续的 注释 指令，脚本将一并读取
+#    ·对于每个事件，同时只会执行一个“标签序列”
 #
 #--------------------------------------------------------------------------
 # ○ 注意
 #--------------------------------------------------------------------------
-#  ·所有标签对均大小写敏感，在默认情况下，全部为小写字母
-#  ·进行 场所移动 / Scene切换 时，会自动结束全部并行对话序列
-#  ·打开S_ID_NO_MSG号开关时，会自动结束全部并行对话序列并禁止产生新的并行对话
+#  ·进行 场所移动 / Scene切换 时，会自动结束全部“标签序列”
+#      除了 ensure_fin 设置为 true 的序列
+#  ·打开S_ID_NO_MSG号开关时，会自动结束全部“标签序列”并禁止产生新的
 #==============================================================================
 
 #==============================================================================
@@ -169,7 +180,7 @@ module MESSAGE_PARA
     },
     :auto => { # id为1时“自动触发”
       :t => 180, # 循环触发后的等待帧数
-      :tc => 0, # 第一次触发前的等待帧数
+      :tc => 10, # 第一次触发前的等待帧数
     },
     :mouse => { # id为2时“鼠标停留触发”
       :d => 0, # 与鼠标（所在格子）距离小于等于d时触发
@@ -206,90 +217,58 @@ end
 #==============================================================================
 module MESSAGE_PARA
   #--------------------------------------------------------------------------
-  # ● 解析含并行对话序列的文本文件
-  #--------------------------------------------------------------------------
-  # hash - 存储解析出的全部 name => [cond_string, 并行对话文本list_msg]
-  def self.parse_list_file(filename)
-    hash = {}
-    text = EAGLE.load_text(filename) rescue ""
-    text.scan(/<list ?(\{.*?\})? ?(.*?)>(.*?)<\/list>/m).each do |params|
-      hash[ params[1].to_sym ] = [ params[0], params[2] ]
-    end
-    hash
-  end
-  #--------------------------------------------------------------------------
-  # ● 解析含并行对话序列的字符串
-  #--------------------------------------------------------------------------
-  # hash - 存储解析出的全部 name => 并行对话文本list_msg
-  def self.parse_list_string(text)
-    s = $game_switches; v = $game_variables; p = $game_player
-    e = $game_map.events if SceneManager.scene_is?(Scene_Map)
-    e = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
-    hash = {}
-    text.scan(/<list ?(\{.*?\})? ?(.*?)>(.*?)<\/list>/m).each do |params|
-      next if params[0] && eval(params[0]) == false
-      hash[ params[1] ] = params[2]
-    end
-    hash
-  end
-  #--------------------------------------------------------------------------
-  # ● 新增预设的并行对话序列
-  #--------------------------------------------------------------------------
-  def self.call(name_sym, ensure_fin = false)
-    name_sym = name_sym.to_sym if !name_sym.is_a?(Symbol)
-    v = @lists_msgs[name_sym]
-    return if v.nil?
-    return if v[0] && eval(v[0]) != true
-    add(name_sym, v[1], ensure_fin)
-  end
-  #--------------------------------------------------------------------------
-  # ● 新增一个并行对话序列
-  #--------------------------------------------------------------------------
-  # list_msg - "<msg params>foo</msg><msg params>foo</msg>"
-  def self.add(id, list_msg, ensure_fin = false)
-    list = []
-    # 执行快捷替换
-    list_msg.gsub!(/<call (.*?)>/) {
-      params = @list_msg[$1.to_sym]
-      (params && eval(params[0]) == true) ? params[1] : ""
-    }
-    list_msg.scan(/<msg ?(\{.*?\})? ?(.*?)>(.*?)<\/msg>/m).each do |_params|
-      # 解析脸图信息
-      face_infos = parse_face_info(_params[0])
-      # 解析对话框参数
-      params = PARA_MESSAGE_PARAMS.dup # 初始化
-      MESSAGE_EX.parse_param(params, _params[1])
-      params[:id] = id # 记录执行事件的id号 / 特征id
-      # [text, face_infos, message_params]
-      list.push( [_params[2], face_infos, params] )
-    end
-    @lists[id].dispose if @lists[id]
-    @lists[id] = MessagePara_List.new(list)
-    @lists[id].f_ensure_fin = ensure_fin
-    return true
-  end
-  #--------------------------------------------------------------------------
-  # ● 解析对话框脸图信息
-  #--------------------------------------------------------------------------
-  def self.parse_face_info(param_text)
-    # param_text = "{face_name, face_index}"
-    infos = []
-    param_text =~ /\{(.*?)[, ]*(\d+)\}/i
-    infos[0] = $1 || ""
-    infos[1] = $2.to_i || 0
-    infos
-  end
-
-  #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
   def self.init
     @lists = {} # 存储当前正在更新的并行对话列表
     @lock_count = [] # 当前锁定类型汇总
-    @lists_msgs = {} # 存储预读取的全部并行对话序列 name_sym => [cond, list_msg]
+    @lists_strs = {} # 存储预读取的全部对话序列 name_sym => list_msg
     FILES_MSG_LIST.each do |filename|
-      @lists_msgs.merge!( parse_list_file(filename) )
+      @lists_strs.merge!( parse_list_file(filename) )
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 解析含“标签序列”的文本文件
+  #--------------------------------------------------------------------------
+  # hash - 存储解析出的全部 name => [cond_string, 并行对话文本list_msg]
+  def self.parse_list_file(filename)
+    hash = {}
+    text = EAGLE.load_text(filename) rescue ""
+    text.scan(/<list ?(.*?)>(.*?)<\/list>/m).each do |params|
+      hash[ params[0].to_sym ] = params[1]
+    end
+    hash
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取指定的“标签序列”字符串
+  #--------------------------------------------------------------------------
+  def self.get_list_str(sym)
+    @lists_strs[sym] || ""
+  end
+  #--------------------------------------------------------------------------
+  # ● 呼叫“标签序列”
+  #--------------------------------------------------------------------------
+  # list_str - "<msg params>foo</msg><msg params>foo</msg>"
+  def self.add(id, list_str, ensure_fin = false)
+    @lists[id].dispose if @lists[id]
+    @lists[id] = MessagePara_List.new(id, list_str)
+    @lists[id].f_ensure_fin = ensure_fin
+    return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 保存“标签序列”到预设
+  #--------------------------------------------------------------------------
+  def self.reserve(id, list_str)
+    @lists_strs[id] = list_str
+  end
+  #--------------------------------------------------------------------------
+  # ● 呼叫预设的“标签序列”
+  #--------------------------------------------------------------------------
+  def self.call(name_sym, ensure_fin = false)
+    name_sym = name_sym.to_sym if !name_sym.is_a?(Symbol)
+    v = get_list_str(name_sym)
+    return if v == ""
+    add(name_sym, v, ensure_fin)
   end
   #--------------------------------------------------------------------------
   # ● 指定对话组存在？
@@ -308,17 +287,16 @@ module MESSAGE_PARA
   #--------------------------------------------------------------------------
   # ● 全部结束
   #--------------------------------------------------------------------------
-  def self.all_finish(dispose = false)
-    @lists.each { |id, l| l.finish; l.dispose if dispose }
+  def self.all_finish
+    @lists.each { |id, l| l.finish }
   end
   #--------------------------------------------------------------------------
   # ● 全部结束（跳过需要显示完的list）
   #--------------------------------------------------------------------------
-  def self.all_finish_sys(dispose = false)
+  def self.all_finish_sys
     @lists.each do |id, l|
       next l.halt if l.f_ensure_fin
       l.finish
-      l.dispose if dispose
     end
   end
   #--------------------------------------------------------------------------
@@ -341,7 +319,7 @@ module MESSAGE_PARA
   def self.update_lock
     if $game_switches[S_ID_NO_MSG]
       return if lock?
-      all_finish
+      all_finish_sys
       lock
     else
       return if !lock?
@@ -367,21 +345,19 @@ module MESSAGE_PARA
     !@lock_count.empty?
   end
   #--------------------------------------------------------------------------
-  # ● 生成对话框
+  # ● 解析含“标签序列”的字符串（地图事件页用）
   #--------------------------------------------------------------------------
-  def self.get_new_window(info)
-    # info[0]为待绘制文本 info[1]为脸图信息 info[2]为params的hash
-    game_message = $game_message.clone
-    game_message.add(info[0])
-    game_message.face_name = info[1][0]
-    game_message.face_index = info[1][1]
-    game_message.background = info[2][:bg]
-    game_message.position = info[2][:pos]
-    game_message.visible = true
-    game_message.win_params[:z] = 100
-    game_message.pause_params[:v] = 0
-    w = Window_Message_Para.new(game_message, info[2])
-    return w
+  # hash - 存储解析出的全部 name => 并行对话文本list_msg
+  def self.parse_event_list_str(text)
+    s = $game_switches; v = $game_variables; p = $game_player
+    e = $game_map.events if SceneManager.scene_is?(Scene_Map)
+    e = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
+    hash = {}
+    text.scan(/<list ?(\{.*?\})? ?(.*?)>(.*?)<\/list>/m).each do |params|
+      next if params[0] && eval(params[0]) == false
+      hash[ params[1] ] = params[2]
+    end
+    hash
   end
   #--------------------------------------------------------------------------
   # ● 初始化参数组（地图事件页用）
@@ -398,14 +374,20 @@ end
 # ○ 并行对话列表
 #==============================================================================
 class MessagePara_List # 该list中每一时刻只显示一个对话框
+  attr_reader   :game_message
   attr_accessor  :f_ensure_fin
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
-  def initialize(list)
-    @list = list   # 待处理的窗口信息队列 [[string, {infos}, {sym => value}]]
+  def initialize(id, list_str)
+    @id = id
+    @list_str = list_str   # 待处理的标签队列
+    @game_message = $game_message.clone
+    @face = ["", 0]
+    @params = MESSAGE_PARA::PARA_MESSAGE_PARAMS.dup
+    @params[:id] = id
     @window = nil  # 当前正在处理的window
-    @wait = 0      # 在处理队列下一个窗口前需要等待的时间
+    @wait = 0      # 剩余等待的时间
     @f_ensure_fin = false # 保证必定显示完？（场景切换时只暂时暂停并关闭）
   end
   #--------------------------------------------------------------------------
@@ -414,20 +396,115 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   def update
     if @window
       @window.update
-      dispose if !@window.game_message.visible
+      dispose if !@game_message.visible
     end
-    if @window.nil? && !@list.empty?
-      return if (@wait -= 1) > 0
-      set_new_window
-    end
+    return if @wait > 0
+    @wait -= 1
+    parse_list if @window.nil? && !@list_str.empty?
   end
   #--------------------------------------------------------------------------
-  # ● 设置新的对话框
+  # ● 解析序列字符串
   #--------------------------------------------------------------------------
-  def set_new_window
-    info = @list.shift # [string, params]
-    @window = MESSAGE_PARA.get_new_window(info)
-    @wait = info[-1][:t]
+  def parse_list
+    tag_name, tag_str = parse_next_tag
+    method_name = "tag_" + tag_name
+    send(method_name, tag_str) if respond_to?(method_name)
+  end
+  #--------------------------------------------------------------------------
+  # ● 解析下一个标签（移除首位的非标签内容）
+  #--------------------------------------------------------------------------
+  def parse_next_tag
+    i = 0; s = @list_str.size
+    while @list_str[i] != '<'
+      i += 1
+      return @list_str.clear if i == s
+    end
+    @list_str = @list_str[i..-1]
+    @list_str.slice!(/<(.*?)>/)
+    str = $1
+    # tag_name 为标签中的标识符
+    tag_name = str.slice!(/\w+/)
+    # tag_str 为标签中标识符以外的字符
+    tag_str = str.lstrip # 去除多余空格
+    return tag_name, tag_str
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：开启对话框
+  #--------------------------------------------------------------------------
+  def tag_msg(tag_str)
+    @list_str.slice!(/^(.*?)<\/msg>/m)
+    set_new_window($1)
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：预设脸图参数
+  #--------------------------------------------------------------------------
+  def tag_face(tag_str)
+    ps = tag_str.split(' ')
+    @face[0] = ps[0]
+    @face[1] = (ps[1] ? ps[1].to_i : 0)
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：预设对话框参数
+  #--------------------------------------------------------------------------
+  def tag_params(tag_str)
+    MESSAGE_EX.parse_param(@params, tag_str) # 解析对话框参数
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：呼叫预定序列
+  #--------------------------------------------------------------------------
+  def tag_call(tag_str)
+    s = MESSAGE_PARA.get_list_str(tag_str.to_sym)
+    @list_str = s + @list_str if s != ""
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：等待
+  #--------------------------------------------------------------------------
+  def tag_wait(tag_str)
+    @wait = tag_str.to_i
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：结束
+  #--------------------------------------------------------------------------
+  def tag_break(tag_str)
+    finish
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：判定，若返回false，则跳过下一指令
+  #--------------------------------------------------------------------------
+  def tag_if(tag_str)
+    parse_next_tag if(eval_str(tag_str) == false)
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：脚本
+  #--------------------------------------------------------------------------
+  def tag_rb(tag_str)
+    eval_str(tag_str)
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行字符串
+  #--------------------------------------------------------------------------
+  def eval_str(str)
+    s = $game_switches; v = $game_variables; p = $game_player
+    if @id.is_a?(Integer)
+      e = $game_map.events[@id] if SceneManager.scene_is?(Scene_Map)
+      e = $game_troop.members[@id] if SceneManager.scene_is?(Scene_Battle)
+    end
+    eval(str)
+  end
+  #--------------------------------------------------------------------------
+  # ● 生成对话框
+  #--------------------------------------------------------------------------
+  def set_new_window(text)
+    @game_message.clear
+    @game_message.add(text)
+    @game_message.face_name = @face[0]
+    @game_message.face_index = @face[1]
+    @game_message.background = @params[:bg]
+    @game_message.position = @params[:pos]
+    @game_message.visible = true
+    @game_message.win_params[:z] = 100
+    @game_message.pause_params[:v] = 0
+    @window = Window_Message_Para.new(self, @params)
   end
   #--------------------------------------------------------------------------
   # ● 对话暂停与继续
@@ -442,13 +519,13 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   # ● 对话结束？
   #--------------------------------------------------------------------------
   def finish?
-    @window.nil? && @list.empty?
+    @window.nil? && @list_str.empty?
   end
   #--------------------------------------------------------------------------
   # ● 直接结束
   #--------------------------------------------------------------------------
   def finish
-    @list.clear
+    @list_str.clear
     @window.finish if @window
   end
   #--------------------------------------------------------------------------
@@ -466,16 +543,16 @@ class Window_Message_Para < Window_Message
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
-  def initialize(game_message, para_params)
-    @game_message = game_message.dup
-    @para_params = para_params.dup
+  def initialize(list, para_params)
+    @list = list
+    @para_params = para_params
     super()
   end
   #--------------------------------------------------------------------------
   # ● 获取主参数
   #--------------------------------------------------------------------------
   def game_message
-    @game_message
+    @list.game_message
   end
   #--------------------------------------------------------------------------
   # ● 更新纤程
@@ -570,6 +647,7 @@ class << DataManager
     eagle_message_para_init
   end
 end
+
 #==============================================================================
 # ○ Game_Player
 #==============================================================================
@@ -581,8 +659,8 @@ class Game_Player
   alias eagle_message_para_reserve_transfer reserve_transfer
   def reserve_transfer(map_id, x, y, d = 2)
     eagle_message_para_reserve_transfer(map_id, x, y, d)
-    MESSAGE_PARA.all_finish_sys(true)
     MESSAGE_PARA.lock(:player)
+    MESSAGE_PARA.all_finish_sys
   end
   #--------------------------------------------------------------------------
   # ● 执行场所移动
@@ -590,8 +668,8 @@ class Game_Player
   alias eagle_message_para_perform_transfer perform_transfer
   def perform_transfer
     eagle_message_para_perform_transfer
-    MESSAGE_PARA.unlock(:player)
     MESSAGE_PARA.all_go_on
+    MESSAGE_PARA.unlock(:player)
   end
 end
 #==============================================================================
@@ -620,8 +698,8 @@ class Scene_Base
   #--------------------------------------------------------------------------
   alias eagle_message_para_pre_terminate pre_terminate
   def pre_terminate
-    MESSAGE_PARA.all_finish_sys(true)
     MESSAGE_PARA.lock(:scene_end)
+    MESSAGE_PARA.all_finish_sys
     eagle_message_para_pre_terminate
   end
 end
@@ -636,9 +714,9 @@ class Game_Event < Game_Character
   alias eagle_message_para_setup_page setup_page
   def setup_page(new_page)
     eagle_message_para_setup_page(new_page)
-    @eagle_message_para = {} # type => [list_msg, list_params] # 每种一个
+    @eagle_message_para = {} # type => [list_str, list_params] # 每种一个
     t = EAGLE.event_comment_head(@list)
-    hash = MESSAGE_PARA.parse_list_string(t) # params => list_msg
+    hash = MESSAGE_PARA.parse_event_list_str(t) # params => list_str
     hash.each do |key, value|
       hash_ = {}; MESSAGE_EX.parse_param(hash_, key)
       hash_ = MESSAGE_PARA.event_init_params(hash_)
@@ -658,7 +736,7 @@ class Game_Event < Game_Character
     end
   end
   #--------------------------------------------------------------------------
-  # ● 新增一个并行对话序列（在一次激活后，只处理一次）
+  # ● 新增一个“标签序列”（在一次激活后，不重复处理）
   #--------------------------------------------------------------------------
   def add_para_message(flag, list_msg, list_params)
     if flag # flag 为 true 代表满足对话生成条件
