@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.8.5.15 修复文字绘制时透明度调整失效的bug；窗口移动时文字显示视图错位的bug
+# - 2019.8.18.10 增加兼容性
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -3170,8 +3170,7 @@ class Sprite_EagleCharacter < Sprite
   def update
     super
     update_position
-    return move_update(:cin)  if @flag_move == :in
-    return move_update(:cout) if @flag_move == :out
+    return move_update(@flag_move)  if @flag_move
     update_effects if !@effects.empty?
   end
   #--------------------------------------------------------------------------
@@ -3250,7 +3249,7 @@ class Sprite_EagleCharacter < Sprite
     self.opacity = 0
     self.zoom_x = self.zoom_y = 1.0 + @_zoom/100.0
     reset_oxy(5)
-    @flag_move = :in
+    @flag_move = :cin
   end
   #--------------------------------------------------------------------------
   # ● 更新移动
@@ -3288,7 +3287,7 @@ class Sprite_EagleCharacter < Sprite
     if !(@params[:cout].nil? || @params[:cout].empty?)
       @dx = @dy = @_zoom = 0
       reset_oxy(5)
-      @flag_move = :out
+      @flag_move = :cout
     elsif !@params[:uout].nil?
       move_out_uout(@params[:uout])
     else
