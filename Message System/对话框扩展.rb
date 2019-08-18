@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.8.18.10 增加兼容性
+# - 2019.8.18.13 新增脸图播放时不循环
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -133,9 +133,9 @@ $imported["EAGLE-MessageEX"] = true
 #         将设置该脸图文件的规格为 行数（数字1）x列数（数字2）（默认2行x4列）
 #     示例： face_actor_1_1.png → 该脸图规格为 1×1，含有一张脸图，只有index为0有效
 #    i → 【重置】【默认】显示当前文件中指定序号的脸图（默认同va对话框传入参数）
-#    ls/le → 【重置】定义脸图循环播放的开始index/结束index（负数代表不循环）
+#    ls/le → 【重置】定义脸图循环播放的开始index/结束index（负数代表不启用循环）
 #    lt → 循环播放时，每两帧之间的等待间隔帧数
-#    lw → 循环播放时，每一次loop结束时的等待帧数
+#    lw → 循环播放时，每一次loop结束时的等待帧数（nil代表只播放一次）
 #
 #  \facep[param] → 【预先】脸图的基础设置
 #    dir → 【默认】脸图的显示位置（0左侧，1右侧；默认0）
@@ -1708,6 +1708,7 @@ class Window_Message
     if game_message.face_params[:flag_l]
       if game_message.face_params[:li_c] >= game_message.face_params[:le]
         # 每次loop之间的等待
+        return if game_message.face_params[:lw].nil?
         game_message.face_params[:lw_c] -= 1
         return if game_message.face_params[:lw_c] > 0
         game_message.face_params[:lw_c] = game_message.face_params[:lw]

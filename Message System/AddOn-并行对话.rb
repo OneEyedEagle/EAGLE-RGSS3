@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2019.8.7.14 逻辑重写
+# - 2019.8.18.15 修复wait标签失效bug；新增显示动画与显示心情
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -32,6 +32,17 @@ $imported["EAGLE-MessagePara"] = true
 #           w → 设置对话框绘制完成后、关闭前的等待帧数（nil为不自动关闭）
 #           t → 设置对话框关闭后、下一次对话开启前的等待帧数
 #         示例： <params w10> → 之后的对话框在绘制完成后，均额外等待10帧才关闭
+#
+#    <anim chara_index animation_id[ wait]>  → 显示动画（仅在地图上有效）
+#          其中 chara_index 为指定的事件/角色的序号
+#            正数 代表地图事件中 指定ID 的事件
+#             0 代表当前并行对话绑定的事件（仅地图上事件页注释所激活的并行对话有效）
+#            负数 代表玩家队伍中 数据库ID 为该负数绝对值的角色，若不存在则取队首
+#          其中 animation_id 为数据库中指定动画的ID号（从1开始）
+#          其中[ wait] 为可选项，若有数值传入，则代表需要等待至显示结束
+#
+#    <balloon chara_index balloon_id[ wait]>  → 显示心情气泡（仅在地图上有效）
+#          其中 balloon_id 为心情气泡的ID号（从1开始）
 #
 #    <wait count> → 直接等待 count 帧数
 #
@@ -109,8 +120,8 @@ $imported["EAGLE-MessagePara"] = true
 #    （玩家接近时触发）（每次玩家接近只触发一次）
 #       d → 玩家与事件的距离（x差值的绝对值+y差值的绝对值）小于等于d时触发
 #    （自动触发）
-#       t → 显示完成后的等待帧数
 #       tc → 第一次触发前的等待帧数
+#       t → 显示完成后的等待帧数（nil代表不再重复显示）
 #    （鼠标停留触发【需 鼠标系统】）
 #       d → 与鼠标（所在格子）距离小于等于d时触发
 #
@@ -179,8 +190,8 @@ module MESSAGE_PARA
       :d => 2, # 与玩家距离小于等于d时触发
     },
     :auto => { # id为1时“自动触发”
-      :t => 180, # 循环触发后的等待帧数
       :tc => 10, # 第一次触发前的等待帧数
+      :t => 180, # 循环触发后的等待帧数
     },
     :mouse => { # id为2时“鼠标停留触发”
       :d => 0, # 与鼠标（所在格子）距离小于等于d时触发
@@ -387,20 +398,21 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @params = MESSAGE_PARA::PARA_MESSAGE_PARAMS.dup
     @params[:id] = id
     @window = nil  # 当前正在处理的window
-    @wait = 0      # 剩余等待的时间
     @f_ensure_fin = false # 保证必定显示完？（场景切换时只暂时暂停并关闭）
+    @fiber = Fiber.new { fiber_main }
   end
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
   def update
-    if @window
-      @window.update
-      dispose if !@game_message.visible
-    end
-    return if @wait > 0
-    @wait -= 1
-    parse_list if @window.nil? && !@list_str.empty?
+    @fiber.resume if @fiber
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新线程
+  #--------------------------------------------------------------------------
+  def fiber_main
+    parse_list while !@list_str.empty?
+    @fiber = nil
   end
   #--------------------------------------------------------------------------
   # ● 解析序列字符串
@@ -409,6 +421,31 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     tag_name, tag_str = parse_next_tag
     method_name = "tag_" + tag_name
     send(method_name, tag_str) if respond_to?(method_name)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取当前绑定的事件
+  #--------------------------------------------------------------------------
+  def get_bind_event
+    if @id.is_a?(Integer)
+      return $game_map.events[@id] if SceneManager.scene_is?(Scene_Map)
+      return $game_troop.members[@id] if SceneManager.scene_is?(Scene_Battle)
+    end
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取地图上的指定角色
+  #--------------------------------------------------------------------------
+  def get_character(index)
+    return nil if !SceneManager.scene_is?(Scene_Map)
+    if index > 0
+      return $game_map.events[index]
+    elsif index == 0
+      return get_bind_event
+    elsif index < 0
+      id = index.abs
+      $game_player.followers.each { |f| return f.actor if f.actor && f.actor.actor.id == id }
+      return $game_player
+    end
   end
   #--------------------------------------------------------------------------
   # ● 解析下一个标签（移除首位的非标签内容）
@@ -434,6 +471,11 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   def tag_msg(tag_str)
     @list_str.slice!(/^(.*?)<\/msg>/m)
     set_new_window($1)
+    while @game_message.visible
+      @window.update
+      Fiber.yield
+    end
+    dispose
   end
   #--------------------------------------------------------------------------
   # ● 标签：预设脸图参数
@@ -457,10 +499,31 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @list_str = s + @list_str if s != ""
   end
   #--------------------------------------------------------------------------
+  # ● 标签：显示动画
+  #--------------------------------------------------------------------------
+  def tag_anim(tag_str)
+    ps = tag_str.split(' ')
+    character = get_character(ps[0].to_i)
+    return if character.nil?
+    character.animation_id = ps[1].to_i
+    Fiber.yield while character.animation_id > 0 if ps[2]
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：显示心情
+  #--------------------------------------------------------------------------
+  def tag_balloon(tag_str)
+    ps = tag_str.split(' ')
+    character = get_character(ps[0].to_i)
+    return if character.nil?
+    character.balloon_id = ps[1].to_i
+    Fiber.yield while character.balloon_id > 0 if ps[2]
+  end
+  #--------------------------------------------------------------------------
   # ● 标签：等待
   #--------------------------------------------------------------------------
   def tag_wait(tag_str)
-    @wait = tag_str.to_i
+    wait_c = tag_str.to_i
+    wait_c.times { Fiber.yield }
   end
   #--------------------------------------------------------------------------
   # ● 标签：结束
@@ -485,10 +548,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   #--------------------------------------------------------------------------
   def eval_str(str)
     s = $game_switches; v = $game_variables; p = $game_player
-    if @id.is_a?(Integer)
-      e = $game_map.events[@id] if SceneManager.scene_is?(Scene_Map)
-      e = $game_troop.members[@id] if SceneManager.scene_is?(Scene_Battle)
-    end
+    e = get_bind_event
     eval(str)
   end
   #--------------------------------------------------------------------------
@@ -510,23 +570,10 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   # ● 对话暂停与继续
   #--------------------------------------------------------------------------
   def halt
-    @window.halt
+    @window.halt if @window
   end
   def go_on
     @window.go_on if @window
-  end
-  #--------------------------------------------------------------------------
-  # ● 对话结束？
-  #--------------------------------------------------------------------------
-  def finish?
-    @window.nil? && @list_str.empty?
-  end
-  #--------------------------------------------------------------------------
-  # ● 直接结束
-  #--------------------------------------------------------------------------
-  def finish
-    @list_str.clear
-    @window.finish if @window
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -534,6 +581,19 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   def dispose
     @window.dispose if @window
     @window = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束？
+  #--------------------------------------------------------------------------
+  def finish?
+    @fiber == nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 直接结束
+  #--------------------------------------------------------------------------
+  def finish
+    @list_str.clear
+    @window.finish if @window
   end
 end
 #==============================================================================
@@ -606,10 +666,10 @@ class Window_Message_Para < Window_Message
   #--------------------------------------------------------------------------
   def process_input
     @input_wait_c = @para_params[:w]
-    while @fiber_para || @input_wait_c > 0
+    while @fiber_para || @input_wait_c.nil? || @input_wait_c > 0
       Fiber.yield
       next @fiber_para.resume if @fiber_para
-      @input_wait_c -= 1
+      @input_wait_c -= 1 if @input_wait_c
     end
   end
   #--------------------------------------------------------------------------
@@ -740,7 +800,7 @@ class Game_Event < Game_Character
   #--------------------------------------------------------------------------
   def add_para_message(flag, list_msg, list_params)
     if flag # flag 为 true 代表满足对话生成条件
-      if !list_params[:active]
+      if !list_params[:active] # 防止二次覆盖
         list_params[:active] = true
         MESSAGE_PARA.add(@id, list_msg)
       end
@@ -762,7 +822,9 @@ class Game_Event < Game_Character
   # ● 检查“自动执行”的并行对话
   #--------------------------------------------------------------------------
   def check_message_para_auto(list_params)
+    # 若已经生成，则保证一直满足条件让它更新
     return true if MESSAGE_PARA.list_exist?(@id)
+    return false if list_params[:tc].nil?
     list_params[:tc] -= 1
     if list_params[:tc] <= 0
       list_params[:tc] = list_params[:t]
