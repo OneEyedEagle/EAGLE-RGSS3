@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.8.18.13 新增脸图播放时不循环
+# - 2019.8.22.22 修复位图消散错位bug；修复渐变色失效bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -264,10 +264,10 @@ $imported["EAGLE-MessageEX"] = true
 # - 扩展类
 #     此处放置整合其他插件效果的转义符，统一放置于 $game_message.ex_params 中
 #
-#  \g[c1..] → 渐变描绘文本【需要前置Sion_GradientText插件】
+#  \cg[c1..] → 渐变描绘文本【需要前置Sion_GradientText插件】
 #    变量参数字符串为按序排列的 c + Windowskin颜色索引号，无任何参数时取消渐变绘制
-#    示例：\g[c1c2c1] → 用 1号 2号 1号颜色由上至下进行渐变绘制
-#    示例：\g[] → 取消渐变绘制
+#    示例：\cg[c1c2c1] → 用 1号 2号 1号颜色由上至下进行渐变绘制
+#    示例：\cg[] → 取消渐变绘制
 #
 #----------------------------------------------------------------------------
 # ● 内容滚动
@@ -602,8 +602,8 @@ module MESSAGE_EX
   # ● 【设置】定义初始激活的扩展类转义符的预设变量参数字符串
   #--------------------------------------------------------------------------
   EX_PARAMS_INIT = {
-  # 渐变绘制转义符 \g => [颜色索引数组],
-    :g => [],
+  # 渐变绘制转义符 \cg => "颜色索引字符串",
+    :cg => "",
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义新游戏开始时对话框预定的转义字符串
@@ -2003,7 +2003,7 @@ class Window_Message
   def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
     f = Font_EagleCharacter.new(font_params)
     f.set_param(:skin, game_message.win_params[:skin])
-    f.set_param(:g, game_message.ex_params[:g])
+    f.set_param(:cg, game_message.ex_params[:cg])
 
     s = Sprite_EagleCharacter.new(self, f, c_x, c_y, c_w, c_h, @eagle_chara_viewport)
     s.start_effects(game_message.chara_params)
@@ -2759,16 +2759,12 @@ class Window_Message
     end
   end
   #--------------------------------------------------------------------------
-  # ● 设置g参数 / 渐变绘制预定
+  # ● 设置cg参数 / 渐变绘制预定
   #--------------------------------------------------------------------------
   if defined?(Sion_GradientText)
-  def eagle_text_control_g(param = '')
-    game_message.ex_params[:g].clear
-    param = param.downcase
-    while(param != "")
-      param.slice!(/\D+/)
-      game_message.ex_params[:g].push((param.slice!(/\d+/)).to_i)
-    end
+  def eagle_text_control_cg(param = '0')
+    game_message.ex_params[:cg].clear
+    game_message.ex_params[:cg] = param if param != '' && param != '0'
   end
   end
 end # end of class Window_Message
@@ -2994,6 +2990,18 @@ class Font_EagleCharacter
     MESSAGE_EX.windowskin(@params[:skin]).get_pixel(64 + (n % 8) * 8, 96 + (n / 8) * 8)
   end
   #--------------------------------------------------------------------------
+  # ● 获取渐变色数组
+  #--------------------------------------------------------------------------
+  def get_gradient_color(str)
+    result = []
+    param = str.downcase
+    while(param != "")
+      param.slice!(/\D+/)
+      result.push((param.slice!(/\d+/)).to_i)
+    end
+    result
+  end
+  #--------------------------------------------------------------------------
   # ● 执行文字绘制
   #--------------------------------------------------------------------------
   def draw(bitmap, x, y, w, h, c, ali = 0)
@@ -3002,8 +3010,9 @@ class Font_EagleCharacter
 
     draw_param_p(bitmap, x, y, w, h) if @params[:p]
     draw_param_l(bitmap, x, y, w, h, c, ali) if @params[:l]
-    if defined?(Sion_GradientText) && @params[:g] && !@params[:g].empty?
-      Sion_GradientText.draw_text(bitmap,x,y,w*2,h,c,ali,@params[:g])
+    if defined?(Sion_GradientText) && @params[:cg] != ''
+      grad_cs = get_gradient_color(@params[:cg])
+      Sion_GradientText.draw_text(bitmap,x,y,w*2,h,c,ali,grad_cs)
     else
       bitmap.draw_text(x, y, w*2, h, c, ali)
     end
@@ -3086,6 +3095,17 @@ class Sprite_EagleCharacter < Sprite
     bind_window(window_bind)
     bind_font(font_bind)
     reset(x, y, w, h)
+  end
+  #--------------------------------------------------------------------------
+  # ● 文字中心点是否在视图内部？
+  #--------------------------------------------------------------------------
+  def in_viewport?
+    return true if self.viewport.nil?
+    x_ = self.x - self.ox + self.width / 2
+    y_ = self.y - self.oy + self.height / 2
+    return false if x_ < 0 || x_ > self.viewport.rect.width
+    return false if y_ < 0 || y_ > self.viewport.rect.height
+    return true
   end
   #--------------------------------------------------------------------------
   # ● 设置绑定的窗口
@@ -3302,12 +3322,7 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def check_move_out
     # 若精灵在视图外，则直接结束
-    if(self.viewport)
-      if(self.x < 0 || self.x > self.viewport.rect.width ||
-         self.y < 0 || self.y > self.viewport.rect.height)
-        self.opacity = 0
-      end
-    end
+    self.opacity = 0 if !in_viewport?
   end
   #--------------------------------------------------------------------------
   # ● 执行移出
@@ -3438,9 +3453,14 @@ class Sprite_EagleCharacter < Sprite
     params[:s] = MESSAGE_EX::CU_PARAM_S[ params[:s] ]
   end
   def update_effect_cu(params)
+    return if !in_viewport?
     return if (params[:t_c] += 1) < params[:t]
     params[:t_c] = 0
-    Unravel_Bitmap.new(self.x, self.y, self.bitmap.clone, 0, 0, self.width,
+    _x = self.x; _y = self.y
+    if(self.viewport)
+      _x += self.viewport.rect.x; _y += self.viewport.rect.y
+    end
+    Unravel_Bitmap.new(_x, _y, self.bitmap.clone, 0, 0, self.width,
       self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
   end
   #--------------------------------------------------------------------------
