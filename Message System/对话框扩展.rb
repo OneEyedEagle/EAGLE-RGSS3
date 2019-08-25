@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.8.22.22 修复位图消散错位bug；修复渐变色失效bug
+# - 2019.8.25.13 优化文字逐个移出体验；新增逆序移出
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -99,6 +99,7 @@ $imported["EAGLE-MessageEX"] = true
 #    ld → 增加的行间距值（默认0）（默认行间距为0）（每一行行高将取其最大字号）
 #    cwi → 单个文字绘制完成后的等待帧数（最小值0）
 #    cwo → 单个文字移出开始后的等待帧数（最小值0）
+#    cor → 是否逆序移出全部文字（默认false，正序）
 #    cfast → 是否允许按键快进（默认true）
 #    cdx/cdy → 文本绘制区域与窗口左侧padding/上侧padding的间距（默认0）
 #
@@ -423,6 +424,7 @@ module MESSAGE_EX
     :ld => 4, # 增加的行间距值
     :cwi => 2, # 单个文字绘制后的等待帧数（最小值0）
     :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
+    :cor => 0, # 是否逆序移出全部文字？
     :cfast => 1, # 是否允许快进
     :cdx => 0, # 文本左侧与窗口padding的间距
     :cdy => 0, # 文本上边距
@@ -1361,12 +1363,12 @@ class Window_Message
   # ● 移出全部文字精灵
   #--------------------------------------------------------------------------
   def eagle_message_sprites_move_out
-    @eagle_chara_sprites.each do |c|
-      c.move_out
-      c.update if !c.disposed?
+    while(!@eagle_chara_sprites.empty?)
+      c = win_params[:cor] ? @eagle_chara_sprites.pop : @eagle_chara_sprites.shift
+      ensure_character_visible(c)
+      c.move_out # 已经交由文字池进行后续更新释放
       win_params[:cwo].times { Fiber.yield }
     end
-    @eagle_chara_sprites.clear # 已经交由文字池进行后续更新释放
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -2037,7 +2039,7 @@ class Window_Message
     eagle_charas_reset_alignment(game_message.win_params[:ali])
     eagle_open_and_wait # 第一个文字绘制完成时窗口打开
     # 确保最后绘制的文字在视图区域内
-    ensure_character_visible
+    ensure_character_visible(@eagle_chara_sprites[-1])
   end
   #--------------------------------------------------------------------------
   # ● 重排列全部文字精灵
@@ -2081,10 +2083,9 @@ class Window_Message
     end
   end
   #--------------------------------------------------------------------------
-  # ● 确保最后绘制完成的文字在视图内
+  # ● 确保指定文字在视图内
   #--------------------------------------------------------------------------
-  def ensure_character_visible
-    c = @eagle_chara_sprites[-1]
+  def ensure_character_visible(c)
     self.ox = 0 if c._x < self.ox
     d = c._x + c.width - @eagle_chara_viewport.rect.width
     self.ox = d if d > 0
@@ -2573,6 +2574,7 @@ class Window_Message
     game_message.win_params[:fh] = MESSAGE_EX.check_bool(game_message.win_params[:fh])
     game_message.win_params[:cwi] = 0 if game_message.win_params[:cwi] < 0
     game_message.win_params[:cwo] = 0 if game_message.win_params[:cwo] < 0
+    game_message.win_params[:cor] = MESSAGE_EX.check_bool(game_message.win_params[:cor])
     game_message.win_params[:cfast] = MESSAGE_EX.check_bool(game_message.win_params[:cfast])
     game_message.win_params[:fix] = MESSAGE_EX.check_bool(game_message.win_params[:fix])
     eagle_reset_z
@@ -3010,7 +3012,7 @@ class Font_EagleCharacter
 
     draw_param_p(bitmap, x, y, w, h) if @params[:p]
     draw_param_l(bitmap, x, y, w, h, c, ali) if @params[:l]
-    if defined?(Sion_GradientText) && @params[:cg] != ''
+    if defined?(Sion_GradientText) && @params[:cg] && @params[:cg] != ''
       grad_cs = get_gradient_color(@params[:cg])
       Sion_GradientText.draw_text(bitmap,x,y,w*2,h,c,ali,grad_cs)
     else
@@ -3183,7 +3185,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 结束使命？
   #--------------------------------------------------------------------------
   def finish?
-    self.opacity == 0
+    self.disposed? || self.opacity == 0
   end
   #--------------------------------------------------------------------------
   # ● 更新

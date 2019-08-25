@@ -1,18 +1,18 @@
 #==============================================================================
 # ■ Add-On 滚动文本框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
-# ※ 本插件需要放置在【对话框扩展 by老鹰】之下
+# ※ 本插件需要放置在【对话框扩展 by老鹰 2019.8.25.13】之下
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.8.3.11 修复颜色bug
+# - 2019.8.25.11 整合渐变色绘制；新增rb标签对动态执行脚本
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
 #     使用方式与 对话框扩展 中的保持一致
 # - 关于标签对：
 #     在标签对中的内容，将会被按照标签对的作用进行统一处理
-# - 由于效率问题，本插件暂不支持翻页或滚动
+# - 由于效率问题，本插件暂不支持翻页
 #------------------------------------------------------------------------------
 # ● 转义符及其变量列表
 #------------------------------------------------------------------------------
@@ -56,6 +56,9 @@ $imported["EAGLE-ScrollTextEX"] = true
 #------------------------------------------------------------------------------
 # - 文本特效类
 #     此项同 对话框扩展 中的全部内容
+#----------------------------------------------------------------------------
+# - 扩展类
+#     此项同 对话框扩展 中的全部内容
 #------------------------------------------------------------------------------
 # ● 标签对列表
 #------------------------------------------------------------------------------
@@ -67,6 +70,11 @@ $imported["EAGLE-ScrollTextEX"] = true
 #  <para>...</para> → 需要并行绘制的文本
 #                     当主绘制进程绘制到 <para> 时，标签对中的文本将同步开始绘制，
 #                     同时主进程继续绘制 </para> 后面的内容
+#
+#  <rb>...</rb> → 需要执行的脚本，当文字绘制到该标签对时才会执行
+#                 可用 s 代替 $game_switches，用 v 代替 $game_variables
+#                 可用 cs 代替 已绘制的文字精灵数组（按绘制顺序排列）
+#                 （Sprite_EagleCharacter_ScrollText 的实例的数组）
 #==============================================================================
 
 #==============================================================================
@@ -137,6 +145,11 @@ module MESSAGE_EX
     }, # :pause
     # 设置默认启用的文字特效
     :charas => { :cin => "", :cout => "" },
+    # 设置额外转义符
+    :ex => {
+      # 渐变色绘制
+      :cg => "",
+    },
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义文字特效类转义符各参数的初始值
@@ -225,6 +238,8 @@ class Window_ScrollText < Window_Base
     @eagle_threads = {} # 存储其余的绘制线程 id => fiber
     @eagle_threads_params = {} # 存储待处理的并行绘制 id => text
     @eagle_last_thread_id = 0 # 并行线程id计数
+    @eagle_rbs = {} # 存储需要执行的脚本 id => string
+    @eagle_rb_count = 0 # 脚本记录计数
 
     self.arrows_visible = false
     self.openness = 0
@@ -305,7 +320,7 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   def update_eagle_sprites
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
-    @eagle_chara_sprites.each { |c| c.update }
+    @eagle_chara_sprites.each { |c| c.update if !c.disposed? }
   end
   #--------------------------------------------------------------------------
   # ● 更新并行线程
@@ -360,6 +375,12 @@ class Window_ScrollText < Window_Base
   # ● 预处理标签对
   #--------------------------------------------------------------------------
   def pre_process_tags(text)
+    # 如果发现脚本标签对，则存储
+    text.gsub!(/<rb>(.*?)<\/rb>/) {
+      @eagle_rb_count += 1
+      @eagle_rbs[@eagle_rb_count] = $1
+      "\erbl[#{@eagle_rb_count}]"
+    }
     # 如果发现条件判断标签对，则检查
     s = $game_switches; v = $game_variables
     text.gsub!(/<if ?{(.*?)}>(.*?)<\/if>/) { eval($1) == true ? $2 : "" }
@@ -457,6 +478,7 @@ class Window_ScrollText < Window_Base
   def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
     f = Font_EagleCharacter.new(font_params)
     f.set_param(:skin, win_params[:skin])
+    f.set_param(:cg, ex_params[:cg])
 
     s = Sprite_EagleCharacter_ScrollText.new(self, f, c_x, c_y, c_w, c_h,
       @eagle_chara_viewport)
@@ -665,6 +687,22 @@ class Window_ScrollText < Window_Base
   end
 
   #--------------------------------------------------------------------------
+  # ● 激活并行绘制
+  #--------------------------------------------------------------------------
+  def eagle_activate_thread(id, pos)
+    pos_ = { :x => pos[:x], :y => pos[:y] }
+    @eagle_threads[id] = Fiber.new { eagle_thread_main(id, pos_) }
+    @eagle_threads[id].resume
+  end
+  #--------------------------------------------------------------------------
+  # ● 并行绘制的逻辑
+  #--------------------------------------------------------------------------
+  def eagle_thread_main(id, pos)
+    process_all_text(@eagle_threads_params[id], pos)
+    @eagle_threads.delete(id)
+  end
+
+  #--------------------------------------------------------------------------
   # ● 解析字符串参数
   #--------------------------------------------------------------------------
   def parse_param(param_hash, param_text, default_type = "default")
@@ -756,21 +794,23 @@ class Window_ScrollText < Window_Base
     MESSAGE_EX.reset_xy_origin(rect, h[:o])
     self.contents.blt(rect.x, rect.y, pic_bitmap, pic_bitmap.rect)
   end
-
   #--------------------------------------------------------------------------
-  # ● 激活并行绘制
+  # ● 设置rbl脚本参数
   #--------------------------------------------------------------------------
-  def eagle_activate_thread(id, pos)
-    pos_ = { :x => pos[:x], :y => pos[:y] }
-    @eagle_threads[id] = Fiber.new { eagle_thread_main(id, pos_) }
-    @eagle_threads[id].resume
+  def eagle_text_control_rbl(param = '0')
+    cs = @eagle_chara_sprites
+    s = $game_switches; v = $game_variables
+    eval(@eagle_rbs[param.to_i])
   end
   #--------------------------------------------------------------------------
-  # ● 并行绘制的逻辑
+  # ● 设置cg参数 / 渐变绘制预定
   #--------------------------------------------------------------------------
-  def eagle_thread_main(id, pos)
-    process_all_text(@eagle_threads_params[id], pos)
-    @eagle_threads.delete(id)
+  def ex_params; params[:ex]; end
+  if defined?(Sion_GradientText)
+  def eagle_text_control_cg(param = '0')
+    ex_params[:cg].clear
+    ex_params[:cg] = param if param != '' && param != '0'
+  end
   end
 end
 
