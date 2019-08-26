@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.8.25.11 整合渐变色绘制；新增rb标签对动态执行脚本
+# - 2019.8.27.0 修复显示图片bug
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -49,10 +49,6 @@ $imported["EAGLE-ScrollTextEX"] = true
 #
 #  \wait[param] → 设置等待（同 对话框扩展）
 #
-#  \pic[param] -【重置】在指定位置绘制指定图片
-#    id → 指定需要绘制的图片的id（见【设置】中自定义）
-#    o → 设置图片的显示原点（默认7）（九宫格小键盘位置）
-#    x/y → 设置图片原点的显示位置（描绘的第一个字的左上角为(0,0)原点）
 #------------------------------------------------------------------------------
 # - 文本特效类
 #     此项同 对话框扩展 中的全部内容
@@ -75,6 +71,23 @@ $imported["EAGLE-ScrollTextEX"] = true
 #                 可用 s 代替 $game_switches，用 v 代替 $game_variables
 #                 可用 cs 代替 已绘制的文字精灵数组（按绘制顺序排列）
 #                 （Sprite_EagleCharacter_ScrollText 的实例的数组）
+#
+#  <pic sym>...</pic> → 显示指定图片
+#                   其中 sym 替换成 当前图片的唯一标识符
+#                      在 rb 标签对中，可用 pics[sym] 获取该图片的精灵（Sprite类）
+#                   其中 ... 替换成 精灵参数字符串|图片名称|位图参数字符串
+#         精灵参数字符串可用变量一览：
+#            o → 设置图片的显示原点（默认7）（九宫格小键盘位置）
+#            x/y → 设置图片原点的坐标（窗口左上角为(0,0)原点）
+#            z → 图片显示z值的增量（默认-1，显示在文字之下）
+#            a → 显示的不透明度（默认255）
+#            m → 是否开启水平镜像翻转（默认false）
+#         图片名称：
+#            图片放置于 Graphics/Pictures 目录下，可省略后缀名
+#         位图参数字符串可用变量一览：（可省略）
+#            x/y/w/h → 图片中需要显示的矩形区域范围（默认取整张图片）
+#
+#     示例： <pic 1>x10y10|foo</pic> → 在滚动文本框内的(10,10)处显示foo图片
 #==============================================================================
 
 #==============================================================================
@@ -90,6 +103,10 @@ module MESSAGE_EX
     :win => {
       # 窗口自身相关
       :opa => 255, # 窗口的不透明度
+      :x => 0, # 窗口打开时所在位置
+      :y => 0,
+      :w => Graphics.width, # 窗口打开时大小
+      :h => Graphics.height,
       :skin => 0, # 皮肤index
       # 文字绘制属性
       :xo => 0, # 第一个文字的绘制位置
@@ -179,14 +196,6 @@ module MESSAGE_EX
   ST_CU_PARAMS_INIT = {
   # \cu[]
   }
-  #--------------------------------------------------------------------------
-  # ● 【设置】定义\pic转义符中的id与对应图片
-  # （均位于 Graphics/Pictures 目录下）
-  #--------------------------------------------------------------------------
-  ID_TO_PICS = {
-    # id => pic_name,
-    0 => "",
-  }
 end
 
 #==============================================================================
@@ -228,18 +237,19 @@ class Window_ScrollText < Window_Base
   # ● 初始化对象
   #--------------------------------------------------------------------------
   def initialize
-    super(0, 0, Graphics.width, Graphics.height)
+    super(win_params[:x], win_params[:y], win_params[:w], win_params[:h])
     @eagle_chara_viewport = Viewport.new # 文字精灵的显示区域
     @eagle_chara_viewport.z = self.z + 1
     @eagle_chara_sprites = []
     @last_chara_sprite = nil
     @eagle_sprite_pause = Sprite_EaglePauseTag.new(self) # 初始化等待按键的精灵
     @eagle_sprite_pause.z = self.z + 10
-    @eagle_threads = {} # 存储其余的绘制线程 id => fiber
+    @eagle_threads = {} # 存储并行绘制的线程 id => fiber
     @eagle_threads_params = {} # 存储待处理的并行绘制 id => text
     @eagle_last_thread_id = 0 # 并行线程id计数
     @eagle_rbs = {} # 存储需要执行的脚本 id => string
     @eagle_rb_count = 0 # 脚本记录计数
+    @eagle_pics = {} # 存储显示的图片精灵 sym => Sprite
 
     self.arrows_visible = false
     self.openness = 0
@@ -279,6 +289,8 @@ class Window_ScrollText < Window_Base
   def close_and_wait
     @eagle_last_thread_id = 0
     chara_sprites_move_out
+    @eagle_pics.each { |sym, s| s.bitmap.dispose; s.dispose }
+    @eagle_pics.clear
     close
     Fiber.yield until close?
   end
@@ -316,7 +328,7 @@ class Window_ScrollText < Window_Base
     eagle_change_windowskin(win_params[:skin])
   end
   #--------------------------------------------------------------------------
-  # ● 更新全部文字精灵
+  # ● 更新全部精灵
   #--------------------------------------------------------------------------
   def update_eagle_sprites
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
@@ -375,15 +387,21 @@ class Window_ScrollText < Window_Base
   # ● 预处理标签对
   #--------------------------------------------------------------------------
   def pre_process_tags(text)
-    # 如果发现脚本标签对，则存储
+    # 条件判断标签对
+    s = $game_switches; v = $game_variables
+    text.gsub!(/<if ?{(.*?)}>(.*?)<\/if>/) { eval($1) == true ? $2 : "" }
+    # 图片标签对
+    text.gsub!(/<pic (.*?)>(.*?)<\/pic>/) {
+      sym = $1
+      @eagle_pics[$1] = $2
+      "\epic[#{sym}]"
+    }
+    # 脚本标签对
     text.gsub!(/<rb>(.*?)<\/rb>/) {
       @eagle_rb_count += 1
       @eagle_rbs[@eagle_rb_count] = $1
       "\erbl[#{@eagle_rb_count}]"
     }
-    # 如果发现条件判断标签对，则检查
-    s = $game_switches; v = $game_variables
-    text.gsub!(/<if ?{(.*?)}>(.*?)<\/if>/) { eval($1) == true ? $2 : "" }
     # 如果发现并行绘制标签对，则创建线程，并替换成转义符来启动并行绘制
     text.gsub!(/<para>(.*?)<\/para>/) {
       @eagle_last_thread_id += 1
@@ -784,21 +802,29 @@ class Window_ScrollText < Window_Base
   # ● 设置pic参数
   #--------------------------------------------------------------------------
   def eagle_text_control_pic(param = '0')
-    h = { :id => nil, :x => 0, :y => 0, :o => 7 }
-    parse_param(h, param, :id)
-    return if h[:id].nil?
-    pic_name = MESSAGE_EX::ID_TO_PICS[:id]
-    return if pic_name.nil?
-    pic_bitmap = Cache.pictures(pic_name) rescue return
-    rect = Rect.new(h[:x], h[:y], pic_bitmap.width, pic_bitmap.height)
-    MESSAGE_EX.reset_xy_origin(rect, h[:o])
-    self.contents.blt(rect.x, rect.y, pic_bitmap, pic_bitmap.rect)
+    sym = param
+    return if @eagle_pics[sym].nil?
+    params = @eagle_pics[sym].split('|')
+    @eagle_pics.delete(sym)
+    pic_bitmap = Cache.picture(params[1]) rescue return
+    h = { :o => 7, :x => 0, :y => 0, :z => -1, :m => 0, :a => 255 }
+    parse_param(h, params[0], :o)
+    h2 = { :x => 0, :y => 0, :w => pic_bitmap.width, :h => pic_bitmap.height }
+    parse_param(h2, params[2], :x) if params[2]
+
+    s = Sprite.new(@eagle_chara_viewport)
+    s.x = h[:x]; s.y = h[:y]; s.z = h[:z]; s.opacity = h[:a]
+    s.mirror = h[:m] != 0
+    s.bitmap = Bitmap.new(h2[:w], h2[:h])
+    s.bitmap.blt(0, 0, pic_bitmap, Rect.new(h2[:x], h2[:y], h2[:w], h2[:h]))
+    @eagle_pics[sym] = s
   end
   #--------------------------------------------------------------------------
   # ● 设置rbl脚本参数
   #--------------------------------------------------------------------------
   def eagle_text_control_rbl(param = '0')
     cs = @eagle_chara_sprites
+    pics = @eagle_pics
     s = $game_switches; v = $game_variables
     eval(@eagle_rbs[param.to_i])
   end

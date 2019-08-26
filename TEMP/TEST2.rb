@@ -1,4 +1,7 @@
 module WINDOW_MOVE
+  #--------------------------------------------------------------------------
+  # ● 新增
+  #--------------------------------------------------------------------------
   def self.new(window, params)
     data = Eagle_Window_MoveData.new(window, params)
     @datas.push(data)
@@ -15,6 +18,7 @@ module WINDOW_MOVE
     @datas.clear
   end
 end
+
 class Eagle_Window_MoveData
   def initialize(win, params)
     @window = win
@@ -41,6 +45,7 @@ class Eagle_Window_MoveData
     @t <= 0
   end
 end
+
 class Scene_Base
   alias eagle_window_move_post_start post_start
   def post_start
