@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.8.27.0 修复显示图片bug
+# - 2019.8.27.10 修复显示图片bug；新增对窗口大小位置的修改
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -23,9 +23,11 @@ $imported["EAGLE-ScrollTextEX"] = true
 #  \win[param] → 背景窗口的相关设置
 #  （窗口属性相关）
 #    opa → 窗口的不透明度
+#    o → 窗口打开时的显示原点所在位置的类型（九宫格）（默认7左上角）
+#    x/y/w/h → 窗口打开时的坐标与实际宽高
 #    skin → 窗口所用皮肤的index（同 对话框扩展）
 #  （文字摆放相关）
-#    xo 与 yo → 第一个文字的绘制位置
+#    xo 与 yo → 第一个文字的绘制位置（窗口contents的左上角为原点）
 #    cdx → 下一个字的横轴偏移量（负数为往左，正数为往右）（默认1，朝右侧前进一个文字）
 #    cdy → 下一个字的纵轴偏移量（负数为往上，正数为往下）（默认0，与前一个字高度对齐）
 #    ck → 设置缩减的字符间距值（默认0）
@@ -49,6 +51,12 @@ $imported["EAGLE-ScrollTextEX"] = true
 #
 #  \wait[param] → 设置等待（同 对话框扩展）
 #
+# - 利用脚本为指定的控制类转义符设置变量的值
+#
+#        MESSAGE_EX.set_scroll_params(sym, str)
+#
+#   其中 sym 为转义符的名称，需要传入 Symbol类型，比如 \win 转义符对应为 :win
+#   其中 str 为变量参数字符串，同默认，为 String类型，如 "o5x320y100w300h200"
 #------------------------------------------------------------------------------
 # - 文本特效类
 #     此项同 对话框扩展 中的全部内容
@@ -71,6 +79,7 @@ $imported["EAGLE-ScrollTextEX"] = true
 #                 可用 s 代替 $game_switches，用 v 代替 $game_variables
 #                 可用 cs 代替 已绘制的文字精灵数组（按绘制顺序排列）
 #                 （Sprite_EagleCharacter_ScrollText 的实例的数组）
+#                 可用 win 代替本窗口
 #
 #  <pic sym>...</pic> → 显示指定图片
 #                   其中 sym 替换成 当前图片的唯一标识符
@@ -103,6 +112,7 @@ module MESSAGE_EX
     :win => {
       # 窗口自身相关
       :opa => 255, # 窗口的不透明度
+      :o => 7, # 窗口位置的显示原点类型
       :x => 0, # 窗口打开时所在位置
       :y => 0,
       :w => Graphics.width, # 窗口打开时大小
@@ -208,6 +218,12 @@ module MESSAGE_EX
   def self.get_default_cparams_st(param_sym)
     MESSAGE_EX.const_get("ST_#{param_sym.to_s.upcase}_PARAMS_INIT".to_sym) rescue {}
   end
+  #--------------------------------------------------------------------------
+  # ● 设置参数
+  #--------------------------------------------------------------------------
+  def self.set_scroll_params(sym, str)
+    MESSAGE_EX.parse_param($game_message.scroll_params[sym], str)
+  end
 end
 
 #==============================================================================
@@ -237,7 +253,7 @@ class Window_ScrollText < Window_Base
   # ● 初始化对象
   #--------------------------------------------------------------------------
   def initialize
-    super(win_params[:x], win_params[:y], win_params[:w], win_params[:h])
+    super(0, 0, Graphics.width, Graphics.height)
     @eagle_chara_viewport = Viewport.new # 文字精灵的显示区域
     @eagle_chara_viewport.z = self.z + 1
     @eagle_chara_sprites = []
@@ -278,7 +294,9 @@ class Window_ScrollText < Window_Base
   # ● 打开窗口并等待窗口开启完成
   #--------------------------------------------------------------------------
   def open_and_wait
+    self.move(win_params[:x], win_params[:y], win_params[:w], win_params[:h])
     self.opacity = win_params[:opa]
+    MESSAGE_EX.reset_xy_origin(self, win_params[:o])
     return self.openness = 0 if self.opacity == 0
     open
     Fiber.yield until open?
@@ -825,6 +843,7 @@ class Window_ScrollText < Window_Base
   def eagle_text_control_rbl(param = '0')
     cs = @eagle_chara_sprites
     pics = @eagle_pics
+    win = self
     s = $game_switches; v = $game_variables
     eval(@eagle_rbs[param.to_i])
   end
