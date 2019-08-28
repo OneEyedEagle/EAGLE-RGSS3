@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2019.8.18.15 修复wait标签失效bug；新增显示动画与显示心情
+# - 2019.8.28.10 新增对话框z值参数
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -31,6 +31,7 @@ $imported["EAGLE-MessagePara"] = true
 #           pos → 设置对话框的显示位置类型id（0居上，1居中，2居下）（同VA默认）
 #           w → 设置对话框绘制完成后、关闭前的等待帧数（nil为不自动关闭）
 #           t → 设置对话框关闭后、下一次对话开启前的等待帧数
+#           z → 设置对话框的z值（默认100）
 #         示例： <params w10> → 之后的对话框在绘制完成后，均额外等待10帧才关闭
 #
 #    <anim chara_index animation_id[ wait]>  → 显示动画（仅在地图上有效）
@@ -164,6 +165,7 @@ module MESSAGE_PARA
     :pos => 2, # 对话框位置类型id
     :w => 40, # 对话完成后、关闭前的等待帧数
     :t => 1, # 当前对话框关闭后的等待帧数
+    :z => 100, # 对话框的z值
   }
   #--------------------------------------------------------------------------
   # ●【常量】预设文本文件的路径（用 / 分隔）与文件名（含后缀名）的数组
@@ -562,7 +564,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @game_message.background = @params[:bg]
     @game_message.position = @params[:pos]
     @game_message.visible = true
-    @game_message.win_params[:z] = 100
+    @game_message.win_params[:z] = @params[:z]
     @game_message.pause_params[:v] = 0
     @window = Window_Message_Para.new(self, @params)
   end

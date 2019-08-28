@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.8.25.13 优化文字逐个移出体验；新增逆序移出
+# - 2019.8.28.9 修复空对话框报错bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1438,12 +1438,12 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_reset_z
     self.z = game_message.win_params[:z] if game_message.win_params[:z] > 0
-    @back_sprite.z = self.z - 1
+    @back_sprite.z = self.z
     @eagle_chara_viewport.z = self.z + 1
     @eagle_sprite_pop_tag.z = self.z + 1
     @eagle_sprite_face.z = self.z + game_message.face_params[:z]
-    @eagle_window_name.z = self.z + 3
-    @eagle_sprite_pause.z = self.z + 3
+    @eagle_window_name.z = self.z + 2
+    @eagle_sprite_pause.z = self.z + 2
   end
   #--------------------------------------------------------------------------
   # ● 重置指定对象的显示原点位置
@@ -1881,8 +1881,8 @@ class Window_Message
     new_page(text, pos)
     calc_charas_wh(text, pos) if eagle_dyn_fit_w? || eagle_dyn_fit_h?
     loop do
-      process_character(text.slice!(0, 1), text, pos)
       break if text.empty?
+      process_character(text.slice!(0, 1), text, pos)
       break @pause_skip = true if @eagle_force_close
     end
     eagle_process_draw_update if !@eagle_chara_sprites.empty?
