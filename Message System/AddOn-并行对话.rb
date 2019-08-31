@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2019.8.28.10 新增对话框z值参数
+# - 2019.8.31.23 当返回地图时，重新启动事件注释的并行对话
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -776,6 +776,12 @@ class Game_Event < Game_Character
   alias eagle_message_para_setup_page setup_page
   def setup_page(new_page)
     eagle_message_para_setup_page(new_page)
+    set_para_message
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置注释中的“标签序列”
+  #--------------------------------------------------------------------------
+  def set_para_message
     @eagle_message_para = {} # type => [list_str, list_params] # 每种一个
     t = EAGLE.event_comment_head(@list)
     hash = MESSAGE_PARA.parse_event_list_str(t) # params => list_str
@@ -842,5 +848,16 @@ class Game_Event < Game_Character
     y_ = Mouse.y / 32 + $game_map.display_y
     d = distance_x_from(x_).abs + distance_y_from(y_).abs
     d <= list_params[:d]
+  end
+end
+
+class Scene_Map < Scene_Base
+  #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  alias eagle_message_para_map_post_start post_start
+  def post_start
+    eagle_message_para_map_post_start
+    $game_map.events.each { |id, e| e.set_para_message }
   end
 end

@@ -1,81 +1,56 @@
-module WINDOW_MOVE
+class Game_Player < Game_Character
   #--------------------------------------------------------------------------
-  # ● 新增一个移动
+  # ● 初始化对象
   #--------------------------------------------------------------------------
-  def self.new(window, params)
-    data = Eagle_Window_MoveData.new(window, params)
-    @datas.push(data)
+  alias eagle_init initialize
+  def initialize
+    eagle_init
+    @_x = 2
+    @_y = 3
   end
   #--------------------------------------------------------------------------
-  # ● 更新
+  # ● 获取画面 X 坐标
   #--------------------------------------------------------------------------
-  def self.update
-    return if @datas.empty?
-    d = @datas.shift
-    d.update
-    return d.finish if d.finish?
-    @datas.push(d)
+  def screen_x
+    $game_map.adjust_x(@real_x) * 32 + (@_x-2)*8 + 16
   end
   #--------------------------------------------------------------------------
-  # ● 清除
+  # ● 获取画面 Y 坐标
   #--------------------------------------------------------------------------
-  def self.clear
-    @datas ||= []
-    @datas.clear
-  end
-end
-
-class Eagle_Window_MoveData
-  #--------------------------------------------------------------------------
-  # ● 初始化
-  #--------------------------------------------------------------------------
-  def initialize(win, params)
-    @window = win
-    # 浮点坐标
-    @x = @window.x; @y = @window.y
-    # 移动耗时
-    @t = params[:t] || 1
-    # x方向速度
-    @vx = params[:vx] || 0
-    @vx = (params[:x] - @x) / @t if params[:x]
-    # y方向速度
-    @vy = params[:vy] || 0
-    @vy = (params[:y] - @y) / @t if params[:y]
-    # 透明度变化速度
-    @vo = params[:vo] || 0
+  def screen_y
+    $game_map.adjust_y(@real_y) * 32 - (3-@_y)*8 + 32 - shift_y - jump_height
   end
   #--------------------------------------------------------------------------
-  # ● 更新
+  # ● 由方向键移动
   #--------------------------------------------------------------------------
-  def update
-    @t -= 1
-    @x += @vx; @y += @vy
-    @window.x = @x; @window.y = @y
-    @window.opacity += @vo
-  end
-  #--------------------------------------------------------------------------
-  # ● 已经结束？
-  #--------------------------------------------------------------------------
-  def finish?
-    @t <= 0
-  end
-end
-
-class Scene_Base
-  #--------------------------------------------------------------------------
-  # ● 开始后处理
-  #--------------------------------------------------------------------------
-  alias eagle_window_move_post_start post_start
-  def post_start
-    eagle_window_move_post_start
-    WINDOW_MOVE.clear
-  end
-  #--------------------------------------------------------------------------
-  # ● 基础更新
-  #--------------------------------------------------------------------------
-  alias eagle_window_move_update_basic update_basic
-  def update_basic
-    eagle_window_move_update_basic
-    WINDOW_MOVE.update
+  def move_by_input
+    return if !movable? || $game_map.interpreter.running?
+    case Input.dir4
+    when 8
+      @_y -= 1
+      if @_y == -1
+        @_y = 3
+        move_straight(8)
+      end
+    when 2
+      @_y += 1
+      if @_y == 4
+        @_y = 0
+        move_straight(2)
+      end
+    when 4
+      @_x -= 1
+      if @_x == -1
+        @_x = 3
+        move_straight(4)
+      end
+    when 6
+      @_x += 1
+      if @_x == 4
+        @_x = 0
+        move_straight(6)
+      end
+    end
+    #move_straight(Input.dir4) if Input.dir4 > 0
   end
 end
