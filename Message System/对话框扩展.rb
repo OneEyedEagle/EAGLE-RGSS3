@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.8.28.9 修复空对话框报错bug
+# - 2019.9.13.12 新增文字特效随机移入移出
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -192,6 +192,8 @@ $imported["EAGLE-MessageEX"] = true
 #    （除非标注【叠加】，否则多特效同时执行可能会造成奇怪效果）
 #
 #  \cin[param] → 开启文字移入的特效【独占】（移入完成时才进行其余特效更新）
+#    r → 是否将以下全部变量的值变更为正负范围内的随机数？
+#         比如传入的 vx5，则实际的 vx 为 -5 ~ 5 中随机一个值
 #    t → 移入所用帧数（即移动到最终位置所用帧数）（不透明度从0平滑增加到255）
 #    vxt/vx → 每vxt（最小值1）帧x偏移值增加vx像素的值
 #    vyt/vy → 每vyt（最小值1）帧y偏移值增加vy像素的值
@@ -199,6 +201,8 @@ $imported["EAGLE-MessageEX"] = true
 #    va → 每帧内angle的增值
 #
 #  \cout[param] → 开启文字移出的特效【独占】（移出时关闭其余特效更新）
+#    r → 是否将以下全部变量的值变更为正负范围内的随机数？
+#         比如传入的 vx5，则实际的 vx 为 -5 ~ 5 中随机一个值
 #    t → 移出所用帧数（即移动到最终位置所用帧数）（不透明度从255平滑减小到0）
 #    vxt/vx → 每vxt（最小值1）帧x偏移值增加vx像素的值
 #    vyt/vy → 每vyt（最小值1）帧y偏移值增加vy像素的值
@@ -417,7 +421,7 @@ module MESSAGE_EX
     :hmin => 0, # 设置高度的上下限（当dh==1时生效）
     :hmax => 0,
     # 文本显示相关
-    :se => 1, # 打字音类型（默认0，无声效）
+    :se => 0, # 打字音类型（默认0，无声效）
     :ali => 0, # 设置文本对齐方式
     :ck => 0, # 缩减的字符间距值
     :lh => Font.default_size, # 基础行高
@@ -496,6 +500,7 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   CIN_PARAMS_INIT = {
   # \cin[]
+    :r => 0, # 随机取值？
     :t => 15, # 移入所用帧数
     :vx => 0,  # 每vxt帧x的增量
     :vxt => 1,
@@ -507,6 +512,7 @@ module MESSAGE_EX
   }
   COUT_PARAMS_INIT = {
   # \cout[]
+    :r => 0, # 随机取值？
     :t => 15, # 移出所用帧数
     :vx => 0,  # 每vxt帧x的增量
     :vxt => 1,
@@ -914,82 +920,7 @@ module MESSAGE_EX
     end
     return [array_width.max, array_height.inject{|sum, v| sum = sum + v + ld}]
   end
-#==============================================================================
-# ○ 文字池（用于更新需要移出的文字精灵）
-#==============================================================================
-  #--------------------------------------------------------------------------
-  # ● 重置（每次Scene新建/释放时调用）
-  #--------------------------------------------------------------------------
-  def self.charapool_reset
-    @pool_charas ||= []
-    @pool_charas.each { |s| s.dispose }
-    @pool_charas.clear
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def self.charapool_update
-    @pool_charas.each { |s| s.update if !s.finish? }
-  end
-  #--------------------------------------------------------------------------
-  # ● 放入文字池中
-  #--------------------------------------------------------------------------
-  def self.charapool_push(s)
-    return s.dispose if s.finish?
-    @pool_charas.push(s)
-  end
 end # end of MESSAGE_EX
-#=============================================================================
-# ○ DataManager
-#=============================================================================
-class << DataManager
-  #--------------------------------------------------------------------------
-  # ● 设置新游戏
-  #--------------------------------------------------------------------------
-  alias eagle_message_ex_setup_new_game setup_new_game
-  def setup_new_game
-    eagle_message_ex_setup_new_game
-    $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
-  end
-end
-#=============================================================================
-# ○ Scene_Base
-#=============================================================================
-class Scene_Base
-  #--------------------------------------------------------------------------
-  # ● 开始后处理
-  #--------------------------------------------------------------------------
-  alias eagle_charapool_post_start post_start
-  def post_start
-    eagle_charapool_post_start
-    MESSAGE_EX.charapool_reset
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新画面（基础）
-  #--------------------------------------------------------------------------
-  alias eagle_charapool_update_basic update_basic
-  def update_basic
-    eagle_charapool_update_basic
-    MESSAGE_EX.charapool_update
-  end
-  #--------------------------------------------------------------------------
-  # ● 结束处理
-  #--------------------------------------------------------------------------
-  alias eagle_charapool_terminate terminate
-  def terminate
-    eagle_charapool_terminate
-    MESSAGE_EX.charapool_reset
-  end
-end
-#=============================================================================
-# ○ Scene_Map
-#=============================================================================
-class Spriteset_Map; attr_reader :character_sprites; end
-class Scene_Map; attr_reader :spriteset; end
-#=============================================================================
-# ○ Scene_Battle
-#=============================================================================
-class Scene_Battle; attr_reader :spriteset; end
 
 #==============================================================================
 # ○ 定义能够响应的文字特效
@@ -1228,7 +1159,7 @@ end
 #=============================================================================
 class Window_Message
   include MESSAGE_EX::CHARA_EFFECTS
-  attr_reader :eagle_charas_w, :eagle_charas_h
+  attr_reader :eagle_charas_w, :eagle_charas_h, :eagle_chara_viewport
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -2007,7 +1938,7 @@ class Window_Message
     f.set_param(:skin, game_message.win_params[:skin])
     f.set_param(:cg, game_message.ex_params[:cg])
 
-    s = Sprite_EagleCharacter.new(self, f, c_x, c_y, c_w, c_h, @eagle_chara_viewport)
+    s = MESSAGE_EX.charapool_new(self, f, c_x, c_y, c_w, c_h, @eagle_chara_viewport)
     s.start_effects(game_message.chara_params)
     @eagle_chara_sprites.push(s)
     s
@@ -2923,7 +2854,7 @@ class Sprite_EaglePauseTag < Sprite
     if params[:do] > 0
       MESSAGE_EX.reset_xy_dorigin(self, @window_bind, params[:do])
     elsif @last_chara
-      self.viewport = @last_chara.viewport
+      self.viewport = @window_bind.eagle_chara_viewport
       self.x = @last_chara._x + @last_chara.width - @window_bind.eagle_charas_ox
       self.y = @last_chara._y + @last_chara.height/2 - @window_bind.eagle_charas_oy
     else
@@ -2968,6 +2899,100 @@ class Sprite_EaglePauseTag < Sprite
   end
 end
 
+#=============================================================================
+# ○ DataManager
+#=============================================================================
+class << DataManager
+  #--------------------------------------------------------------------------
+  # ● 设置新游戏
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_setup_new_game setup_new_game
+  def setup_new_game
+    eagle_message_ex_setup_new_game
+    $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
+  end
+end
+#=============================================================================
+# ○ Scene_Map
+#=============================================================================
+class Spriteset_Map; attr_reader :character_sprites; end
+class Scene_Map; attr_reader :spriteset; end
+#=============================================================================
+# ○ Scene_Battle
+#=============================================================================
+class Scene_Battle; attr_reader :spriteset; end
+
+#==============================================================================
+# ○ 文字池（用于更新需要移出的文字精灵）
+#==============================================================================
+module MESSAGE_EX
+  #--------------------------------------------------------------------------
+  # ● 重置（每次Scene新建/释放时调用）
+  #--------------------------------------------------------------------------
+  def self.charapool_reset
+    @pool_charas_valid ||= [] # 备份精灵，防止频繁释放
+    @pool_charas ||= []
+    @pool_charas.each { |s| s.dispose }
+    @pool_charas.clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def self.charapool_update
+    @pool_charas.each { |s| s.update if !s.finish? }
+  end
+  #--------------------------------------------------------------------------
+  # ● 放入文字池中
+  #--------------------------------------------------------------------------
+  def self.charapool_push(s)
+    return @pool_charas_valid.push(s) if s.finish?
+    @pool_charas.push(s)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取一个可用的精灵
+  #--------------------------------------------------------------------------
+  def self.charapool_new(window, font, x,y,w,h, viewport)
+    s = @pool_charas_valid.shift
+    if s.nil?
+      s = Sprite_EagleCharacter.new(window, font, x,y,w,h, viewport)
+      return s
+    end
+    s.bind_window(window)
+    s.bind_font(font)
+    s.reset(x,y,w,h)
+    s.viewport = viewport
+    s
+  end
+end
+#=============================================================================
+# ○ Scene_Base
+#=============================================================================
+class Scene_Base
+  #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  alias eagle_charapool_post_start post_start
+  def post_start
+    eagle_charapool_post_start
+    MESSAGE_EX.charapool_reset
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新画面（基础）
+  #--------------------------------------------------------------------------
+  alias eagle_charapool_update_basic update_basic
+  def update_basic
+    eagle_charapool_update_basic
+    MESSAGE_EX.charapool_update
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束处理
+  #--------------------------------------------------------------------------
+  alias eagle_charapool_terminate terminate
+  def terminate
+    eagle_charapool_terminate
+    MESSAGE_EX.charapool_reset
+  end
+end
 #=============================================================================
 # ○ 文字绘制类
 #=============================================================================
@@ -3123,10 +3148,24 @@ class Sprite_EagleCharacter < Sprite
     @eagle_font = font_bind
   end
   #--------------------------------------------------------------------------
+  # ● 取消绑定视图
+  #--------------------------------------------------------------------------
+  def unbind_viewport
+    @viewport_old = self.viewport
+    self.viewport = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 重新绑定视图
+  #--------------------------------------------------------------------------
+  def rebind_viewport
+    self.viewport = @viewport_old
+    @viewport_old = nil
+  end
+  #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    @bitmaps.each { |b| b.dispose }
+    @bitmaps.each { |b| b.dispose }; @bitmaps.clear
     self.bitmap.dispose if !self.bitmap.disposed?
     super
   end
@@ -3146,7 +3185,8 @@ class Sprite_EagleCharacter < Sprite
     @dx = @dy = 0 # 移动的实时偏移值
     @effects = {} # effect_sym => param_string
     @params = {} # effect_sym => param_hash
-    @bitmaps = [] # 备用位图
+    @bitmaps ||= [] # 备用位图
+    @bitmaps.each { |b| b.dispose }
     @flag_move = nil # 在移动中？
   end
   #--------------------------------------------------------------------------
@@ -3216,6 +3256,32 @@ class Sprite_EagleCharacter < Sprite
     self.y += (@y0 - @_oy)
   end
   #--------------------------------------------------------------------------
+  # ● 更新移动
+  #--------------------------------------------------------------------------
+  def move_update(sym = :cin) # 只有移动结束时，才进行其他更新
+    params = @params[sym]
+    params[:t] -= 1
+    (params[:vxc] = 0; @dx += params[:vx]) if (params[:vxc] += 1) == params[:vxt]
+    (params[:vyc] = 0; @dy += params[:vy]) if (params[:vyc] += 1) == params[:vyt]
+    (params[:vzc] = 0;@_zoom += params[:vz]) if (params[:vzc] += 1) == params[:vzt]
+    self.zoom_x = self.zoom_y = 1.0 + @_zoom/100.0
+    self.angle += params[:va]
+    self.opacity += params[:vo]
+    move_end(sym) if params[:t] == 0
+  end
+  def move_end(sym = :cin)
+    rebind_viewport
+    reset_oxy(7)
+    if sym == :cin
+      self.zoom_x = self.zoom_y = 1.0
+      self.opacity = 255
+    elsif sym == :cout
+      self.opacity = 0
+    end
+    update_position
+    @flag_move = nil
+  end
+  #--------------------------------------------------------------------------
   # ● 解析参数
   #--------------------------------------------------------------------------
   def parse_param(params, param_s, default_type = "default")
@@ -3256,14 +3322,34 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def start_effect_cin(params, param_s, flag_move_in = true)
     parse_param(params, param_s)
+    params[:t] = 1 if params[:t] < 1
     params[:vxc] = 0; params[:vyc] = 0; params[:vzc] = 0 # 计数用
     params[:vxt] = 1 if params[:vxt] < 1
     params[:vyt] = 1 if params[:vyt] < 1
     params[:vzt] = 1 if params[:vzt] < 1
+    rand_cin(params, param_s) if params[:r] != 0
     params[:vo] = [255 / params[:t], 1].max # 移入时每帧不透明度增量
     move_in if flag_move_in
   end
+  #--------------------------------------------------------------------------
+  # ● 随机移入
+  #--------------------------------------------------------------------------
+  def rand_cin(params, param_s)
+    rand_v = lambda { |v| rand(v * 2 + 1) - v }
+    params[:t] = rand(params[:t]) + 1
+    params[:vx] = rand_v.call(params[:vx])
+    params[:vxt] = rand(params[:vxt]) + 1
+    params[:vy] = rand_v.call(params[:vy])
+    params[:vyt] = rand(params[:vyt]) + 1
+    params[:vz] = rand_v.call(params[:vz])
+    params[:vzt] = rand(params[:vzt]) + 1
+    params[:va] = rand_v.call(params[:va])
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行移入
+  #--------------------------------------------------------------------------
   def move_in
+    unbind_viewport
     params = @params[:cin]
     @dx = -(params[:t]/params[:vxt]) * params[:vx]
     @dy = -(params[:t]/params[:vyt]) * params[:vy]
@@ -3275,38 +3361,17 @@ class Sprite_EagleCharacter < Sprite
     @flag_move = :cin
   end
   #--------------------------------------------------------------------------
-  # ● 更新移动
-  #--------------------------------------------------------------------------
-  def move_update(sym = :cin) # 只有移动结束时，才进行其他更新
-    params = @params[sym]
-    params[:t] -= 1
-    (params[:vxc] = 0; @dx += params[:vx]) if (params[:vxc] += 1) == params[:vxt]
-    (params[:vyc] = 0; @dy += params[:vy]) if (params[:vyc] += 1) == params[:vyt]
-    (params[:vzc] = 0;@_zoom += params[:vz]) if (params[:vzc] += 1) == params[:vzt]
-    self.zoom_x = self.zoom_y = 1.0 + @_zoom/100.0
-    self.angle += params[:va]
-    self.opacity += params[:vo]
-    move_end(sym) if params[:t] == 0
-  end
-  def move_end(sym = :cin)
-    reset_oxy(7)
-    if sym == :cin
-      self.zoom_x = self.zoom_y = 1.0
-      self.opacity = 255
-    elsif sym == :cout
-      self.opacity = 0
-    end
-    update_position
-    @flag_move = nil
-  end
-  #--------------------------------------------------------------------------
   # ● 移出
   #--------------------------------------------------------------------------
   def start_effect_cout(params, param_s)
     start_effect_cin(params, param_s, false)
     params[:vo] *= -1
   end
+  #--------------------------------------------------------------------------
+  # ● 执行移出
+  #--------------------------------------------------------------------------
   def move_out
+    unbind_viewport
     if !(@params[:cout].nil? || @params[:cout].empty?)
       @dx = @dy = @_zoom = 0
       reset_oxy(5)
@@ -3330,9 +3395,21 @@ class Sprite_EagleCharacter < Sprite
   # ● 执行移出
   #--------------------------------------------------------------------------
   def process_move_out
-    self.viewport = nil # 取消视图的绑定
     @window_bind = nil # 取消窗口的绑定
     MESSAGE_EX.charapool_push(self) # 由文字池接管后续更新
+  end
+  #--------------------------------------------------------------------------
+  # ● 消散移出
+  #--------------------------------------------------------------------------
+  def start_effect_uout(params, param_s)
+    parse_param(params, param_s)
+    params[:dir] = MESSAGE_EX::CU_PARAM_DIR[ params[:dir] ]
+    params[:s] = MESSAGE_EX::CU_PARAM_S[ params[:s] ]
+  end
+  def move_out_uout(parmas)
+    Unravel_Bitmap.new(self.x, self.y, self.bitmap.clone, 0, 0, self.width,
+      self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
+    self.opacity = 0
   end
   #--------------------------------------------------------------------------
   # ● 正弦扭曲特效
@@ -3464,19 +3541,6 @@ class Sprite_EagleCharacter < Sprite
     end
     Unravel_Bitmap.new(_x, _y, self.bitmap.clone, 0, 0, self.width,
       self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
-  end
-  #--------------------------------------------------------------------------
-  # ● 消散移出
-  #--------------------------------------------------------------------------
-  def start_effect_uout(params, param_s)
-    parse_param(params, param_s)
-    params[:dir] = MESSAGE_EX::CU_PARAM_DIR[ params[:dir] ]
-    params[:s] = MESSAGE_EX::CU_PARAM_S[ params[:s] ]
-  end
-  def move_out_uout(parmas)
-    Unravel_Bitmap.new(self.x, self.y, self.bitmap.clone, 0, 0, self.width,
-      self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
-    self.opacity = 0
   end
   #--------------------------------------------------------------------------
   # ● 位图切换特效
