@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.9.13.12 新增文字特效随机移入移出
+# - 2019.9.15.23 修复战斗中pop失效bug；修复文字精灵可能无法显示bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -2586,12 +2586,12 @@ class Window_Message
     return nil if id.nil?
     if id > 0 # 敌人index
       SceneManager.scene.spriteset.battler_sprites.each do |s|
-        return s if s.battler.enemy? && s.battler.index == id
+        return s if s.battler && s.battler.enemy? && s.battler.index == id-1
       end
     elsif id < 0 # 我方数据库id
       id = id.abs
       SceneManager.scene.spriteset.battler_sprites.each do |s|
-        return s if s.battler.actor? && s.battler.id == id
+        return s if s.battler && s.battler.actor? && s.battler.id == id
       end
     end
     return nil
@@ -2953,14 +2953,13 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   def self.charapool_new(window, font, x,y,w,h, viewport)
     s = @pool_charas_valid.shift
-    if s.nil?
-      s = Sprite_EagleCharacter.new(window, font, x,y,w,h, viewport)
-      return s
+    if s.nil? || s.disposed?
+      return Sprite_EagleCharacter.new(window, font, x,y,w,h, viewport)
     end
+    s.viewport = viewport
     s.bind_window(window)
     s.bind_font(font)
     s.reset(x,y,w,h)
-    s.viewport = viewport
     s
   end
 end
@@ -3175,6 +3174,7 @@ class Sprite_EagleCharacter < Sprite
   def reset(x, y, w, h)
     self.bitmap.dispose if self.bitmap
     self.bitmap = Bitmap.new(w, h)
+    self.opacity = 255
     # (x0,y0) 为文字区域左上点的屏幕坐标
     @x0 = 0; @y0 = 0
     # (_ox,_oy) 为当前可视区域的左上点的坐标（文字区域坐标系中）
