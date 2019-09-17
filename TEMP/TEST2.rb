@@ -80,7 +80,7 @@ class Sprite_QTE < Sprite
   def initialize(viewport, params)
     super(viewport)
     @key = params[0]
-  end 
+  end
   def udpate
     super
   end
