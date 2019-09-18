@@ -10,17 +10,17 @@ $imported["EAGLE-EventCondEX"] = true
 #----------------------------------------------------------------------------
 # ○ 事件的独立变量
 #----------------------------------------------------------------------------
-# - 获取 map_id序号 的地图的 evnet_id序号 的事件的 v_id序号的独立变量的值：
-#     $game_self_varialbes[ [map_id, evnet_id, v_id] ]
+# - 获取 map_id序号 的地图的 event_id序号 的事件的 v_id序号的独立变量的值：
+#     $game_self_variables[ [map_id, event_id, v_id] ]
 #
 # - 操作独立变量的值：
-#     $game_self_varialbes[ [map_id, evnet_id, v_id] ] = value
+#     $game_self_variables[ [map_id, event_id, v_id] ] = value
 #
-# - 在 事件脚本框 中，可用 @map_id 获取当前地图id，用 @evnet_id 获取当前事件id
+# - 在 事件脚本框 中，可用 @map_id 获取当前地图id，用 @event_id 获取当前事件id
 #
 # - 示例：（在 事件脚本框 中填写）
-#     key = [@map_id, @evnet_id, 5]
-#     $game_self_varialbes[key] += 4 # 当前事件的5号独立变量的值加5
+#     key = [@map_id, @event_id, 5]
+#     $game_self_variables[key] += 4 # 当前事件的5号独立变量的值加5
 #
 #----------------------------------------------------------------------------
 # ○ 新增事件页的触发条件
@@ -73,7 +73,7 @@ class << DataManager
   alias eagle_event_sv_create_game_objects create_game_objects
   def create_game_objects
     eagle_event_sv_create_game_objects
-    $game_self_varialbes = Game_SelfVariables.new
+    $game_self_variables = Game_SelfVariables.new
   end
   #--------------------------------------------------------------------------
   # ● 生成存档内容
@@ -81,7 +81,7 @@ class << DataManager
   alias eagle_event_sv_make_save_contents make_save_contents
   def make_save_contents
     contents = eagle_event_sv_make_save_contents
-    contents[:self_variables] = $game_self_varialbes
+    contents[:self_variables] = $game_self_variables
     contents
   end
   #--------------------------------------------------------------------------
@@ -90,7 +90,7 @@ class << DataManager
   alias eagle_event_sv_extract_save_contents extract_save_contents
   def extract_save_contents(contents)
     eagle_event_sv_extract_save_contents(contents)
-    $game_self_varialbes = contents[:self_variables]
+    $game_self_variables = contents[:self_variables]
   end
 end
 #=============================================================================
@@ -125,7 +125,7 @@ class Game_Event
     text.gsub!( /ss\[([ABCD])\]/ ) { "ss[[#{@map_id},#{@event.id},\"#{$1}\"]]" }
     ss = $game_self_switches
     text.gsub!( /sv\[(\d+)\]/ ) { "sv[[#{@map_id},#{@event.id},#{$1}]]" }
-    sv = $game_self_varialbes
+    sv = $game_self_variables
     text.scan(/<cond>(.*?)<\/cond>/).each do |cond|
       return false if eval(cond[0]) == false
     end
