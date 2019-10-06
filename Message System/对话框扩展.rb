@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.9.15.23 修复战斗中pop失效bug；修复文字精灵可能无法显示bug
+# - 2019.10.6.22 修复hold指令造成宽度nil的bug；修复文字精灵初始角度不为0的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -2738,6 +2738,7 @@ class Window_Message_Clone < Window_Message
   # （去除该操作，防止过早移出组件）
   #--------------------------------------------------------------------------
   def eagle_message_reset
+    @eagle_sprite_pause_width_add = 0 # 拷贝窗口中不存在pause精灵
   end
   #--------------------------------------------------------------------------
   # ● 更新纤程
@@ -3174,7 +3175,11 @@ class Sprite_EagleCharacter < Sprite
   def reset(x, y, w, h)
     self.bitmap.dispose if self.bitmap
     self.bitmap = Bitmap.new(w, h)
+    self.visible = true
     self.opacity = 255
+    self.angle = 0
+    self.wave_amp    = 0
+    self.wave_length = 0
     # (x0,y0) 为文字区域左上点的屏幕坐标
     @x0 = 0; @y0 = 0
     # (_ox,_oy) 为当前可视区域的左上点的坐标（文字区域坐标系中）
