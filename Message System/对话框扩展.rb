@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.10.6.22 修复hold指令造成宽度nil的bug；修复文字精灵初始角度不为0的bug
+# - 2019.10.7.22 修复csin转义符导致的卡死
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -3178,8 +3178,6 @@ class Sprite_EagleCharacter < Sprite
     self.visible = true
     self.opacity = 255
     self.angle = 0
-    self.wave_amp    = 0
-    self.wave_length = 0
     # (x0,y0) 为文字区域左上点的屏幕坐标
     @x0 = 0; @y0 = 0
     # (_ox,_oy) 为当前可视区域的左上点的坐标（文字区域坐标系中）
