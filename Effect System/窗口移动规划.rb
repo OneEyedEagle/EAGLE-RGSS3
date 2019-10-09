@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-WindowMoveSystem"] = true
 #=============================================================================
-# - 2019.10.9.17
+# - 2019.10.9.20
 #=============================================================================
 # - 本插件提供了对窗口/精灵的移动控制
 #-----------------------------------------------------------------------------
@@ -29,11 +29,12 @@ $imported["EAGLE-WindowMoveSystem"] = true
 #     ay:d  → 在每帧的移动结束后，vy增加d
 #     opa:d → 直接指定opacity不透明度值为d
 #     vo:d  → 设置每帧内opacity变更值为d
-#     （以下参数将在设置t的同时生效）
-#     desx:d → 设置匀速直线运动的目的地x为d（覆盖vx与ax的设置）
-#     desy:d → 设置匀速直线运动的目的地y为d（覆盖vx与ax的设置）
-#     （以下参数将立即生效）
+#     （设置匀速直线运动，将覆盖原有的vx与ax）
+#     desx:d → 设置匀速直线运动的目的地x坐标为d
+#     desy:d → 设置匀速直线运动的目的地y坐标为d
+#     （高级）
 #     eval:string → 执行 eval(string)，其中不含英语分号和冒号
+#     teval:string → 在下一个t生效时，t中每帧执行的脚本（按传入顺序）
 #
 #   其中 flag_reserve 传入 true 时，代表旧移动序列将继续执行，在其结束后执行新移动序列；
 #     传入 false 时，代表放弃之前剩余未执行的移动序列，直接开始执行新的移动序列
@@ -90,81 +91,92 @@ end
 
 class Eagle_MoveSystem
   attr_reader :win
-  attr_accessor :wait, :t, :x, :y, :vx, :vy, :ax, :ay
+  attr_accessor :t, :x, :y, :vx, :vy, :ax, :ay
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
   def initialize(window, path_string)
     @paths = path_string.split(';')
     @win = window
-    @wait = 0 # 等待用倒计时
     @t = 0 # 移动用计时
     @x = window.x * 1.0; @y = window.y * 1.0 # 初始位置（浮点数）
     @vx = 0; @vy = 0 # 移动速度
     @ax = 0; @ay = 0 # 移动后 速度的变更量
     @opa = window.opacity # 不透明度
     @vo = 0 # 不透明度变更速度
+    @tevals = [] # 每帧执行的脚本
+    @fiber = Fiber.new { fiber_main }
   end
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
   def update
-    return if (@wait -= 1) > 0
-    if @t > 0
-      @t -= 1
+    @fiber.resume if @fiber
+  end
+  #--------------------------------------------------------------------------
+  # ● 主线程
+  #--------------------------------------------------------------------------
+  def fiber_main
+    while !@paths.empty?
+      str = @paths.shift # sym:value
+      process_command(str)
+      process_move if @t > 0
+    end
+    @fiber = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理指令
+  #--------------------------------------------------------------------------
+  def process_command(str)
+    params = str.lstrip.split(':')
+    case params[0]
+    when "wait"
+      params[1].to_i.times { Fiber.yield }
+    when "desx" # 覆盖 vx 与 ax，设置匀速直线运动的目的地
+      @des_x = params[1].to_i
+    when "desy"
+      @des_y = params[1].to_i
+    when "eval" # 一次性执行的脚本
+      eval(params[1])
+    when "teval" # 随着下一次t每帧执行的脚本
+      @tevals.push(params[1])
+    else
+      m_c = (params[0] + "=").to_sym
+      method(m_c).call(params[1].to_f) if respond_to?(m_c)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理移动
+  #--------------------------------------------------------------------------
+  def process_move
+    if @des_x
+      @vx = (@des_x - @x) * 1.0 / @t
+      @ax = 0
+    end
+    if @des_y
+      @vy = (@des_y - @y) * 1.0 / @t
+      @ay = 0
+    end
+    while @t > 0
       @x += @vx; @y += @vy
       @vx += @ax; @vy += @ay
       @opa += @vo
-      apply
-    else
-      parse_path
+      @tevals.each { |s| eval(s) }
+      @win.x = @x
+      @win.y = @y
+      @window.opacity = @opa
+      Fiber.yield
+      @t -= 1
     end
-  end
-  #--------------------------------------------------------------------------
-  # ● 应用
-  #--------------------------------------------------------------------------
-  def apply
-    @win.x = @x
-    @win.y = @y
-    @window.opacity = @opa
-  end
-  #--------------------------------------------------------------------------
-  # ● 解析移动指令
-  #--------------------------------------------------------------------------
-  def parse_path
-    des_x = des_y = nil
-    while(@wait == 0 || @t == 0)
-      break if @paths.empty?
-      str = @paths.shift # sym:value
-      params = str.lstrip.split(':')
-      case params[0]
-      when "desx" # 覆盖 vx 与 ax，设置匀速直线运动的目的地
-        des_x = params[1].to_i
-      when "desy"
-        des_y = params[1].to_i
-      when "eval" # 一次性执行脚本
-        eval(params[1])
-      else
-        m_c = (params[0] + "=").to_sym
-        method(m_c).call(params[1].to_f) if respond_to?(m_c)
-      end
-    end
-    if @t > 0
-      if des_x
-        @vx = (des_x - @x) * 1.0 / @t
-        @ax = 0
-      end
-      if des_y
-        @vy = (des_y - @y) * 1.0 / @t
-        @ay = 0
-      end
-    end
+    @des_x = nil
+    @des_y = nil
+    @tevals.clear
   end
   #--------------------------------------------------------------------------
   # ● 移动结束？
   #--------------------------------------------------------------------------
   def finish?
-    @paths.empty?
+    @fiber == nil
   end
 end
 
