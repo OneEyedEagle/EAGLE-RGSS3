@@ -1,16 +1,16 @@
 #==============================================================================
-# ■ 窗口移动规划 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 窗口移动路径 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-WindowMoveSystem"] = true
 #=============================================================================
-# - 2019.10.9.20
+# - 2019.10.9.22
 #=============================================================================
 # - 本插件提供了对窗口/精灵的移动控制
 #-----------------------------------------------------------------------------
 # - 新增一个移动控制：
 #
-#      WINDOW_MOVE.new(window, string[, flag_reserve])
+#      WINDOW_MOVE.new(window, string[, params])
 #
 #   其中 window 为 Window类 或 Sprite类 的实例对象
 #
@@ -36,9 +36,12 @@ $imported["EAGLE-WindowMoveSystem"] = true
 #     eval:string → 执行 eval(string)，其中不含英语分号和冒号
 #     teval:string → 在下一个t生效时，t中每帧执行的脚本（按传入顺序）
 #
-#   其中 flag_reserve 传入 true 时，代表旧移动序列将继续执行，在其结束后执行新移动序列；
-#     传入 false 时，代表放弃之前剩余未执行的移动序列，直接开始执行新的移动序列
-#     默认传入 true
+#   其中 params 传入额外设置的Hash（可选）
+#    额外参数一览：
+#     :reserve → 传入 true，则旧移动序列将继续执行，在其结束后执行新移动序列；
+#                传入 false，放弃之前剩余未执行的移动序列，直接开始执行新的移动序列
+#                默认传入 true
+#     :loop → 传入 true，则循环执行所设置的移动序列；默认传入 false
 #
 #   示例：
 #     在 Scene_Menu类 中的指令窗口 @command_window，为其附加从上方移入效果
@@ -65,10 +68,10 @@ module WINDOW_MOVE
   #--------------------------------------------------------------------------
   # ● 新增一个移动
   #--------------------------------------------------------------------------
-  def self.new(window, path_string, reserve = true)
+  def self.new(window, path_string, params = {})
     @datas[window] ||= []
-    data = Eagle_MoveSystem.new(window, path_string)
-    @datas[window].clear if !reserve
+    data = Eagle_MoveSystem.new(window, path_string, params)
+    @datas[window].clear if params[:reserve] && params[:reserve] == true
     @datas[window].push(data)
   end
   #--------------------------------------------------------------------------
@@ -85,7 +88,7 @@ module WINDOW_MOVE
   # ● 清除
   #--------------------------------------------------------------------------
   def self.clear
-    @datas.clear
+    @datas.delete_if { |win, datas| win.disposed? }
   end
 end
 
@@ -95,17 +98,26 @@ class Eagle_MoveSystem
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
-  def initialize(window, path_string)
-    @paths = path_string.split(';')
+  def initialize(window, path_string, params)
     @win = window
+    @paths = path_string.split(';')
+    @params = params
+    reset
+    @fiber = Fiber.new { fiber_main }
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置
+  #--------------------------------------------------------------------------
+  def reset
     @t = 0 # 移动用计时
-    @x = window.x * 1.0; @y = window.y * 1.0 # 初始位置（浮点数）
+    @x = @win.x * 1.0; @y = @win.y * 1.0 # 初始位置（浮点数）
     @vx = 0; @vy = 0 # 移动速度
     @ax = 0; @ay = 0 # 移动后 速度的变更量
-    @opa = window.opacity # 不透明度
+    @opa = @win.opacity # 不透明度
     @vo = 0 # 不透明度变更速度
     @tevals = [] # 每帧执行的脚本
-    @fiber = Fiber.new { fiber_main }
+    @des_x = nil
+    @des_y = nil
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -117,10 +129,13 @@ class Eagle_MoveSystem
   # ● 主线程
   #--------------------------------------------------------------------------
   def fiber_main
-    while !@paths.empty?
-      str = @paths.shift # sym:value
+    @index = 0
+    while @index != @paths.size
+      str = @paths[@index] # sym:value
       process_command(str)
+      @index += 1
       process_move if @t > 0
+      @index = 0 if @params[:loop] == true && @index == @paths.size
     end
     @fiber = nil
   end
@@ -164,13 +179,11 @@ class Eagle_MoveSystem
       @tevals.each { |s| eval(s) }
       @win.x = @x
       @win.y = @y
-      @window.opacity = @opa
+      @win.opacity = @opa
       Fiber.yield
       @t -= 1
     end
-    @des_x = nil
-    @des_y = nil
-    @tevals.clear
+    reset
   end
   #--------------------------------------------------------------------------
   # ● 移动结束？
@@ -199,5 +212,13 @@ class Scene_Base
   def update_basic
     eagle_window_move_update_basic
     WINDOW_MOVE.update
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束处理
+  #--------------------------------------------------------------------------
+  alias eagle_window_move_terminate terminate
+  def terminate
+    eagle_window_move_terminate
+    WINDOW_MOVE.clear
   end
 end
