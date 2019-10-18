@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-WindowMoveSystem"] = true
 #=============================================================================
-# - 2019.10.10.23
+# - 2019.10.18.21 细化注释
 #=============================================================================
 # - 本插件提供了对窗口/精灵的移动控制
 #-----------------------------------------------------------------------------
@@ -16,10 +16,11 @@ $imported["EAGLE-WindowMoveSystem"] = true
 #
 #   其中 string 为移动指令的字符串
 #    （用 英语分号 ; 隔开各个指令，可以在指令前后添加多余的空格）
+#    （指令中，用 英语冒号 : 隔开指令名称与指令参数值）
 #     指令一览：
-#     （指令中，用 英语冒号 : 隔开指令名称与指令参数值）
 #     wait:d  → 等待d帧后再处理剩下指令
-#     t:d   → 开始按照设置的参数执行移动，持续d帧后再处理剩下指令
+#     t:d   → 开始按照设置的参数执行移动，运动d帧后再继续处理剩下指令
+#             注意：在移动结束后，全部参数将被重置为 0
 #     （以下参数若含小数，计算时保留，显示时取整）
 #     x:d   → 直接指定x坐标为d（默认取窗口当前坐标）
 #     y:d   → 直接指定y坐标为d
@@ -29,12 +30,15 @@ $imported["EAGLE-WindowMoveSystem"] = true
 #     ay:d  → 在每帧的移动结束后，vy增加d
 #     opa:d → 直接指定opacity不透明度值为d
 #     vo:d  → 设置每帧内opacity变更值为d
-#     （设置匀速直线运动，将覆盖原有的vx与ax）
+#     vzx:d → （仅Sprite类有效）设置每帧中zoom_x的变更量为d
+#     vzy:d → （仅Sprite类有效）设置每帧中zoom_y的变更量为d
+#     （预定匀速直线运动，将覆盖原有的vx、vy与ax、ay）
 #     desx:d → 设置匀速直线运动的目的地x坐标为d
 #     desy:d → 设置匀速直线运动的目的地y坐标为d
-#     （高级）
+#     （高级设置）
 #     eval:string → 执行 eval(string)，其中不含英语分号和冒号
-#     teval:string → 在下一个t生效时，t中每帧执行的脚本（按传入顺序）
+#                   其中可用 win 代表当前正在运动的窗口/精灵对象
+#     teval:string → 在下一个t生效时，t中每帧执行的脚本（按传入顺序）（在移动后）
 #
 #   其中 params 传入额外设置的Hash（可选）
 #    额外参数一览：
@@ -117,6 +121,11 @@ class Eagle_MoveSystem
     @vx = 0; @vy = 0 # 移动速度
     @ax = 0; @ay = 0 # 移动后 速度的变更量
     @vo = 0 # 不透明度变更速度
+    @zx = 1.0; @zy = 1.0 # 缩放
+    @vzx = 0; @vzy = 0 # 缩放度变更量
+    if @win.is_a?(Sprite)
+      @zx = @win.zoom_x; @zy = @win.zoom_y # 缩放
+    end
     @tevals = [] # 每帧执行的脚本
     @des_x = nil
     @des_y = nil
@@ -179,6 +188,7 @@ class Eagle_MoveSystem
       @x += @vx; @y += @vy
       @vx += @ax; @vy += @ay
       @opa += @vo
+      @zx += @vzx; @zy += @vzy
       @tevals.each { |s| eval(s) }
       apply
       Fiber.yield
@@ -193,6 +203,10 @@ class Eagle_MoveSystem
     @win.x = @x
     @win.y = @y
     @win.opacity = @opa
+    if @win.is_a?(Sprite)
+      @win.zoom_x = @zx
+      @win.zoom_y = @zy
+    end
   end
   #--------------------------------------------------------------------------
   # ● 移动结束？
