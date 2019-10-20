@@ -1,18 +1,18 @@
 #==============================================================================
-# ■ 窗口移动路径 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ UI移动控制 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-WindowMoveSystem"] = true
+$imported["EAGLE-UIMove"] = true
 #=============================================================================
-# - 2019.10.18.21 细化注释
+# - 2019.10.20.16 重新分类
 #=============================================================================
 # - 本插件提供了对窗口/精灵的移动控制
 #-----------------------------------------------------------------------------
 # - 新增一个移动控制：
 #
-#      WINDOW_MOVE.new(window, string[, params])
+#      EAGLE_UI_MOVE.new(obj, string[, params])
 #
-#   其中 window 为 Window类 或 Sprite类 的实例对象
+#   其中 obj 为 Window类 或 Sprite类 的实例对象
 #
 #   其中 string 为移动指令的字符串
 #    （用 英语分号 ; 隔开各个指令，可以在指令前后添加多余的空格）
@@ -30,6 +30,9 @@ $imported["EAGLE-WindowMoveSystem"] = true
 #     ay:d  → 在每帧的移动结束后，vy增加d
 #     opa:d → 直接指定opacity不透明度值为d
 #     vo:d  → 设置每帧内opacity变更值为d
+#     angle:d → （仅Sprite类有效）直接指定angle旋转角度值为d
+#     va:d → （仅Sprite类有效）设置每帧中angle的变更量为d
+#     aa:d → （仅Sprite类有效）设置每帧中va的变更量为d
 #     vzx:d → （仅Sprite类有效）设置每帧中zoom_x的变更量为d
 #     vzy:d → （仅Sprite类有效）设置每帧中zoom_y的变更量为d
 #     （预定匀速直线运动，将覆盖原有的vx、vy与ax、ay）
@@ -37,7 +40,7 @@ $imported["EAGLE-WindowMoveSystem"] = true
 #     desy:d → 设置匀速直线运动的目的地y坐标为d
 #     （高级设置）
 #     eval:string → 执行 eval(string)，其中不含英语分号和冒号
-#                   其中可用 win 代表当前正在运动的窗口/精灵对象
+#                   其中可用 obj 代表当前正在运动的窗口/精灵对象
 #     teval:string → 在下一个t生效时，t中每帧执行的脚本（按传入顺序）（在移动后）
 #
 #   其中 params 传入额外设置的Hash（可选）
@@ -51,38 +54,39 @@ $imported["EAGLE-WindowMoveSystem"] = true
 #     在 Scene_Menu类 中的指令窗口 @command_window，为其附加从上方移入效果
 =begin
 class Scene_Menu
-  alias eagle_window_move_example_command_window create_command_window
+  alias eagle_ui_move_example_command_window create_command_window
   def create_command_window
-    eagle_window_move_example_command_window
+    eagle_ui_move_example_command_window
     @command_window.y = 0 - @command_window.height
     pstr = "desy:0; t:40"
-    WINDOW_MOVE.new(@command_window, pstr)
+    EAGLE_UI_MOVE.new(@command_window, pstr)
   end
 end
 =end
 #=============================================================================
 
-module WINDOW_MOVE
+module EAGLE_UI_MOVE
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
   def self.init
-    @datas ||= {} # window => [data]
+    @datas ||= {} # obj => [data]
   end
   #--------------------------------------------------------------------------
   # ● 新增一个移动
   #--------------------------------------------------------------------------
-  def self.new(window, path_string, params = {})
-    @datas[window] ||= []
-    data = Eagle_MoveSystem.new(window, path_string, params)
-    @datas[window].clear if params[:reserve] && params[:reserve] == true
-    @datas[window].push(data)
+  def self.new(obj, path_string, params = {})
+    @datas[obj] ||= []
+    data = Eagle_MoveControl.new(obj, path_string, params)
+    @datas[obj].clear if params[:reserve] && params[:reserve] == true
+    @datas[obj].push(data)
   end
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
   def self.update
-    @datas.each do |window, datas|
+    @datas.each do |obj, datas|
+      next if obj.disposed?
       next if datas.empty?
       datas[0].update
       datas.shift if datas[0].finish?
@@ -92,18 +96,21 @@ module WINDOW_MOVE
   # ● 清除
   #--------------------------------------------------------------------------
   def self.clear
-    @datas.delete_if { |win, datas| win.disposed? }
+    @datas.delete_if { |obj, datas| obj.disposed? }
   end
 end
-
-class Eagle_MoveSystem
-  attr_reader :win
+#=============================================================================
+# ○ 移动控制类
+#=============================================================================
+class Eagle_MoveControl
+  attr_reader :obj
   attr_accessor :t, :x, :y, :vx, :vy, :ax, :ay
+  attr_accessor :angle, :va, :aa, :vzx, :vzy
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
-  def initialize(window, path_string, params)
-    @win = window
+  def initialize(obj, path_string, params)
+    @obj = obj
     @paths = path_string.split(';')
     @params = params
     reset
@@ -114,17 +121,20 @@ class Eagle_MoveSystem
   #--------------------------------------------------------------------------
   def reset
     # 属性绑定
-    @x = @win.x * 1.0; @y = @win.y * 1.0 # 初始位置（浮点数）
-    @opa = @win.opacity # 不透明度
+    @x = @obj.x * 1.0; @y = @obj.y * 1.0 # 初始位置（浮点数）
+    @opa = @obj.opacity # 不透明度
     # 变量初值
     @t = 0 # 移动用计时
     @vx = 0; @vy = 0 # 移动速度
     @ax = 0; @ay = 0 # 移动后 速度的变更量
     @vo = 0 # 不透明度变更速度
+    @angle = 0 # 旋转角度
+    @va = 0; @aa = 0
     @zx = 1.0; @zy = 1.0 # 缩放
     @vzx = 0; @vzy = 0 # 缩放度变更量
-    if @win.is_a?(Sprite)
-      @zx = @win.zoom_x; @zy = @win.zoom_y # 缩放
+    if @obj.is_a?(Sprite)
+      @angle = @obj.angle
+      @zx = @obj.zoom_x; @zy = @obj.zoom_y # 缩放
     end
     @tevals = [] # 每帧执行的脚本
     @des_x = nil
@@ -188,6 +198,8 @@ class Eagle_MoveSystem
       @x += @vx; @y += @vy
       @vx += @ax; @vy += @ay
       @opa += @vo
+      @angle += @va;
+      @va += @aa
       @zx += @vzx; @zy += @vzy
       @tevals.each { |s| eval(s) }
       apply
@@ -200,12 +212,13 @@ class Eagle_MoveSystem
   # ● 应用
   #--------------------------------------------------------------------------
   def apply
-    @win.x = @x
-    @win.y = @y
-    @win.opacity = @opa
-    if @win.is_a?(Sprite)
-      @win.zoom_x = @zx
-      @win.zoom_y = @zy
+    @obj.x = @x
+    @obj.y = @y
+    @obj.opacity = @opa
+    if @obj.is_a?(Sprite)
+      @obj.angle = @angle
+      @obj.zoom_x = @zx
+      @obj.zoom_y = @zy
     end
   end
   #--------------------------------------------------------------------------
@@ -215,33 +228,34 @@ class Eagle_MoveSystem
     @fiber == nil
   end
 end
-
+#=============================================================================
+# ○ 绑定
+#=============================================================================
 class << DataManager
   #--------------------------------------------------------------------------
   # ● 初始化模块
   #--------------------------------------------------------------------------
-  alias eagle_window_move_init init
+  alias eagle_ui_move_init init
   def init
-    eagle_window_move_init
-    WINDOW_MOVE.init
+    eagle_ui_move_init
+    EAGLE_UI_MOVE.init
   end
 end
-
 class Scene_Base
   #--------------------------------------------------------------------------
   # ● 基础更新
   #--------------------------------------------------------------------------
-  alias eagle_window_move_update_basic update_basic
+  alias eagle_ui_move_update_basic update_basic
   def update_basic
-    eagle_window_move_update_basic
-    WINDOW_MOVE.update
+    eagle_ui_move_update_basic
+    EAGLE_UI_MOVE.update
   end
   #--------------------------------------------------------------------------
   # ● 结束处理
   #--------------------------------------------------------------------------
-  alias eagle_window_move_terminate terminate
+  alias eagle_ui_move_terminate terminate
   def terminate
-    eagle_window_move_terminate
-    WINDOW_MOVE.clear
+    eagle_ui_move_terminate
+    EAGLE_UI_MOVE.clear
   end
 end
