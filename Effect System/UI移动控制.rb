@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-UIMove"] = true
 #=============================================================================
-# - 2019.10.20.16 重新分类
+# - 2019.10.25.18 新增 until 指令
 #=============================================================================
 # - 本插件提供了对窗口/精灵的移动控制
 #-----------------------------------------------------------------------------
@@ -39,9 +39,12 @@ $imported["EAGLE-UIMove"] = true
 #     desx:d → 设置匀速直线运动的目的地x坐标为d
 #     desy:d → 设置匀速直线运动的目的地y坐标为d
 #     （高级设置）
-#     eval:string → 执行 eval(string)，其中不含英语分号和冒号
-#                   其中可用 obj 代表当前正在运动的窗口/精灵对象
-#     teval:string → 在下一个t生效时，t中每帧执行的脚本（按传入顺序）（在移动后）
+#      （在下列的 string 中，不可含有英语分号）
+#      （可用 obj 代表当前正在运动的窗口/精灵对象）
+#      （可用 s 代表开关组，v 代表变量组）
+#     until:string → 直到 eval(string) 返回值为 true，才继续执行之后的指令
+#     eval:string → 执行 eval(string)
+#     teval:string → 设置下一个t生效期间，每帧移动后额外执行的脚本（按指令顺序）
 #
 #   其中 params 传入额外设置的Hash（可选）
 #    额外参数一览：
@@ -111,7 +114,7 @@ class Eagle_MoveControl
   #--------------------------------------------------------------------------
   def initialize(obj, path_string, params)
     @obj = obj
-    @paths = path_string.split(';')
+    @paths = path_string.split(';').collect { |s| s.lstrip }
     @params = params
     reset
     @fiber = Fiber.new { fiber_main }
@@ -164,21 +167,25 @@ class Eagle_MoveControl
   # ● 处理指令
   #--------------------------------------------------------------------------
   def process_command(str)
-    params = str.lstrip.split(':')
-    case params[0]
+    i = str.index(':')
+    code = str[0..i-1]
+    param = str[i+1..-1]
+    case code
     when "wait"
-      params[1].to_i.times { Fiber.yield }
+      param.to_i.times { Fiber.yield }
     when "desx" # 覆盖 vx 与 ax，设置匀速直线运动的目的地
-      @des_x = params[1].to_i
+      @des_x = param.to_i
     when "desy"
-      @des_y = params[1].to_i
+      @des_y = param.to_i
+    when "until" # 直到条件成立，才继续执行
+      Fiber.yield until eval_str(param) == true
     when "eval" # 一次性执行的脚本
-      eval(params[1])
+      eval_str(param)
     when "teval" # 随着下一次t每帧执行的脚本
-      @tevals.push(params[1])
+      @tevals.push(param)
     else
-      m_c = (params[0] + "=").to_sym
-      method(m_c).call(params[1].to_f) if respond_to?(m_c)
+      m_c = (code + "=").to_sym
+      method(m_c).call(param.to_f) if respond_to?(m_c)
     end
     apply
   end
@@ -201,7 +208,7 @@ class Eagle_MoveControl
       @angle += @va;
       @va += @aa
       @zx += @vzx; @zy += @vzy
-      @tevals.each { |s| eval(s) }
+      @tevals.each { |s| eval_str(s) }
       apply
       Fiber.yield
       @t -= 1
@@ -222,10 +229,23 @@ class Eagle_MoveControl
     end
   end
   #--------------------------------------------------------------------------
+  # ● 执行脚本
+  #--------------------------------------------------------------------------
+  def eval_str(string)
+    s = $game_switches; v = $game_variables
+    eval(string)
+  end
+  #--------------------------------------------------------------------------
   # ● 移动结束？
   #--------------------------------------------------------------------------
   def finish?
     @fiber == nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 强制终止
+  #--------------------------------------------------------------------------
+  def stop
+    @fiber = nil
   end
 end
 #=============================================================================
