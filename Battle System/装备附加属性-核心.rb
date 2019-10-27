@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EquipEXCore"] = true
 #=============================================================================
-# - 2019.10.23.18 优化
+# - 2019.10.27.14 便于扩展基础属性
 #=============================================================================
 # - 本插件新增了一组处理装备附加属性的核心方法
 # - 本插件已为 $data_weapons 与 $data_armors 编写了绑定，可以适用于该两类
@@ -27,7 +27,7 @@ $imported["EAGLE-EquipEXCore"] = true
 #--------------------------------------------------------------------------
 # - 新增一个属性调整：
 #     [sym/id, value] → [属性符号/属性ID, 属性增减值]
-#   · 具体 属性符号/属性ID 可见 PARAMS_TO_ID 常量，与默认八维数据保持一致
+#   · 具体 属性符号/属性ID 可见 PARAMS_TO_ID 常量，已绑定默认八维数据
 #   · value 为对应项的增减值（必须为整数）
 #     （若 value 值为 整数0 ，则会被自动删除）
 #
@@ -84,17 +84,19 @@ module EQUIP_EX
   #--------------------------------------------------------------------------
   EX_SINGLE_OBJ = true
   #--------------------------------------------------------------------------
-  # ○ 常量：属性与对应ID
+  # ○ 常量：基础属性与对应ID
   #--------------------------------------------------------------------------
   PARAMS_TO_ID = {
     :mhp => 0, :mmp => 1, :atk => 2, :def => 3,
-    :mat => 4, :mdf => 5, :agi => 6, :luk => 7
+    :mat => 4, :mdf => 5, :agi => 6, :luk => 7,
   }
   #--------------------------------------------------------------------------
   # ○ 获取基础属性的ID
   #--------------------------------------------------------------------------
   def self.get_param_id(param)
-    param.is_a?(Symbol) ? PARAMS_TO_ID[param] : param
+    return param if !param.is_a?(Symbol)
+    return PARAMS_TO_ID[param] if PARAMS_TO_ID.has_key?(param)
+    return -1 # 无效属性
   end
   #--------------------------------------------------------------------------
   # ○ 获取物品的类型符号
@@ -379,7 +381,7 @@ class Data_Equip_EX
   def initialize(id, attrs = [])
     @id = id # 0无效，为保留项
     @attrs = attrs
-    @params = [0,0,0,0,0,0,0,0]
+    @params = Array.new(EQUIP_EX::PARAMS_TO_ID.size, 0)
     @features = []
     @note = "" # 备注（扩展用）
     @attrs.each { |a| parse(a) }
@@ -415,7 +417,8 @@ class Data_Equip_EX
       @features.push( RPG::BaseItem::Feature.new(attr[0], attr[1], attr[2]) )
       return
     end
-    @params[EQUIP_EX.get_param_id(attr[0])] += attr[1]
+    id = EQUIP_EX.get_param_id(attr[0])
+    @params[id] += attr[1] if id >= 0
   end
   #--------------------------------------------------------------------------
   # ○ 解析扩展attr数组项（扩展用）
@@ -424,7 +427,6 @@ class Data_Equip_EX
   end
   #--------------------------------------------------------------------------
   # ○ 设置属性方法
-  # （按序）mhp, mmp, atk, def, mat, mdf, agi, luk
   #--------------------------------------------------------------------------
   EQUIP_EX::PARAMS_TO_ID.each do |sym_, id_|
     define_method sym_ do
