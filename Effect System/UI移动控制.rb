@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-UIMove"] = true
 #=============================================================================
-# - 2019.10.25.18 新增 until 指令
+# - 2019.11.14.21 新增 ox/oy/zx/zy 指令
 #=============================================================================
 # - 本插件提供了对窗口/精灵的移动控制
 #-----------------------------------------------------------------------------
@@ -22,8 +22,10 @@ $imported["EAGLE-UIMove"] = true
 #     t:d   → 开始按照设置的参数执行移动，运动d帧后再继续处理剩下指令
 #             注意：在移动结束后，全部参数将被重置为 0
 #     （以下参数若含小数，计算时保留，显示时取整）
-#     x:d   → 直接指定x坐标为d（默认取窗口当前坐标）
+#     x:d   → 直接指定x坐标为d（默认取对象当前坐标）（窗口左上角为原点）
 #     y:d   → 直接指定y坐标为d
+#     ox:d  → （仅Sprite类有效）直接指定显示原点的x坐标为d（对象左上角为原点）
+#     oy:d  → （仅Sprite类有效）直接指定显示原点的y坐标为d
 #     vx:d  → 设置x方向上每帧移动d像素
 #     vy:d  → 设置y方向上每帧移动d像素
 #     ax:d  → 在每帧的移动结束后，vx增加d
@@ -31,8 +33,10 @@ $imported["EAGLE-UIMove"] = true
 #     opa:d → 直接指定opacity不透明度值为d
 #     vo:d  → 设置每帧内opacity变更值为d
 #     angle:d → （仅Sprite类有效）直接指定angle旋转角度值为d
-#     va:d → （仅Sprite类有效）设置每帧中angle的变更量为d
-#     aa:d → （仅Sprite类有效）设置每帧中va的变更量为d
+#     va:d  → （仅Sprite类有效）设置每帧中angle的变更量为d
+#     aa:d  → （仅Sprite类有效）设置每帧中va的变更量为d
+#     zx:d  → （仅Sprite类有效）直接指定x方向缩放值为d（0.0~1.0）
+#     zy:d  → （仅Sprite类有效）直接指定y方向缩放值为d（0.0~1.0）
 #     vzx:d → （仅Sprite类有效）设置每帧中zoom_x的变更量为d
 #     vzy:d → （仅Sprite类有效）设置每帧中zoom_y的变更量为d
 #     （预定匀速直线运动，将覆盖原有的vx、vy与ax、ay）
@@ -43,7 +47,7 @@ $imported["EAGLE-UIMove"] = true
 #      （可用 obj 代表当前正在运动的窗口/精灵对象）
 #      （可用 s 代表开关组，v 代表变量组）
 #     until:string → 直到 eval(string) 返回值为 true，才继续执行之后的指令
-#     eval:string → 执行 eval(string)
+#     eval:string  → 执行 eval(string)
 #     teval:string → 设置下一个t生效期间，每帧移动后额外执行的脚本（按指令顺序）
 #
 #   其中 params 传入额外设置的Hash（可选）
@@ -107,7 +111,7 @@ end
 #=============================================================================
 class Eagle_MoveControl
   attr_reader :obj
-  attr_accessor :t, :x, :y, :vx, :vy, :ax, :ay
+  attr_accessor :t, :x, :y, :ox, :oy, :vx, :vy, :ax, :ay, :zx, :zy, :opa
   attr_accessor :angle, :va, :aa, :vzx, :vzy
   #--------------------------------------------------------------------------
   # ● 初始化
@@ -125,6 +129,7 @@ class Eagle_MoveControl
   def reset
     # 属性绑定
     @x = @obj.x * 1.0; @y = @obj.y * 1.0 # 初始位置（浮点数）
+    @ox = 0; @oy = 0
     @opa = @obj.opacity # 不透明度
     # 变量初值
     @t = 0 # 移动用计时
@@ -136,6 +141,7 @@ class Eagle_MoveControl
     @zx = 1.0; @zy = 1.0 # 缩放
     @vzx = 0; @vzy = 0 # 缩放度变更量
     if @obj.is_a?(Sprite)
+      @ox = @obj.ox; @oy = @obj.oy
       @angle = @obj.angle
       @zx = @obj.zoom_x; @zy = @obj.zoom_y # 缩放
     end
@@ -185,7 +191,7 @@ class Eagle_MoveControl
       @tevals.push(param)
     else
       m_c = (code + "=").to_sym
-      method(m_c).call(param.to_f) if respond_to?(m_c)
+      method(m_c).call(eval_str(param)) if respond_to?(m_c)
     end
     apply
   end
@@ -223,6 +229,7 @@ class Eagle_MoveControl
     @obj.y = @y
     @obj.opacity = @opa
     if @obj.is_a?(Sprite)
+      @obj.ox = @ox; @obj.oy = @oy
       @obj.angle = @angle
       @obj.zoom_x = @zx
       @obj.zoom_y = @zy
