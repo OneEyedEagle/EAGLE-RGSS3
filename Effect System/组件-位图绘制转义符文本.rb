@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2019.11.11.21
+# - 2019.11.15.18 修复绘制时y错位的bug
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #-----------------------------------------------------------------------------
@@ -55,7 +55,7 @@ class Process_DrawTextEX
   # ● 获取总占用宽度
   #--------------------------------------------------------------------------
   def width
-    @info[:w].inject(0) { |s, v| s += v }
+    @info[:w].max
   end
   #--------------------------------------------------------------------------
   # ● 获取总占用高度
@@ -114,8 +114,13 @@ class Process_DrawTextEX
     pos[:y0] = @params[:y][pos[:line]] || (pos[:y0] + pos[:h])
     pos[:y0] += @params[:lhd] if pos[:line] > 0
     pos[:y] = pos[:y0]
-    pos[:w] = 0
-    pos[:h] = 0
+    if pos[:flag_draw]
+      pos[:w] = @info[:w][pos[:line]]
+      pos[:h] = @info[:h][pos[:line]]
+    else
+      @info[:w][pos[:line]] = 0
+      @info[:h][pos[:line]] = 0
+    end
   end
   #--------------------------------------------------------------------------
   # ● 文字的处理
@@ -141,7 +146,7 @@ class Process_DrawTextEX
   def process_normal_character(c, pos)
     r = @bitmap.text_size(c); w = r.width; h = r.height + @params[:lhu]
     process_draw_before(pos[:x], pos[:y], w, h, pos)
-    @bitmap.draw_text(pos[:x], pos[:y], w * 2, h * 2, c) if pos[:flag_draw]
+    @bitmap.draw_text(pos[:x], pos[:y], w * 2, h, c) if pos[:flag_draw]
     process_draw_after(pos[:x], pos[:y], w, h, pos)
   end
   #--------------------------------------------------------------------------
@@ -158,8 +163,10 @@ class Process_DrawTextEX
     pos[:y] = pos[:y0]
     pos[:w] += w
     pos[:h] = h if pos[:h] < h
-    @info[:w][pos[:line]] = pos[:w]
-    @info[:h][pos[:line]] = pos[:h]
+    if !pos[:flag_draw]
+      @info[:w][pos[:line]] = pos[:w]
+      @info[:h][pos[:line]] = pos[:h]
+    end
   end
   #--------------------------------------------------------------------------
   # ● 获取控制符的实际形式（这个方法会破坏原始数据）
