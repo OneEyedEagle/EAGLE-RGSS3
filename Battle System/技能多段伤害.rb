@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 技能多段伤害 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2019.11.15.16
+# - 2019.11.24.17 兼容 YEA-BattleCore
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-SkillDamageEX"] = true
@@ -181,7 +181,11 @@ class Process_AnimDamage
   #--------------------------------------------------------------------------
   def end_apply_item_effects
     @object.remove_state(EAGLE::SkillDamage_EX::STATE_IMMUNE_DIE) # 移除不死
-    @object.refresh unless $imported["YEA-BattleEngine"]
+    if $imported["YEA-BattleEngine"]
+      SceneManager.scene.perform_collapse_check(@object)
+    else
+      @object.refresh
+    end
     clear
   end
 end
