@@ -13,6 +13,7 @@ $imported["EAGLE-EventMsg"] = true
 #    1、在它的所有事件页（无视事件触发条件）中搜索内容为 LABEL 的标签
 #    2、若找到，则继续查找在该标签后的第一个内容为 END 的标签
 #    3、立即执行这两个标签中间的事件指令（若未找到 END，则一直执行到事件结尾）
+#    4、当成功找到标签时，msg 方法返回 true，否则返回 false
 #
 # 【注意】
 #   事件列表中的标签内容需要与 msg 方法传入的标签名称字符串完全一致（包括前后空格）
@@ -75,14 +76,17 @@ class Game_Event
   # ● 初始化消息
   #--------------------------------------------------------------------------
   def msg_trigger_init
-    @eagle_msg_labels = []
+    @eagle_msg_lists = []
     @interpreter_eagle = Game_Interpreter.new
   end
   #--------------------------------------------------------------------------
   # ● 新增消息
   #--------------------------------------------------------------------------
   def msg(msg_label)
-    @eagle_msg_labels.push( msg_label.to_s )
+    list = get_msg_list(msg_label.to_s)
+    return false if list == nil
+    @eagle_msg_lists.push(list)
+    return true
   end
   #--------------------------------------------------------------------------
   # ● 获取子指令序列
@@ -105,6 +109,7 @@ class Game_Event
       end
       break if list_start
     end
+    return nil if eagle_list.empty?
     eagle_list.push( RPG::EventCommand.new )
     return eagle_list
   end
@@ -114,9 +119,9 @@ class Game_Event
   alias eagle_event_msg_trigger_update update
   def update
     eagle_event_msg_trigger_update
-    if !@eagle_msg_labels.empty? && !@interpreter_eagle.running?
-      sym = @eagle_msg_labels.shift
-      @interpreter_eagle.setup(get_msg_list(sym), @event.id)
+    if !@eagle_msg_lists.empty? && !@interpreter_eagle.running?
+      list = @eagle_msg_lists.shift
+      @interpreter_eagle.setup(list, @event.id)
     end
     @interpreter_eagle.update
   end
