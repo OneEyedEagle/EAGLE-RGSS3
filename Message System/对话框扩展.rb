@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.10.7.22 修复csin转义符导致的卡死
+# - 2019.12.13.18 存储当前执行的Game_Interpreter的事件ID
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -994,7 +994,7 @@ class Game_Message
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :ex_params # 存储扩展params
   attr_accessor :escape_strings, :auto_r
-  attr_accessor :hold, :instant, :draw, :para
+  attr_accessor :hold, :instant, :draw, :para, :event_id
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -1031,6 +1031,7 @@ class Game_Message
     @hold = false # 当前对话框要保留显示？
     @instant = false # 当前对话框立即显示？
     @para = false # 并行显示选择框等
+    @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
   end
   #--------------------------------------------------------------------------
   # ● 判定是否需要进入等待按键状态
@@ -1151,6 +1152,20 @@ class Game_Message
   #--------------------------------------------------------------------------
   def add_escape(string)
     @escape_strings.push(string)
+  end
+end
+
+#=============================================================================
+# ○ Game_Interpreter
+#=============================================================================
+class Game_Interpreter
+  #--------------------------------------------------------------------------
+  # ● 显示文字
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_command_101 command_101
+  def command_101
+    $game_message.event_id = @event_id
+    eagle_message_ex_command_101
   end
 end
 
@@ -2567,7 +2582,7 @@ class Window_Message
     @pop_on_map_chara = true
     id = game_message.pop_params[:id]
     if id == 0 # 当前事件
-      return $game_map.events[$game_map.interpreter.event_id]
+      return $game_map.events[game_message.event_id]
     elsif id > 0 # 第id号事件
       chara = $game_map.events[game_message.pop_params[:id]]
       chara ||= $game_map.events[$game_map.interpreter.event_id]

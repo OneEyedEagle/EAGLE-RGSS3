@@ -1,0 +1,135 @@
+#==============================================================================
+# ■ 事件消息机制 by 老鹰（http://oneeyedeagle.lofter.com/）
+#==============================================================================
+$imported ||= {}
+$imported["EAGLE-EventMsg"] = true
+#==============================================================================
+# - 2019.12.13.20
+#==============================================================================
+# - 本插件新增消息机制，以触发事件中的部分指令
+#--------------------------------------------------------------------------
+# - 对于 Game_Event 对象，新增 msg(LABEL) 方法，来快速调用其中的事件指令序列
+#
+#    1、在它的所有事件页（无视事件触发条件）中搜索内容为 LABEL 的标签
+#    2、若找到，则继续查找在该标签后的第一个内容为 END 的标签
+#    3、立即执行这两个标签中间的事件指令（若未找到 END，则一直执行到事件结尾）
+#
+# 【注意】
+#   事件列表中的标签内容需要与 msg 方法传入的标签名称字符串完全一致（包括前后空格）
+#
+# - 示例：
+#    当前地图的 1 号事件的第 2 页中指令列表
+#    |- 显示文字：测试语句1
+#    |- 标签：A
+#    |- 显示文字：测试语句2
+#    |- 标签：END
+#    |- 显示文字：测试语句3
+#    |- 标签：B
+#    |- 显示文字：测试语句4
+#    |- 标签：END
+#
+#    正常执行该事件，将按序显示 测试语句1、测试语句2、测试语句3、测试语句4
+#    若在另一事件中调用事件脚本 $game_map.events[1].msg("A")，则只显示 测试语句2
+#    若在另一事件中调用事件脚本 $game_map.events[1].msg("B")，则只显示 测试语句4
+#
+# - 扩展：
+#    1、利用 $game_temp.last_menu_item 获取最近一次在菜单中所使用物品/技能的实例
+#    2、利用 $game_map.forward_event_id(chara) 获取 chara 面前一格事件的ID
+#        其中 chara 为 Game_CharacterBase 对象
+#        如 $game_player 代表玩家，$game_map.events[id] 代表id号事件
+#==============================================================================
+
+class Game_Temp
+  attr_accessor :last_menu_item
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  alias eagle_event_msg_trigger_init initialize
+  def initialize
+    eagle_event_msg_trigger_init
+    @last_menu_item = nil
+  end
+end
+
+class Game_Map
+  #--------------------------------------------------------------------------
+  # ● 获取角色面前一格的事件ID
+  #--------------------------------------------------------------------------
+  def forward_event_id(chara)
+    x = $game_map.round_x_with_direction(chara.x, chara.direction)
+    y = $game_map.round_y_with_direction(chara.y, chara.direction)
+    return $game_map.event_id_xy(x, y)
+  end
+end
+
+class Game_Event
+  #--------------------------------------------------------------------------
+  # ● 初始化
+  #--------------------------------------------------------------------------
+  alias eagle_event_msg_trigger_init initialize
+  def initialize(map_id, event)
+    eagle_event_msg_trigger_init(map_id, event)
+    msg_trigger_init
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化消息
+  #--------------------------------------------------------------------------
+  def msg_trigger_init
+    @eagle_msg_labels = []
+    @interpreter_eagle = Game_Interpreter.new
+  end
+  #--------------------------------------------------------------------------
+  # ● 新增消息
+  #--------------------------------------------------------------------------
+  def msg(msg_label)
+    @eagle_msg_labels.push( msg_label.to_s )
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取子指令序列
+  #--------------------------------------------------------------------------
+  def get_msg_list(msg_label)
+    list_start = false
+    eagle_list = []
+    @event.pages.size.times do |p_i|
+      page = @event.pages[p_i]
+      page.list.size.times do |i|
+        if page.list[i].code == 118
+          label = page.list[i].parameters[0]
+          if list_start
+            break if label == "END"
+          else
+            next list_start = true if label == msg_label
+          end
+        end
+        eagle_list.push(page.list[i]) if list_start
+      end
+      break if list_start
+    end
+    eagle_list.push( RPG::EventCommand.new )
+    return eagle_list
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  alias eagle_event_msg_trigger_update update
+  def update
+    eagle_event_msg_trigger_update
+    if !@eagle_msg_labels.empty? && !@interpreter_eagle.running?
+      sym = @eagle_msg_labels.shift
+      @interpreter_eagle.setup(get_msg_list(sym), @event.id)
+    end
+    @interpreter_eagle.update
+  end
+end
+
+class Scene_ItemBase < Scene_MenuBase
+  #--------------------------------------------------------------------------
+  # ● 公共事件预定判定
+  #    如果预约了事件的调用，则切换到地图画面。
+  #--------------------------------------------------------------------------
+  alias eagle_event_msg_trigger_check_common_event check_common_event
+  def check_common_event
+    $game_temp.last_menu_item = item
+    eagle_event_msg_trigger_check_common_event
+  end
+end
