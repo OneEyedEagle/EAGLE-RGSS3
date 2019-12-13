@@ -11,10 +11,9 @@
 ### 文件夹说明
 
 - Message System → 对默认对话框的扩展 或 与文本显示相关的插件
-- Event System → 对事件的扩展 或 对地图的扩展
+- Event System → 对事件的扩展 或 地图上可用的扩展
 - Battle System → 战斗相关插件 或 对VA数据库的扩展
-- GamePlay System → 增加娱乐性的独立小系统 或 改善游戏体验的辅助插件
-- Effect System → 特效类的插件 或 对位图绘制的扩展
+- UI System → UI类的插件
 - Demos → 一些特定插件的范例工程，具体见各个子文件夹下的README文件
 - TEMP → （不推荐使用）仍在设计中的或修改中的未完成品
 
