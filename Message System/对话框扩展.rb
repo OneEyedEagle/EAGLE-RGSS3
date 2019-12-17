@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.12.13.18 存储当前执行的Game_Interpreter的事件ID
+# - 2019.12.16.20 增强pop的兼容性
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1582,16 +1582,14 @@ class Window_Message
     eagle_change_windowskin(game_message.pop_params[:skin])
     # 对话框左上角定位到绑定对象位图的对应o位置
     if @pop_on_map_chara # 如果在地图上使用的行走图，定位到位图底部中心的屏幕位置
-      game_message.pop_params[:chara_x] = @eagle_pop_obj.real_x
-      game_message.pop_params[:chara_y] = @eagle_pop_obj.real_y
-      self.x = (game_message.pop_params[:chara_x] - $game_map.display_x) * 32 + 16
-      self.y = (game_message.pop_params[:chara_y] - $game_map.display_y + 1) * 32
+      game_message.pop_params[:chara_x] = @eagle_pop_obj.screen_x
+      game_message.pop_params[:chara_y] = @eagle_pop_obj.screen_y
     else # 否则与对应精灵的坐标一致（注意：精灵底部中心为显示原点）
       game_message.pop_params[:chara_x] = @eagle_pop_obj.x
       game_message.pop_params[:chara_y] = @eagle_pop_obj.y
-      self.x = game_message.pop_params[:chara_x]
-      self.y = game_message.pop_params[:chara_y]
     end
+    self.x = game_message.pop_params[:chara_x]
+    self.y = game_message.pop_params[:chara_y]
     # 将对话框移动到绑定对象的对应方向上
     case game_message.pop_params[:do]
     when 1,4,7; self.x -= (game_message.pop_params[:chara_w] / 2)
