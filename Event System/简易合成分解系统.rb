@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-ItemEX"] = true
 #==============================================================================
-# - 2019.12.16.15
+# - 2019.12.18.15 新增材料数目上限
 #==============================================================================
 # - 本插件新增在菜单物品栏中触发的物品分解与合成系统
 #--------------------------------------------------------------------------
@@ -27,7 +27,7 @@ $imported["EAGLE-ItemEX"] = true
 #--------------------------------------------------------------------------
 # ○ 物品分解
 #--------------------------------------------------------------------------
-# - 在 数据库-物品/武器/护甲 备注栏中填写下式来定义当前物品的分解公式（只能填写一次）
+# - 在 数据库-物品/武器/护甲 备注栏中填写下式来定义其分解公式（只能填写一次）
 #
 #      <break 物品标志字符>
 #
@@ -61,20 +61,21 @@ $imported["EAGLE-ItemEX"] = true
 # - 本插件为菜单中的物品栏绑定了简单的按键交互，以进行物品合成与分解
 #
 # - 物品分解：
-#  ·当 trigger_break? 返回true时（默认按下A键），将触发当前选中物品的分解
+#  ·当 trigger_break? 返回true时（默认按下A键），将触发当前选中物品的分解，
 #      并立即刷新物品栏
 #
 # - 物品合成：
 #  ·当 trigger_compose? 返回true时（默认按下S键），将进入合成模式，
 #      并将1个当前物品加入材料列表中
-#  ·当再次按下S键，若当前物品未在材料列表中，将其加入材料列表
-#      若已经在材料列表中，将其移出（若此时材料列表为空，则自动退出合成模式）
+#  ·当再次按下S键，若当前物品未在材料列表中，将其加入材料列表，
+#      若已在材料列表中，且未到持有上限，且未到单种材料数目上限，则加入材料列表，
+#      否则将其移出列表（若此时材料列表为空，则自动退出合成模式）
 #  ·按下确定键，将判定合成，并清空材料列表，刷新物品栏，退出合成模式
 #  ·按下取消键，将清空材料列表，退出合成模式
 #
 # - 局限：
 #  ·每次只能分解1个物品
-#  ·每种合成材料只能输入1个
+#  ·每种合成材料的输入数目存在上限（值为 COMPOSE_ITEM_MAX）
 #  ·合成材料的选择无法跨越类别
 #    （供参考的修改方式：单列物品栏，只靠左右键动态切换类别，
 #                       便可绕过默认下确认取消键切换类别，以保留当前的合成模式）
@@ -84,6 +85,10 @@ module ITEM_EX
 #==============================================================================
 # ○ 常量定义
 #==============================================================================
+  #--------------------------------------------------------------------------
+  # ● 每种材料的最大数
+  #--------------------------------------------------------------------------
+  COMPOSE_ITEM_MAX = 3
   #--------------------------------------------------------------------------
   # ● 满足触发物品分解的条件？
   #--------------------------------------------------------------------------
@@ -117,6 +122,7 @@ module ITEM_EX
   def self.compose(items)
     inputs = []; rules = {} # { array => hash }
     items.each do |item, n| # 在每个材料的备注栏中搜索规则
+      next if n == 0
       item.note.scan(/<compose ?(.*?) ?to ?(.*?)>/mi).each do |params|
         array = parse_item_list_str(params[0], false)
         result = parse_item_list_str(params[1])
@@ -193,14 +199,14 @@ module ITEM_EX
   #--------------------------------------------------------------------------
   def self.update
     return if !@item_window.active
-    ITEM_EX.process_break if trigger_break?
     ITEM_EX.process_compose if trigger_compose?
+    return if $game_temp.item_compose?
+    ITEM_EX.process_break if trigger_break?
   end
   #--------------------------------------------------------------------------
   # ● 处理物品分解
   #--------------------------------------------------------------------------
   def self.process_break
-    return if $game_temp.item_compose_selected
     item = @item_window.item
     items = ITEM_EX.break_down(item)
     return Sound.play_buzzer if items.empty?
@@ -214,18 +220,17 @@ module ITEM_EX
   # ● 处理物品合成
   #--------------------------------------------------------------------------
   def self.process_compose
-    if $game_temp.item_compose_selected.nil?
-      $game_temp.item_compose_selected = {}
-    end
     item = @item_window.item
-    if $game_temp.item_compose_selected[item]
-      $game_temp.item_compose_selected.delete(item)
-      if $game_temp.item_compose_selected.empty?
-        process_compose_cancel
+    n = $game_temp.selected_item_num(item)
+    if n > 0
+      if n < COMPOSE_ITEM_MAX && n < $game_party.item_number(item)
+        $game_temp.item_compose_selected[item] += 1
+      else
+        $game_temp.item_compose_selected.delete(item)
+        process_compose_cancel if $game_temp.item_compose_selected.empty?
       end
     else
-      $game_temp.item_compose_selected[item] ||= 0
-      $game_temp.item_compose_selected[item] += 1
+      $game_temp.item_compose_selected[item] = 1
     end
     @item_window.redraw_current_item
   end
@@ -248,7 +253,7 @@ module ITEM_EX
   # ● 物品合成取消
   #--------------------------------------------------------------------------
   def self.process_compose_cancel
-    $game_temp.item_compose_selected = nil
+    $game_temp.item_compose_selected.clear
     @item_window.refresh
     @item_window.activate
   end
@@ -264,7 +269,19 @@ class Game_Temp
   alias eagle_item_ex_init initialize
   def initialize
     eagle_item_ex_init
-    @item_compose_selected = nil
+    @item_compose_selected = {}
+  end
+  #--------------------------------------------------------------------------
+  # ● 处于合成模式？
+  #--------------------------------------------------------------------------
+  def item_compose?
+    !@item_compose_selected.empty?
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定材料数目
+  #--------------------------------------------------------------------------
+  def selected_item_num(item)
+    @item_compose_selected[item] || 0
   end
 end
 #==============================================================================
@@ -277,13 +294,25 @@ class Window_ItemList < Window_Selectable
   alias eagle_item_ex_draw_item draw_item
   def draw_item(index)
     item = @data[index]
-    if item && $game_temp.item_compose_selected &&
-       $game_temp.item_compose_selected[item]
+    if item && $game_temp.selected_item_num(item) > 0
       rect = item_rect(index)
       contents.gradient_fill_rect(rect,
-        Color.new(0,0,0,0), Color.new(255,247,38,120))
+        Color.new(0,0,0,0), Color.new(255,255,255,130))
     end
     eagle_item_ex_draw_item(index)
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制物品个数
+  #--------------------------------------------------------------------------
+  alias eagle_item_ex_draw_item_number draw_item_number
+  def draw_item_number(rect, item)
+    n = $game_temp.selected_item_num(item)
+    if n > 0
+      t = sprintf("%d / %2d", n, $game_party.item_number(item))
+      draw_text(rect, t, 2)
+    else
+      eagle_item_ex_draw_item_number(rect, item)
+    end
   end
 end
 #==============================================================================
@@ -310,7 +339,7 @@ class Scene_Item < Scene_ItemBase
   #--------------------------------------------------------------------------
   alias eagle_item_ex_on_item_ok on_item_ok
   def on_item_ok
-    if $game_temp.item_compose_selected
+    if $game_temp.item_compose?
       ITEM_EX.process_compose_ok
     else
       eagle_item_ex_on_item_ok
@@ -321,7 +350,7 @@ class Scene_Item < Scene_ItemBase
   #--------------------------------------------------------------------------
   alias eagle_item_ex_on_item_cancel on_item_cancel
   def on_item_cancel
-    if $game_temp.item_compose_selected
+    if $game_temp.item_compose?
       ITEM_EX.process_compose_cancel
     else
       eagle_item_ex_on_item_cancel
