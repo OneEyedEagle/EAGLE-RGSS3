@@ -169,7 +169,7 @@ class Game_Map
   def forward_event_id(chara)
     x = $game_map.round_x_with_direction(chara.x, chara.direction)
     y = $game_map.round_y_with_direction(chara.y, chara.direction)
-    events = $game_map.event_xy(x, y)
+    events = $game_map.events_xy(x, y)
     return events.empty? ? 0 : events[0].id
   end
   #--------------------------------------------------------------------------
