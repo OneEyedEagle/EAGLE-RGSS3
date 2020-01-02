@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventMsg"] = true
 #==============================================================================
-# - 2019.12.14.15 新增公共事件与敌群事件的消息
+# - 2020.1.1.16 兼容像素移动
 #==============================================================================
 # - 本插件新增消息机制，以直接触发事件中的指令
 #--------------------------------------------------------------------------
@@ -169,7 +169,8 @@ class Game_Map
   def forward_event_id(chara)
     x = $game_map.round_x_with_direction(chara.x, chara.direction)
     y = $game_map.round_y_with_direction(chara.y, chara.direction)
-    return $game_map.event_id_xy(x, y)
+    events = $game_map.event_xy(x, y)
+    return events.empty? ? 0 : events[0].id
   end
   #--------------------------------------------------------------------------
   # ● 新增消息

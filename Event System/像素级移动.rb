@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.1.1.15 修改注释
+# - 2020.1.2.15 修复事件移动路径中玩家移动距离过短的bug
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -685,29 +685,31 @@ class Game_Player < Game_Character
   #--------------------------------------------------------------------------
   def move_by_input
     return if !movable? || $game_map.interpreter.running?
-    return move_straight(Input.dir4) if PIXEL_MOVE::PLAYER_4DIR && Input.dir4>0
+    if PIXEL_MOVE::PLAYER_4DIR && Input.dir4 > 0
+      return move_straight(Input.dir4, true, PIXEL_MOVE::PLAYER_MOVE_UNIT)
+    end
     case Input.dir8
     when 1; move_straight_8dir(4, 2)
     when 3; move_straight_8dir(6, 2)
     when 7; move_straight_8dir(4, 8)
     when 9; move_straight_8dir(6, 8)
-    else; move_straight(Input.dir4)
+    else; move_straight(Input.dir4, true, PIXEL_MOVE::PLAYER_MOVE_UNIT)
     end
   end
   #--------------------------------------------------------------------------
   # ○ 八方向移动
   #--------------------------------------------------------------------------
   def move_straight_8dir(horz, vert)
-    move_diagonal(horz, vert)
+    move_diagonal(horz, vert, PIXEL_MOVE::PLAYER_MOVE_UNIT)
     return if @move_succeed
-    move_straight(horz)
+    move_straight(horz, true, PIXEL_MOVE::PLAYER_MOVE_UNIT)
     return if @move_succeed
-    move_straight(vert)
+    move_straight(vert, true, PIXEL_MOVE::PLAYER_MOVE_UNIT)
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）径向移动
   #--------------------------------------------------------------------------
-  def move_straight(d, turn_ok = true, n = PIXEL_MOVE::PLAYER_MOVE_UNIT)
+  def move_straight(d, turn_ok = true, n = PIXEL_MOVE::UNIT_PER_MAP_GRID)
     @followers.move if passable?(@x, @y, d)
     super
   end
@@ -716,7 +718,7 @@ class Game_Player < Game_Character
   #     horz : 横向（4 or 6）
   #     vert : 纵向（2 or 8）
   #--------------------------------------------------------------------------
-  def move_diagonal(horz, vert, n = PIXEL_MOVE::PLAYER_MOVE_UNIT)
+  def move_diagonal(horz, vert, n = PIXEL_MOVE::UNIT_PER_MAP_GRID)
     @followers.move if diagonal_passable?(@x, @y, horz, vert)
     super
   end
