@@ -44,22 +44,26 @@ class World
     @mesh_image.dispose
   end
 end
+
 class Camera
   # 向右为 x 正方向，向下为 y 正方向，向内为 z 正方向
   # 依据右手螺旋定则获得旋转的正方向
   # perspective camera
   #  lookat: Vec(0,0,1)
   #  up: Vec(0,1,0)
-  def initialize(f)
-    @angle_x = @angle_y = @angle_z = 0
-    # from world to camera
-    @R = [[1,0,0], [0,1,0], [0,0,1]]
-    # from world to camera
-    @T = [0,0,-1]
+  def initialize(f, cx = Graphics.width / 2, cy = Graphics.height / 2)
+    # intrinsic
     @f = f # pixel number per meter
-    @cx = Graphics.width / 2
-    @cy = Graphics.height / 2
+    @cx = cx
+    @cy = cy
+    # extrisic
+    #  from world to camera
+    @angle_x = @angle_y = @angle_z = 0
+    @R = [[1,0,0], [0,1,0], [0,0,1]]
+    @T = [0,0,0]
+    translate_origin2des(0,0,-1)
   end
+
   def sin(angle); EAGLE.sin(angle); end
   def cos(angle); EAGLE.cos(angle); end
   def rotate_origin2des(ax = nil, ay = nil, az = nil)
@@ -79,6 +83,20 @@ class Camera
     @angle_y = ay
     @angle_z = az
   end
+  def rotate(dx = 0, dy = 0, dz = 0)
+    rotate_origin2des(@angle_x + dx, @angle_y + dy, @angle_z + dz)
+  end
+  def translate_origin2des(dx = nil, dy = nil, dz = nil)
+    @T[0] = dx if dx
+    @T[1] = dy if dy
+    @T[2] = dz if dz
+  end
+  def translate(dx = 0, dy = 0, dz = 0)
+    @T[0] += dx
+    @T[1] += dy
+    @T[2] += dz
+  end
+
   def project_world2image(point)
     point_ = Point.new(0,0,0,point.u,point.v)
     point_.x = @R[0][0] * point.x + @R[0][1] * point.y + @R[0][2] * point.z - @T[0]
@@ -92,6 +110,13 @@ class Camera
       point_.y = point_.y * 1.0 / point_.z
     end
     return point_
+  end
+end
+
+class Point
+  attr_accessor :x, :y, :z, :u, :v
+  def initialize(x = 0, y = 0, z = 0, u = 0.0, v = 0.0)
+    @x = x; @y = y; @z = z; @u = u; @v = v
   end
 end
 class Mesh
@@ -124,10 +149,10 @@ class Mesh
     @geometry.dispose
   end
 end
-class Point
-  attr_accessor :x, :y, :z, :u, :v
-  def initialize(x = 0, y = 0, z = 0, u = 0.0, v = 0.0)
-    @x = x; @y = y; @z = z; @u = u; @v = v
+
+class Mesh_Picture << Mesh
+  def initialize(bitmap)
+    super()
   end
 end
 end # end of EAGLE
