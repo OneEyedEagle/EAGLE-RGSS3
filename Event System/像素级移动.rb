@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.1.2.15 修复事件移动路径中玩家移动距离过短的bug
+# - 2020.1.4.20 新增方法 get_collision_xy(dir)
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -469,6 +469,15 @@ class Game_CharacterBase
     @collision_rect.height = PIXEL_MOVE.pixel2unit(_rect.height)
   end
   #--------------------------------------------------------------------------
+  # ○ 获取碰撞矩形指定位置的实际坐标
+  #--------------------------------------------------------------------------
+  def get_collision_xy(dir)
+    dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, dir)
+    x = $game_map.round_x(dx + @x)
+    y = $game_map.round_y(dy + @y)
+    return x, y
+  end
+  #--------------------------------------------------------------------------
   # ● （覆盖）获取画面 X 坐标
   #--------------------------------------------------------------------------
   def screen_x
@@ -727,9 +736,9 @@ class Game_Player < Game_Character
   #   取角色碰撞盒的四边中点作为判定点
   #--------------------------------------------------------------------------
   def check_event_trigger_there(triggers)
-    x, y = PIXEL_MOVE.get_rect_xy(@collision_rect, @direction)
-    x2 = $game_map.round_x_with_direction(x + @x, @direction)
-    y2 = $game_map.round_y_with_direction(y + @y, @direction)
+    x_p, y_p = get_collision_xy(@direction)
+    x2 = $game_map.round_x_with_direction(x_p, @direction)
+    y2 = $game_map.round_y_with_direction(y_p, @direction)
     start_map_event(x2, y2, triggers, true)
     return if $game_map.any_event_starting?
     x2_rgss, e = PIXEL_MOVE.unit2rgss(x2)

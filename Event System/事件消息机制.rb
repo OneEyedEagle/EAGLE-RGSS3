@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventMsg"] = true
 #==============================================================================
-# - 2020.1.1.16 兼容像素移动
+# - 2020.1.4.18 修复bug
 #==============================================================================
 # - 本插件新增消息机制，以直接触发事件中的指令
 #--------------------------------------------------------------------------
@@ -164,13 +164,22 @@ class Game_Map
     msg_trigger_init
   end
   #--------------------------------------------------------------------------
-  # ● 获取角色面前一格的事件ID
+  # ○ 获取角色面前一格的事件ID
   #--------------------------------------------------------------------------
   def forward_event_id(chara)
-    x = $game_map.round_x_with_direction(chara.x, chara.direction)
-    y = $game_map.round_y_with_direction(chara.y, chara.direction)
-    events = $game_map.events_xy(x, y)
+    x, y = round_xy_with_direction(chara.x, chara.y, chara.direction)
+    events = events_xy(x, y)
     return events.empty? ? 0 : events[0].id
+  end
+  #--------------------------------------------------------------------------
+  # ○ 计算特定方向推移1个单位的 X/Y 坐标（有循环修正）
+  #--------------------------------------------------------------------------
+  def round_xy_with_direction(x, y, d)
+    if d == 6 || d == 4
+      return round_x_with_direction(x, d), y
+    else
+      return x, round_y_with_direction(y, d)
+    end
   end
   #--------------------------------------------------------------------------
   # ● 新增消息
