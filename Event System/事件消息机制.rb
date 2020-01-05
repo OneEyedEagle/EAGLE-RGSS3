@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventMsg"] = true
 #==============================================================================
-# - 2020.1.5.12 修复bug
+# - 2020.1.5.19 新增规则：若仍在执行，则拒绝同消息
 #==============================================================================
 # - 本插件新增消息机制，以直接触发事件中的指令
 #--------------------------------------------------------------------------
@@ -34,6 +34,10 @@ $imported["EAGLE-EventMsg"] = true
 #    正常执行该事件，将按序显示 测试语句1、测试语句2、测试语句3、测试语句4
 #    若在另一事件中调用事件脚本 $game_map.events[1].msg("A")，则只显示 测试语句2
 #    若在另一事件中调用事件脚本 $game_map.events[1].msg("B")，则只显示 测试语句4
+#
+# 【注意】
+#   为了保证事件的等待指令有意义，并且不出现明显的延时操作感，
+#   当上一个消息未执行完，若再传入同一消息，将不会重复执行，并返回true
 #
 # - 扩展：
 #    1、利用 $game_temp.last_menu_item 获取最近一次在菜单中所使用物品/技能的实例
@@ -94,25 +98,39 @@ module EVENT_MSG
     @eagle_msg_lists = []
     @interpreter_eagle = Game_Interpreter.new
     @eagle_msg_cur_event_id = 0
+    @eagle_msg_cur_label = nil
   end
   #--------------------------------------------------------------------------
   # ● 新增消息
   #--------------------------------------------------------------------------
   def msg_trigger_call(label, lists)
-    list = find_label_list(label.to_s, lists)
+    label = label.to_s
+    list = find_label_list(label, lists)
     return false if list == nil
-    @eagle_msg_lists.push(list)
+    @eagle_msg_lists.push( [label, list] )
     return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 当前正在执行指定消息？
+  #--------------------------------------------------------------------------
+  def msg_trigger_running?(label)
+    label == @eagle_msg_cur_label
   end
   #--------------------------------------------------------------------------
   # ● 更新消息
   #--------------------------------------------------------------------------
   def msg_trigger_update
-    if !@eagle_msg_lists.empty? && !@interpreter_eagle.running?
-      list = @eagle_msg_lists.shift
-      @interpreter_eagle.setup(list, @eagle_msg_cur_event_id)
+    if !@interpreter_eagle.running?
+      if !@eagle_msg_lists.empty?
+        list = @eagle_msg_lists.shift
+        @eagle_msg_cur_label = list[0]
+        @interpreter_eagle.setup(list[1], @eagle_msg_cur_event_id)
+      else
+        @eagle_msg_cur_label = nil
+      end
+    else
+      @interpreter_eagle.update
     end
-    @interpreter_eagle.update
   end
 end
 end
@@ -147,6 +165,7 @@ class Game_Troop < Game_Unit
   # ● 新增消息
   #--------------------------------------------------------------------------
   def msg(label)
+    return true if msg_trigger_running?(label)
     lists = troop.pages.collect { |e| e.list }
     return msg_trigger_call(label, lists)
   end
@@ -185,6 +204,7 @@ class Game_Map
   # ● 新增消息
   #--------------------------------------------------------------------------
   def msg_common(label, common_event_id = 0)
+    return true if msg_trigger_running?(label)
     lists = []
     if common_event_id.is_a?(Array)
       common_event_id.each do |i|
@@ -224,6 +244,7 @@ class Game_Event
   # ● 新增消息
   #--------------------------------------------------------------------------
   def msg(label)
+    return true if msg_trigger_running?(label)
     lists = @event.pages.collect { |e| e.list }
     return msg_trigger_call(label, lists)
   end
