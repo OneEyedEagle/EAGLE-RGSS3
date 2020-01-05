@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.1.5.14 增强兼容性
+# - 2020.1.5.15 增强兼容性
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -381,11 +381,25 @@ class Game_Map
     @events.values.select {|event| event.pos?(x, y) }
   end
   #--------------------------------------------------------------------------
+  # ○ 获取指定矩形处存在的事件的数组
+  #  IN: unitXY 下的矩形
+  #--------------------------------------------------------------------------
+  def events_rect(rect)
+    @events.values.select {|event| event.pos_rect?(rect) }
+  end
+  #--------------------------------------------------------------------------
   # ● （覆盖）获取指定坐标处存在的事件（穿透以外）的数组
   #  IN: unitXY
   #--------------------------------------------------------------------------
   def events_xy_nt(x, y)
     @events.values.select {|event| event.pos_nt?(x, y) }
+  end
+  #--------------------------------------------------------------------------
+  # ○ 获取指定矩形处存在的事件的数组
+  #  IN: unitXY 下的矩形
+  #--------------------------------------------------------------------------
+  def events_rect_nt(rect)
+    @events.values.select {|event| event.pos_rect_nt?(rect) }
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）获取指定坐标处存在的图块事件（穿透以外）的数组
@@ -543,17 +557,24 @@ class Game_CharacterBase
     return PIXEL_MOVE.in_rect?(x - @x, y - @y, rect)
   end
   #--------------------------------------------------------------------------
-  # ○ 碰撞矩形判定
-  #--------------------------------------------------------------------------
-  def pos_rect?(rect)
-    return PIXEL_MOVE.rect_collide_rect?(rect, get_collision_rect(false))
-  end
-  #--------------------------------------------------------------------------
   # ○ 实际坐标一致判定
   #  IN: unitXY
   #--------------------------------------------------------------------------
   def real_pos?(x, y, rect = @collision_rect)
     return PIXEL_MOVE.in_rect?(x - @real_x, y - @real_y, rect)
+  end
+  #--------------------------------------------------------------------------
+  # ○ 矩形碰撞判断
+  #  IN: 实际坐标下的碰撞矩形（左上角点的xy与wh）
+  #--------------------------------------------------------------------------
+  def pos_rect?(rect)
+    return PIXEL_MOVE.rect_collide_rect?(rect, get_collision_rect(false))
+  end
+  #--------------------------------------------------------------------------
+  # ○ 判定 矩形是否碰撞 与“穿透是否关闭”（nt = No Through）
+  #--------------------------------------------------------------------------
+  def pos_rect_nt?(rect)
+    pos_rect?(rect) && !@through
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）计算一帧内移动的距离
@@ -570,13 +591,13 @@ class Game_CharacterBase
     x = x % $game_map.width
     y = y % $game_map.height
     x_, y_ = PIXEL_MOVE.event_rgss2unit(x, y)
-    moveto_pixel(x_, y_)
+    moveto_unit(x_, y_)
   end
   #--------------------------------------------------------------------------
   # ○ 移动到指定位置
   #  IN: unitXY
   #--------------------------------------------------------------------------
-  def moveto_pixel(x, y)
+  def moveto_unit(x, y)
     @x = x
     @y = y
     @real_x = @x
@@ -697,6 +718,41 @@ class Game_CharacterBase
     end
     set_direction(horz) if @direction == reverse_dir(horz)
     set_direction(vert) if @direction == reverse_dir(vert)
+  end
+end
+#==============================================================================
+# ■ Game_Character
+#==============================================================================
+class Game_Character < Game_CharacterBase
+  #--------------------------------------------------------------------------
+  # ● （覆盖）计算 X 方向的距离
+  #  IN: unitXY
+  #--------------------------------------------------------------------------
+  def distance_x_from(x)
+    result = @x - x
+    if $game_map.loop_horizontal? && result.abs > $game_map.width_unit / 2
+      if result < 0
+        result += $game_map.width_unit
+      else
+        result -= $game_map.width_unit
+      end
+    end
+    result
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）计算 y 方向的距离
+  #  IN: unitXY
+  #--------------------------------------------------------------------------
+  def distance_y_from(y)
+    result = @y - y
+    if $game_map.loop_vertical? && result.abs > $game_map.height_unit / 2
+      if result < 0
+        result += $game_map.height_unit
+      else
+        result -= $game_map.height_unit
+      end
+    end
+    result
   end
 end
 #==============================================================================
@@ -841,14 +897,7 @@ class Game_Vehicle < Game_Character
   #--------------------------------------------------------------------------
   def land_ok?(x, y, d)
     if @type == :airship
-      [2, 4, 6, 8].each do |p_|
-        dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, p_)
-        # 移动后坐标 rgssXY
-        x1, e = PIXEL_MOVE.unit2rgss(x + dx)
-        y1, e = PIXEL_MOVE.unit2rgss(y + dy)
-        return false unless $game_map.airship_land_ok?(x1, y1)
-      end
-      return false unless $game_map.events_xy(x, y).empty?
+      return false unless $game_map.events_rect(get_collision_rect(false)).empty?
     else
       x2_p = $game_map.round_x_with_direction(x, d)
       y2_p = $game_map.round_y_with_direction(y, d)
