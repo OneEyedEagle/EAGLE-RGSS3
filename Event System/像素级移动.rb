@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.1.5.12 新增方法
+# - 2020.1.5.14 增强兼容性
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -252,11 +252,16 @@ class Game_Map
     y_
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）有效坐标判定
-  #  IN: rgssXY
+  # ● （覆盖）设置显示位置
   #--------------------------------------------------------------------------
-  def valid?(x, y)
-    x >= 0 && x < @map.width && y >= 0 && y < @map.height
+  def set_display_pos(x, y)
+    w = width_unit; h = height_unit
+    x = [0, [x, w - screen_unit_x].min].max unless loop_horizontal?
+    y = [0, [y, h - screen_unit_y].min].max unless loop_vertical?
+    @display_x = (x + w) % w
+    @display_y = (y + h) % h
+    @parallax_x = x
+    @parallax_y = y
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）计算远景图显示的原点 X 坐标
@@ -266,7 +271,7 @@ class Game_Map
       @parallax_x * 16
     else
       w1 = [bitmap.width - Graphics.width, 0].max
-      w2 = [PIXEL_MOVE.unit2pixel(width) - Graphics.width, 1].max
+      w2 = [PIXEL_MOVE.unit2pixel(width_unit) - Graphics.width, 1].max
       @parallax_x * 16 * w1 / w2
     end
   end
@@ -278,99 +283,113 @@ class Game_Map
       @parallax_y * 16
     else
       h1 = [bitmap.height - Graphics.height, 0].max
-      h2 = [PIXEL_MOVE.unit2pixel(height) - Graphics.height, 1].max
+      h2 = [PIXEL_MOVE.unit2pixel(height_unit) - Graphics.height, 1].max
       @parallax_y * 16 * h1 / h2
     end
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）获取地图宽度
+  # ○ 获取地图宽度（移动单位数）
   #--------------------------------------------------------------------------
-  def width
+  def width_unit
     @map.width * PIXEL_MOVE::UNIT_PER_MAP_GRID
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）获取地图高度
+  # ○ 获取地图高度（移动单位数）
   #--------------------------------------------------------------------------
-  def height
+  def height_unit
     @map.height * PIXEL_MOVE::UNIT_PER_MAP_GRID
   end
   #--------------------------------------------------------------------------
-  # ● 画面的横向图块数
-  # （覆盖）画面的横向移动单位数
+  # ○ 画面的横向移动单位数
   #--------------------------------------------------------------------------
-  def screen_tile_x
+  def screen_unit_x
     PIXEL_MOVE.pixel2unit(Graphics.width)
   end
   #--------------------------------------------------------------------------
-  # ● 画面的纵向图块数
-  # （覆盖）画面的纵向移动单位数
+  # ○ 画面的纵向移动单位数
   #--------------------------------------------------------------------------
-  def screen_tile_y
+  def screen_unit_y
     PIXEL_MOVE.pixel2unit(Graphics.height)
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）计算显示坐标的剩余 X 坐标
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def adjust_x(x)
-    if loop_horizontal? && x < @display_x - (width - screen_tile_x) / 2
-      x - @display_x + width
+    w = width_unit
+    if loop_horizontal? && x < @display_x - (w - screen_unit_x) / 2
+      x - @display_x + w
     else
       x - @display_x
     end
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）计算显示坐标的剩余 Y 坐标
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def adjust_y(y)
-    if loop_vertical? && y < @display_y - (height - screen_tile_y) / 2
-      y - @display_y + height
+    h = height_unit
+    if loop_vertical? && y < @display_y - (h - screen_unit_y) / 2
+      y - @display_y + h
     else
       y - @display_y
     end
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）计算特定方向推移n个单位的 X 坐标（没有循环修正）
+  # ● （覆盖）计算循环修正后的 X 坐标
   #--------------------------------------------------------------------------
-  def x_with_direction(x, d, n = 1)
+  def round_x(x)
+    w = width_unit
+    loop_horizontal? ? (x + w) % w : x
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）计算循环修正后的 Y 坐标
+  #--------------------------------------------------------------------------
+  def round_y(y)
+    h = height_unit
+    loop_vertical? ? (y + h) % h : y
+  end
+  #--------------------------------------------------------------------------
+  # ○ 计算特定方向推移n个单位的 X 坐标（没有循环修正）
+  #--------------------------------------------------------------------------
+  def x_with_direction_n(x, d, n = 1)
     x + (d == 6 ? n : d == 4 ? -n : 0)
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）计算特定方向推移n个单位的 Y 坐标（没有循环修正）
+  # ○ 计算特定方向推移n个单位的 Y 坐标（没有循环修正）
   #--------------------------------------------------------------------------
-  def y_with_direction(y, d, n = 1)
+  def y_with_direction_n(y, d, n = 1)
     y + (d == 2 ? n : d == 8 ? -n : 0)
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）计算特定方向推移n个单位的 X 坐标（有循环修正）
+  # ○ 计算特定方向推移n个单位的 X 坐标（有循环修正）
   #--------------------------------------------------------------------------
-  def round_x_with_direction(x, d, n = 1)
+  def round_x_with_direction_n(x, d, n = 1)
     round_x(x + (d == 6 ? n : d == 4 ? -n : 0))
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）计算特定方向推移n个单位的 Y 坐标（有循环修正）
+  # ○ 计算特定方向推移n个单位的 Y 坐标（有循环修正）
   #--------------------------------------------------------------------------
-  def round_y_with_direction(y, d, n = 1)
+  def round_y_with_direction_n(y, d, n = 1)
     round_y(y + (d == 2 ? n : d == 8 ? -n : 0))
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定坐标处存在的事件的数组
-  #  IN: pixelXY
+  # ● （覆盖）获取指定坐标处存在的事件的数组
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def events_xy(x, y)
     @events.values.select {|event| event.pos?(x, y) }
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定坐标处存在的事件（穿透以外）的数组
-  #  IN: pixelXY
+  # ● （覆盖）获取指定坐标处存在的事件（穿透以外）的数组
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def events_xy_nt(x, y)
     @events.values.select {|event| event.pos_nt?(x, y) }
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定坐标处存在的图块事件（穿透以外）的数组
-  #  IN: pixelXY
+  # ● （覆盖）获取指定坐标处存在的图块事件（穿透以外）的数组
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def tile_events_xy(x, y)
     @tile_events.select {|event| event.pos_nt?(x, y) }
@@ -386,16 +405,16 @@ class Game_Map
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）向下卷动
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def scroll_down(distance)
     if loop_vertical?
       @display_y += distance
-      @display_y %= height
+      @display_y %= height_unit
       @parallax_y += distance if @parallax_loop_y
     else
       last_y = @display_y
-      @display_y = [@display_y + distance, height - screen_tile_y].min
+      @display_y = [@display_y + distance, height_unit - screen_unit_y].min
       @parallax_y += @display_y - last_y
     end
   end
@@ -404,8 +423,8 @@ class Game_Map
   #--------------------------------------------------------------------------
   def scroll_left(distance)
     if loop_horizontal?
-      @display_x += width - distance
-      @display_x %= width
+      @display_x += width_unit - distance
+      @display_x %= width_unit
       @parallax_x -= distance if @parallax_loop_x
     else
       last_x = @display_x
@@ -419,11 +438,11 @@ class Game_Map
   def scroll_right(distance)
     if loop_horizontal?
       @display_x += distance
-      @display_x %= width
+      @display_x %= width_unit
       @parallax_x += distance if @parallax_loop_x
     else
       last_x = @display_x
-      @display_x = [@display_x + distance, (width - screen_tile_x)].min
+      @display_x = [@display_x + distance, (width_unit - screen_unit_x)].min
       @parallax_x += @display_x - last_x
     end
   end
@@ -432,14 +451,21 @@ class Game_Map
   #--------------------------------------------------------------------------
   def scroll_up(distance)
     if loop_vertical?
-      @display_y += height - distance
-      @display_y %= height
+      @display_y += height_unit - distance
+      @display_y %= height_unit
       @parallax_y -= distance if @parallax_loop_y
     else
       last_y = @display_y
       @display_y = [@display_y - distance, 0].max
       @parallax_y += @display_y - last_y
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）有效坐标判定
+  #  IN: rgssXY
+  #--------------------------------------------------------------------------
+  def valid?(x, y)
+    x >= 0 && x < @map.width && y >= 0 && y < @map.height
   end
 end
 #==============================================================================
@@ -511,7 +537,7 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）坐标一致判定
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def pos?(x, y, rect = @collision_rect)
     return PIXEL_MOVE.in_rect?(x - @x, y - @y, rect)
@@ -524,7 +550,7 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ○ 实际坐标一致判定
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def real_pos?(x, y, rect = @collision_rect)
     return PIXEL_MOVE.in_rect?(x - @real_x, y - @real_y, rect)
@@ -537,7 +563,7 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）移动到指定位置
-  #  在pixelXY中，行走图坐标为底部中心点
+  #  在unitXY中，行走图坐标为底部中心点
   #  IN: rgssXY
   #--------------------------------------------------------------------------
   def moveto(x, y)
@@ -548,7 +574,7 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ○ 移动到指定位置
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def moveto_pixel(x, y)
     @x = x
@@ -561,7 +587,7 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ○ 直接指定理论坐标
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def set_xy(x = nil, y = nil)
     @x = x.to_i if x
@@ -569,7 +595,7 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ○ 强制移动
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def move_force_pixel(dx, dy)
     @x += dx; @y += dy
@@ -578,7 +604,7 @@ class Game_CharacterBase
   #--------------------------------------------------------------------------
   # ● （覆盖）判定是否可以通行（检查 地图的通行度 和 前方是否有路障）
   #     d : 方向（2,4,6,8）
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def passable?(x, y, d)
     pos = []
@@ -590,10 +616,10 @@ class Game_CharacterBase
     end
     pos.each do |p_|
       dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, p_)
-      # 移动前坐标 pixelXY
+      # 移动前坐标 unitXY
       x1_p = $game_map.round_x(x + dx)
       y1_p = $game_map.round_y(y + dy)
-      # 移动后坐标 pixelXY
+      # 移动后坐标 unitXY
       x2_p = $game_map.round_x_with_direction(x1_p, d)
       y2_p = $game_map.round_y_with_direction(y1_p, d)
       # 移动前坐标 rgssXY
@@ -639,8 +665,8 @@ class Game_CharacterBase
       @move_succeed = true
       set_direction(d)
       @x = x_; @y = y_
-      @real_x = $game_map.x_with_direction(@x, reverse_dir(d), n)
-      @real_y = $game_map.y_with_direction(@y, reverse_dir(d), n)
+      @real_x = $game_map.x_with_direction_n(@x, reverse_dir(d), n)
+      @real_y = $game_map.y_with_direction_n(@y, reverse_dir(d), n)
       increase_steps
     elsif turn_ok
       @move_succeed = false
@@ -663,8 +689,8 @@ class Game_CharacterBase
     if n > 0
       @move_succeed = true
       @x = x_; @y = y_
-      @real_x = $game_map.x_with_direction(@x, reverse_dir(horz), n)
-      @real_y = $game_map.y_with_direction(@y, reverse_dir(vert), n)
+      @real_x = $game_map.x_with_direction_n(@x, reverse_dir(horz), n)
+      @real_y = $game_map.y_with_direction_n(@y, reverse_dir(vert), n)
       increase_steps
     else
       @move_succeed = false
@@ -685,14 +711,14 @@ class Game_Player < Game_Character
   end
   #--------------------------------------------------------------------------
   # ● 画面中央的 X 坐标
-  #  OUT: pixelXY
+  #  OUT: unitXY
   #--------------------------------------------------------------------------
   def center_x
     PIXEL_MOVE.pixel2unit(Graphics.width / 2.0)
   end
   #--------------------------------------------------------------------------
   # ● 画面中央的 Y 坐标
-  #  OUT: pixelXY
+  #  OUT: unitXY
   #--------------------------------------------------------------------------
   def center_y
     PIXEL_MOVE.pixel2unit(Graphics.height / 2.0)
@@ -704,11 +730,11 @@ class Game_Player < Game_Character
   def center(x, y)
     x_, e = PIXEL_MOVE.rgss2unit(x)
     y_, e = PIXEL_MOVE.rgss2unit(y)
-    $game_map.set_display_pos(x_ - center_x, y_ - center_y) # pixelXY
+    $game_map.set_display_pos(x_ - center_x, y_ - center_y) # unitXY
   end
   #--------------------------------------------------------------------------
   # ○ 强制移动
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def move_force_pixel(dx = 0, dy = 0)
     last_real_x = @real_x; last_real_y = @real_y
@@ -771,9 +797,9 @@ class Game_Player < Game_Character
     y2_rgss, e = PIXEL_MOVE.unit2rgss(y2)
     return unless $game_map.counter?(x2_rgss, y2_rgss)
     # 柜台属性：向前方推进 RGSS 中的一格来查找事件
-    x3 = $game_map.round_x_with_direction(x2, @direction,
+    x3 = $game_map.round_x_with_direction_n(x2, @direction,
       PIXEL_MOVE.pixel2unit(32))
-    y3 = $game_map.round_y_with_direction(y2, @direction,
+    y3 = $game_map.round_y_with_direction_n(y2, @direction,
       PIXEL_MOVE.pixel2unit(32))
     start_map_event(x3, y3, triggers, true)
   end
@@ -811,7 +837,7 @@ class Game_Vehicle < Game_Character
   #--------------------------------------------------------------------------
   # ● （覆盖）判定是否可以靠岸／着陆
   #     d : 方向（2,4,6,8）
-  #  IN: pixelXY
+  #  IN: unitXY
   #--------------------------------------------------------------------------
   def land_ok?(x, y, d)
     if @type == :airship
