@@ -247,7 +247,7 @@ class Game_Event
   #--------------------------------------------------------------------------
   def msg(label, cur_page = false)
     return true if msg_trigger_running?(label)
-    lists = (cur_page ? [@page.list] ? @event.pages.collect { |e| e.list })
+    lists = (cur_page ? [@page.list] : @event.pages.collect { |e| e.list })
     return msg_trigger_call(label, lists)
   end
   #--------------------------------------------------------------------------
