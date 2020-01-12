@@ -1,21 +1,30 @@
 module BATTLER_MSG
-  def self.init
+  def self.clear # before a battler acts
+    @msgs ||= []
+    @msgs.clear
+    @index = -1
   end
-  def self.add()
+  def self.update
   end
-  def self.exist?()
+  def self.add(source_battler, target_battler, msg, params = {})
   end
-  def self.clear
+  def self.exist?(source_battler, target_battler, msg)
   end
   class Msg
-    def initialize()
+    attr_reader :source_battler, :target_battler, :msg
+    def initialize(source_battler, target_battler, msg)
+      @source_battler = source_battler
+      @target_battler = target_battler
+      @msg = msg
     end
-    def equal?()
+    def equal?(source_battler, target_battler, msg)
+      @source_battler == source_battler &&
+      @target_battler == target_battler && @msg == msg
     end
   end
 end
 class Game_Battler
-  def msg(sym)
+  def msg(sym, params = {})
   end
 end
 class Scene_Battle
