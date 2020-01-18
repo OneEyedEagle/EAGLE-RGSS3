@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-UtilsDrawing"] = true
 #=============================================================================
-# - 2019.7.16.15 新增Sin查表加速
+# - 2020.1.19.1 修复BUG
 #=============================================================================
 # - 本插件提供了一部分全局通用的关于形状绘制的脚本工具
 #----------------------------------------------------------------------------
@@ -170,7 +170,7 @@ module EAGLE
       end
       x += 1
     end
-    arc_circle_point(bitmap, cx, cy, x, y, color, fill) if x == y
+    arc_circle_point(bitmap, cx, cy, x, y, scopes, color, fill) if x == y
   end
   # 绘制圆上的指定点
   def self.arc_circle_point(bitmap, cx, cy, x, y, scopes, color, fill)
