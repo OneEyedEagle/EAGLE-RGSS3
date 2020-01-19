@@ -1,4 +1,24 @@
+#==============================================================================
+# ■ 组件-JSON解析
 # From: https://github.com/RGSS3/SJSON
+#==============================================================================
+$imported ||= {}
+$imported["JSONParser"] = true
+#=============================================================================
+# - 2020.1.13.10
+#=============================================================================
+# - 使用示例
+=begin
+text = '{ "programmers": [
+    { "firstName": "Brett", "lastName":"McLaughlin", "email": "brett@newInstance.com" },
+    { "firstName": "Jason", "lastName":"Hunter", "email": "jason@servlets.com" },
+    { "firstName": "Elliotte", "lastName":"Harold", "email": "elharo@macfaq.com" }
+   ] }'
+s = JSONParser.new(text)
+p hash_result = s.parse
+=end
+#=============================================================================
+
 class JSONParser
     SyntaxError = Class.new(StandardError)
     def raise(a)
@@ -203,11 +223,3 @@ class JSONParser
       end
     end
 end
-
-t = '{ "programmers": [
-    { "firstName": "Brett", "lastName":"McLaughlin", "email": "brett@newInstance.com" },
-    { "firstName": "Jason", "lastName":"Hunter", "email": "jason@servlets.com" },
-    { "firstName": "Elliotte", "lastName":"Harold", "email": "elharo@macfaq.com" }
-   ] }'
-s = JSONParser.new(t)
-p s.parse
