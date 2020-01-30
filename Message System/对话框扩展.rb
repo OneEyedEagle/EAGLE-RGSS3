@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2019.12.16.20 增强pop的兼容性
+# - 2020.1.30.23 修正face转义符注释；优化窗口背景图片显示，新增bgo参数设置对齐原点
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -73,7 +73,8 @@ $imported["EAGLE-MessageEX"] = true
 #    skin → 对话框所用windowskin的index（按常量设置进行 index → skin名称 映射）
 #    bg → 对话框背景图片的index（按常量设置进行 index → 图片名称 映射）
 #        （若读取成功，将不显示窗口皮肤；若读取失败，仍绘制窗口皮肤）
-#        （图片的左上角与对话框的左上角对齐）
+#    bgo → 对话框背景图片与对话框的对齐原点（对应九宫格小键盘）
+#        （默认背景图片的左上角与对话框左上角对齐7）
 #  （窗口位置相关）
 #    o → 【默认】对话框的显示原点的位置类型（对应九宫格小键盘）（默认左上角7）
 #    x/y → 对话框显示原点的屏幕坐标（默认nil，取va设置）
@@ -130,9 +131,9 @@ $imported["EAGLE-MessageEX"] = true
 #    td → 设置与所绑定对象的中心的远离偏移值（按pop的do自动设置xy）（默认0）
 #
 #  \face[param] → 脸图的动态设置
-#    【注】脸图文件名包含 _数字1x数字2 时，
+#    【注】脸图文件名包含 _数字1x数字2 时（其中为字母x），
 #         将设置该脸图文件的规格为 行数（数字1）x列数（数字2）（默认2行x4列）
-#     示例： face_actor_1_1.png → 该脸图规格为 1×1，含有一张脸图，只有index为0有效
+#     示例： face_actor_1x1.png → 该脸图规格为 1×1，含有一张脸图，只有index为0有效
 #    i → 【重置】【默认】显示当前文件中指定序号的脸图（默认同va对话框传入参数）
 #    ls/le → 【重置】定义脸图循环播放的开始index/结束index（负数代表不启用循环）
 #    lt → 循环播放时，每两帧之间的等待间隔帧数
@@ -401,6 +402,7 @@ module MESSAGE_EX
     :z => 200,
     :skin => 0, # 对话框所用windowskin的类型
     :bg => nil, # 对话框背景所用图片（覆盖窗口皮肤）
+    :bgo => 7,  # 对话框背景图片与对话框的对齐原点
     # 窗口位置相关
     :o => 7, # 原点位置类型 默认为7左上角
     :x => nil, # 原点坐标xy
@@ -1338,6 +1340,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def dispose_back_bitmap
     @back_bitmap.dispose if @back_bitmap
+    @back_bitmap = nil
   end
 
   #--------------------------------------------------------------------------
@@ -1705,50 +1708,56 @@ class Window_Message
   def eagle_recreate_back_bitmap
     if game_message.win_params[:bg] # 绘制图片背景
       if game_message.win_params[:bg_draw] != game_message.win_params[:bg]
-        @back_bitmap.dispose if @back_bitmap
-        @back_bitmap = MESSAGE_EX.windowbg(game_message.win_params[:bg])
-        game_message.win_params[:bg_draw] = game_message.win_params[:bg]
-      end
-    else
-      if game_message.win_params[:bg_draw] # 清除之前的图片背景记录
-        @back_bitmap.dispose if @back_bitmap
-        @back_bitmap = nil
-        game_message.win_params[:bg_draw] = nil
-      end
-      if game_message.background == 1 # 绘制暗色背景
-        w = self.width; h = self.height
-        if @back_bitmap && @back_bitmap.width == w && @back_bitmap.height == h
-        else
-          @back_bitmap.dispose if @back_bitmap
-          @back_bitmap = Bitmap.new(w, h)
-          rect1 = Rect.new(0, 0, w, 12)
-          rect2 = Rect.new(0, 12, w, h - 24)
-          rect3 = Rect.new(0, h - 12, w, 12)
-          @back_bitmap.gradient_fill_rect(rect1, back_color2, back_color1, true)
-          @back_bitmap.fill_rect(rect2, back_color1)
-          @back_bitmap.gradient_fill_rect(rect3, back_color1, back_color2, true)
+        _bitmap = MESSAGE_EX.windowbg(game_message.win_params[:bg])
+        if _bitmap != nil
+          @back_sprite.bitmap = _bitmap
+          @back_sprite.visible = true
+          self.opacity = 0
+          game_message.win_params[:bg_draw] = game_message.win_params[:bg]
+          return
         end
       else
-        @back_bitmap.dispose if @back_bitmap
-        @back_bitmap = nil
-      end
-      if game_message.background == 2 # 透明背景
+        @back_sprite.visible = true
         self.opacity = 0
-      else
-        self.opacity = 255
+        return
       end
     end
-    return if @back_bitmap.nil?
-    @back_sprite.bitmap = @back_bitmap
-    @back_sprite.visible = true
-    self.opacity = 0
+    game_message.win_params[:bg_draw] = nil # 清除之前的图片背景
+    if game_message.background == 0 # 普通
+      @back_sprite.visible = false
+      self.opacity = 255
+      return
+    end
+    if game_message.background == 1 # 绘制暗色背景
+      w = self.width; h = self.height
+      if @back_bitmap && @back_bitmap.width == w && @back_bitmap.height == h
+      else # 重绘
+        @back_bitmap.dispose if @back_bitmap
+        @back_bitmap = Bitmap.new(w, h)
+        rect1 = Rect.new(0, 0, w, 12)
+        rect2 = Rect.new(0, 12, w, h - 24)
+        rect3 = Rect.new(0, h - 12, w, 12)
+        @back_bitmap.gradient_fill_rect(rect1, back_color2, back_color1, true)
+        @back_bitmap.fill_rect(rect2, back_color1)
+        @back_bitmap.gradient_fill_rect(rect3, back_color1, back_color2, true)
+      end
+      @back_sprite.bitmap = @back_bitmap
+      @back_sprite.visible = true
+      self.opacity = 0
+      return
+    end
+    if game_message.background == 2 # 透明背景
+      @back_sprite.visible = false
+      self.opacity = 0
+      return
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新背景精灵
   #--------------------------------------------------------------------------
   def update_back_sprite
-    @back_sprite.x = self.x
-    @back_sprite.y = self.y
+    eagle_reset_xy_dorigin(@back_sprite, self, game_message.win_params[:bgo])
+    eagle_reset_xy_origin(@back_sprite, game_message.win_params[:bgo])
     @back_sprite.opacity = openness
     @back_sprite.update
   end

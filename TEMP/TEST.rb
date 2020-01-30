@@ -1,95 +1,104 @@
-module BATTLER_MSG
-  def self.clear # before a battler acts
-    @msgs ||= []
-    @msgs.clear
-    @index = -1
-  end
-  def self.update
-  end
-  def self.add(source_battler, target_battler, msg, params = {})
-  end
-  def self.exist?(source_battler, target_battler, msg)
-  end
-  class Msg
-    attr_reader :source_battler, :target_battler, :msg
-    def initialize(source_battler, target_battler, msg)
-      @source_battler = source_battler
-      @target_battler = target_battler
-      @msg = msg
-    end
-    def equal?(source_battler, target_battler, msg)
-      @source_battler == source_battler &&
-      @target_battler == target_battler && @msg == msg
-    end
+class Game_Character
+  attr_accessor :pop_icon
+  #--------------------------------------------------------------------------
+  # ● 初始化公有成员变量
+  #--------------------------------------------------------------------------
+  alias eagle_popicon_init initialize
+  def initialize
+    eagle_popicon_init
+    @pop_icon = 0
   end
 end
-class Game_Battler
-  def msg(sym, params = {})
-  end
-end
-class Scene_Battle
+
+class Sprite_Character < Sprite_Base
   #--------------------------------------------------------------------------
-  # ● 获取敌我双方的全部参战角色
+  # ● 初始化对象
+  #     character : Game_Character
   #--------------------------------------------------------------------------
-  def all_battle_members
-    $game_party.members + $game_troop.members
-  end
-  #--------------------------------------------------------------------------
-  # ● 执行战斗行动
-  #--------------------------------------------------------------------------
-  def execute_action
-    @subject.sprite_effect_type = :whiten
-    use_item
-    @log_window.wait_and_clear
+  alias eagle_popicon_init initialize
+  def initialize(viewport, character = nil)
+    @pop_icon = 0
+    eagle_popicon_init(viewport, character)
+    @popicon_sprite = ::Sprite.new(viewport)
+    @popicon_sprite.bitmap = Bitmap.new(24, 24)
   end
   #--------------------------------------------------------------------------
-  # ● 使用技能／物品
+  # ● 释放
   #--------------------------------------------------------------------------
-  def use_item
-    item = @subject.current_action.item
-    @log_window.display_use_item(@subject, item)
-    @subject.use_item(item)
-    refresh_status
-    targets = @subject.current_action.make_targets.compact
-    show_animation(targets, item.animation_id)
-    targets.each {|target| item.repeats.times { invoke_item(target, item) } }
+  alias eagle_popicon_dispose dispose
+  def dispose
+    eagle_popicon_dispose
+    @popicon_sprite.bitmap.dispose
+    @popicon_sprite.dispose
   end
   #--------------------------------------------------------------------------
-  # ● 发动技能／物品
+  # ● 更新画面
   #--------------------------------------------------------------------------
-  def invoke_item(target, item)
-    if rand < target.item_cnt(@subject, item)
-      invoke_counter_attack(target, item)
-    elsif rand < target.item_mrf(@subject, item)
-      invoke_magic_reflection(target, item)
-    else
-      apply_item_effects(apply_substitute(target, item), item)
+  alias eagle_popicon_update update
+  def update
+    eagle_popicon_update
+    update_popicon
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制图标
+  #     enabled : 有效的标志。false 的时候使用半透明效果绘制
+  #--------------------------------------------------------------------------
+  def draw_icon(bitmap, icon_index, x, y, enabled = true)
+    bitmap_ = Cache.system("Iconset")
+    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
+    bitmap.blt(x, y, bitmap_, rect, enabled ? 255 : 120)
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置图标pop
+  #--------------------------------------------------------------------------
+  def reset_popicon
+    # 若与当前显示的一致，则继续显示
+    if @character.pop_icon == @pop_icon
+      @character.pop_icon = 0
+      @popicon_count = 0 if @popicon_count == @popicon_max
+      return
     end
-    @subject.last_target_index = target.index
+    @pop_icon = @character.pop_icon
+    @character.pop_icon = 0
+
+    @popicon_sprite.bitmap.clear
+    @popicon_sprite.ox = 12
+    @popicon_sprite.oy = 24
+    draw_icon(@popicon_sprite.bitmap, @pop_icon, 0, 0)
+    @popicon_sprite.blend_type = 1
+
+    @popicon_count = 0
+    @popicon_max = 20 # 激活一次后显示的持续帧数
+
+    @popicon_flash_count = 0
   end
   #--------------------------------------------------------------------------
-  # ● 应用技能／物品效果
+  # ● 更新图标pop
   #--------------------------------------------------------------------------
-  def apply_item_effects(target, item)
-    target.item_apply(@subject, item)
-    refresh_status
-    @log_window.display_action_results(target, item)
+  def update_popicon
+    reset_popicon if @character.pop_icon > 0
+    if @pop_icon > 0
+      return end_popicon if @popicon_count == @popicon_max
+
+      if @popicon_flash_count == 10
+        @popicon_sprite.flash(Color.new(255,0,0,255), 20)
+      end
+
+      @popicon_sprite.x = x
+      @popicon_sprite.y = y - height
+      @popicon_sprite.z = z + 200
+      @popicon_sprite.update
+
+      @popicon_count += 1
+      @popicon_flash_count += 1
+      @popicon_flash_count %= 60
+    end
   end
   #--------------------------------------------------------------------------
-  # ● 发动反击
+  # ● 释放图标pop
   #--------------------------------------------------------------------------
-  def invoke_counter_attack(target, item)
-    @log_window.display_counter(target, item)
-    attack_skill = $data_skills[target.attack_skill_id]
-    @subject.item_apply(target, attack_skill)
-    refresh_status
-    @log_window.display_action_results(@subject, attack_skill)
-  end
-  #--------------------------------------------------------------------------
-  # ● 发动反射魔法攻击
-  #--------------------------------------------------------------------------
-  def invoke_magic_reflection(target, item)
-    @log_window.display_reflection(target, item)
-    apply_item_effects(@subject, item)
+  def end_popicon
+    @popicon_sprite.bitmap.clear
+    @pop_icon = 0
   end
 end
