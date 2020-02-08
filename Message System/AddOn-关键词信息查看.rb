@@ -2,7 +2,7 @@
 # ■ Add-On 关键词信息查看 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.8.18.16 新增关键词信息文本增减
+# - 2020.2.8.11 优化提示文本绘制
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细信息
 #------------------------------------------------------------------------------
@@ -88,10 +88,17 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   KEYWORD_WINDOWTAG_D = 3
   #--------------------------------------------------------------------------
-  # ● 【设置】定义提示文本的内容
-  # （具体设置见 Window_Keyword_Info类 中的 @sprite_hint 精灵实例）
+  # ● 设置提示文本精灵
   #--------------------------------------------------------------------------
-  KEYWORD_KEY_HINT = "  ○ Shift键 - 查看关键词信息"
+  def self.set_keyword_hint(sprite)
+    text = "  ○ Shift键 - 查看关键词信息"
+    sprite.bitmap = Bitmap.new(Graphics.width/2, 24)
+    sprite.bitmap.gradient_fill_rect(sprite.bitmap.rect,
+      Color.new(0,0,0,150), Color.new(0,0,0,0))
+    sprite.bitmap.draw_text(0,1,sprite.width,sprite.height,text, 0)
+
+    sprite.y = Graphics.height - 50
+  end
   #--------------------------------------------------------------------------
   # ● 获取关键词的信息文本
   #--------------------------------------------------------------------------
@@ -102,7 +109,7 @@ module MESSAGE_EX
         if KEYWORD_INFO[word]
           s += "\n" if s != ""
           s += KEYWORD_INFO[word]
-        end 
+        end
       end
       return s
     end
@@ -233,12 +240,7 @@ class Window_Keyword_Info < Window_Base
     @sprite_tag.bitmap = Bitmap.new(w/3, h/3)
 
     @sprite_hint = Sprite.new
-    @sprite_hint.y = Graphics.height - 50 # 调整hint文本所在的y位置
-    @sprite_hint.bitmap = Bitmap.new(Graphics.width/2, line_height)
-    @sprite_hint.bitmap.gradient_fill_rect(@sprite_hint.bitmap.rect,
-      Color.new(0,0,0,150), Color.new(0,0,0,0))
-    @sprite_hint.bitmap.draw_text(0,1,@sprite_hint.width,@sprite_hint.height,
-      MESSAGE_EX::KEYWORD_KEY_HINT, 0)
+    MESSAGE_EX.set_keyword_hint(@sprite_hint)
     @sprite_hint.visible = false
   end
   #--------------------------------------------------------------------------
