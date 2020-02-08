@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.2.7.18 扩展
+# - 2020.2.8.16 优化force_close
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -2190,6 +2190,11 @@ class Window_Message
   #--------------------------------------------------------------------------
   def input_wait_while_active(window)
     while window.active
+      if @eagle_force_close
+        window.deactivate
+        window.close
+        break
+      end
       @fiber_para.resume if @fiber_para
       Fiber.yield
     end

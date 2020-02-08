@@ -41,6 +41,7 @@
 #      则跳过 测试语句2，显示 测试语句3 ，并继续显示 测试语句4。
 #
 # - 【推荐】若同时使用了【对话框扩展 by老鹰】，将在按键时立即关闭当前对话框
+#     （含选择框、数值输入框、物品选择框、金钱框）
 #==============================================================================
 
 module COMMAND_SKIP
@@ -66,13 +67,15 @@ module COMMAND_SKIP
   # ● 设置提示文本精灵
   #--------------------------------------------------------------------------
   def self.set_skip_hint(sprite)
-    text = "  ○ Shift键 - 跳过"
-    sprite.bitmap = Bitmap.new(Graphics.width/2, 24)
-    sprite.bitmap.gradient_fill_rect(sprite.bitmap.rect,
-      Color.new(0,0,0,150), Color.new(0,0,0,0))
-    sprite.bitmap.draw_text(0,1,sprite.width,sprite.height,text, 0)
+    text = "按 Shift 跳过"
+    w = 80
+    sprite.bitmap = Bitmap.new(w, 18)
+    sprite.bitmap.font.size = 15
+    sprite.bitmap.fill_rect(0,17,w,1, Color.new(255,255,255,220))
+    sprite.bitmap.draw_text(0,1,sprite.width,sprite.height,text, 1)
 
-    sprite.y = 50
+    sprite.x = 15
+    sprite.y = 15
   end
   #--------------------------------------------------------------------------
   # ● 精灵操作
@@ -92,18 +95,6 @@ module COMMAND_SKIP
   end
   def self.hide_hint
     @sprite_hint.visible = false
-  end
-end
-#=============================================================================
-# ○ Game_CharacterBase
-#=============================================================================
-class Game_CharacterBase
-  #--------------------------------------------------------------------------
-  # ● 暂停移动
-  #--------------------------------------------------------------------------
-  def stop_move
-    @x = @real_x
-    @y = @real_y
   end
 end
 #=============================================================================
@@ -162,15 +153,14 @@ class Game_Interpreter
   # ● 处理跳过
   #--------------------------------------------------------------------------
   def eagle_process_skip
-    if $imported["EAGLE-MessageEX"]
-      SceneManager.scene.message_window.force_close
-    end
-    $game_player.stop_move
-    $game_map.events.each { |id,c| c.stop_move }
+    @eagle_skip_begin_i = nil
     if !eagle_goto_label(COMMAND_SKIP::LABEL_THEN)
       eagle_goto_label(COMMAND_SKIP::LABEL_END)
     end
     COMMAND_SKIP.hide_hint
-    @eagle_skip_begin_i = nil
+    if $imported["EAGLE-MessageEX"]
+      window = SceneManager.scene.message_window
+      window.force_close if window.open?
+    end
   end
 end
