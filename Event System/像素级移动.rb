@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.1.10.18 增加事件绑定交互
+# - 2020.2.14.14 修复斜向移动bug；修复事件接触bug
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -40,23 +40,11 @@ $imported["EAGLE-PixelMove"] = true
 # - 若第一个 注释 指令内无法写下，可在之后继续添加新的 注释 指令，将合并读取
 #
 #-----------------------------------------------------------------------------
-# ○ 事件交互绑定
+# ○ 移动平台
 #-----------------------------------------------------------------------------
-# - 事件页的第一个指令为 注释 时，在其中填入下式将当前事件与指定事件（玩家）绑定
+# - 事件页的第一个指令为 注释 时，在其中填入下式将当前事件设置为移动平台
 #
-#     <bind 对象ID>...</bind>
-#
-#   其中 对象ID 为当前地图的事件的ID（同编辑器内ID）
-#               若填入 0（或省略不填），则为玩家
-#
-#   其中 ... 替换为以下的任意个标签，进行相应绑定内容的设置
-#
-#     <platform> 设置当前事件可以作为绑定事件的移动平台，
-#                当绑定事件移动到当前事件上面时，将会同步移动
-#
-#     <move d> 设置当前事件可以作为绑定事件的强制移动区域，
-#              当绑定事件位于当前事件上面时，将强制向 d 方向持续移动
-#              d 为 2/4/6/8 代表四方向
+#      <platform>
 #
 # - 当玩家位于该事件上时（玩家的坐标处于该事件的碰撞矩形内部），
 #    玩家将首先移动到该事件中心位置，再跟随事件移动
@@ -72,8 +60,7 @@ $imported["EAGLE-PixelMove"] = true
 #
 #  chara.pos_rect?(rect) 是否与矩形相交（划分后网格坐标）
 #
-#  $game_map.events_rect(rect) 获取与 rect 相交的全部事件
-#                             （rect 为划分后网格坐标中的矩形）
+#  $game_map.events_rect(rect) 获取与 rect 相交的全部事件（rect 为划分后网格坐标中的矩形）
 #  $game_map.events_rect_nt(rect) 获取与 rect 相交的全部事件（不含穿透）
 #=============================================================================
 
@@ -200,29 +187,13 @@ module PIXEL_MOVE
     return x, y, w, h
   end
   #--------------------------------------------------------------------------
-  # ● 解析事件绑定
+  # ● 解析浮动平台字符串
   #--------------------------------------------------------------------------
-  def self.parse_event_bindings(str)
-    hash_ = {} # chara_id => {flag=>value}
-    str.scan(/<bind ?(\d+)?>(.*?)<\/bind>/m).each do |params|
-      id = params[0].to_i || 0
-      hash_[id] ||= {}
-      if params[1] =~ /<platform>/
-        hash_[id][:platform] = true
-        hash_[id][:f_on_platform] = false
-      end
-      if params[1] =~ /<move ?(\d+)>/
-        hash_[id][:move] = $1.to_i
-      end
+  def self.parse_floating_platform_str(str)
+    if str =~ /<platform>/i
+      return true
     end
-    hash_
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取角色对象
-  #--------------------------------------------------------------------------
-  def self.get_target(t_id)
-    return $game_player if t_id == 0
-    return $game_map.events[t_id] || nil
+    return false
   end
 #==============================================================================
 # ■ 碰撞判定
@@ -254,11 +225,19 @@ module PIXEL_MOVE
   # ● 矩形之间碰撞？
   #--------------------------------------------------------------------------
   def self.rect_collide_rect?(rect1, rect2)
-    w1 = (rect1.width-1)/2; h1 = (rect1.height-1)/2
-    w2 = (rect2.width-1)/2; h2 = (rect2.height-1)/2
-    dx = (rect1.x+w1 - (rect2.x+w2)).abs
-    dy = (rect1.y+h1 - (rect2.y+h2)).abs
-    return dx <= w1 + w2 && dy <= h1 + h2
+    if(rect1.x > rect2.x && rect1.x > rect2.x + rect2.width)
+      return false
+    end
+    if(rect1.x < rect2.x && rect1.x + rect1.width < rect2.x)
+      return false
+    end
+    if(rect1.y > rect2.y && rect1.y > rect2.y + rect2.height)
+      return false
+    end
+    if(rect1.y < rect2.y && rect1.y + rect1.height < rect2.y)
+      return false
+    end
+    return true
   end
 end
 #==============================================================================
@@ -746,7 +725,7 @@ class Game_CharacterBase
   def move_diagonal(horz, vert, n = PIXEL_MOVE::UNIT_PER_MAP_GRID)
     x_ = @x; y_ = @y
     n.times do |i|
-      break n = i if !diagonal_passable?(x, y, horz, vert)
+      break n = i if !diagonal_passable?(x_, y_, horz, vert)
       x_ = $game_map.round_x_with_direction(x_, horz)
       y_ = $game_map.round_y_with_direction(y_, vert)
     end
@@ -968,8 +947,9 @@ class Game_Event < Game_Character
     # 检查碰撞矩形
     x, y, w, h = PIXEL_MOVE.parse_collision_xywh_str(t)
     set_collision_xywh(x, y, w, h)
-    # 检查事件绑定 # chara_id => {flag => value}
-    @eagle_binds = PIXEL_MOVE.parse_event_bindings(t)
+    # 检查浮动平台
+    @flag_platform = PIXEL_MOVE.parse_floating_platform_str(t)
+    @flag_player_on_platform = false
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）判定事件是否临近玩家
@@ -978,6 +958,22 @@ class Game_Event < Game_Character
     sx = distance_x_from($game_player.x).abs
     sy = distance_y_from($game_player.y).abs
     sx + sy < 20 * PIXEL_MOVE::UNIT_PER_MAP_GRID
+  end
+  #--------------------------------------------------------------------------
+  # ○ 判定事件是否与玩家碰撞
+  #--------------------------------------------------------------------------
+  def rect_collide_player?
+    PIXEL_MOVE.rect_collide_rect?(get_collision_rect(false),
+      $game_player.get_collision_rect(false))
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）接触事件的启动判定
+  #--------------------------------------------------------------------------
+  def check_event_trigger_touch(x, y)
+    return if $game_map.interpreter.running?
+    if @trigger == 2 && rect_collide_player?
+      start if !jumping? && normal_priority?
+    end
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）判定是否在画面的可视区域內
@@ -998,47 +994,22 @@ class Game_Event < Game_Character
   def update
     last_real_x = @real_x; last_real_y = @real_y
     eagle_pixel_move_update
-    @eagle_binds.each do |c_id, ps|
-      update_binding_platform(c_id, last_real_x, last_real_y) if ps[:platform]
-      update_binding_move(c_id, last_real_x, last_real_y) if ps[:move]
-    end
+    update_floating_platform(last_real_x, last_real_y) if @flag_platform
   end
   #--------------------------------------------------------------------------
-  # ○ 更新移动平台
+  # ○ 更新浮动平台（主角专用）
   #--------------------------------------------------------------------------
-  def update_binding_platform(c_id, last_real_x, last_real_y)
-   chara = PIXEL_MOVE.get_target(c_id)
-   if real_pos?(chara.real_x, chara.real_y)
-      if !@eagle_binds[c_id][:f_on_platform] # 强制居中于浮动平台 防止卡位bug
-        @eagle_binds[c_id][:f_on_platform] = true
+  def update_floating_platform(last_real_x, last_real_y)
+    f = real_pos?($game_player.real_x, $game_player.real_y)
+    if f
+      if !@flag_player_on_platform # 强制居中于浮动平台 防止卡位bug
         dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, 5)
-        return chara.set_xy(last_real_x+dx, last_real_y+dy)
+        $game_player.set_xy(last_real_x+dx, last_real_y+dy)
       end
-      chara.move_force_pixel(@real_x-last_real_x, @real_y - last_real_y)
+      @flag_player_on_platform = true
+      $game_player.move_force_pixel(@real_x-last_real_x, @real_y - last_real_y)
     else
-      @eagle_binds[c_id][:f_on_platform] = false
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ○ 更新自动移动
-  #--------------------------------------------------------------------------
-  def update_binding_move(c_id, last_real_x, last_real_y)
-    chara = PIXEL_MOVE.get_target(c_id)
-    return if chara.moving?
-    chara_x_5, chara_y_5 = chara.get_collision_xy(5)
-    if pos?(chara_x_5, chara_y_5)
-      if !@eagle_binds[c_id][:f_on_move] # 强制居中于移动块
-        @eagle_binds[c_id][:f_on_move] = true
-        dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, 5)
-        return chara.set_xy(last_real_x+dx, last_real_y+dy)
-      end
-      d = @eagle_binds[c_id][:move]
-      x = $game_map.x_with_direction_n(chara.x, d, 4)
-      y = $game_map.y_with_direction_n(chara.y, d, 4)
-      chara.set_direction(d)
-      chara.move_force_pixel(x - chara.x, y - chara.y)
-    else
-      @eagle_binds[c_id][:f_on_move] = false
+      @flag_player_on_platform = false
     end
   end
 end

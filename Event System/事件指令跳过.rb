@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventCommandSkip"] = true
 #==============================================================================
-# - 2020.2.12.12
+# - 2020.2.14.13 修复F12后报错bug
 #==============================================================================
 # - 本插件利用标签，新增了事件指令的跳过
 #--------------------------------------------------------------------------
@@ -89,7 +89,8 @@ module COMMAND_SKIP
   end
   def self.init_hint
     if @hint_show_count.nil?
-      @sprite_hint ||= Sprite.new
+      @sprite_hint.dispose if @sprite_hint
+      @sprite_hint = Sprite.new
       set_skip_hint(@sprite_hint)
       @sprite_hint.visible = false
     end
