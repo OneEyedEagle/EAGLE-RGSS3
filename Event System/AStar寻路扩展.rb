@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-AStar"] = true
 #==============================================================================
-# - 2020.2.15.23
+# - 2020.2.16.19
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 #-----------------------------------------------------------------------------
@@ -118,10 +118,8 @@ if $imported["EAGLE-PixelMove"]
     y_p, e = PIXEL_MOVE.rgss2unit(y)
     r = Rect.new(x_p, y_p, PIXEL_MOVE.pixel2unit(32), PIXEL_MOVE.pixel2unit(32))
     $game_map.events.each do |id, event|
-      next if event == self
-      if event.normal_priority? && event.pos_rect?(r)
-        return true
-      end
+      next if event == self || !event.normal_priority? || event.through
+      return true if event.pos_rect?(r)
     end
     return false
   end
