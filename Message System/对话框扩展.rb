@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.2.17.16 修复mirror未被重置的bug
+# - 2020.2.18.1 修复csin参数未被重置的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -769,7 +769,7 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   def self.windowtag(index)
     begin
-      return Cache.system(INDEX_TO_WINDOWTAG[index]).dup
+      return Cache.system(INDEX_TO_WINDOWTAG[index])
     rescue
       return Cache.empty_bitmap
     end
@@ -1330,7 +1330,6 @@ class Window_Message
     @eagle_window_name.dispose
     @eagle_sprite_pop_tag.bitmap.dispose if @eagle_sprite_pop_tag.bitmap
     @eagle_sprite_pop_tag.dispose
-    @eagle_pop_tag_bitmap.dispose if @eagle_pop_tag_bitmap
     @eagle_sprite_pause.dispose
     @eagle_dup_windows.each { |w| w.dispose if !w.disposed? }
     @eagle_chara_viewport.dispose
@@ -2284,7 +2283,6 @@ class Window_Message
   # ● 重置tag的位图
   #--------------------------------------------------------------------------
   def eagle_reset_pop_tag_bitmap
-    @eagle_pop_tag_bitmap.dispose if @eagle_pop_tag_bitmap
     @eagle_pop_tag_bitmap = MESSAGE_EX.windowtag(game_message.pop_params[:tag])
     w = @eagle_pop_tag_bitmap.width
     h = @eagle_pop_tag_bitmap.height
@@ -3206,6 +3204,10 @@ class Sprite_EagleCharacter < Sprite
     self.opacity = 255
     self.angle = 0
     self.mirror = false
+    self.wave_amp    = 0
+    self.wave_length = 0
+    self.wave_speed  = 0
+    self.wave_phase  = 0
     # (x0,y0) 为文字区域左上点的屏幕坐标
     @x0 = 0; @y0 = 0
     # (_ox,_oy) 为当前可视区域的左上点的坐标（文字区域坐标系中）
