@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventAlert"] = true
 #==============================================================================
-# - 2020.1.5.23
+# - 2020.2.20.15 增强兼容性
 #==============================================================================
 # - 本插件新增警报机制，以并行判定并执行简单脚本
 #--------------------------------------------------------------------------
@@ -16,6 +16,7 @@ $imported["EAGLE-EventAlert"] = true
 #    <alert[ 目标对象id]>[<repeat>]<cond>..<eval>..</alert>
 #
 #   其中 目标对象id 为绑定的目标对象（0为玩家，正数为事件id）（默认不填取 0）
+#     （若目标不存在，依然可以更新）
 #
 #   其中填入 <repeat> 代表当条件满足时，将反复执行脚本
 #     （若无该标签，则只在条件首次满足时，执行一次脚本）
@@ -27,7 +28,7 @@ $imported["EAGLE-EventAlert"] = true
 #           如 ss[ [map_id, a.id, 'A'] ] = true 为开启当前事件的A号独立开关
 #      可用 sv 代表独立变量组（若使用了【事件页触发条件扩展 by 老鹰】）
 #           如 sv[ [map_id, a.id, 1] ] = 2 为当前事件的1号独立变量赋值 2
-#      可用 a 代表当前事件，b 代表目标对象
+#      可用 a 代表当前事件，b 代表目标对象（若不存在则为 nil）
 #           dx 与 dy 为当前事件与目标对象间的坐标差的绝对值
 #
 #   其中 <eval>.. 中的 .. 替换为需要执行的脚本
@@ -60,7 +61,7 @@ module EVENT_ALERT
   #--------------------------------------------------------------------------
   def self.get_target(t_id)
     return $game_player if t_id == 0
-    return $game_map.events[t_id]
+    return $game_map.events[t_id] rescue nil
   end
 end
 #==============================================================================
@@ -109,12 +110,13 @@ class Game_Event
     map_id = $game_map.map_id
     @eagle_alerts.each do |hash|
       b = EVENT_ALERT.get_target(hash[:t_id])
-      next if b.nil?
       s = $game_switches; v = $game_variables
       ss = $game_self_switches
       sv = $game_self_variables if $imported["EAGLE-EventCondEX"]
-      dx = (a.x - b.x).abs
-      dy = (a.y - b.y).abs
+      if b
+        dx = (a.x - b.x).abs
+        dy = (a.y - b.y).abs
+      end
       if eval(hash[:cond]) == true
         next if hash[:repeat] == false && hash[:trigger] == true
         hash[:trigger] = true

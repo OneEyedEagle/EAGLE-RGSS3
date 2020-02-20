@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-InputEX"] = true
 #=============================================================================
-# - 2020.2.19.16
+# - 2020.2.20.11 优化
 #=============================================================================
 # - 本插件新增了一系列按键判定方法，但不修改默认模块
 #-----------------------------------------------------------------------------
@@ -62,7 +62,7 @@ module Input_EX
   def self.update
     init if @flag_init == nil
     @keys_state.each_with_index do |v, i|
-      next @keys_last_state[i] = 0 if v == 0
+      next @keys_last_state[i] = 0 if v <= 1
       @keys_last_state[i] += 1 if v > 1
     end
     @getKeyboardState.call(@keys_state_str)
@@ -87,7 +87,7 @@ module Input_EX
   #--------------------------------------------------------------------------
   def self.up?(key)
     keycode = get_keycode(key)
-    @keys_last_state[key] > 0 && @keys_state[key] == 0
+    @keys_last_state[keycode] > 0 && @keys_state[keycode] <= 1
   end
   #--------------------------------------------------------------------------
   # ● 获取按键被按住的帧数
@@ -100,7 +100,8 @@ module Input_EX
   # ● 指定键被按住？
   #--------------------------------------------------------------------------
   def self.press?(key)
-    press_count(key) > 1
+    keycode = get_keycode(key)
+    @keys_last_state[keycode] > 1 && @keys_state[keycode] > 1
   end
 
   #--------------------------------------------------------------------------
@@ -108,7 +109,7 @@ module Input_EX
   #--------------------------------------------------------------------------
   def self.update_keys_m_v
     KEY_M.each_with_index do |key, i|
-      @keys_m_v[i] = (trigger_key?(key) ? "1" : "0")
+      @keys_m_v[i] = (trigger?(key) ? "1" : "0")
     end
   end
   #--------------------------------------------------------------------------
