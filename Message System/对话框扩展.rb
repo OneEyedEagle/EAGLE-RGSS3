@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.2.18.1 修复csin参数未被重置的bug
+# - 2020.2.22.18 新增自动继续的UI
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -176,6 +176,7 @@ $imported["EAGLE-MessageEX"] = true
 #    t → 【默认】等待的帧数
 #
 #  \auto[param] → 等待按键时，自动继续的设置
+#    若使用了【组件-形状绘制 by老鹰】，则会在对话框右下角绘制简单的倒计时UI
 #    t → 【默认】在t帧后自动结束按键等待，并继续事件处理（默认nil，不自动继续）
 #    r → 是否为 t 参数附加【重置】属性，即每次对话框打开后不自动继续（默认true）
 #
@@ -995,7 +996,8 @@ class Game_Message
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :ex_params # 存储扩展params
-  attr_accessor :escape_strings, :auto_r
+  attr_accessor :escape_strings # 存储预定要添加的字符串
+  attr_accessor :auto_r, :auto_t
   attr_accessor :hold, :instant, :draw, :para, :event_id
   #--------------------------------------------------------------------------
   # ● 初始化对象
@@ -1005,7 +1007,8 @@ class Game_Message
     eagle_message_ex_init
     @temp_game_messages = {} # sym => game_message
     set_default_params
-    @auto_r = true # 是否重置window.auto_continue_t
+    @auto_r = true # 是否重置 @auto_t
+    @auto_t = nil # 自动对话的倒计时（nil时为不自动继续）
   end
   #--------------------------------------------------------------------------
   # ● 获取全部可保存params的符号的数组
@@ -1361,7 +1364,7 @@ class Window_Message
     @eagle_sprite_pause.bind_last_chara(nil)
     @eagle_sprite_pause_width_add = 0 # 因pause精灵而扩展的窗口宽度
     # 重置auto的设置帧数
-    @eagle_auto_continue_t = nil if game_message.auto_r # nil时为不自动继续
+    game_message.auto_t = nil if game_message.auto_r # nil时为不自动继续
     # 重置强制关闭flag
     @eagle_force_close = false
     # 重置集体的z值
@@ -2119,7 +2122,7 @@ class Window_Message
   # ● 执行输入等待
   #--------------------------------------------------------------------------
   def process_input_pause
-    @eagle_auto_continue_c = @eagle_auto_continue_t
+    @eagle_auto_continue_c = game_message.auto_t
     ox_des = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
     oy_des = self.oy
     recreate_contents_for_charas
@@ -2127,7 +2130,11 @@ class Window_Message
     self.arrows_visible = true
     while true
       Fiber.yield
-      break if @eagle_auto_continue_c && (@eagle_auto_continue_c -= 1) <= 0
+      if @eagle_auto_continue_c
+        @eagle_auto_continue_c -= 1
+        @eagle_sprite_pause.redraw_auto_countdown(@eagle_auto_continue_c)
+        break if @eagle_auto_continue_c < 0
+      end
       break if check_input_pause?
       # 处理文本滚动
       if Input.press?(:UP)
@@ -2163,7 +2170,6 @@ class Window_Message
   end
   #--------------------------------------------------------------------------
   # ● 处理选项的输入（覆盖）
-  #  选择框不可嵌入
   #--------------------------------------------------------------------------
   def input_choice
     @choice_window.start
@@ -2178,7 +2184,6 @@ class Window_Message
   end
   #--------------------------------------------------------------------------
   # ● 处理物品的选择（覆盖）
-  #  物品选择框不可嵌入
   #--------------------------------------------------------------------------
   def input_item
     @item_window.start
@@ -2678,10 +2683,10 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_text_control_auto(param = '0')
     h = {}
-    h[:t] = @eagle_auto_continue_t # 自动继续的帧数
+    h[:t] = game_message.auto_t # 自动继续的帧数
     h[:r] = game_message.auto_r ? 1 : 0
     parse_param(h, param, :t)
-    @eagle_auto_continue_t = h[:t]
+    game_message.auto_t = h[:t]
     game_message.auto_r = MESSAGE_EX.check_bool(h[:r])
   end
   #--------------------------------------------------------------------------
@@ -2803,6 +2808,7 @@ class Sprite_EaglePauseTag < Sprite
     @type_pos = 0 # 记录当前相对于对话框的位置类型
     @last_chara = nil
     @last_pause_index = nil
+    init_auto_countdown
     reset
     hide
   end
@@ -2816,6 +2822,8 @@ class Sprite_EaglePauseTag < Sprite
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
+    @sprite_auto_countdown.bitmap.dispose if @sprite_auto_countdown.bitmap
+    @sprite_auto_countdown.dispose
     @s_bitmap.dispose
     self.bitmap.dispose
     super
@@ -2868,7 +2876,7 @@ class Sprite_EaglePauseTag < Sprite
   def reset_bitmap
     self.bitmap.clear
     @s_rect.x = (@index % @s_bitmap_row) * @s_rect.width
-    @s_rect.y = (@index / @s_bitmap_col) * @s_rect.height
+    @s_rect.y = (@index / @s_bitmap_row) * @s_rect.height
     self.bitmap.blt(0, 0, @s_bitmap, @s_rect)
     @count = 0
   end
@@ -2890,6 +2898,7 @@ class Sprite_EaglePauseTag < Sprite
     self.x += params[:dx]
     self.y += params[:dy]
     MESSAGE_EX.reset_xy_origin(self, params[:o])
+    reset_auto_countdown_position
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -2913,6 +2922,7 @@ class Sprite_EaglePauseTag < Sprite
   def show
     return if params[:v] == 0
     reset_position
+    @sprite_auto_countdown.visible = true
     self.visible = true
     self
   end
@@ -2920,8 +2930,40 @@ class Sprite_EaglePauseTag < Sprite
   # ● 隐藏
   #--------------------------------------------------------------------------
   def hide
+    @sprite_auto_countdown.visible = false
     self.visible = false
     self
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化自动倒计时
+  #--------------------------------------------------------------------------
+  def init_auto_countdown
+    @auto_countdown_max = 0
+    @sprite_auto_countdown = Sprite.new
+    @sprite_auto_countdown.bitmap = Bitmap.new(13, 13)
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置自动倒计时
+  #--------------------------------------------------------------------------
+  def reset_auto_countdown_position
+    MESSAGE_EX.reset_xy_dorigin(@sprite_auto_countdown, @window_bind, 3)
+    @sprite_auto_countdown.x -= @sprite_auto_countdown.width
+    @sprite_auto_countdown.y -= @sprite_auto_countdown.height
+    @sprite_auto_countdown.z = self.z + 1
+  end
+  #--------------------------------------------------------------------------
+  # ● 重绘自动倒计时
+  #--------------------------------------------------------------------------
+  def redraw_auto_countdown(cd)
+    return if !$imported["EAGLE-UtilsDrawing"]
+    @sprite_auto_countdown.bitmap.clear
+    a2 = 360 - (360.0 * cd / @window_bind.game_message.auto_t).to_i
+    [[4,4],[5,5],[6,6],[5,7],[4,8],
+     [6,3],[7,4],[8,5],[9,6],[8,7],[7,8],[6,9]].each do |xy|
+      @sprite_auto_countdown.bitmap.set_pixel(xy[0], xy[1], Color.new(255,255,255))
+    end
+    r = 6
+    EAGLE.Arc(@sprite_auto_countdown.bitmap,r,r, r, 0,a2,false,Color.new(255,255,255,250))
   end
 end
 
