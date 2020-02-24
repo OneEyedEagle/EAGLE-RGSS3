@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.2.14.13 优化if与rb标签对编写方式
+# - 2020.2.24.11 优化wait标签；新增until标签
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -46,7 +46,9 @@ $imported["EAGLE-MessagePara"] = true
 #    <balloon chara_index balloon_id[ wait]>  → 显示心情气泡（仅在地图上有效）
 #          其中 balloon_id 为心情气泡的ID号（从1开始）
 #
-#    <wait count> → 直接等待 count 帧数
+#    <wait count> → 等待 count 帧数
+#
+#    <until>str</until> → 等待，直至 eval(str) 返回 true
 #
 #    <break> → 直接结束当前序列
 #
@@ -304,7 +306,7 @@ module MESSAGE_PARA
     @lists.each { |id, l| l.finish }
   end
   #--------------------------------------------------------------------------
-  # ● 全部结束（跳过需要显示完的list）
+  # ● 全部结束（除了保证显示完的list）
   #--------------------------------------------------------------------------
   def self.all_finish_sys
     @lists.each do |id, l|
@@ -524,8 +526,19 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   # ● 标签：等待
   #--------------------------------------------------------------------------
   def tag_wait(tag_str)
-    wait_c = tag_str.to_i
-    wait_c.times { Fiber.yield }
+    wait_c = tag_str.to_i.abs
+    wait_c.times do
+      Fiber.yield
+      break if @list_str.empty?
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：等待直至
+  #--------------------------------------------------------------------------
+  def tag_until(tag_str)
+    @list_str.slice!(/^(.*?)<\/until>/m)
+    t = $1.dup
+    Fiber.yield until(eval_str(t) == true || @list_str.empty?)
   end
   #--------------------------------------------------------------------------
   # ● 标签：结束
