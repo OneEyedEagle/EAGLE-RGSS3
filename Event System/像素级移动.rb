@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.2.21.17 新增rgss_x与rgss_y方法，用于获取编辑器中的网格坐标
+# - 2020.2.25.19 修复远景图高速移动的bug
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -300,24 +300,26 @@ class Game_Map
   # ● （覆盖）计算远景图显示的原点 X 坐标
   #--------------------------------------------------------------------------
   def parallax_ox(bitmap)
+    v, e = PIXEL_MOVE.unit2rgss(@parallax_x)
     if @parallax_loop_x
-      @parallax_x * 16
+      v * 16
     else
       w1 = [bitmap.width - Graphics.width, 0].max
       w2 = [PIXEL_MOVE.unit2pixel(width_unit) - Graphics.width, 1].max
-      @parallax_x * 16 * w1 / w2
+      v * 16 * w1 / w2
     end
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）计算远景图显示的原点 Y 坐标
   #--------------------------------------------------------------------------
   def parallax_oy(bitmap)
+    v, e = PIXEL_MOVE.unit2rgss(@parallax_y)
     if @parallax_loop_y
-      @parallax_y * 16
+      v * 16
     else
       h1 = [bitmap.height - Graphics.height, 0].max
       h2 = [PIXEL_MOVE.unit2pixel(height_unit) - Graphics.height, 1].max
-      @parallax_y * 16 * h1 / h2
+      v * 16 * h1 / h2
     end
   end
   #--------------------------------------------------------------------------

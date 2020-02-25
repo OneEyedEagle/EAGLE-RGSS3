@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.2.22.18 新增自动继续的UI
+# - 2020.2.24.18 优化姓名框
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1197,7 +1197,7 @@ class Window_Message
     @eagle_chara_sprites = [] # 存储全部的文字精灵
     @eagle_sprite_pop_tag = Sprite.new # 初始化pop状态下的tag精灵
     @eagle_sprite_face = Sprite.new # 初始化脸图精灵
-    @eagle_window_name = Window_Base.new(0, 0, 1, 1) # 初始化姓名框窗口
+    @eagle_window_name = Window_EagleMsgName.new(self) # 初始化姓名框窗口
     @eagle_sprite_pause = Sprite_EaglePauseTag.new(self) # 初始化等待按键的精灵
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
   end
@@ -1698,8 +1698,9 @@ class Window_Message
     # 若对话框遮挡了脸图，则移动到不遮挡的地方
     lx = self.x + eagle_face_left_width
     rx = self.x + self.width - eagle_face_right_width
+    w = @eagle_window_name.width
     @eagle_window_name.x = lx if @eagle_window_name.x < lx
-    @eagle_window_name.x = rx if @eagle_window_name.x > rx
+    @eagle_window_name.x = rx-w if @eagle_window_name.x+w > rx
 
     @eagle_window_name.x += game_message.name_params[:dx]
     @eagle_window_name.y += game_message.name_params[:dy]
@@ -2321,29 +2322,8 @@ class Window_Message
     }
     parse_pre_params(text, 'name', game_message.name_params, :o)
 
-    return if game_message.name_params[:name] == ""
-    # 重设姓名窗口
-    t = MESSAGE_EX.get_name_prefix + game_message.name_params[:name]
-    t.gsub!(/<(.*?)>/) { "[" + $1 + "]" }
-    t = convert_escape_characters(t)
-    w, h = MESSAGE_EX.calculate_text_wh(@eagle_window_name.contents, t)
-    h = [h, @eagle_window_name.line_height].max
-    w += standard_padding * 2; h += standard_padding * 2
-    @eagle_window_name.move(0, 0, w, h)
-    @eagle_window_name.create_contents
-    @eagle_window_name.draw_text_ex(0, 0, t)
-    skin = game_message.name_params[:skin]
-    if game_message.pop? && !game_message.pop_params[:skin].nil?
-      skin ||= game_message.pop_params[:skin]
-    else
-      skin ||= game_message.win_params[:skin]
-    end
-    @eagle_window_name.windowskin = MESSAGE_EX.windowskin(skin)
-    @eagle_window_name.opacity = game_message.name_params[:opa]
-    @eagle_window_name.back_opacity = @eagle_window_name.opacity
-    @eagle_window_name.contents_opacity = 255
-    @eagle_window_name.openness = 0
-    @eagle_window_name.show.open
+    return if game_message.name_params[:name].empty?
+    @eagle_window_name.reset
     eagle_name_update
   end
 
@@ -2791,6 +2771,50 @@ class Window_Message_Clone < Window_Message
     end
     close_and_wait
     @fiber = nil
+  end
+end
+
+#=============================================================================
+# ○ 姓名框窗口
+#=============================================================================
+class Window_EagleMsgName < Window_Base
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  def initialize(window_msg)
+    @window_msg = window_msg
+    super(0, 0, 32, 32)
+    self.openness = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 姓名参数
+  #--------------------------------------------------------------------------
+  def name_params
+    @window_msg.game_message.name_params
+  end
+  #--------------------------------------------------------------------------
+  # ● 重绘
+  #--------------------------------------------------------------------------
+  def reset
+    t = MESSAGE_EX.get_name_prefix + name_params[:name]
+    t.gsub!(/<(.*?)>/) { "[" + $1 + "]" }
+    t = @window_msg.convert_escape_characters(t)
+    w, h = MESSAGE_EX.calculate_text_wh(@window_msg.contents, t)
+    h = [h, @window_msg.game_message.font_params[:size]].max
+
+    move(0, 0, w+standard_padding * 2, h+standard_padding * 2)
+    create_contents
+    MESSAGE_EX.apply_font_params(contents.font, @window_msg.game_message.font_params)
+    draw_text_ex(0, 0, t)
+
+    skin = @window_msg.get_cur_windowskin_index(name_params[:skin])
+    self.windowskin = MESSAGE_EX.windowskin(skin)
+
+    self.opacity = name_params[:opa]
+    self.back_opacity = @window_msg.opacity
+    self.contents_opacity = 255
+    self.openness = 0
+    self.show.open
   end
 end
 
