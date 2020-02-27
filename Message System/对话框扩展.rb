@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.2.24.18 优化姓名框
+# - 2020.2.26.12 修复\^与\hold交互造成的宽度与等待按键显示bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1252,7 +1252,6 @@ class Window_Message
     # 拷贝pause精灵
     t.eagle_sprite_pause.dispose
     t.eagle_sprite_pause = @eagle_sprite_pause
-    t.eagle_sprite_pause.visible = true
     @eagle_sprite_pause.bind_window(t)
     # 拷贝pop对象
     t.eagle_pop_obj = @eagle_pop_obj
@@ -1879,7 +1878,7 @@ class Window_Message
     # 记录最终的文字区域宽度高度
     @eagle_charas_w_final = @eagle_charas_w
     @eagle_charas_h_final = @eagle_charas_h
-    before_input_pause # 此处追加对pause精灵占用宽度的处理
+    before_input_pause unless @pause_skip # 此处追加对pause精灵占用宽度的处理
     # 复原
     @eagle_charas_w = @eagle_charas_h = 0
     game_message.load_params(nil)

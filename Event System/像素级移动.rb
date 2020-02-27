@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.2.25.19 修复远景图高速移动的bug
+# - 2020.2.27.9 修复远景图高速移动的bug；优化事件碰撞
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -236,16 +236,10 @@ module PIXEL_MOVE
   # ● 矩形之间碰撞？
   #--------------------------------------------------------------------------
   def self.rect_collide_rect?(rect1, rect2)
-    if(rect1.x > rect2.x && rect1.x > rect2.x + rect2.width)
-      return false
-    end
-    if(rect1.x < rect2.x && rect1.x + rect1.width < rect2.x)
-      return false
-    end
-    if(rect1.y > rect2.y && rect1.y > rect2.y + rect2.height)
-      return false
-    end
-    if(rect1.y < rect2.y && rect1.y + rect1.height < rect2.y)
+    if((rect1.x > rect2.x && rect1.x > rect2.x + rect2.width-1) ||
+       (rect1.x < rect2.x && rect1.x + rect1.width-1 < rect2.x) ||
+       (rect1.y > rect2.y && rect1.y > rect2.y + rect2.height-1) ||
+       (rect1.y < rect2.y && rect1.y + rect1.height-1 < rect2.y))
       return false
     end
     return true
@@ -704,9 +698,26 @@ class Game_CharacterBase
         return false unless map_passable?(x1, y1, d)
         return false unless map_passable?(x2, y2, reverse_dir(d))
       end
-      return false if collide_with_characters?(x2_p, y2_p)
+      return false if collide_with_vehicles?(x2_p, y2_p)
     end
+    dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, 7)
+    r = get_collision_rect(false)
+    r.x = $game_map.round_x_with_direction(x+dx, d)
+    r.y = $game_map.round_y_with_direction(y+dy, d)
+    return false if collide_with_events_rect?(r)
     return true
+  end
+  #--------------------------------------------------------------------------
+  # ○ 判定是否与事件矩形碰撞
+  #--------------------------------------------------------------------------
+  def collide_with_events_rect?(rect)
+    $game_map.events.each do |id, event|
+      next if event == self || !event.normal_priority? || event.through
+      if PIXEL_MOVE.rect_collide_rect?(event.get_collision_rect(false), rect)
+        return true
+      end
+    end
+    return false
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）判定是否与事件碰撞
@@ -735,7 +746,6 @@ class Game_CharacterBase
   #--------------------------------------------------------------------------
   def move_straight(d, turn_ok = true, n = PIXEL_MOVE::UNIT_PER_MAP_GRID)
     x_ = @x; y_ = @y
-    # 尝试移动，获取能够成功移动的次数
     n.times do |i|
       break n = i if !passable?(x_, y_, d)
       x_ = $game_map.round_x_with_direction(x_, d)

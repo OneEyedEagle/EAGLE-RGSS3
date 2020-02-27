@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventCopy"] = true
 #=============================================================================
-# - 2020.2.25.19 新增回收机制
+# - 2020.2.26.20 优化
 #=============================================================================
 # - 原始创意：Yanfly Engine Ace - Spawn Event
 # - 本插件新增了拷贝事件的方法
@@ -79,7 +79,7 @@ class Game_Map
       id = @events_copy[map_id][event_id][0]
       event = @events[id].event.dup
     else
-      map = load_data(sprintf("Data/Map%03d.rvdata2", map_id))
+      map = get_map_data(map_id)
       event = map.events[event_id] rescue return
     end
     id = @events.keys.max
@@ -101,9 +101,21 @@ class Game_Map
       e.update
       @events_copy[e.copy_origin[0]][e.copy_origin[1]].push(id)
     end
-    SceneManager.scene.spriteset.add_characters_tmp
+    get_cur_scene.spriteset.add_characters_tmp
     @events.merge!(@events_tmp)
     @events_tmp.clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取地图数据
+  #--------------------------------------------------------------------------
+  def get_map_data(map_id)
+    load_data(sprintf("Data/Map%03d.rvdata2", map_id))
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取当前场景
+  #--------------------------------------------------------------------------
+  def get_cur_scene
+    SceneManager.scene
   end
 end
 #=============================================================================
@@ -111,22 +123,13 @@ end
 #=============================================================================
 class Game_Event < Game_Character
   attr_reader    :event
-  attr_accessor  :flag_copy, :flag_copy_restore, :copy_origin
-  #--------------------------------------------------------------------------
-  # ● 初始化公有成员变量
-  #--------------------------------------------------------------------------
-  alias eagle_copy_event_init_public_members init_public_members
-  def init_public_members
-    eagle_copy_event_init_public_members
-    @flag_copy = false # 若为copy的事件，置为true
-    @copy_origin = nil # [原始地图id, 原始事件id]
-    @flag_copy_restore = false # 若copy事件已经可以回收，置为true
-  end
+  attr_accessor  :flag_copy, :flag_copy_restore
+  attr_accessor  :copy_origin # [原始地图id, 原始事件id]
   #--------------------------------------------------------------------------
   # ● 回收拷贝事件
   #--------------------------------------------------------------------------
   def copy_finish
-    return if !@flag_copy
+    return if @flag_copy.nil?
     @flag_copy_restore = true
   end
   #--------------------------------------------------------------------------
@@ -135,7 +138,8 @@ class Game_Event < Game_Character
   def copy_reset(x, y)
     init_public_members
     init_private_members
-    @flag_copy = true
+    @flag_copy = true # 若为copy的事件，置为true
+    @flag_copy_restore = false # 若copy事件已经可以回收，置为true
     moveto(x, y)
     refresh
   end
@@ -153,3 +157,7 @@ class Spriteset_Map
     end
   end
 end
+#=============================================================================
+# ○ Scene_Map
+#=============================================================================
+class Scene_Map; attr_reader :spriteset; end
