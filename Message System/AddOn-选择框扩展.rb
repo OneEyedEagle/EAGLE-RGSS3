@@ -1,11 +1,11 @@
 #==============================================================================
-# ■ Add-On 选择框扩展(new) by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ Add-On 选择框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2019.8.5.14 修改选项实现方式
+# - 2020.3.1.11 优化嵌入模式
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -14,7 +14,7 @@ $imported["EAGLE-ChoiceEX"] = true
 #
 #   （窗口属性）
 #     o → 选择框的显示原点类型（九宫格小键盘）（默认7）（嵌入时固定为7）
-#     x/y → 直接指定选择框的坐标（默认不设置）（利用参数重置进行清除）
+#     x/y → 直接指定选择框的坐标（默认nil）
 #     do → 选择框的显示位置类型（覆盖x/y）（默认-10无效）
 #          （0嵌入；1~9对话框外边界的九宫格位置；-1~-9屏幕外框的九宫格位置）
 #          （当对话框关闭时，0~9的设置均无效）
@@ -113,7 +113,7 @@ module MESSAGE_EX
     :o => 5, # 原点类型
     :x => nil,
     :y => nil,
-    :do => -5, # 显示位置类型
+    :do => 0, # 显示位置类型
     :dx => 0,
     :dy => 0,
     :w => 0,
@@ -158,21 +158,6 @@ end
 #==============================================================================
 class Window_Message
   #--------------------------------------------------------------------------
-  # ● 额外增加的窗口宽度高度
-  #--------------------------------------------------------------------------
-  alias eagle_choicelist_ex_window_width_add eagle_window_width_add
-  def eagle_window_width_add(cur_width)
-    w = eagle_choicelist_ex_window_width_add(cur_width)
-    w += @choice_window.message_window_w_add if game_message.choice?
-    w
-  end
-  alias eagle_choicelist_ex_window_height_add eagle_window_height_add
-  def eagle_window_height_add(cur_height)
-    h = eagle_choicelist_ex_window_height_add(cur_height)
-    h += @choice_window.message_window_h_add if game_message.choice?
-    h
-  end
-  #--------------------------------------------------------------------------
   # ● 设置choice参数
   #--------------------------------------------------------------------------
   def eagle_text_control_choice(param = "")
@@ -184,7 +169,6 @@ end
 #==============================================================================
 class Window_ChoiceList < Window_Command
   attr_reader :message_window, :skin
-  attr_reader :message_window_w_add, :message_window_h_add
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -197,16 +181,14 @@ class Window_ChoiceList < Window_Command
     @func_key_freeze = false # 冻结功能按键
     @skin = 0 # 当前所用窗口皮肤的index
 
-    @message_window_w_add = @message_window_h_add = 0
     eagle_choicelist_ex_init(message_window)
+    eagle_reset
   end
   #--------------------------------------------------------------------------
   # ● 重置
   #--------------------------------------------------------------------------
   def eagle_reset
     @choices_info.clear
-    # 重置对话框wh增量
-    @message_window_w_add = @message_window_h_add = 0
     # 重置默认光标位置
     $game_message.choice_params[:i] = MESSAGE_EX.get_default_params(:choice)[:i]
   end
@@ -220,8 +202,9 @@ class Window_ChoiceList < Window_Command
     update_placement
     reset_params_ex
     set_init_select
-    open
-    activate
+    self.cursor_rect.empty
+    #open
+    #activate
   end
   #--------------------------------------------------------------------------
   # ● 处理选项列表
@@ -307,7 +290,7 @@ class Window_ChoiceList < Window_Command
       if @message_window.eagle_dynamic_w?
         d = width_min - win_w
         if d > 0
-          @message_window_w_add = d # 扩展对话框的宽度
+          $game_message.child_window_w_des = d # 扩展对话框的宽度
         else # 宽度 = 文字区域宽度
           self.width = win_w + standard_padding * 2
         end
@@ -318,7 +301,7 @@ class Window_ChoiceList < Window_Command
       if @message_window.eagle_dynamic_h? # 扩展对话框的高度
         d = self.height - win_h
         d += standard_padding if @message_window.eagle_charas_h > 0
-        @message_window_h_add = d if d > 0
+        $game_message.child_window_h_des = d if d > 0
       else # 压缩高度
         self.height = [[height, win_h].min-standard_padding*2, item_height].max
         # 确保是行高的正整数倍数
@@ -429,7 +412,6 @@ class Window_ChoiceList < Window_Command
       t = @choices_info[index][:extra][:rt] || 5
       s.set_timer(:replace, t * 60, @choices_info[index][:extra][:ri])
     end
-
     s.update; @choices[index] = s
   end
   #--------------------------------------------------------------------------
@@ -438,6 +420,7 @@ class Window_ChoiceList < Window_Command
   alias eagle_choice_ex_update_cursor update_cursor
   def update_cursor
     eagle_choice_ex_update_cursor
+    return if !@active
     @choices.each do |i, s|
       r = item_rect(i)
       y_ = r.y - self.oy
@@ -517,18 +500,26 @@ class Window_ChoiceList < Window_Command
     close
   end
   #--------------------------------------------------------------------------
+  # ● 打开
+  #--------------------------------------------------------------------------
+  alias eagle_choicelist_ex_open open
+  def open
+    @choices.each { |i, s| s.set_visible(true) }
+    eagle_choicelist_ex_open
+  end
+  #--------------------------------------------------------------------------
   # ● 关闭
   #--------------------------------------------------------------------------
   alias eagle_choicelist_ex_close close
   def close
     @choices.each { |i, s| s.move_out }
     eagle_reset
-    eagle_choicelist_ex_close
     if $imported["EAGLE-TimerEX"]
       $game_timer[:choice_cd].stop
     else
       $game_timer.stop
     end
+    eagle_choicelist_ex_close
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -554,7 +545,7 @@ class Spriteset_Choice
     @chara_dwin_rect = nil
     @font = @choice_window.contents.font.dup # 每个选项存储独立的font对象
     @font_params = $game_message.font_params.dup # font转义符参数
-    @visible = true
+    @visible = false
     @enabled = true
     @timer = nil
   end

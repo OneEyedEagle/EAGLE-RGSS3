@@ -2,12 +2,15 @@
 # ■ Add-On 物品选择框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2019.7.31.15 整合文字切换特效
+$imported ||= {}
+$imported["EAGLE-ItemChoiceEX"] = true
+#=============================================================================
+# - 2020.3.1.11 优化嵌入模式
 #==============================================================================
 # - 在对话框中利用 \keyitem[param] 对物品选择框进行部分参数设置：
 #     type → 【默认】物品选择范围的类型index（见 index → 物品种类的符号数组 的映射）
 #     o → 物品选择框的显示原点类型（九宫格小键盘）（默认7）（嵌入时固定为7）
-#     x/y → 直接指定物品选择框的坐标（默认不设置）（利用参数重置进行清除）
+#     x/y → 直接指定坐标（默认nil）
 #     do → 物品选择框的显示位置类型（覆盖x/y）（默认-10无效）
 #         （0为嵌入；1~9对话框外边界的九宫格位置；-1~-9屏幕外框的九宫格位置）
 #         （当对话框关闭时，0~9的设置均无效）
@@ -98,21 +101,6 @@ end
 #==============================================================================
 class Window_Message
   #--------------------------------------------------------------------------
-  # ● 额外增加的窗口宽度高度
-  #--------------------------------------------------------------------------
-  alias eagle_keyitem_ex_window_width_add eagle_window_width_add
-  def eagle_window_width_add(cur_width)
-    w = eagle_keyitem_ex_window_width_add(cur_width)
-    w += @item_window.message_window_w_add if game_message.item_choice?
-    w
-  end
-  alias eagle_keyitem_ex_window_height_add eagle_window_height_add
-  def eagle_window_height_add(cur_height)
-    h = eagle_keyitem_ex_window_height_add(cur_height)
-    h += @item_window.message_window_h_add if game_message.item_choice?
-    h
-  end
-  #--------------------------------------------------------------------------
   # ● 设置keyitem参数
   #--------------------------------------------------------------------------
   def eagle_text_control_keyitem(param = "")
@@ -123,29 +111,11 @@ end
 # ○ Window_KeyItem
 #==============================================================================
 class Window_KeyItem < Window_ItemList
-  attr_reader :message_window_w_add, :message_window_h_add
-  #--------------------------------------------------------------------------
-  # ● 初始化对象
-  #--------------------------------------------------------------------------
-  alias eagle_keyitem_ex_init initialize
-  def initialize(message_window)
-    @item_max_width = 0 # 最大的选项宽度
-    @message_window_w_add = @message_window_h_add = 0
-    eagle_keyitem_ex_init(message_window)
-  end
   #--------------------------------------------------------------------------
   # ● 获取列数
   #--------------------------------------------------------------------------
   def col_max
     return 1
-  end
-  #--------------------------------------------------------------------------
-  # ● 关闭
-  #--------------------------------------------------------------------------
-  alias eagle_keyitem_ex_close close
-  def close
-    @message_window_w_add = @message_window_h_add = 0 # 重置对话框wh增量
-    eagle_keyitem_ex_close
   end
   #--------------------------------------------------------------------------
   # ● 开始输入的处理
@@ -158,8 +128,9 @@ class Window_KeyItem < Window_ItemList
     update_placement
     update_params_ex
     select(0)
-    open
-    activate
+    hide
+    #open
+    #activate
   end
   #--------------------------------------------------------------------------
   # ● 重设最小宽度
@@ -223,7 +194,7 @@ class Window_KeyItem < Window_ItemList
       if @message_window.eagle_dynamic_w?
         d = width_min - win_w
         if d > 0
-          @message_window_w_add = d # 扩展对话框的宽度
+          $game_message.child_window_w_des = d # 扩展对话框的宽度
         else # 宽度 = 文字区域宽度
           self.width = win_w + standard_padding * 2
         end
@@ -235,7 +206,7 @@ class Window_KeyItem < Window_ItemList
       if @message_window.eagle_dynamic_h? || @message_window.eagle_charas_h == 0
         d = self.height - win_h
         d += standard_padding if @message_window.eagle_charas_h > 0
-        @message_window_h_add = d if d > 0
+        $game_message.child_window_h_des = d if d > 0
       else # 压缩高度
         self.height = [[height, win_h].min-standard_padding*2, item_height].max
         # 确保是行高的正整数倍数

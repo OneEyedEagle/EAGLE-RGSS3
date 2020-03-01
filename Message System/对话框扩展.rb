@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.2.26.12 修复\^与\hold交互造成的宽度与等待按键显示bug
+# - 2020.3.1.11 优化选择框等的嵌入效果
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -999,6 +999,8 @@ class Game_Message
   attr_accessor :escape_strings # 存储预定要添加的字符串
   attr_accessor :auto_r, :auto_t
   attr_accessor :hold, :instant, :draw, :para, :event_id
+  attr_accessor :child_window_w_add, :child_window_h_add
+  attr_accessor :child_window_w_des, :child_window_h_des
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -1037,6 +1039,10 @@ class Game_Message
     @instant = false # 当前对话框立即显示？
     @para = false # 并行显示选择框等
     @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
+    @child_window_w_add = 0 # 因为子窗口嵌入而已经额外增加的宽高
+    @child_window_h_add = 0
+    @child_window_w_des = 0 # 预定因子窗口嵌入而额外增加的宽高
+    @child_window_h_des = 0
   end
   #--------------------------------------------------------------------------
   # ● 判定是否需要进入等待按键状态
@@ -1447,20 +1453,24 @@ class Window_Message
   # ● 更新win参数组（初始化/一页绘制完成时调用）
   #--------------------------------------------------------------------------
   def eagle_win_update
-    eagle_change_windowskin
     self.width = eagle_window_width
     self.width += eagle_window_width_add(self.width)
     self.height = eagle_window_height
     self.height += eagle_window_height_add(self.height)
+    eagle_recreate_back_bitmap
+    return eagle_pop_update if game_message.pop?
+
     self.x = game_message.win_params[:x] || 0
     self.y = game_message.win_params[:y] || (game_message.position * (Graphics.height - self.height) / 2)
-    eagle_reset_xy_dorigin(self, nil, game_message.win_params[:do]) if game_message.win_params[:do] < 0
+    if game_message.win_params[:do] < 0
+      eagle_reset_xy_dorigin(self, nil, game_message.win_params[:do])
+    end
     eagle_reset_xy_origin(self, game_message.win_params[:o])
     self.x += game_message.win_params[:dx]
     self.y += game_message.win_params[:dy]
     eagle_fix_position if game_message.win_params[:fix]
-    eagle_recreate_back_bitmap
     eagle_set_charas_viewport
+    eagle_change_windowskin
     eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
@@ -1550,10 +1560,10 @@ class Window_Message
   # ● 额外增加的窗口宽度高度（右侧和下侧）
   #--------------------------------------------------------------------------
   def eagle_window_width_add(cur_width)
-    eagle_window_w_empty
+    eagle_window_w_empty + game_message.child_window_w_add
   end
   def eagle_window_height_add(cur_height)
-    eagle_window_h_empty
+    eagle_window_h_empty + game_message.child_window_h_add
   end
   #--------------------------------------------------------------------------
   # ● 窗口内容中，无法被用于文本绘制的宽高
@@ -1583,7 +1593,6 @@ class Window_Message
   # ● 更新pop参数组
   #--------------------------------------------------------------------------
   def eagle_pop_update
-    eagle_change_windowskin(game_message.pop_params[:skin])
     # 对话框左上角定位到绑定对象位图的对应o位置
     if @pop_on_map_chara # 如果在地图上使用的行走图，定位到位图底部中心的屏幕位置
       game_message.pop_params[:chara_x] = @eagle_pop_obj.screen_x
@@ -1621,6 +1630,7 @@ class Window_Message
     eagle_pop_tag_update if game_message.pop_params[:tag] > 0
     eagle_fix_position if game_message.pop_params[:fix]
     eagle_set_charas_viewport
+    eagle_change_windowskin(game_message.pop_params[:skin])
     eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
@@ -1989,7 +1999,6 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_process_draw_update
     eagle_win_update # 当绘制完一个文字时，更新一次win参数
-    eagle_pop_update if game_message.pop? # 当使用pop时，再覆盖一次
     # 由于对齐需要用到对话框的属性，因此需要在调用更新后执行
     eagle_charas_reset_alignment(game_message.win_params[:ali])
     eagle_open_and_wait # 第一个文字绘制完成时窗口打开
@@ -2172,33 +2181,49 @@ class Window_Message
   # ● 处理选项的输入（覆盖）
   #--------------------------------------------------------------------------
   def input_choice
-    @choice_window.start
+    input_wait_until_msg_wh(@choice_window)
     input_wait_while_active(@choice_window)
   end
   #--------------------------------------------------------------------------
   # ● 处理数值的输入（覆盖）
   #--------------------------------------------------------------------------
   def input_number
-    @number_window.start
+    input_wait_until_msg_wh(@number_window)
     input_wait_while_active(@number_window)
   end
   #--------------------------------------------------------------------------
   # ● 处理物品的选择（覆盖）
   #--------------------------------------------------------------------------
   def input_item
-    @item_window.start
+    input_wait_until_msg_wh(@item_window)
     input_wait_while_active(@item_window)
   end
   #--------------------------------------------------------------------------
-  # ● 并行等待窗口处理结束
+  # ● 等待对话框宽高处理结束
   #--------------------------------------------------------------------------
-  def input_wait_while_active(window)
-    while window.active
-      if @eagle_force_close
-        window.deactivate
-        window.close
-        break
-      end
+  def input_wait_until_msg_wh(child_window)
+    child_window.start
+    while(true)
+      d1 = game_message.child_window_w_des - game_message.child_window_w_add
+      d2 = game_message.child_window_h_des - game_message.child_window_h_add
+      break if d1 == 0 && d2 == 0
+      d = d1 / 4
+      d = (d1 > 0 ? 1 : (d1 < 0 ? -1 : 0)) if d == 0
+      game_message.child_window_w_add += d
+      d = d2 / 4
+      d = (d2 > 0 ? 1 : (d2 < 0 ? -1 : 0)) if d == 0
+      game_message.child_window_h_add += d
+      eagle_win_update
+      Fiber.yield
+    end
+    child_window.show.open.activate
+  end
+  #--------------------------------------------------------------------------
+  # ● 并行等待子窗口处理结束
+  #--------------------------------------------------------------------------
+  def input_wait_while_active(child_window)
+    while child_window.active
+      break child_window.deactivate.close if @eagle_force_close
       @fiber_para.resume if @fiber_para
       Fiber.yield
     end
