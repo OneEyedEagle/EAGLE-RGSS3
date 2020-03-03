@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.3.1.11 优化嵌入模式
+# - 2020.3.3.12 修复倒计时后选项未刷新的BUG
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -412,7 +412,8 @@ class Window_ChoiceList < Window_Command
       t = @choices_info[index][:extra][:rt] || 5
       s.set_timer(:replace, t * 60, @choices_info[index][:extra][:ri])
     end
-    s.update; @choices[index] = s
+    s.update
+    @choices[index] = s
   end
   #--------------------------------------------------------------------------
   # ● 更新光标
@@ -428,21 +429,26 @@ class Window_ChoiceList < Window_Command
       s.set_xywh( nil, y_ )
     end
   end
+
   #--------------------------------------------------------------------------
   # ● 用事件列表中i_e_new号选项分支替换窗口中i_w号选项
   #--------------------------------------------------------------------------
   def replace_choice(i_e_new, i_w)
     @choices[i_w].move_out
     if i_e_new < 0
-      process_choice("", i_e_new, i_w, false)
+      i_e_old = @choices_info[i_w][:i_e]
+      process_choice($game_message.choices[i_e_old].dup, i_e_old, i_w, false)
       @choices_info[i_w][:enable] = false
       @list[i_w][:enabled] = false # 修改 add_command 中的数据
+      redraw_item(i_w)
+      @choices[i_w].dispose_timer # 防止二次倒计时
     else
       process_choice($game_message.choices[i_e_new].dup, i_e_new, i_w, false)
+      redraw_item(i_w)
+      reset_size; update_placement
     end
-    cursor_rect.empty
-    redraw_item(i_w)
-    reset_size; update_placement # 更新窗口大小和位置
+    @choices[i_w].set_active(true)
+    @choices[i_w].set_visible(true)
     select(self.index)
   end
 
@@ -500,6 +506,14 @@ class Window_ChoiceList < Window_Command
     close
   end
   #--------------------------------------------------------------------------
+  # ● 激活
+  #--------------------------------------------------------------------------
+  alias eagle_choicelist_ex_activate activate
+  def activate
+    @choices.each { |i, s| s.set_active(true) }
+    eagle_choicelist_ex_activate
+  end
+  #--------------------------------------------------------------------------
   # ● 打开
   #--------------------------------------------------------------------------
   alias eagle_choicelist_ex_open open
@@ -545,7 +559,8 @@ class Spriteset_Choice
     @chara_dwin_rect = nil
     @font = @choice_window.contents.font.dup # 每个选项存储独立的font对象
     @font_params = $game_message.font_params.dup # font转义符参数
-    @visible = false
+    @active = false # 是否开始移入
+    @visible = false # 是否可见
     @enabled = true
     @timer = nil
   end
@@ -588,6 +603,12 @@ class Spriteset_Choice
   def eagle_charas_ox; 0; end
   def eagle_charas_oy; 0; end
   #--------------------------------------------------------------------------
+  # ● 设置倒计时激活状态
+  #--------------------------------------------------------------------------
+  def set_active(bool)
+    @active = bool
+  end
+  #--------------------------------------------------------------------------
   # ● 设置文字的显示状态
   #--------------------------------------------------------------------------
   def set_visible(bool)
@@ -615,6 +636,7 @@ class Spriteset_Choice
   # ● 更新
   #--------------------------------------------------------------------------
   def update
+    return unless @active
     update_timer if @timer
     return unless @visible
     @fiber.resume if @fiber
@@ -625,12 +647,13 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   def set_timer(type, count, i_e_target)
     # [计数, 总计, 类型, 目标选项的事件中序号]
-    @timer = [count, count, type, i_e_target]
+    @timer = [count+1, count, type, i_e_target]
     @timer_viewport = Viewport.new(@chara_dwin_rect)
     @timer_viewport.z = self.z - 1
     @timer_s = Sprite.new(@timer_viewport)
     @timer_s.bitmap = Bitmap.new(@chara_dwin_rect.width, @chara_dwin_rect.height)
     @timer_s.bitmap.fill_rect(@timer_s.bitmap.rect, Color.new(180,180,180,50))
+    update_timer
   end
   #--------------------------------------------------------------------------
   # ● 更新计时器
