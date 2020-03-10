@@ -12,6 +12,13 @@ def getUserName
 end
 p getUserName
 
+ShellExecute = Win32API.new("shell32.dll", "ShellExecute", "LPPPPI", "I")
+def run_text
+  ShellExecute.call(0, "open", "README.md", nil, nil, 1)
+end
+run_text
+#p Dir.pwd
+
 # 获取某个按键的状态
 #  返回：高位为1代表被按下，低位为1代表被激活（如大写）
 #@getKeyState = Win32API.new("user32", "GetKeyState", 'i', 'i')

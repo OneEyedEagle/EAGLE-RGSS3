@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 角色头顶显示图标 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.2.13.22
+# - 2020.3.6.11 修复bitmap无效的bug
 #==============================================================================
 # - 本插件新增了在地图上角色头顶显示指定图标的功能（仿气泡）
 #--------------------------------------------------------------------------
@@ -50,7 +50,6 @@ class Sprite_Character < Sprite_Base
     @pop_icon = 0
     eagle_popicon_init(viewport, character)
     @popicon_sprite = ::Sprite.new(viewport)
-    @popicon_sprite.bitmap = Bitmap.new(24, 24)
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -58,7 +57,7 @@ class Sprite_Character < Sprite_Base
   alias eagle_popicon_dispose dispose
   def dispose
     eagle_popicon_dispose
-    @popicon_sprite.bitmap.dispose
+    @popicon_sprite.bitmap.dispose if @popicon_sprite.bitmap
     @popicon_sprite.dispose
   end
   #--------------------------------------------------------------------------
@@ -95,6 +94,7 @@ class Sprite_Character < Sprite_Base
     @pop_icon = @character.pop_icon
     @character.pop_icon = 0
 
+    @popicon_sprite.bitmap ||= Bitmap.new(24, 24)
     @popicon_sprite.bitmap.clear
     @popicon_sprite.ox = 12
     @popicon_sprite.oy = 24
