@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.3.1.11 优化选择框等的嵌入效果
+# - 2020.3.11.13 修复读档后无法读取背景图片的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1719,13 +1719,13 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_recreate_back_bitmap
     if game_message.win_params[:bg] # 绘制图片背景
-      if game_message.win_params[:bg_draw] != game_message.win_params[:bg]
+      if @win_bg_draw != game_message.win_params[:bg]
         _bitmap = MESSAGE_EX.windowbg(game_message.win_params[:bg])
         if _bitmap != nil
           @back_sprite.bitmap = _bitmap
           @back_sprite.visible = true
           self.opacity = 0
-          game_message.win_params[:bg_draw] = game_message.win_params[:bg]
+          @win_bg_draw = game_message.win_params[:bg]
           return
         end
       else
@@ -1734,7 +1734,7 @@ class Window_Message
         return
       end
     end
-    game_message.win_params[:bg_draw] = nil # 清除之前的图片背景
+    @win_bg_draw = nil # 清除之前的图片背景
     if game_message.background == 0 # 普通
       @back_sprite.visible = false
       self.opacity = 255
