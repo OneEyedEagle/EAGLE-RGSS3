@@ -13,7 +13,7 @@
 - Message System → 对默认对话框的扩展 或 与文本显示相关的插件
 - Event System → 对事件的扩展 或 地图上可用的扩展
 - Battle System → 战斗相关插件 或 对VA数据库的扩展
-- UI Parts → 场景 或 UI类的插件
+- UI Parts → 功能系统 或 UI类的插件
 - Extra Parts → 额外扩展组件，用于实现一些基础功能
 - Demos → 一些特定插件的范例工程，具体见各个子文件夹下的README文件
 - TEMP → （不推荐使用）仍在设计中的或修改中的未完成品
