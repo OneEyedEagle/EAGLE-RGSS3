@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventAlert"] = true
 #==============================================================================
-# - 2020.2.20.15 增强兼容性
+# - 2020.3.17.11 当事件被消除，不再更新警报
 #==============================================================================
 # - 本插件新增警报机制，以并行判定并执行简单脚本
 #--------------------------------------------------------------------------
@@ -95,12 +95,20 @@ class Game_Event
     @eagle_alerts = EVENT_ALERT.parse_note(t)
   end
   #--------------------------------------------------------------------------
+  # ● 清除事件页的设置
+  #--------------------------------------------------------------------------
+  alias eagle_event_alert_trigger_clear_page_settings clear_page_settings
+  def clear_page_settings
+    eagle_event_alert_trigger_clear_page_settings
+    @eagle_alerts = []
+  end
+  #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
   alias eagle_event_alert_trigger_update update
   def update
     eagle_event_alert_trigger_update
-    alert_triggers_update
+    alert_triggers_update if @eagle_alerts
   end
   #--------------------------------------------------------------------------
   # ● 更新警报
