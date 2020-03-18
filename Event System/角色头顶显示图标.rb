@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 角色头顶显示图标 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.3.15.23 修复bitmap无效的bug
+# - 2020.3.18.17 优化逻辑
 #==============================================================================
 # - 本插件新增了在地图上角色头顶显示指定图标的功能（仿气泡）
 #--------------------------------------------------------------------------
@@ -33,8 +33,8 @@ class Game_Character
   #--------------------------------------------------------------------------
   alias eagle_popicon_init initialize
   def initialize
-    eagle_popicon_init
     @pop_icon = 0
+    eagle_popicon_init
   end
 end
 #=============================================================================
@@ -79,21 +79,37 @@ class Sprite_Character < Sprite_Base
     bitmap.blt(x, y, bitmap_, rect, enabled ? 255 : 120)
   end
   #--------------------------------------------------------------------------
-  # ● 重置图标pop
+  # ● 更新图标pop
   #--------------------------------------------------------------------------
-  def reset_popicon
+  def update_popicon
     if $game_switches[POP_ICON::S_ID_NO_POP]
       end_popicon if @pop_icon != 0
       return
     end
-    # 若与当前显示的一致，则继续显示
+    # 若icon被手动赋值
+    reset_popicon if @character.pop_icon > 0
+    if @pop_icon > 0
+      return end_popicon if @popicon_count == @popicon_max || @character.pop_icon == 0
+      # 此处可以加入在第 @popicon_count 帧的额外处理
+
+      @popicon_sprite.x = x
+      @popicon_sprite.y = y - height
+      @popicon_sprite.z = z + 200
+      @popicon_sprite.update
+      @popicon_count += 1
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置图标pop
+  #--------------------------------------------------------------------------
+  def reset_popicon
+    # 若新icon与当前显示的一致，则继续显示
     if @character.pop_icon == @pop_icon
-      @character.pop_icon = 0
       @popicon_count = 0 if @popicon_count == @popicon_max
       return
     end
     @pop_icon = @character.pop_icon
-    @character.pop_icon = 0
+    @character.pop_icon = -1 # 在显示中，则置为-1
 
     @popicon_sprite ||= Sprite.new(viewport)
     @popicon_sprite.bitmap ||= Bitmap.new(24, 24)
@@ -106,26 +122,11 @@ class Sprite_Character < Sprite_Base
     @popicon_max = POP_ICON::MAX_POP_FRAME # 激活一次后显示的帧数
   end
   #--------------------------------------------------------------------------
-  # ● 更新图标pop
-  #--------------------------------------------------------------------------
-  def update_popicon
-    reset_popicon if @character.pop_icon > 0
-    if @pop_icon > 0
-      return end_popicon if @popicon_count == @popicon_max
-      # 此处可以加入在第 @popicon_count 帧的额外处理
-
-      @popicon_sprite.x = x
-      @popicon_sprite.y = y - height
-      @popicon_sprite.z = z + 200
-      @popicon_sprite.update
-      @popicon_count += 1
-    end
-  end
-  #--------------------------------------------------------------------------
   # ● 释放图标pop
   #--------------------------------------------------------------------------
   def end_popicon
     @popicon_sprite.bitmap.clear
     @pop_icon = 0
+    @character.pop_icon = 0
   end
 end

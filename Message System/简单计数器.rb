@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-Counter"] = true
 #=============================================================================
-# - 2020.2.14.12 新增显隐控制
+# - 2020.3.18.13 优化：当变量值未变化时，任意赋值也不会再重绘
 #=============================================================================
 # - 本插件提供了一组绑定于默认变量 $game_variables 的计数器
 # - 在地图上时，指定的文本将显示于屏幕指定位置，当变量值变更时将自动重绘
@@ -20,9 +20,10 @@ $imported["EAGLE-Counter"] = true
 #  【参数列表】
 #   （精灵相关）
 #     :x/:y/:z → 计数器精灵在屏幕中的显示位置
+#     :ox/:oy  → 计数器精灵的显示原点
 #   （位图相关）
 #     :w/:h → 位图Bitmap的宽度和高度
-#     :pic → 所用的背景图片的名称（位于Graphics/System下）（覆盖:w/:h的设置）
+#     :pic  → 所用的背景图片的名称（位于Graphics/System下）（覆盖:w/:h的设置）
 #   （文本相关）
 #     :text → 所绘制文本，其中 <v> 将会被替换成所绑定变量的值
 #     :cx/:cy → 所绘制文本在位图Bitmap中的位置（以位图左上角为原点）
@@ -71,6 +72,14 @@ module Counter
     $game_system.counters[v_id] = params
   end
   #--------------------------------------------------------------------------
+  # ● 设置计数器
+  #--------------------------------------------------------------------------
+  def self.set(v_id, params = {})
+    return if $game_system.counters[v_id].nil?
+    $game_system.counters[v_id].merge!(params)
+    $game_system.counters[v_id][:refresh] = true # 需要刷新的标志
+  end
+  #--------------------------------------------------------------------------
   # ● 删除计数器
   #--------------------------------------------------------------------------
   def self.delete(v_id)
@@ -107,14 +116,12 @@ end
 # ○ Game_System
 #==============================================================================
 class Game_System
-  attr_reader :counters
   #--------------------------------------------------------------------------
-  # ● 初始化
+  # ● 读取
   #--------------------------------------------------------------------------
-  alias eagle_counter_init initialize
-  def initialize
-    eagle_counter_init
-    @counters = {}
+  def counters
+    @counters ||= {}
+    @counters
   end
 end
 #==============================================================================
@@ -144,7 +151,14 @@ class Sprite_Counter < Sprite
     super(viewport)
     @v_id = v_id
     @flag_update = false # 每帧重置为false，若更新结束依然为false，则需要删除
+    @last_v = nil
     refresh
+  end
+  #--------------------------------------------------------------------------
+  # ● 参数
+  #--------------------------------------------------------------------------
+  def params
+    $game_system.counters[@v_id]
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -158,36 +172,28 @@ class Sprite_Counter < Sprite
   #--------------------------------------------------------------------------
   def update
     super
-    update_visible
-    refresh if $game_system.counters[@v_id][:refresh]
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新显示
-  #--------------------------------------------------------------------------
-  def update_visible
-    self.visible = $game_system.counters[@v_id][:visible]
+    self.visible = params[:visible]
+    refresh if params[:refresh]
   end
   #--------------------------------------------------------------------------
   # ● 重绘
   #--------------------------------------------------------------------------
   def refresh
     $game_system.counters[@v_id][:refresh] = false
-    params = $game_system.counters[@v_id]
+    return if @last_v == $game_variables[@v_id]
+    @last_v = $game_variables[@v_id]
+    self.x  = params[:x] || 0
+    self.y  = params[:y] || 0
+    self.z  = params[:z] || 0
+    self.ox = params[:ox] || 0
+    self.oy = params[:oy] || 0
     redraw_bg
-    self.x = params[:x] || 0
-    self.y = params[:y] || 0
-    self.z = params[:z] || 0
-    cx = params[:cx] || 0
-    cy = params[:cy] || 0
-    t  = params[:text] || "#{@v_id} 号变量：<v>"
-    t.gsub!(/<v>/) { $game_variables[@v_id] }
-    draw_text_ex(cx, cy, t)
+    redraw_contents
   end
   #--------------------------------------------------------------------------
   # ● 重绘背景
   #--------------------------------------------------------------------------
   def redraw_bg
-    params = $game_system.counters[@v_id]
     self.bitmap.dispose if self.bitmap
     if params[:pic]
       self.bitmap = Cache.system(params[:pic]).dup
@@ -199,10 +205,21 @@ class Sprite_Counter < Sprite
     self.bitmap.font.size = params[:size] if params[:size]
   end
   #--------------------------------------------------------------------------
+  # ● 重绘内容
+  #--------------------------------------------------------------------------
+  def redraw_contents
+    cx = params[:cx] || 0
+    cy = params[:cy] || 0
+    t  = params[:text] || "#{@v_id} 号变量：<v>"
+    t.gsub!(/<v>/) { $game_variables[@v_id] }
+    draw_text_ex(cx, cy, t)
+  end
+  #--------------------------------------------------------------------------
   # ● 绘制带有控制符的文本内容
   #--------------------------------------------------------------------------
   def draw_text_ex(x, y, text)
-    text = SceneManager.scene.message_window.convert_escape_characters(text)
+    s = SceneManager.scene
+    text = s.message_window.convert_escape_characters(text) rescue return
     pos = {:x => x, :y => y, :new_x => x, :height => self.bitmap.font.size }
     process_character(text.slice!(0, 1), text, pos) until text.empty?
   end

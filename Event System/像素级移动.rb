@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.3.18.10 优化载具乘降
+# - 2020.3.18.13 优化载具乘降；修复步数计数BUG
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -976,6 +976,7 @@ class Game_Player < Game_Character
       return move_straight(Input.dir4, true, PIXEL_MOVE::PLAYER_MOVE_UNIT)
     end
     case Input.dir8
+    when 0; return
     when 1; move_straight_8dir(4, 2)
     when 3; move_straight_8dir(6, 2)
     when 7; move_straight_8dir(4, 8)
