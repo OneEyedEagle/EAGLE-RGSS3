@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.3.16.0 修复地图卷动距离错误
+# - 2020.3.18.10 优化载具乘降
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -40,11 +40,23 @@ $imported["EAGLE-PixelMove"] = true
 # - 若第一个 注释 指令内无法写下，可在之后继续添加新的 注释 指令，将合并读取
 #
 #-----------------------------------------------------------------------------
-# ○ 移动平台
+# ○ 事件交互绑定
 #-----------------------------------------------------------------------------
-# - 事件页的第一个指令为 注释 时，在其中填入下式将当前事件设置为移动平台
+# - 事件页的第一个指令为 注释 时，在其中填入下式将当前事件与指定事件（玩家）绑定
 #
-#      <platform>
+#     <bind 对象ID>...</bind>
+#
+#   其中 对象ID 为当前地图的事件的ID（同编辑器内ID）
+#               若填入 0（或省略不填），则为玩家
+#
+#   其中 ... 替换为以下的任意个标签，进行相应绑定内容的设置
+#
+#     <platform> 设置当前事件可以作为绑定事件的移动平台，
+#                当绑定事件移动到当前事件上面时，将会同步移动
+#
+#     <move d> 设置当前事件可以作为绑定事件的强制移动区域，
+#              当绑定事件位于当前事件上面时，将强制向 d 方向持续移动
+#              d 为 2/4/6/8 代表四方向
 #
 # - 当玩家位于该事件上时（玩家的坐标处于该事件的碰撞矩形内部），
 #    玩家将首先移动到该事件中心位置，再跟随事件移动
@@ -62,7 +74,8 @@ $imported["EAGLE-PixelMove"] = true
 #
 #  chara.pos_rect?(rect) 是否与矩形相交（划分后网格坐标）
 #
-#  $game_map.events_rect(rect) 获取与 rect 相交的全部事件（rect 为划分后网格坐标中的矩形）
+#  $game_map.events_rect(rect) 获取与 rect 相交的全部事件
+#                             （rect 为划分后网格坐标中的矩形）
 #  $game_map.events_rect_nt(rect) 获取与 rect 相交的全部事件（不含穿透）
 #=============================================================================
 
@@ -115,6 +128,18 @@ module PIXEL_MOVE
   #  当 |跟随角色x - 玩家x| + |跟随角色y - 玩家y| 大于该值时，跟随角色才移动接近
   #--------------------------------------------------------------------------
   FOLLOWER_MIN_UNIT = 32
+  #--------------------------------------------------------------------------
+  # ● 【设置】小船的初始碰撞矩形（单位：像素）
+  #--------------------------------------------------------------------------
+  BOAT_RECT = Rect.new(-7, -15, 16, 16)
+  #--------------------------------------------------------------------------
+  # ● 【设置】大船的初始碰撞矩形（单位：像素）
+  #--------------------------------------------------------------------------
+  SHIP_RECT = Rect.new(-15, -31, 32, 32)
+  #--------------------------------------------------------------------------
+  # ● 【设置】飞艇的初始碰撞矩形（单位：像素）
+  #--------------------------------------------------------------------------
+  AIRSHIP_RECT = Rect.new(-7, -15, 16, 16)
 #==============================================================================
 # ■ 单位转换
 #==============================================================================
@@ -198,19 +223,61 @@ module PIXEL_MOVE
     return x, y, w, h
   end
   #--------------------------------------------------------------------------
-  # ● 解析浮动平台字符串
+  # ● 解析事件绑定
   #--------------------------------------------------------------------------
-  def self.parse_floating_platform_str(str)
-    if str =~ /<platform>/i
-      return true
+  def self.parse_event_bindings(str)
+    hash_ = {} # chara_id => {flag=>value}
+    str.scan(/<bind ?(\d+)?>(.*?)<\/bind>/m).each do |params|
+      id = params[0].to_i || 0
+      hash_[id] ||= {}
+      if params[1] =~ /<platform>/
+        hash_[id][:platform] = true
+        hash_[id][:f_on_platform] = false
+      end
+      if params[1] =~ /<move ?(\d+)>/
+        hash_[id][:move] = $1.to_i
+      end
     end
-    return false
+    hash_
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取角色对象
+  #--------------------------------------------------------------------------
+  def self.get_target(t_id)
+    return $game_player if t_id == 0
+    return $game_map.events[t_id] || nil
   end
 #==============================================================================
 # ■ 碰撞判定
 #==============================================================================
   #--------------------------------------------------------------------------
-  # ● 点在矩形内部？
+  # ● 朝指定方向移动矩形（返回新矩形）
+  #--------------------------------------------------------------------------
+  def self.move_rect(rect_origin, direction, d = 1)
+    rect = rect_origin.clone
+    case direction
+    when 2; rect.y += d
+    when 4; rect.x -= d
+    when 6; rect.x += d
+    when 8; rect.y -= d
+    end
+    rect
+  end
+  #--------------------------------------------------------------------------
+  # ● 朝指定方向拉长矩形（返回新矩形）
+  #--------------------------------------------------------------------------
+  def self.lengthen_rect(rect_origin, direction, d = 1)
+    rect = rect_origin.clone
+    case direction
+    when 2; rect.height += d
+    when 4; rect.x -= d; rect.width += d
+    when 6; rect.width += d
+    when 8; rect.y -= d; rect.height += d
+    end
+    rect
+  end
+  #--------------------------------------------------------------------------
+  # ● 点在矩形内部？（或在矩形四边上）
   #--------------------------------------------------------------------------
   def self.in_rect?(x, y, rect)
     x >= rect.x && y >= rect.y &&
@@ -564,13 +631,22 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ○ 获取碰撞矩形
-  #  当 raw_rect 为 false 时，返回实际坐标下的碰撞矩形
+  #  当 raw_rect 为 false 时，返回角色坐标下的碰撞矩形
   #--------------------------------------------------------------------------
   def get_collision_rect(raw_rect = true)
     return @collision_rect if raw_rect
     rect = @collision_rect.dup
     rect.x += @x
     rect.y += @y
+    return rect
+  end
+  #--------------------------------------------------------------------------
+  # ○ 获取实际坐标的碰撞矩形
+  #--------------------------------------------------------------------------
+  def get_collision_rectR
+    rect = @collision_rect.dup
+    rect.x += @real_x
+    rect.y += @real_y
     return rect
   end
   #--------------------------------------------------------------------------
@@ -624,10 +700,17 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ○ 矩形碰撞判断
-  #  IN: 实际坐标下的碰撞矩形（左上角点的xy与wh）
+  #  IN: 角色坐标的碰撞矩形（左上角点的xy与wh）
   #--------------------------------------------------------------------------
   def pos_rect?(rect)
     return PIXEL_MOVE.rect_collide_rect?(rect, get_collision_rect(false))
+  end
+  #--------------------------------------------------------------------------
+  # ○ 矩形碰撞判断
+  #  IN: 实际坐标的碰撞矩形（左上角点的xy与wh）
+  #--------------------------------------------------------------------------
+  def pos_rectR?(rect)
+    return PIXEL_MOVE.rect_collide_rect?(rect, get_collision_rectR)
   end
   #--------------------------------------------------------------------------
   # ○ 判定 矩形是否碰撞 与“穿透是否关闭”（nt = No Through）
@@ -666,7 +749,7 @@ class Game_CharacterBase
     update_bush_depth
   end
   #--------------------------------------------------------------------------
-  # ○ 直接指定理论坐标
+  # ○ 直接指定理论坐标 / 预定移动到目的地 (x,y)
   #  IN: unitXY
   #--------------------------------------------------------------------------
   def set_xy(x = nil, y = nil)
@@ -674,10 +757,10 @@ class Game_CharacterBase
     @y = y.to_i if y
   end
   #--------------------------------------------------------------------------
-  # ○ 强制移动
+  # ○ 直接移动到(x+dx, y+dy) / 直接增加坐标的偏移量
   #  IN: unitXY
   #--------------------------------------------------------------------------
-  def move_force_pixel(dx, dy)
+  def moveto_dxy_unit(dx, dy)
     @x += dx; @y += dy
     @real_x += dx; @real_y += dy
   end
@@ -714,34 +797,36 @@ class Game_CharacterBase
         return false unless map_passable?(x1, y1, d)
         return false unless map_passable?(x2, y2, reverse_dir(d))
       end
-      return false if collide_with_vehicles?(x2_p, y2_p)
     end
     dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, 7)
     r = get_collision_rect(false)
     r.x = $game_map.round_x_with_direction(x+dx, d)
     r.y = $game_map.round_y_with_direction(y+dy, d)
+    return false if collide_with_charas_rect?(r)
     return false if collide_with_events_rect?(r)
     return true
   end
   #--------------------------------------------------------------------------
-  # ○ 判定是否与事件矩形碰撞
+  # ○ 判定是否与玩家矩形碰撞
   #--------------------------------------------------------------------------
-  def collide_with_events_rect?(rect)
-    $game_map.events.each do |id, event|
-      next if event == self || !event.normal_priority? || event.through
-      if PIXEL_MOVE.rect_collide_rect?(event.get_collision_rect(false), rect)
+  def collide_with_charas_rect?(rect)
+    [$game_player, $game_map.boat, $game_map.ship].each do |chara|
+      next if self == chara || chara.through
+      if PIXEL_MOVE.rect_collide_rect?(chara.get_collision_rect(false), rect)
         return true
       end
     end
     return false
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）判定是否与事件碰撞
+  # ○ 判定是否与事件矩形碰撞
   #--------------------------------------------------------------------------
-  def collide_with_events?(x, y)
+  def collide_with_events_rect?(rect)
     $game_map.events.each do |id, event|
-      next if event == self || !event.normal_priority? || event.through
-      return true if event.pos?(x, y)
+      next if self == event || !event.normal_priority? || event.through
+      if PIXEL_MOVE.rect_collide_rect?(event.get_collision_rect(false), rect)
+        return true
+      end
     end
     return false
   end
@@ -874,10 +959,10 @@ class Game_Player < Game_Character
     $game_map.set_display_pos(x_ - center_x, y_ - center_y) # unitXY
   end
   #--------------------------------------------------------------------------
-  # ○ 强制移动
+  # ○ 直接移动到(x+dx, y+dy) / 直接增加坐标的偏移量
   #  IN: unitXY
   #--------------------------------------------------------------------------
-  def move_force_pixel(dx = 0, dy = 0)
+  def moveto_dxy_unit(dx = 0, dy = 0)
     last_real_x = @real_x; last_real_y = @real_y
     super
     update_scroll(last_real_x, last_real_y)
@@ -944,6 +1029,47 @@ class Game_Player < Game_Character
       PIXEL_MOVE.pixel2unit(32))
     start_map_event(x3, y3, triggers, true)
   end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）登上载具
+  #    前提是没有乘坐着载具。
+  #--------------------------------------------------------------------------
+  def get_on_vehicle
+    d, e = PIXEL_MOVE.pixel2unit(32)
+    rect = PIXEL_MOVE.lengthen_rect(get_collision_rect(false), @direction, d)
+    @vehicle_type = :boat    if $game_map.boat.pos_rect?(rect)
+    @vehicle_type = :ship    if $game_map.ship.pos_rect?(rect)
+    @vehicle_type = :airship if $game_map.airship.pos_rect?(get_collision_rect(false))
+    if vehicle
+      @vehicle_getting_on = true
+      set_xy(vehicle.x, vehicle.y)
+      @followers.gather
+    end
+    @vehicle_getting_on
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）离开载具
+  #    前提是乘坐着载具。
+  #--------------------------------------------------------------------------
+  def get_off_vehicle
+    if vehicle.land_ok?(@x, @y, @direction)
+      set_direction(2) if in_airship?
+      @followers.synchronize_unit(@x, @y, @direction)
+      vehicle.get_off
+      unless in_airship?
+        n, e = PIXEL_MOVE.rgss2unit(1)
+        des_x = $game_map.round_x_with_direction_n(vehicle.x, @direction, n)
+        des_y = $game_map.round_y_with_direction_n(vehicle.y, @direction, n)
+        set_xy(des_x, des_y)
+        @transparent = false
+      end
+      @vehicle_getting_off = true
+      @move_speed = 4
+      @through = false
+      make_encounter_count
+      @followers.gather
+    end
+    @vehicle_getting_off
+  end
 end
 #==============================================================================
 # ■ Game_Follower
@@ -952,12 +1078,12 @@ class Game_Follower < Game_Character
   #--------------------------------------------------------------------------
   # ● （覆盖）追随带队角色
   #--------------------------------------------------------------------------
-  def chase_preceding_character
+  def chase_preceding_character(gathering = false)
     unless moving?
       sx = distance_x_from(@preceding_character.x).to_i
       sy = distance_y_from(@preceding_character.y).to_i
       dx = sx.abs; dy = sy.abs
-      return if dx + dy < PIXEL_MOVE::FOLLOWER_MIN_UNIT
+      return if !gathering && dx + dy < PIXEL_MOVE::FOLLOWER_MIN_UNIT
       if sx != 0 && sy != 0
         n = [dx, dy, PIXEL_MOVE::PLAYER_MOVE_UNIT].min
         move_diagonal(sx > 0 ? 4 : 6, sy > 0 ? 8 : 2, n)
@@ -972,9 +1098,40 @@ class Game_Follower < Game_Character
   end
 end
 #==============================================================================
+# ■ Game_Followers
+#==============================================================================
+class Game_Followers
+  #--------------------------------------------------------------------------
+  # ● （覆盖）移动
+  #--------------------------------------------------------------------------
+  def move
+    reverse_each {|follower| follower.chase_preceding_character(@gathering) }
+  end
+  #--------------------------------------------------------------------------
+  # ○ 同步
+  #--------------------------------------------------------------------------
+  def synchronize_unit(x, y, d)
+    each do |follower|
+      follower.moveto_unit(x, y)
+      follower.set_direction(d)
+    end
+  end
+end
+#==============================================================================
 # ■ Game_Vehicle
 #==============================================================================
 class Game_Vehicle < Game_Character
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #     type : 载具类型（:boat, :ship, :airship）
+  #--------------------------------------------------------------------------
+  alias eagle_pixel_move_vehicle_init initialize
+  def initialize(type)
+    eagle_pixel_move_vehicle_init(type)
+    set_collision_rect(PIXEL_MOVE::BOAT_RECT) if @type == :boat
+    set_collision_rect(PIXEL_MOVE::SHIP_RECT) if @type == :ship
+    set_collision_rect(PIXEL_MOVE::AIRSHIP_RECT) if @type == :airship
+  end
   #--------------------------------------------------------------------------
   # ● （覆盖）判定是否可以靠岸／着陆
   #     d : 方向（2,4,6,8）
@@ -982,16 +1139,21 @@ class Game_Vehicle < Game_Character
   #--------------------------------------------------------------------------
   def land_ok?(x, y, d)
     if @type == :airship
-      return false unless $game_map.events_rect(get_collision_rect(false)).empty?
+      x_, e = PIXEL_MOVE.unit2rgss(x)
+      y_, e = PIXEL_MOVE.unit2rgss(y)
+      return false unless $game_map.airship_land_ok?(x_, y_)
+      return false unless $game_map.events_rect_nt(get_collision_rect(false)).empty?
     else
-      x2_p = $game_map.round_x_with_direction(x, d)
-      y2_p = $game_map.round_y_with_direction(y, d)
+      n, e = PIXEL_MOVE.rgss2unit(1)
+      x2_p = $game_map.round_x_with_direction_n(x, d, n)
+      y2_p = $game_map.round_y_with_direction_n(y, d, n)
       # 移动后坐标 rgssXY
       x2, e = PIXEL_MOVE.unit2rgss(x2_p)
       y2, e = PIXEL_MOVE.unit2rgss(y2_p)
       return false unless $game_map.valid?(x2, y2)
       return false unless $game_map.passable?(x2, y2, reverse_dir(d))
-      return false if collide_with_characters?(x2_p, y2_p)
+      rect = PIXEL_MOVE.lengthen_rect(get_collision_rect(false), d, n)
+      return false if collide_with_events_rect?(rect)
     end
     return true
   end
@@ -1001,18 +1163,17 @@ end
 #==============================================================================
 class Game_Event < Game_Character
   #--------------------------------------------------------------------------
-  # ● 设置事件页的设置
+  # ● 设置事件页
   #--------------------------------------------------------------------------
-  alias eagle_pixel_move_setup_page_settings setup_page_settings
-  def setup_page_settings
-    eagle_pixel_move_setup_page_settings
+  alias eagle_pixel_move_setup_page setup_page
+  def setup_page(new_page)
+    eagle_pixel_move_setup_page(new_page)
     t = EAGLE.event_comment_head(@list)
     # 检查碰撞矩形
     x, y, w, h = PIXEL_MOVE.parse_collision_xywh_str(t)
     set_collision_xywh(x, y, w, h)
-    # 检查浮动平台
-    @flag_platform = PIXEL_MOVE.parse_floating_platform_str(t)
-    @flag_player_on_platform = false
+    # 检查事件绑定 # chara_id => {flag => value}
+    @eagle_binds = PIXEL_MOVE.parse_event_bindings(t)
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）判定事件是否临近玩家
@@ -1023,18 +1184,14 @@ class Game_Event < Game_Character
     sx + sy < 20 * PIXEL_MOVE::UNIT_PER_MAP_GRID
   end
   #--------------------------------------------------------------------------
-  # ○ 判定事件是否与玩家碰撞
-  #--------------------------------------------------------------------------
-  def rect_collide_player?
-    PIXEL_MOVE.rect_collide_rect?(get_collision_rect(false),
-      $game_player.get_collision_rect(false))
-  end
-  #--------------------------------------------------------------------------
-  # ● （覆盖）接触事件的启动判定
+  # ● （覆盖）事件接触的启动判定
+  #  传入的(x,y)是碰撞矩形各边中点再向前一个单位
   #--------------------------------------------------------------------------
   def check_event_trigger_touch(x, y)
     return if $game_map.interpreter.running?
-    if @trigger == 2 && rect_collide_player?
+    return if @trigger != 2 # 事件接触触发
+    r = PIXEL_MOVE.move_rect(get_collision_rectR, @direction, 1)
+    if PIXEL_MOVE.rect_collide_rect?(r, $game_player.get_collision_rectR)
       start if !jumping? && normal_priority?
     end
   end
@@ -1057,22 +1214,47 @@ class Game_Event < Game_Character
   def update
     last_real_x = @real_x; last_real_y = @real_y
     eagle_pixel_move_update
-    update_floating_platform(last_real_x, last_real_y) if @flag_platform
+    @eagle_binds.each do |c_id, ps|
+      update_binding_platform(c_id, last_real_x, last_real_y) if ps[:platform]
+      update_binding_move(c_id, last_real_x, last_real_y) if ps[:move]
+    end
   end
   #--------------------------------------------------------------------------
-  # ○ 更新浮动平台（主角专用）
+  # ○ 更新移动平台
   #--------------------------------------------------------------------------
-  def update_floating_platform(last_real_x, last_real_y)
-    f = real_pos?($game_player.real_x, $game_player.real_y)
-    if f
-      if !@flag_player_on_platform # 强制居中于浮动平台 防止卡位bug
+  def update_binding_platform(c_id, last_real_x, last_real_y)
+   chara = PIXEL_MOVE.get_target(c_id)
+   if real_pos?(chara.real_x, chara.real_y)
+      if !@eagle_binds[c_id][:f_on_platform] # 强制居中于浮动平台 防止卡位bug
+        @eagle_binds[c_id][:f_on_platform] = true
         dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, 5)
-        $game_player.set_xy(last_real_x+dx, last_real_y+dy)
+        return chara.set_xy(last_real_x+dx, last_real_y+dy)
       end
-      @flag_player_on_platform = true
-      $game_player.move_force_pixel(@real_x-last_real_x, @real_y - last_real_y)
+      chara.moveto_dxy_unit(@real_x-last_real_x, @real_y - last_real_y)
     else
-      @flag_player_on_platform = false
+      @eagle_binds[c_id][:f_on_platform] = false
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ○ 更新自动移动
+  #--------------------------------------------------------------------------
+  def update_binding_move(c_id, last_real_x, last_real_y)
+    chara = PIXEL_MOVE.get_target(c_id)
+    return if chara.moving?
+    chara_x_5, chara_y_5 = chara.get_collision_xy(5)
+    if pos?(chara_x_5, chara_y_5)
+      if !@eagle_binds[c_id][:f_on_move] # 强制居中于移动块
+        @eagle_binds[c_id][:f_on_move] = true
+        dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, 5)
+        return chara.set_xy(last_real_x+dx, last_real_y+dy)
+      end
+      d = @eagle_binds[c_id][:move]
+      x = $game_map.x_with_direction_n(chara.x, d, 4)
+      y = $game_map.y_with_direction_n(chara.y, d, 4)
+      chara.set_direction(d)
+      chara.moveto_dxy_unit(x - chara.x, y - chara.y)
+    else
+      @eagle_binds[c_id][:f_on_move] = false
     end
   end
 end
