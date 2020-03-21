@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.3.11.13 修复读档后无法读取背景图片的bug
+# - 2020.3.21.13 修复姓名框绘制错位的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -988,6 +988,29 @@ module MESSAGE_EX::CHARA_EFFECTS
 end
 
 #=============================================================================
+# ○ DataManager
+#=============================================================================
+class << DataManager
+  #--------------------------------------------------------------------------
+  # ● 设置新游戏
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_setup_new_game setup_new_game
+  def setup_new_game
+    eagle_message_ex_setup_new_game
+    $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
+  end
+end
+#=============================================================================
+# ○ Scene_Map
+#=============================================================================
+class Spriteset_Map; attr_reader :character_sprites; end
+class Scene_Map; attr_reader :spriteset, :message_window; end
+#=============================================================================
+# ○ Scene_Battle
+#=============================================================================
+class Scene_Battle; attr_reader :spriteset; end
+
+#=============================================================================
 # ○ Game_Message
 #=============================================================================
 class Game_Message
@@ -1187,6 +1210,25 @@ class Window_Message
   include MESSAGE_EX::CHARA_EFFECTS
   attr_reader :eagle_charas_w, :eagle_charas_h, :eagle_chara_viewport
   #--------------------------------------------------------------------------
+  # ● 获取主参数
+  #--------------------------------------------------------------------------
+  def game_message
+    $game_message
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置指定对象的显示原点位置
+  #--------------------------------------------------------------------------
+  def eagle_reset_xy_origin(obj, o)
+    MESSAGE_EX.reset_xy_origin(obj, o)
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置指定对象依据另一对象小键盘位置的新位置
+  #--------------------------------------------------------------------------
+  def eagle_reset_xy_dorigin(obj, obj2, o)
+    MESSAGE_EX.reset_xy_dorigin(obj, obj2, o)
+  end
+
+  #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
   alias eagle_message_ex_init initialize
@@ -1194,6 +1236,7 @@ class Window_Message
     eagle_message_ex_init
     eagle_message_init_assets
     eagle_message_init_params
+    eagle_message_reset
   end
   #--------------------------------------------------------------------------
   # ● 初始化组件
@@ -1208,7 +1251,7 @@ class Window_Message
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
   end
   #--------------------------------------------------------------------------
-  # ● 初始化参数
+  # ● 初始化参数（只需要最初执行一次）
   #--------------------------------------------------------------------------
   def eagle_message_init_params
     self.arrows_visible = false # 内容位图未完全显示时出现的箭头
@@ -1216,15 +1259,8 @@ class Window_Message
     @in_battle = SceneManager.scene_is?(Scene_Battle) # 战斗场景中？
     @pop_on_map_chara = true # pop绑定的对象为地图场景上的行走图？
     @last_windowskin_index = nil # 上一次所绘制的窗口皮肤的index
-    @temp_message = false # 当前对话框的转义符不会保存到$game_message中？
-    eagle_reset_pop_tag_bitmap # 重置tag的位图
-    eagle_message_reset
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取主参数
-  #--------------------------------------------------------------------------
-  def game_message
-    $game_message
+    @temp_message = false # 当前对话框的转义符不会保存到game_message中？
+    eagle_reset_pop_tag_bitmap # 初始化tag的位图
   end
   #--------------------------------------------------------------------------
   # ● 拷贝自身
@@ -1268,63 +1304,10 @@ class Window_Message
     eagle_message_reset
     eagle_reset_pop_tag_bitmap
     # 重置之前存储的窗口的z值（确保最近的显示在最上面）
-    @eagle_dup_windows.each_with_index { |w, i|
+    @eagle_dup_windows.each_with_index do |w, i|
       w.z = t.z - (i+1) * 5; w.eagle_reset_z
-    }
-    t
-  end
-
-  #--------------------------------------------------------------------------
-  # ● 打开直至完成（当有文字绘制完成时执行）
-  #--------------------------------------------------------------------------
-  def eagle_open_and_wait
-    return if self.openness == 255
-    self.openness = 0
-    # 组件隐藏
-    @eagle_chara_sprites.each { |c| c.visible = false }
-    f_tag = @eagle_sprite_pop_tag.visible
-    @eagle_sprite_pop_tag.visible = false
-    @eagle_sprite_pop_tag.opacity = 0
-    open_and_wait
-    # 组件显示
-    @eagle_chara_sprites.each { |c| c.visible = true }
-    @eagle_sprite_pop_tag.visible = f_tag
-    @eagle_sprite_pop_tag.opacity = 255
-  end
-  #--------------------------------------------------------------------------
-  # ● （覆盖）更新打开处理
-  #--------------------------------------------------------------------------
-  def update_open
-    self.openness += 36
-    @opening = false if open?
-  end
-  #--------------------------------------------------------------------------
-  # ● 关闭
-  #--------------------------------------------------------------------------
-  alias eagle_message_ex_close close
-  def close
-    eagle_message_reset
-    @gold_window.close
-    eagle_message_ex_close
-  end
-  #--------------------------------------------------------------------------
-  # ● （覆盖）关闭窗口并等待关闭结束
-  #--------------------------------------------------------------------------
-  def close_and_wait
-    eagle_message_sprites_move_out
-    close
-    Fiber.yield until all_close?
-  end
-  #--------------------------------------------------------------------------
-  # ● 移出全部文字精灵
-  #--------------------------------------------------------------------------
-  def eagle_message_sprites_move_out
-    while(!@eagle_chara_sprites.empty?)
-      c = win_params[:cor] ? @eagle_chara_sprites.pop : @eagle_chara_sprites.shift
-      ensure_character_visible(c)
-      c.move_out # 已经交由文字池进行后续更新释放
-      win_params[:cwo].times { Fiber.yield }
     end
+    t
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -1401,30 +1384,72 @@ class Window_Message
     @eagle_window_name.z = self.z + 2
     @eagle_sprite_pause.z = self.z + 2
   end
+
   #--------------------------------------------------------------------------
-  # ● 重置指定对象的显示原点位置
+  # ● 打开直至完成（当有文字绘制完成时执行）
   #--------------------------------------------------------------------------
-  def eagle_reset_xy_origin(obj, o)
-    MESSAGE_EX.reset_xy_origin(obj, o)
+  def eagle_open_and_wait
+    return if self.openness == 255
+    self.openness = 0
+    # 组件隐藏
+    @eagle_chara_sprites.each { |c| c.visible = false }
+    f_tag = @eagle_sprite_pop_tag.visible
+    @eagle_sprite_pop_tag.visible = false
+    @eagle_sprite_pop_tag.opacity = 0
+    open_and_wait
+    # 组件显示
+    @eagle_chara_sprites.each { |c| c.visible = true }
+    @eagle_sprite_pop_tag.visible = f_tag
+    @eagle_sprite_pop_tag.opacity = 255
   end
   #--------------------------------------------------------------------------
-  # ● 重置指定对象依据另一对象小键盘位置的新位置
+  # ● （覆盖）更新打开处理
   #--------------------------------------------------------------------------
-  def eagle_reset_xy_dorigin(obj, obj2, o)
-    MESSAGE_EX.reset_xy_dorigin(obj, obj2, o)
+  def update_open
+    self.openness += 36
+    @opening = false if open?
+  end
+  #--------------------------------------------------------------------------
+  # ● 关闭
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_close close
+  def close
+    eagle_message_reset
+    @gold_window.close
+    eagle_message_ex_close
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）关闭窗口并等待关闭结束
+  #--------------------------------------------------------------------------
+  def close_and_wait
+    eagle_message_sprites_move_out
+    close
+    Fiber.yield until all_close?
+  end
+  #--------------------------------------------------------------------------
+  # ● 移出全部文字精灵
+  #--------------------------------------------------------------------------
+  def eagle_message_sprites_move_out
+    while(!@eagle_chara_sprites.empty?)
+      c = win_params[:cor] ? @eagle_chara_sprites.pop : @eagle_chara_sprites.shift
+      ensure_character_visible(c)
+      c.move_out # 已经交由文字池进行后续更新释放
+      win_params[:cwo].times { Fiber.yield }
+    end
   end
 
   #--------------------------------------------------------------------------
-  # ● 更新（在更新fiber之后）
+  # ● 更新
   #--------------------------------------------------------------------------
   alias eagle_message_ex_update update
   def update
     eagle_message_ex_update
+    # 此时已经更新了 @fiber
     @eagle_chara_sprites.each { |s| s.update }
     eagle_dup_windows_update
   end
   #--------------------------------------------------------------------------
-  # ● 更新所有窗口（在更新fiber之前）
+  # ● 更新所有窗口（在 @fiber 更新之前）
   #--------------------------------------------------------------------------
   alias eagle_message_ex_update_all_windows update_all_windows
   def update_all_windows
@@ -1449,35 +1474,12 @@ class Window_Message
     @eagle_dup_windows.delete_if { |w| w.disposed? }
     @eagle_dup_windows.each { |w| w.update; w.dispose if w.openness <= 0 }
   end
-  #--------------------------------------------------------------------------
-  # ● 更新win参数组（初始化/一页绘制完成时调用）
-  #--------------------------------------------------------------------------
-  def eagle_win_update
-    self.width = eagle_window_width
-    self.width += eagle_window_width_add(self.width)
-    self.height = eagle_window_height
-    self.height += eagle_window_height_add(self.height)
-    eagle_recreate_back_bitmap
-    return eagle_pop_update if game_message.pop?
 
-    self.x = game_message.win_params[:x] || 0
-    self.y = game_message.win_params[:y] || (game_message.position * (Graphics.height - self.height) / 2)
-    if game_message.win_params[:do] < 0
-      eagle_reset_xy_dorigin(self, nil, game_message.win_params[:do])
-    end
-    eagle_reset_xy_origin(self, game_message.win_params[:o])
-    self.x += game_message.win_params[:dx]
-    self.y += game_message.win_params[:dy]
-    eagle_fix_position if game_message.win_params[:fix]
-    eagle_set_charas_viewport
-    eagle_change_windowskin
-    eagle_name_update if game_message.name?
-  end
   #--------------------------------------------------------------------------
   # ● 变更窗口皮肤
   #--------------------------------------------------------------------------
   def eagle_change_windowskin(index = nil)
-    index = game_message.win_params[:skin] if index.nil?
+    index = win_params[:skin] if index.nil?
     return if @last_windowskin_index == index
     @last_windowskin_index = index
     self.windowskin = MESSAGE_EX.windowskin(index)
@@ -1488,18 +1490,26 @@ class Window_Message
   #--------------------------------------------------------------------------
   def get_cur_windowskin_index(index = nil)
     return index if index
-    if game_message.pop? && !game_message.pop_params[:skin].nil?
-      return game_message.pop_params[:skin]
-    else
-      return game_message.win_params[:skin]
-    end
+    return pop_params[:skin] if game_message.pop? && !pop_params[:skin].nil?
+    return win_params[:skin]
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 设置对话框的宽高
+  #--------------------------------------------------------------------------
+  def eagle_set_wh
+    self.width = eagle_window_width
+    self.width += eagle_window_width_add(self.width)
+    self.height = eagle_window_height
+    self.height += eagle_window_height_add(self.height)
+    eagle_recreate_back_bitmap
   end
   #--------------------------------------------------------------------------
   # ● 获取窗口宽度高度
   #--------------------------------------------------------------------------
   def eagle_window_width
-    return game_message.pop_params[:w] if game_message.pop? && game_message.pop_params[:w] > 0
-    return game_message.win_params[:w] if game_message.win_params[:w] > 0
+    return pop_params[:w] if game_message.pop? && pop_params[:w] > 0
+    return win_params[:w] if win_params[:w] > 0
     if eagle_dynamic_w?
       w = @eagle_charas_w
       w = @eagle_charas_w_final if eagle_dyn_fit_w?
@@ -1512,11 +1522,11 @@ class Window_Message
     window_width
   end
   def eagle_window_height
-    if game_message.pop? && game_message.pop_params[:h] > 0
-      return eagle_check_param_h(game_message.pop_params[:h]) + standard_padding * 2
+    if game_message.pop? && pop_params[:h] > 0
+      return eagle_check_param_h(pop_params[:h]) + standard_padding * 2
     end
     if game_message.win_params[:h] > 0
-      return eagle_check_param_h(game_message.win_params[:h]) + standard_padding * 2
+      return eagle_check_param_h(win_params[:h]) + standard_padding * 2
     end
     if eagle_dynamic_h?
       h = @eagle_charas_h
@@ -1533,28 +1543,26 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_check_param_h(h)
     # 如果h小于行高，则判定其为行数
-    if h < line_height
-      h = line_height * h + game_message.win_params[:ld] * (h - 1)
-    end
+    h = line_height * h + win_params[:ld] * (h - 1) if h < line_height
     return h
   end
   #--------------------------------------------------------------------------
   # ● 动态调整宽度高度？
   #--------------------------------------------------------------------------
   def eagle_dynamic_w?
-    game_message.pop? ? game_message.pop_params[:dw] : game_message.win_params[:dw]
+    game_message.pop? ? pop_params[:dw] : win_params[:dw]
   end
   def eagle_dynamic_h?
-    game_message.pop? ? game_message.pop_params[:dh] : game_message.win_params[:dh]
+    game_message.pop? ? pop_params[:dh] : win_params[:dh]
   end
   #--------------------------------------------------------------------------
   # ● 预计算完整文字区域的宽度高度？
   #--------------------------------------------------------------------------
   def eagle_dyn_fit_w?
-    game_message.pop? ? game_message.pop_params[:fw] : game_message.win_params[:fw]
+    game_message.pop? ? pop_params[:fw] : win_params[:fw]
   end
   def eagle_dyn_fit_h?
-    game_message.pop? ? game_message.pop_params[:fh] : game_message.win_params[:fh]
+    game_message.pop? ? pop_params[:fh] : win_params[:fh]
   end
   #--------------------------------------------------------------------------
   # ● 额外增加的窗口宽度高度（右侧和下侧）
@@ -1573,6 +1581,24 @@ class Window_Message
   end
   def eagle_window_h_empty
     win_params[:cdy]
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 更新win参数组（初始化/一页绘制完成时调用）
+  #--------------------------------------------------------------------------
+  def eagle_win_update
+    eagle_set_wh
+    return eagle_pop_update if game_message.pop?
+    self.x = win_params[:x] || 0
+    self.y = win_params[:y] || (game_message.position * (Graphics.height - self.height) / 2)
+    eagle_reset_xy_dorigin(self, nil, win_params[:do]) if win_params[:do] < 0
+    eagle_reset_xy_origin(self, win_params[:o])
+    self.x += win_params[:dx]
+    self.y += win_params[:dy]
+    eagle_fix_position if win_params[:fix]
+    eagle_set_charas_viewport
+    eagle_change_windowskin
+    eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
   # ● 设置文字显示区域的矩形（屏幕坐标）
@@ -1595,59 +1621,48 @@ class Window_Message
   def eagle_pop_update
     # 对话框左上角定位到绑定对象位图的对应o位置
     if @pop_on_map_chara # 如果在地图上使用的行走图，定位到位图底部中心的屏幕位置
-      game_message.pop_params[:chara_x] = @eagle_pop_obj.screen_x
-      game_message.pop_params[:chara_y] = @eagle_pop_obj.screen_y
+      pop_params[:chara_x] = @eagle_pop_obj.screen_x
+      pop_params[:chara_y] = @eagle_pop_obj.screen_y
     else # 否则与对应精灵的坐标一致（注意：精灵底部中心为显示原点）
-      game_message.pop_params[:chara_x] = @eagle_pop_obj.x
-      game_message.pop_params[:chara_y] = @eagle_pop_obj.y
+      pop_params[:chara_x] = @eagle_pop_obj.x
+      pop_params[:chara_y] = @eagle_pop_obj.y
     end
-    self.x = game_message.pop_params[:chara_x]
-    self.y = game_message.pop_params[:chara_y]
-    # 将对话框移动到绑定对象的对应方向上
-    case game_message.pop_params[:do]
-    when 1,4,7; self.x -= (game_message.pop_params[:chara_w] / 2)
-    when 3,6,9; self.x += game_message.pop_params[:chara_w]
-    when 2,8;
+    self.x = pop_params[:chara_x]
+    self.y = pop_params[:chara_y]
+    eagle_reset_xy_origin(self, 10 - pop_params[:do]) # 显示原点恰好相反
+    # 将对话框移动到绑定对象的对应方向上，并加上偏移量
+    case pop_params[:do]
+    when 1,4,7; self.x -= (pop_params[:chara_w] / 2 + pop_params[:d])
+    when 3,6,9; self.x += (pop_params[:chara_w] + pop_params[:d])
     end
-    case game_message.pop_params[:do]
-    when 1,2,3;
-    when 7,8,9; self.y -= game_message.pop_params[:chara_h]
-    when 4,6;   self.y -= (game_message.pop_params[:chara_h] / 2)
-    end
-    eagle_reset_xy_origin(self, 10 - game_message.pop_params[:do]) # 显示原点恰好相反
-    # 距离绑定对象位图中心的偏移量
-    case game_message.pop_params[:do]
-    when 1,4,7; self.x -= game_message.pop_params[:d]
-    when 3,6,9; self.x += game_message.pop_params[:d]
-    end
-    case game_message.pop_params[:do]
-    when 1,2,3; self.y += game_message.pop_params[:d]
-    when 7,8,9; self.y -= game_message.pop_params[:d]
+    case pop_params[:do]
+    when 1,2,3; self.y += (pop_params[:chara_h] / 2 + pop_params[:d])
+    when 7,8,9; self.y -= (pop_params[:chara_h] + pop_params[:d])
     end
     # 坐标的补足偏移量
-    self.x += game_message.pop_params[:dx]
-    self.y += game_message.pop_params[:dy]
-    eagle_pop_tag_update if game_message.pop_params[:tag] > 0
-    eagle_fix_position if game_message.pop_params[:fix]
+    self.x += pop_params[:dx]
+    self.y += pop_params[:dy]
+    eagle_pop_tag_update if pop_params[:tag] > 0
+    eagle_fix_position if pop_params[:fix]
     eagle_set_charas_viewport
-    eagle_change_windowskin(game_message.pop_params[:skin])
+    eagle_change_windowskin(pop_params[:skin])
     eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
   # ● 更新pop的tag
   #--------------------------------------------------------------------------
   def eagle_pop_tag_update
-    o = 10 - game_message.pop_params[:do] # tag的o值恰好与pop对话框的do值相对
+    o = 10 - pop_params[:do] # tag的o值恰好与pop对话框的do值相对
     @eagle_sprite_pop_tag.visible =
       MESSAGE_EX.windowtag_o(self, @eagle_sprite_pop_tag, @eagle_pop_tag_bitmap, o)
     # 坐标距离事件格子中心的偏移量
     case o
-    when 1,4,7; @eagle_sprite_pop_tag.x -= game_message.pop_params[:td]
-    when 3,6,9; @eagle_sprite_pop_tag.x += game_message.pop_params[:td]
+    when 1,4,7; @eagle_sprite_pop_tag.x -= pop_params[:td]
+    when 3,6,9; @eagle_sprite_pop_tag.x += pop_params[:td]
     end
     case o
-    when 1,2,3; @eagle_sprite_pop_tag.y -= game_message.pop_params[:td]
-    when 7,8,9; @eagle_sprite_pop_tag.y += game_message.pop_params[:td]
+    when 1,2,3; @eagle_sprite_pop_tag.y -= pop_params[:td]
+    when 7,8,9; @eagle_sprite_pop_tag.y += pop_params[:td]
     end
   end
   #--------------------------------------------------------------------------
@@ -1655,32 +1670,32 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_face_update
     # 更新脸图位置
-    if game_message.face_params[:dir] # 脸图放置于右侧时
+    if face_params[:dir] # 脸图放置于右侧时
       @eagle_sprite_face.x = self.x + self.width - standard_padding - @eagle_sprite_face.ox
     else # 脸图放置于左侧时
       @eagle_sprite_face.x = self.x + standard_padding + @eagle_sprite_face.ox
     end
-    @eagle_sprite_face.x += game_message.face_params[:dx]
-    @eagle_sprite_face.y = self.y + self.height - standard_padding + game_message.face_params[:dy]
-    @eagle_sprite_face.mirror = game_message.face_params[:m]
+    @eagle_sprite_face.x += face_params[:dx]
+    @eagle_sprite_face.y = self.y + self.height - standard_padding + face_params[:dy]
+    @eagle_sprite_face.mirror = face_params[:m]
 
     # 更新脸图循环播放
-    if game_message.face_params[:flag_l]
-      if game_message.face_params[:li_c] >= game_message.face_params[:le]
+    if face_params[:flag_l]
+      if face_params[:li_c] >= face_params[:le]
         # 每次loop之间的等待
-        return if game_message.face_params[:lw].nil?
-        game_message.face_params[:lw_c] -= 1
-        return if game_message.face_params[:lw_c] > 0
-        game_message.face_params[:lw_c] = game_message.face_params[:lw]
-        game_message.face_params[:li_c] = game_message.face_params[:ls]
+        return if face_params[:lw].nil?
+        face_params[:lw_c] -= 1
+        return if face_params[:lw_c] > 0
+        face_params[:lw_c] = face_params[:lw]
+        face_params[:li_c] = face_params[:ls]
       else
         # 每帧之间的等待
-        game_message.face_params[:lt_c] -= 1
-        return if game_message.face_params[:lt_c] > 0
-        game_message.face_params[:lt_c] = game_message.face_params[:lt]
-        game_message.face_params[:li_c] += 1
+        face_params[:lt_c] -= 1
+        return if face_params[:lt_c] > 0
+        face_params[:lt_c] = face_params[:lt]
+        face_params[:li_c] += 1
       end
-      game_message.face_params[:i] = game_message.face_params[:li_c]
+      face_params[:i] = face_params[:li_c]
       eagle_face_apply
     end
   end
@@ -1688,13 +1703,13 @@ class Window_Message
   # ● 更新face参数组中的移动（用于滞后移出效果）
   #--------------------------------------------------------------------------
   def eagle_face_update_move
-    if game_message.face_params[:params_move][0] > 0
-      game_message.face_params[:params_move][0] -= 1
-      game_message.face_params[:params_move][2] += game_message.face_params[:params_move][1]
-      @eagle_sprite_face.x += game_message.face_params[:params_move][2]
-      @eagle_sprite_face.opacity += game_message.face_params[:params_move][3]
+    if face_params[:params_move][0] > 0
+      face_params[:params_move][0] -= 1
+      face_params[:params_move][2] += face_params[:params_move][1]
+      @eagle_sprite_face.x += face_params[:params_move][2]
+      @eagle_sprite_face.opacity += face_params[:params_move][3]
     else
-      game_message.face_params[:params_move] = nil
+      face_params[:params_move] = nil
     end
   end
   #--------------------------------------------------------------------------
@@ -1704,7 +1719,7 @@ class Window_Message
     eagle_reset_xy_dorigin(@eagle_window_name, self, game_message.name_params[:do])
     eagle_reset_xy_origin(@eagle_window_name, game_message.name_params[:o])
 
-    # 若对话框遮挡了脸图，则移动到不遮挡的地方
+    # 若姓名框遮挡了脸图，则移动到不遮挡的地方
     lx = self.x + eagle_face_left_width
     rx = self.x + self.width - eagle_face_right_width
     w = @eagle_window_name.width
@@ -1714,33 +1729,15 @@ class Window_Message
     @eagle_window_name.x += game_message.name_params[:dx]
     @eagle_window_name.y += game_message.name_params[:dy]
   end
+
   #--------------------------------------------------------------------------
   # ● 重新生成背景位图
   #--------------------------------------------------------------------------
   def eagle_recreate_back_bitmap
-    if game_message.win_params[:bg] # 绘制图片背景
-      if @win_bg_draw != game_message.win_params[:bg]
-        _bitmap = MESSAGE_EX.windowbg(game_message.win_params[:bg])
-        if _bitmap != nil
-          @back_sprite.bitmap = _bitmap
-          @back_sprite.visible = true
-          self.opacity = 0
-          @win_bg_draw = game_message.win_params[:bg]
-          return
-        end
-      else
-        @back_sprite.visible = true
-        self.opacity = 0
-        return
-      end
-    end
+    return if win_params[:bg] && eagle_draw_bg_pic
     @win_bg_draw = nil # 清除之前的图片背景
-    if game_message.background == 0 # 普通
-      @back_sprite.visible = false
-      self.opacity = 255
-      return
-    end
-    if game_message.background == 1 # 绘制暗色背景
+    case game_message.background
+    when 1 # 暗色背景
       w = self.width; h = self.height
       if @back_bitmap && @back_bitmap.width == w && @back_bitmap.height == h
       else # 重绘
@@ -1756,20 +1753,35 @@ class Window_Message
       @back_sprite.bitmap = @back_bitmap
       @back_sprite.visible = true
       self.opacity = 0
-      return
-    end
-    if game_message.background == 2 # 透明背景
+    when 2 # 透明背景
       @back_sprite.visible = false
       self.opacity = 0
-      return
+    else # 普通
+      @back_sprite.visible = false
+      self.opacity = 255
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制背景图片
+  #--------------------------------------------------------------------------
+  def eagle_draw_bg_pic
+    @back_sprite.visible = true
+    self.opacity = 0
+    return true if @win_bg_draw == win_params[:bg]
+    _bitmap = MESSAGE_EX.windowbg(win_params[:bg])
+    if _bitmap != nil
+      @back_sprite.bitmap = _bitmap
+      @win_bg_draw = win_params[:bg]
+      return true
+    end
+    return false
   end
   #--------------------------------------------------------------------------
   # ● 更新背景精灵
   #--------------------------------------------------------------------------
   def update_back_sprite
-    eagle_reset_xy_dorigin(@back_sprite, self, game_message.win_params[:bgo])
-    eagle_reset_xy_origin(@back_sprite, game_message.win_params[:bgo])
+    eagle_reset_xy_dorigin(@back_sprite, self, win_params[:bgo])
+    eagle_reset_xy_origin(@back_sprite, win_params[:bgo])
     @back_sprite.opacity = openness
     @back_sprite.update
   end
@@ -2328,110 +2340,26 @@ class Window_Message
     game_message.face_params[:dir] = MESSAGE_EX.check_bool(game_message.face_params[:dir])
     game_message.face_params[:m] = MESSAGE_EX.check_bool(game_message.face_params[:m])
   end
-
   #--------------------------------------------------------------------------
   # ● 初始化姓名框
   #--------------------------------------------------------------------------
+  def name_params; game_message.name_params; end
   def eagle_draw_name(text)
     # 用 | 分隔需要绘制的name字符串（其中转义符用<>代替[]）和参数组
     text.gsub!(/\ename\[(.*?)\]/i) {
       t = $1.dup
       if t.include?('|')
-        game_message.name_params[:name] = t.slice!(/.*?\|/).chop
+        name_params[:name] = t.slice!(/.*?\|/).chop
         "\ename[#{t}]"
       else
-        game_message.name_params[:name] = t
+        name_params[:name] = t
         ""
       end
     }
-    parse_pre_params(text, 'name', game_message.name_params, :o)
-
-    return if game_message.name_params[:name].empty?
+    parse_pre_params(text, 'name', name_params, :o)
+    return if name_params[:name].empty?
     @eagle_window_name.reset
     eagle_name_update
-  end
-
-  #--------------------------------------------------------------------------
-  # ● 初始化脸图
-  #--------------------------------------------------------------------------
-  def eagle_draw_face(face_name, face_index)
-    game_message.face_params[:name] = face_name
-    game_message.face_params[:i] = face_index
-    return if face_name == ""
-
-    @eagle_face_bitmap.dispose if @eagle_face_bitmap
-    @eagle_face_bitmap = Cache.face(face_name)
-    face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
-    game_message.face_params[:num_line] = $1 ? $1.to_i : 2
-    game_message.face_params[:num_col] = $2 ? $2.to_i : 4
-    game_message.face_params[:sole_w] = @eagle_face_bitmap.width / game_message.face_params[:num_col]
-    game_message.face_params[:sole_h] = @eagle_face_bitmap.height / game_message.face_params[:num_line]
-    # 脸图以底部中心为显示原点
-    @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
-    @eagle_sprite_face.bitmap = Bitmap.new(game_message.face_params[:sole_w],
-      game_message.face_params[:sole_h])
-    @eagle_sprite_face.ox = @eagle_sprite_face.width / 2
-    @eagle_sprite_face.oy = @eagle_sprite_face.height
-    @eagle_sprite_face.opacity = 0
-    # 覆盖部分face参数
-    eagle_text_control_face
-    # 显示
-    eagle_face_apply
-    eagle_face_move_in
-  end
-  #--------------------------------------------------------------------------
-  # ● 初始化脸图移入
-  #--------------------------------------------------------------------------
-  def eagle_face_move_in
-    # 用于控制移入移出的参数组 [time, v_x, dx, v_opa]
-    t = game_message.face_params[:it]
-    v_x = game_message.face_params[:iv] * (game_message.face_params[:dir] ? -1 : 1)
-    game_message.face_params[:params_move] = [t, v_x, v_x*t*-1,
-      game_message.face_params[:io]]
-  end
-  #--------------------------------------------------------------------------
-  # ● 初始化脸图移出
-  #--------------------------------------------------------------------------
-  def eagle_face_move_out
-    t = game_message.face_params[:ot]
-    v_x = game_message.face_params[:ov] * (game_message.face_params[:dir] ? 1 : -1)
-    game_message.face_params[:params_move] = [t, v_x, 0,
-      -1*game_message.face_params[:oo]]
-  end
-  #--------------------------------------------------------------------------
-  # ● 应用设置的脸图
-  # （根据设置好的参数，重新绘制脸图精灵的bitmap）
-  #--------------------------------------------------------------------------
-  def eagle_face_apply
-    @eagle_sprite_face.bitmap.clear
-    w = game_message.face_params[:sole_w]
-    h = game_message.face_params[:sole_h]
-    x = game_message.face_params[:i] % game_message.face_params[:num_col] * w
-    y = game_message.face_params[:i] / game_message.face_params[:num_col] * h
-    rect = Rect.new(x, y, w, h)
-    @eagle_sprite_face.bitmap.blt(0,0, @eagle_face_bitmap,rect)
-  end
-  #--------------------------------------------------------------------------
-  # ● 脸图占用的宽度
-  #--------------------------------------------------------------------------
-  def eagle_face_width
-    return 0 if !game_message.face?
-    return 0 if game_message.face_params[:z] < 0
-    @eagle_sprite_face.width + game_message.face_params[:dw]
-  end
-  #--------------------------------------------------------------------------
-  # ● 脸图在左侧占用的宽度（用于调整文字区域的左侧起始位置）
-  #--------------------------------------------------------------------------
-  def eagle_face_left_width
-    return 0 if game_message.face_params[:dir] # 显示在右侧时
-    eagle_face_width
-  end
-  #--------------------------------------------------------------------------
-  # ● 脸图在右侧占用的宽度
-  #--------------------------------------------------------------------------
-  def eagle_face_right_width
-    return 0 if !game_message.face_params[:dir] # 显示在左侧时
-    eagle_face_width
   end
 
   #--------------------------------------------------------------------------
@@ -2491,30 +2419,30 @@ class Window_Message
   #--------------------------------------------------------------------------
   def font_params; game_message.font_params; end
   def eagle_text_control_font(param = "")
-    parse_param(game_message.font_params, param, :size)
-    MESSAGE_EX.apply_font_params(self.contents.font, game_message.font_params)
-    change_color(text_color(game_message.font_params[:c]))
+    parse_param(font_params, param, :size)
+    MESSAGE_EX.apply_font_params(self.contents.font, font_params)
+    change_color(text_color(font_params[:c]))
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）重置字体设置
   #--------------------------------------------------------------------------
   def reset_font_settings
     change_color(normal_color)
-    game_message.font_params[:c] = 0
+    font_params[:c] = 0
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）放大字体尺寸
   #--------------------------------------------------------------------------
   def make_font_bigger
     self.contents.font.size += 4 if self.contents.font.size <= 64
-    game_message.font_params[:size] = self.contents.font.size
+    font_params[:size] = self.contents.font.size
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）缩小字体尺寸
   #--------------------------------------------------------------------------
   def make_font_smaller
     self.contents.font.size -= 4 if self.contents.font.size >= 16
-    game_message.font_params[:size] = self.contents.font.size
+    font_params[:size] = self.contents.font.size
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）更改内容绘制颜色
@@ -2522,26 +2450,26 @@ class Window_Message
   #--------------------------------------------------------------------------
   def change_color(color, enabled = true)
     super(color, enabled)
-    game_message.font_params[:ca] = self.contents.font.color.alpha
+    font_params[:ca] = self.contents.font.color.alpha
   end
+
   #--------------------------------------------------------------------------
   # ● 设置win参数
   #--------------------------------------------------------------------------
   def win_params; game_message.win_params; end
   def eagle_text_control_win(param = "")
-    parse_param(game_message.win_params, param, :o)
-
-    game_message.win_params[:hmin] = eagle_check_param_h(game_message.win_params[:hmin])
-    game_message.win_params[:hmax] = eagle_check_param_h(game_message.win_params[:hmax])
-    game_message.win_params[:dw] = MESSAGE_EX.check_bool(game_message.win_params[:dw])
-    game_message.win_params[:fw] = MESSAGE_EX.check_bool(game_message.win_params[:fw])
-    game_message.win_params[:dh] = MESSAGE_EX.check_bool(game_message.win_params[:dh])
-    game_message.win_params[:fh] = MESSAGE_EX.check_bool(game_message.win_params[:fh])
-    game_message.win_params[:cwi] = 0 if game_message.win_params[:cwi] < 0
-    game_message.win_params[:cwo] = 0 if game_message.win_params[:cwo] < 0
-    game_message.win_params[:cor] = MESSAGE_EX.check_bool(game_message.win_params[:cor])
-    game_message.win_params[:cfast] = MESSAGE_EX.check_bool(game_message.win_params[:cfast])
-    game_message.win_params[:fix] = MESSAGE_EX.check_bool(game_message.win_params[:fix])
+    parse_param(win_params, param, :o)
+    win_params[:hmin] = eagle_check_param_h(win_params[:hmin])
+    win_params[:hmax] = eagle_check_param_h(win_params[:hmax])
+    win_params[:dw] = MESSAGE_EX.check_bool(win_params[:dw])
+    win_params[:fw] = MESSAGE_EX.check_bool(win_params[:fw])
+    win_params[:dh] = MESSAGE_EX.check_bool(win_params[:dh])
+    win_params[:fh] = MESSAGE_EX.check_bool(win_params[:fh])
+    win_params[:cwi] = 0 if win_params[:cwi] < 0
+    win_params[:cwo] = 0 if win_params[:cwo] < 0
+    win_params[:cor] = MESSAGE_EX.check_bool(win_params[:cor])
+    win_params[:cfast] = MESSAGE_EX.check_bool(win_params[:cfast])
+    win_params[:fix] = MESSAGE_EX.check_bool(win_params[:fix])
     eagle_reset_z
   end
   #--------------------------------------------------------------------------
@@ -2549,47 +2477,49 @@ class Window_Message
   #--------------------------------------------------------------------------
   alias eagle_message_ex_line_height line_height
   def line_height
-    h = game_message.win_params[:lh]
+    h = win_params[:lh]
     return h if h > 0
     return eagle_message_ex_line_height
   end
+
   #--------------------------------------------------------------------------
   # ● 设置pop参数
   #--------------------------------------------------------------------------
+  def pop_params; game_message.pop_params; end
   def eagle_text_control_pop(param = "")
-    game_message.pop_params[:id] = nil # 所绑定的事件的id
+    pop_params[:id] = nil # 所绑定的事件的id
     #（0代表当前事件，正数代表事件，负数代表队列中数据库id号角色，若不存在则取队首）
-    parse_param(game_message.pop_params, param, :id)
+    parse_param(pop_params, param, :id)
 
     # 设置pop对话框所绑定的精灵对象，方便直接调用
     # （特殊：在地图场景中，获得的是 Character 类的实例）
     @pop_on_map_chara = false
     @eagle_pop_obj = eagle_get_pop_obj
     # 若设置了chara变量，则认定使用pop对话框
-    return game_message.pop_params[:id] = nil if @eagle_pop_obj.nil?
+    return pop_params[:id] = nil if @eagle_pop_obj.nil?
     s = eagle_get_pop_sprite
-    game_message.pop_params[:chara_w] = s.width
-    game_message.pop_params[:chara_h] = s.height
+    pop_params[:chara_w] = s.width
+    pop_params[:chara_h] = s.height
 
-    game_message.pop_params[:dw] = MESSAGE_EX.check_bool(game_message.pop_params[:dw])
-    game_message.pop_params[:fw] = MESSAGE_EX.check_bool(game_message.pop_params[:fw])
-    game_message.pop_params[:dh] = MESSAGE_EX.check_bool(game_message.pop_params[:dh])
-    game_message.pop_params[:fh] = MESSAGE_EX.check_bool(game_message.pop_params[:fh])
-    game_message.pop_params[:fix] = MESSAGE_EX.check_bool(game_message.pop_params[:fix])
+    pop_params[:dw] = MESSAGE_EX.check_bool(pop_params[:dw])
+    pop_params[:fw] = MESSAGE_EX.check_bool(pop_params[:fw])
+    pop_params[:dh] = MESSAGE_EX.check_bool(pop_params[:dh])
+    pop_params[:fh] = MESSAGE_EX.check_bool(pop_params[:fh])
+    pop_params[:fix] = MESSAGE_EX.check_bool(pop_params[:fix])
 
     # 存储设定的固定宽度高度，原变量改为存储动态值，方便设置
-    game_message.pop_params[:w_fix] = (game_message.pop_params[:w] > 0 ? game_message.pop_params[:w] : nil)
-    game_message.pop_params[:h_fix] = (game_message.pop_params[:h] > 0 ? game_message.pop_params[:h] : nil)
+    pop_params[:w_fix] = (pop_params[:w] > 0 ? pop_params[:w] : nil)
+    pop_params[:h_fix] = (pop_params[:h] > 0 ? pop_params[:h] : nil)
     # 每次pop更新后记录坐标 避免每帧更新
-    game_message.pop_params[:chara_x] = nil
-    game_message.pop_params[:chara_y] = nil
+    pop_params[:chara_x] = nil
+    pop_params[:chara_y] = nil
     eagle_pop_update
   end
   #--------------------------------------------------------------------------
   # ● 获取pop的弹出对象（需要有x、y、width、height方法）
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj
-    return nil if game_message.pop_params[:id].nil?
+    return nil if pop_params[:id].nil?
     return eagle_get_pop_obj_m if @in_map
     return eagle_get_pop_obj_b if @in_battle
     return nil
@@ -2599,16 +2529,18 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj_m
     @pop_on_map_chara = true
-    id = game_message.pop_params[:id]
+    id = pop_params[:id]
     if id == 0 # 当前事件
       return $game_map.events[game_message.event_id]
     elsif id > 0 # 第id号事件
-      chara = $game_map.events[game_message.pop_params[:id]]
-      chara ||= $game_map.events[$game_map.interpreter.event_id]
+      chara = $game_map.events[id]
+      chara ||= $game_map.events[game_message.event_id]
       return chara
     elsif id < 0 # 队伍中数据库id号角色（不存在则取队长）
       id = id.abs
-      $game_player.followers.each { |f| return f.actor if f.actor && f.actor.actor.id == id }
+      $game_player.followers.each { |f|
+        return f.actor if f.actor && f.actor.actor.id == id
+      }
       return $game_player
     end
   end
@@ -2616,7 +2548,7 @@ class Window_Message
   # ● 获取pop的对象（战斗场景中）
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj_b
-    id = game_message.pop_params[:id]
+    id = pop_params[:id]
     return nil if id.nil?
     if id > 0 # 敌人index
       SceneManager.scene.spriteset.battler_sprites.each do |s|
@@ -2641,31 +2573,113 @@ class Window_Message
     end
     return nil
   end
+
   #--------------------------------------------------------------------------
   # ● 设置face参数
   #--------------------------------------------------------------------------
+  def face_params; game_message.face_params; end
   def eagle_text_control_face(param = "")
-    return if game_message.face_params[:name] == ""
-    game_message.face_params[:ls] = -1 # 设置循环开始编号（+1直至le，再从ls循环）
-    game_message.face_params[:le] = -1 # 设置循环结束编号
-    parse_param(game_message.face_params, param, :i)
+    return if face_params[:name] == ""
+    face_params[:ls] = -1 # 设置循环开始编号（+1直至le，再从ls循环）
+    face_params[:le] = -1 # 设置循环结束编号
+    parse_param(face_params, param, :i)
 
     # 判断是否需要循环的flag
-    game_message.face_params[:flag_l] = (game_message.face_params[:ls] > -1 &&
-      game_message.face_params[:le] > game_message.face_params[:ls])
-    game_message.face_params[:li_c] = game_message.face_params[:ls] # 循环用index计数
-    game_message.face_params[:lt_c] = game_message.face_params[:lt] # 循环用time计数
-    game_message.face_params[:lw_c] = game_message.face_params[:lw] # 循环后wait计数
+    face_params[:flag_l] = (face_params[:ls] > -1 && face_params[:le] > face_params[:ls])
+    face_params[:li_c] = face_params[:ls] # 循环用index计数
+    face_params[:lt_c] = face_params[:lt] # 循环用time计数
+    face_params[:lw_c] = face_params[:lw] # 循环后wait计数
     eagle_face_apply
   end
+  #--------------------------------------------------------------------------
+  # ● 初始化脸图
+  #--------------------------------------------------------------------------
+  def eagle_draw_face(face_name, face_index)
+    face_params[:name] = face_name
+    face_params[:i] = face_index
+    return if face_name == ""
+
+    @eagle_face_bitmap.dispose if @eagle_face_bitmap
+    @eagle_face_bitmap = Cache.face(face_name)
+    face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
+    face_params[:num_line] = $1 ? $1.to_i : 2
+    face_params[:num_col] = $2 ? $2.to_i : 4
+    face_params[:sole_w] = @eagle_face_bitmap.width / face_params[:num_col]
+    face_params[:sole_h] = @eagle_face_bitmap.height / face_params[:num_line]
+    # 脸图以底部中心为显示原点
+    @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
+    @eagle_sprite_face.bitmap = Bitmap.new(face_params[:sole_w], face_params[:sole_h])
+    @eagle_sprite_face.ox = @eagle_sprite_face.width / 2
+    @eagle_sprite_face.oy = @eagle_sprite_face.height
+    @eagle_sprite_face.opacity = 0
+    # 覆盖部分face参数
+    eagle_text_control_face
+    # 显示
+    eagle_face_apply
+    eagle_face_move_in
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化脸图移入
+  #--------------------------------------------------------------------------
+  def eagle_face_move_in
+    # 用于控制移入移出的参数组 [time, v_x, dx, v_opa]
+    t = face_params[:it]
+    v_x = face_params[:iv] * (face_params[:dir] ? -1 : 1)
+    face_params[:params_move] = [t, v_x, v_x*t*-1, face_params[:io]]
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化脸图移出
+  #--------------------------------------------------------------------------
+  def eagle_face_move_out
+    t = face_params[:ot]
+    v_x = face_params[:ov] * (face_params[:dir] ? 1 : -1)
+    face_params[:params_move] = [t, v_x, 0, -1*face_params[:oo]]
+  end
+  #--------------------------------------------------------------------------
+  # ● 应用设置的脸图
+  # （根据设置好的参数，重新绘制脸图精灵的bitmap）
+  #--------------------------------------------------------------------------
+  def eagle_face_apply
+    @eagle_sprite_face.bitmap.clear
+    w = face_params[:sole_w]
+    h = face_params[:sole_h]
+    x = face_params[:i] % face_params[:num_col] * w
+    y = face_params[:i] / face_params[:num_col] * h
+    rect = Rect.new(x, y, w, h)
+    @eagle_sprite_face.bitmap.blt(0,0, @eagle_face_bitmap,rect)
+  end
+  #--------------------------------------------------------------------------
+  # ● 脸图占用的宽度
+  #--------------------------------------------------------------------------
+  def eagle_face_width
+    return 0 if !game_message.face?
+    return 0 if face_params[:z] < 0
+    @eagle_sprite_face.width + face_params[:dw]
+  end
+  #--------------------------------------------------------------------------
+  # ● 脸图在左侧占用的宽度（用于调整文字区域的左侧起始位置）
+  #--------------------------------------------------------------------------
+  def eagle_face_left_width
+    return 0 if face_params[:dir] # 显示在右侧时
+    eagle_face_width
+  end
+  #--------------------------------------------------------------------------
+  # ● 脸图在右侧占用的宽度
+  #--------------------------------------------------------------------------
+  def eagle_face_right_width
+    return 0 if !face_params[:dir] # 显示在左侧时
+    eagle_face_width
+  end
+
   #--------------------------------------------------------------------------
   # ● 设置pause参数
   #--------------------------------------------------------------------------
   def pause_params; game_message.pause_params; end
   def eagle_text_control_pause(param = "")
-    parse_param(game_message.pause_params, param, :pause)
+    parse_param(pause_params, param, :pause)
     @eagle_sprite_pause.reset
   end
+
   #--------------------------------------------------------------------------
   # ● 设置wait参数
   #--------------------------------------------------------------------------
@@ -2682,6 +2696,7 @@ class Window_Message
     return if !game_message.draw
     duration.times { break if @eagle_force_close; Fiber.yield }
   end
+
   #--------------------------------------------------------------------------
   # ● 设置auto参数
   #--------------------------------------------------------------------------
@@ -2814,7 +2829,13 @@ class Window_EagleMsgName < Window_Base
   # ● 姓名参数
   #--------------------------------------------------------------------------
   def name_params
-    @window_msg.game_message.name_params
+    @window_msg.name_params
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取行高
+  #--------------------------------------------------------------------------
+  def line_height
+    @window_msg.font_params[:size]
   end
   #--------------------------------------------------------------------------
   # ● 重绘
@@ -2824,11 +2845,11 @@ class Window_EagleMsgName < Window_Base
     t.gsub!(/<(.*?)>/) { "[" + $1 + "]" }
     t = @window_msg.convert_escape_characters(t)
     w, h = MESSAGE_EX.calculate_text_wh(@window_msg.contents, t)
-    h = [h, @window_msg.game_message.font_params[:size]].max
+    h = [h, @window_msg.font_params[:size]].max
 
-    move(0, 0, w+standard_padding * 2, h+standard_padding * 2)
+    move(0, 0, w + standard_padding * 2, h + standard_padding * 2)
     create_contents
-    MESSAGE_EX.apply_font_params(contents.font, @window_msg.game_message.font_params)
+    MESSAGE_EX.apply_font_params(contents.font, @window_msg.font_params)
     draw_text_ex(0, 0, t)
 
     skin = @window_msg.get_cur_windowskin_index(name_params[:skin])
@@ -3014,29 +3035,6 @@ class Sprite_EaglePauseTag < Sprite
     EAGLE.Arc(@sprite_auto_countdown.bitmap,r,r, r, 0,a2,false,Color.new(255,255,255,250))
   end
 end
-
-#=============================================================================
-# ○ DataManager
-#=============================================================================
-class << DataManager
-  #--------------------------------------------------------------------------
-  # ● 设置新游戏
-  #--------------------------------------------------------------------------
-  alias eagle_message_ex_setup_new_game setup_new_game
-  def setup_new_game
-    eagle_message_ex_setup_new_game
-    $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
-  end
-end
-#=============================================================================
-# ○ Scene_Map
-#=============================================================================
-class Spriteset_Map; attr_reader :character_sprites; end
-class Scene_Map; attr_reader :spriteset, :message_window; end
-#=============================================================================
-# ○ Scene_Battle
-#=============================================================================
-class Scene_Battle; attr_reader :spriteset; end
 
 #==============================================================================
 # ○ 文字池（用于更新需要移出的文字精灵）
@@ -3291,13 +3289,15 @@ class Sprite_EagleCharacter < Sprite
     self.bitmap.dispose if self.bitmap
     self.bitmap = Bitmap.new(w, h)
     self.visible = true
-    self.opacity = 255
+    self.zoom_x = self.zoom_y = 1.0
     self.angle = 0
-    self.mirror = false
     self.wave_amp    = 0
     self.wave_length = 0
     self.wave_speed  = 0
     self.wave_phase  = 0
+    self.mirror = false
+    self.opacity = 255
+    self.blend_type = 0
     # (x0,y0) 为文字区域左上点的屏幕坐标
     @x0 = 0; @y0 = 0
     # (_ox,_oy) 为当前可视区域的左上点的坐标（文字区域坐标系中）
