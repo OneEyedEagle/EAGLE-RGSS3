@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.3.24.14 删去拷贝对话框中的子窗口
+# - 2020.3.25.0 新增空参数保护，防止因AddOn插入而废弃旧存档
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1046,10 +1046,21 @@ class Game_Message
   #--------------------------------------------------------------------------
   def set_default_params
     eagle_params.each do |sym|
-      self.send((sym.to_s+"_params=").to_sym, MESSAGE_EX.get_default_params(sym).dup)
+      self.send("#{sym}_params=".to_sym, MESSAGE_EX.get_default_params(sym).dup)
     end
     @params_need_apply = eagle_params.dup # 添加修改预定，用于应用初始值
     @escape_strings = [] # 存储等待执行的转义符字符串
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查params是否都存在
+  #--------------------------------------------------------------------------
+  def check_params
+    eagle_params.each do |sym|
+      if self.send("#{sym}_params".to_sym) == nil
+        self.send("#{sym}_params=".to_sym, MESSAGE_EX.get_default_params(sym).dup)
+        add_apply(sym)
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● 清除（每次对话框开启时被调用）
@@ -1237,6 +1248,7 @@ class Window_Message
     eagle_message_init_assets
     eagle_message_init_params
     eagle_message_reset
+    game_message.check_params # 确保新增AddOn时，参数hash存在
   end
   #--------------------------------------------------------------------------
   # ● 初始化组件
