@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-Counter"] = true
 #=============================================================================
-# - 2020.3.18.13 优化：当变量值未变化时，任意赋值也不会再重绘
+# - 2020.3.25.22 优化：当变量值未变化时，任意赋值也不会再重绘
 #=============================================================================
 # - 本插件提供了一组绑定于默认变量 $game_variables 的计数器
 # - 在地图上时，指定的文本将显示于屏幕指定位置，当变量值变更时将自动重绘
@@ -132,8 +132,15 @@ class Game_Variables
   # ● 设置变量（覆盖）
   #--------------------------------------------------------------------------
   def []=(variable_id, value)
+    v_old = @data[variable_id]
     @data[variable_id] = value
     on_change
+    on_change_different(variable_id) if v_old != value
+  end
+  #--------------------------------------------------------------------------
+  # ● 变量改变时的操作
+  #--------------------------------------------------------------------------
+  def on_change_different(variable_id)
     if $game_system.counters[variable_id]
       $game_system.counters[variable_id][:refresh] = true
     end
@@ -151,7 +158,6 @@ class Sprite_Counter < Sprite
     super(viewport)
     @v_id = v_id
     @flag_update = false # 每帧重置为false，若更新结束依然为false，则需要删除
-    @last_v = nil
     refresh
   end
   #--------------------------------------------------------------------------
@@ -180,8 +186,6 @@ class Sprite_Counter < Sprite
   #--------------------------------------------------------------------------
   def refresh
     $game_system.counters[@v_id][:refresh] = false
-    return if @last_v == $game_variables[@v_id]
-    @last_v = $game_variables[@v_id]
     self.x  = params[:x] || 0
     self.y  = params[:y] || 0
     self.z  = params[:z] || 0
@@ -210,7 +214,7 @@ class Sprite_Counter < Sprite
   def redraw_contents
     cx = params[:cx] || 0
     cy = params[:cy] || 0
-    t  = params[:text] || "#{@v_id} 号变量：<v>"
+    t  = params[:text].dup || "#{@v_id} 号变量：<v>"
     t.gsub!(/<v>/) { $game_variables[@v_id] }
     draw_text_ex(cx, cy, t)
   end

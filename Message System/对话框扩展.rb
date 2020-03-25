@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.3.25.0 新增空参数保护，防止因AddOn插入而废弃旧存档
+# - 2020.3.25.22 优化对话框打开模式，变更为放大
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -277,49 +277,63 @@ $imported["EAGLE-MessageEX"] = true
 #    示例：\cg[] → 取消渐变绘制
 #
 #----------------------------------------------------------------------------
-# ● 内容滚动
+# ● 高级功能
 #----------------------------------------------------------------------------
-# - 当对话框的宽度或高度被固定时，
-#     若所绘制的文字超出对话框范围，将自动开启内容滚动效果
-# - 当进入 等待按键 状态时，按住 方向键 即可朝对应方向滚动浏览对话框全部内容
+# - 内容滚动
 #
+# · 当对话框的宽度或高度被固定时，
+#    若所绘制的文字超出对话框范围，将自动开启内容滚动效果
+#
+# · 当进入 等待按键 状态时，按住 方向键 即可朝对应方向滚动浏览对话框全部内容
 #----------------------------------------------------------------------------
-# ● 并行选择
+# - 对话框Open特效优化
+#
+# · 对话框的开启特效已被优化为 四向动态展开，而非默认的 上下打开
+#
+# · 若为 $game_message.default_open_type 赋值为 true，则重新使用默认的 上下打开
+#    若为 $game_message.default_open_type 赋值为 false，则使用 动态展开
 #----------------------------------------------------------------------------
-# - 利用脚本设置对话框与下一条指令的 选择框/数字输入框/物品选择框 进行并行处理
+# - 并行处理子窗口
+#
+#   利用该脚本设置对话框与下一条指令的 选择框/数字输入框/物品选择框 并行处理
 #
 #         $game_message.para = true
 #
-# - 当开关开启时，若当前对话框的下一条指令为 选择支/数字输入/物品选择，
-#     则会在对话框打开、开始绘制文字时，同步打开并激活选择框
-# - 当选择框的按键处理结束并关闭时，对话框将同步强制关闭
+# · 当赋值为 true 后，若当前对话框的下一条指令为 选择支/数字输入/物品选择，
+#      则会在对话框打开、开始绘制文字时，同步打开并激活选择框
+#
+# · 当选择框的按键处理结束并关闭时，对话框将同步强制关闭
 #    【注意】未被绘制的转义符可能不会生效！
+#
+# · 该并行设置不会被存储，因此请在每个需要并行处理子窗口的对话框前执行一次该脚本
 #----------------------------------------------------------------------------
-# ● 文本预定
-#----------------------------------------------------------------------------
-# - 利用该脚本存储预定文本，在下次打开对话框时，全部预定文本将按序插入到对话文本开头
+# - 预定绘制文本
+#
+#   利用该脚本存储文本，在下次打开对话框时，全部存储文本将按序插入到对话开头
 #
 #        $game_message.add_escape(param_string)
 #
-# - param_string 解析： 【String】型常量
-# - 示例：
+#   param_string 解析： 【String】型常量
+#
+# · 示例：
 #     $game_message.add_escape("\\win[ali1]")
 #        → 之后的对话框中 文本居中 绘制
 #     $game_message.add_escape("\\pop[0]")
 #        → 下一次的对话框为pop类型，绑定在当前执行对话框的事件上
-# - 注意：
+#
+# · 注意：
 #    ·由于解析问题，在 param_string 中请将 "\" 替换成 "\\"
 #    ·当存在多条预定文本，将按照预定时间的先后顺序，依次放入下一次对话框的开头
 #    ·预定的字符串只会被放入对话框一次
 #    ·不会去除 param_string 中的非转义符文本
 #----------------------------------------------------------------------------
-# ● 参数重置
-#----------------------------------------------------------------------------
-# - 利用该脚本重置指定转义符的指定变量（用预设值覆盖）
+# - 参数重置
+#
+#   利用该脚本重置指定转义符的指定变量（用预设值覆盖）
 #
 #        $game_message.reset_params(param_sym, code_string)
 #
-# - param_sym 解析： 【Symbol】型常量
+# · param_sym 解析： 【Symbol】型常量
 #   【注意】若传入的 param_sym 为 nil，则将重置以下所有类型
 #     :font → 重置关于字体的设置
 #     :win  → 重置关于对话框的设置
@@ -330,11 +344,11 @@ $imported["EAGLE-MessageEX"] = true
 #     :chara → 重置关于文字特效的设置（其参数为文字特效转义符）
 #     :ex → 重置扩展类转义符为预设的变量参数（其参数为扩展类转义符）
 #
-# - code_string 解析： 【String】型常量
+# · code_string 解析： 【String】型常量
 #     可利用 | 将多个变量进行分割
 #     若未传入该参数，则将重置全部变量
 #
-# - 示例：
+# · 示例：
 #     $game_message.reset_params(:font, "i") → 重置字体是否斜体的参数
 #     $game_message.reset_params(:win, "x|y") → 重置对话框的xy坐标（取默认va设置）
 #     $game_message.reset_params(:pop) → 清除pop转义符的全部设置
@@ -342,20 +356,23 @@ $imported["EAGLE-MessageEX"] = true
 #       → cin转义符的参数重置为 CHARA_PARAMS_INIT 中的:cin键值，
 #         若常量中无该键，则取消cin特效
 #----------------------------------------------------------------------------
-# ● 参数保存与读取
-#----------------------------------------------------------------------------
-# - 利用该脚本保存当前全部 param_sym 参数组的状态值
+# - 参数保存与读取
+#
+#   利用该脚本保存当前全部 param_sym 参数组的状态值
 #   （当不传入 sym 时默认取 :default 类别）
 #   （由于涉及内部对话框临时参数的实现方式，请不要用 :temp 类别）
+#
 #         $game_message.save_params(sym)
 #
-# - 利用该脚本使 param_sym 所对应的变量组恢复到上一次的保存状态
+#   利用该脚本使 param_sym 所对应的变量组恢复到上一次的保存状态
 #   （当不传入 sym 时默认取 :default 类别）
+#
 #         $game_message.load_params(param_sym, sym)
 #
-# - param_sym 解析：【Symbol】型常量
+#   param_sym 解析：【Symbol】型常量
 #      具体见 参数重置 中的解析
-# - 示例：
+#
+# · 示例：
 #     $game_message.save_params
 #     $game_message.load_params(:font)
 #       → 按 :default 存储的状态，来恢复字体的全部参数
@@ -1022,8 +1039,8 @@ class Game_Message
   attr_accessor :escape_strings # 存储预定要添加的字符串
   attr_accessor :auto_r, :auto_t
   attr_accessor :hold, :instant, :draw, :para, :event_id
-  attr_accessor :child_window_w_add, :child_window_h_add
   attr_accessor :child_window_w_des, :child_window_h_des
+  attr_accessor :default_open_type
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -1034,6 +1051,7 @@ class Game_Message
     set_default_params
     @auto_r = true # 是否重置 @auto_t
     @auto_t = nil # 自动对话的倒计时（nil时为不自动继续）
+    @default_open_type = false # 是否使用默认的窗口打开方式
   end
   #--------------------------------------------------------------------------
   # ● 获取全部可保存params的符号的数组
@@ -1073,9 +1091,7 @@ class Game_Message
     @instant = false # 当前对话框立即显示？
     @para = false # 并行显示选择框等
     @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
-    @child_window_w_add = 0 # 因为子窗口嵌入而已经额外增加的宽高
-    @child_window_h_add = 0
-    @child_window_w_des = 0 # 预定因子窗口嵌入而额外增加的宽高
+    @child_window_w_des = 0 # 因子窗口嵌入而额外增加的宽高
     @child_window_h_des = 0
   end
   #--------------------------------------------------------------------------
@@ -1403,14 +1419,19 @@ class Window_Message
   # ● 打开直至完成（当有文字绘制完成时执行）
   #--------------------------------------------------------------------------
   def eagle_open_and_wait
-    return if self.openness == 255
-    self.openness = 0
     # 组件隐藏
     @eagle_chara_sprites.each { |c| c.visible = false }
     f_tag = @eagle_sprite_pop_tag.visible
     @eagle_sprite_pop_tag.visible = false
     @eagle_sprite_pop_tag.opacity = 0
-    open_and_wait
+    if game_message.default_open_type # using default open
+      eagle_set_wh(nil, nil, true)
+      open_and_wait
+    else
+      eagle_set_wh(0, 0, true)
+      self.openness = 255
+      eagle_set_wh
+    end
     # 组件显示
     @eagle_chara_sprites.each { |c| c.visible = true }
     @eagle_sprite_pop_tag.visible = f_tag
@@ -1510,12 +1531,42 @@ class Window_Message
   #--------------------------------------------------------------------------
   # ● 设置对话框的宽高
   #--------------------------------------------------------------------------
-  def eagle_set_wh
-    self.width = eagle_window_width
-    self.width += eagle_window_width_add(self.width)
-    self.height = eagle_window_height
-    self.height += eagle_window_height_add(self.height)
-    eagle_recreate_back_bitmap
+  def eagle_set_wh(des_w = nil, des_h = nil, instant = false)
+    if des_w.nil?
+      des_w  = eagle_window_width
+      des_w += eagle_window_width_add(des_w)
+    end
+    if des_h.nil?
+      des_h  = eagle_window_height
+      des_h += eagle_window_height_add(des_h)
+    end
+    if instant
+      self.width = des_w
+      self.height = des_h
+      eagle_recreate_back_bitmap
+    else
+      wait_until_des_wh(des_w, des_h)
+    end
+    eagle_win_update
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新对话框宽高直至完成
+  #--------------------------------------------------------------------------
+  def wait_until_des_wh(des_w, des_h)
+    while(true)
+      d1 = des_w - self.width
+      d2 = des_h - self.height
+      break if d1 == 0 && d2 == 0
+      d = d1 / 4
+      d = (d1 > 0 ? 1 : (d1 < 0 ? -1 : 0)) if d == 0
+      self.width += d
+      d = d2 / 4
+      d = (d2 > 0 ? 1 : (d2 < 0 ? -1 : 0)) if d == 0
+      self.height += d
+      eagle_recreate_back_bitmap
+      eagle_win_update
+      Fiber.yield
+    end
   end
   #--------------------------------------------------------------------------
   # ● 获取窗口宽度高度
@@ -1581,10 +1632,10 @@ class Window_Message
   # ● 额外增加的窗口宽度高度（右侧和下侧）
   #--------------------------------------------------------------------------
   def eagle_window_width_add(cur_width)
-    eagle_window_w_empty + game_message.child_window_w_add
+    eagle_window_w_empty + game_message.child_window_w_des
   end
   def eagle_window_height_add(cur_height)
-    eagle_window_h_empty + game_message.child_window_h_add
+    eagle_window_h_empty + game_message.child_window_h_des
   end
   #--------------------------------------------------------------------------
   # ● 窗口内容中，无法被用于文本绘制的宽高
@@ -1600,7 +1651,6 @@ class Window_Message
   # ● 更新win参数组（初始化/一页绘制完成时调用）
   #--------------------------------------------------------------------------
   def eagle_win_update
-    eagle_set_wh
     return eagle_pop_update if game_message.pop?
     self.x = win_params[:x] || 0
     self.y = win_params[:y] || (game_message.position * (Graphics.height - self.height) / 2)
@@ -2023,10 +2073,10 @@ class Window_Message
   # ● 绘制完成时的更新
   #--------------------------------------------------------------------------
   def eagle_process_draw_update
-    eagle_win_update # 当绘制完一个文字时，更新一次win参数
-    # 由于对齐需要用到对话框的属性，因此需要在调用更新后执行
+    return eagle_open_and_wait if self.openness == 0 # 第一个文字绘制后打开窗口
+    eagle_set_wh(nil, nil, true) # 重设对话框宽高，并更新对话框位置
+    # 对齐需要用到对话框的宽高，因此在更新后执行
     eagle_charas_reset_alignment(game_message.win_params[:ali])
-    eagle_open_and_wait # 第一个文字绘制完成时窗口打开
     # 确保最后绘制的文字在视图区域内
     ensure_character_visible(@eagle_chara_sprites[-1])
   end
@@ -2227,20 +2277,8 @@ class Window_Message
   # ● 等待对话框宽高处理结束
   #--------------------------------------------------------------------------
   def input_wait_until_msg_wh(child_window)
-    child_window.start
-    while(true)
-      d1 = game_message.child_window_w_des - game_message.child_window_w_add
-      d2 = game_message.child_window_h_des - game_message.child_window_h_add
-      break if d1 == 0 && d2 == 0
-      d = d1 / 4
-      d = (d1 > 0 ? 1 : (d1 < 0 ? -1 : 0)) if d == 0
-      game_message.child_window_w_add += d
-      d = d2 / 4
-      d = (d2 > 0 ? 1 : (d2 < 0 ? -1 : 0)) if d == 0
-      game_message.child_window_h_add += d
-      eagle_win_update
-      Fiber.yield
-    end
+    child_window.hide.start
+    eagle_set_wh # 执行因子窗口嵌入而变更的窗口大小
     child_window.show.open.activate
   end
   #--------------------------------------------------------------------------

@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ItemChoiceEX"] = true
 #=============================================================================
-# - 2020.3.1.11 优化嵌入模式
+# - 2020.3.25.22 优化嵌入表现
 #==============================================================================
 # - 在对话框中利用 \keyitem[param] 对物品选择框进行部分参数设置：
 #     type → 【默认】物品选择范围的类型index（见 index → 物品种类的符号数组 的映射）
@@ -212,7 +212,6 @@ class Window_KeyItem < Window_ItemList
         # 确保是行高的正整数倍数
         self.height = self.height/item_height*item_height + standard_padding*2
       end
-      @message_window.eagle_process_draw_update
     end
   end
   #--------------------------------------------------------------------------

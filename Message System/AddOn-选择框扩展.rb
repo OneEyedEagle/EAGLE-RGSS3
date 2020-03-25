@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.3.3.12 修复倒计时后选项未刷新的BUG
+# - 2020.3.25.22 优化嵌入表现
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -307,7 +307,6 @@ class Window_ChoiceList < Window_Command
         # 确保是行高的正整数倍数
         self.height = self.height/item_height*item_height + standard_padding*2
       end
-      @message_window.eagle_process_draw_update
     end
     self.z = @message_window.z + 10 # 在文字绘制之前设置，保证文字精灵的z值
     self.ox = self.oy = 0

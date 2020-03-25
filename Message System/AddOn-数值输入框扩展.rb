@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-NumberInputEX"] = true
 #=============================================================================
-# - 2020.3.1.12
+# - 2020.3.25.22 优化嵌入表现
 #==============================================================================
 # - 在对话框中利用 \numinput[param] 对数值输入框进行部分参数设置：
 #     o → 数值输入框的显示原点类型（九宫格小键盘）（默认7）（嵌入时固定为7）
@@ -223,7 +223,6 @@ class Window_NumberInput < Window_Base
         # 确保是行高的正整数倍数
         self.height = self.height/item_height*item_height + standard_padding*2
       end
-      @message_window.eagle_process_draw_update
     end
   end
   #--------------------------------------------------------------------------
