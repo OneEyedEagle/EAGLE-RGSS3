@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.3.25.22 优化对话框打开模式，变更为放大
+# - 2020.3.25.23 优化对话框打开关闭特效，变更为 展开
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -286,12 +286,12 @@ $imported["EAGLE-MessageEX"] = true
 #
 # · 当进入 等待按键 状态时，按住 方向键 即可朝对应方向滚动浏览对话框全部内容
 #----------------------------------------------------------------------------
-# - 对话框Open特效优化
+# - 对话框Open/Close特效优化
 #
-# · 对话框的开启特效已被优化为 四向动态展开，而非默认的 上下打开
+# · 对话框的开启关闭特效已被优化为 动态展开收缩，而非默认的 上下打开关闭
 #
-# · 若为 $game_message.default_open_type 赋值为 true，则重新使用默认的 上下打开
-#    若为 $game_message.default_open_type 赋值为 false，则使用 动态展开
+# · 若 $game_message.default_open_type 赋值为 true，则使用默认的 上下打开关闭
+#    若 $game_message.default_open_type 赋值为 false，则使用 动态展开收缩
 #----------------------------------------------------------------------------
 # - 并行处理子窗口
 #
@@ -1283,6 +1283,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_message_init_params
     self.arrows_visible = false # 内容位图未完全显示时出现的箭头
+    @flag_open_close = false # 当正在进行打开/关闭时，置为 true
     @in_map = SceneManager.scene_is?(Scene_Map) # 地图场景中？
     @in_battle = SceneManager.scene_is?(Scene_Battle) # 战斗场景中？
     @pop_on_map_chara = true # pop绑定的对象为地图场景上的行走图？
@@ -1368,7 +1369,6 @@ class Window_Message
   def eagle_message_reset
     # 移出全部组件
     eagle_move_out_assets
-    @gold_window.close
     # 重置下一个文字的绘制x（左对齐、不考虑换行）
     @eagle_next_chara_x = 0
     # 重置文字区域的宽度高度
@@ -1392,6 +1392,7 @@ class Window_Message
   # ● 移出全部组件
   #--------------------------------------------------------------------------
   def eagle_move_out_assets
+    @gold_window.close
     # 隐藏pop的tag
     @eagle_sprite_pop_tag.visible = false
     # 移出显示的脸图
@@ -1419,11 +1420,8 @@ class Window_Message
   # ● 打开直至完成（当有文字绘制完成时执行）
   #--------------------------------------------------------------------------
   def eagle_open_and_wait
-    # 组件隐藏
     @eagle_chara_sprites.each { |c| c.visible = false }
-    f_tag = @eagle_sprite_pop_tag.visible
-    @eagle_sprite_pop_tag.visible = false
-    @eagle_sprite_pop_tag.opacity = 0
+    @flag_open_close = true
     if game_message.default_open_type # using default open
       eagle_set_wh(nil, nil, true)
       open_and_wait
@@ -1432,10 +1430,8 @@ class Window_Message
       self.openness = 255
       eagle_set_wh
     end
-    # 组件显示
     @eagle_chara_sprites.each { |c| c.visible = true }
-    @eagle_sprite_pop_tag.visible = f_tag
-    @eagle_sprite_pop_tag.opacity = 255
+    @flag_open_close = false
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）更新打开处理
@@ -1453,12 +1449,21 @@ class Window_Message
     eagle_message_ex_close
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）关闭窗口并等待关闭结束
+  # ● 关闭直至完成
   #--------------------------------------------------------------------------
   def close_and_wait
+    @flag_open_close = true
     eagle_message_sprites_move_out
-    close
-    Fiber.yield until all_close?
+    if game_message.default_open_type # using default open
+      close
+      Fiber.yield until all_close?
+    else
+      eagle_move_out_assets
+      eagle_set_wh(0, 0)
+      close
+      self.openness = 0
+    end
+    @flag_open_close = false
   end
   #--------------------------------------------------------------------------
   # ● 移出全部文字精灵
@@ -1715,6 +1720,7 @@ class Window_Message
   # ● 更新pop的tag
   #--------------------------------------------------------------------------
   def eagle_pop_tag_update
+    return @eagle_sprite_pop_tag.visible = false if @flag_open_close
     o = 10 - pop_params[:do] # tag的o值恰好与pop对话框的do值相对
     @eagle_sprite_pop_tag.visible =
       MESSAGE_EX.windowtag_o(self, @eagle_sprite_pop_tag, @eagle_pop_tag_bitmap, o)
