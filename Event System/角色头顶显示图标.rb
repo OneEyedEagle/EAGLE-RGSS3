@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 角色头顶显示图标 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.3.18.17 优化逻辑
+# - 2020.3.26.22 优化
 #==============================================================================
 # - 本插件新增了在地图上角色头顶显示指定图标的功能（仿气泡）
 #--------------------------------------------------------------------------
@@ -12,16 +12,61 @@
 # - 示例：
 #    $game_player.pop_icon = 1
 #      → 在玩家头顶显示 1 号图标，持续 MAX_POP_FRAME 帧
+#   若设置为 0，则消除图标
 #==============================================================================
 module POP_ICON
-  #--------------------------------------------------------------------------
-  # ● 【常量】持续显示帧数
-  #--------------------------------------------------------------------------
-  MAX_POP_FRAME = 10
   #--------------------------------------------------------------------------
   # ● 【常量】当该序号的开关开启时，不显示图标
   #--------------------------------------------------------------------------
   S_ID_NO_POP = 1
+  #--------------------------------------------------------------------------
+  # ● 【常量】一次激活后，最长的显示帧数
+  #  若设置为 nil，则不会自动消失
+  #--------------------------------------------------------------------------
+  MAX_SHOW_FRAME = 10
+  #--------------------------------------------------------------------------
+  # ● 【常量】最大循环帧数
+  #--------------------------------------------------------------------------
+  MAX_LOOP_FRAME = 60
+  #--------------------------------------------------------------------------
+  # ● 按照当前循环的帧序号进行重绘
+  #  frame 的取值为 0 ~ MAX_LOOP_FRAME-1
+  #--------------------------------------------------------------------------
+  def self.draw_pop_icon(sprite_chara, sprite_icon, icon_id, frame)
+    # 设置基础位置
+    sprite_icon.x = sprite_chara.x
+    sprite_icon.y = sprite_chara.y - sprite_chara.height
+    sprite_icon.z = sprite_chara.z + 200
+
+    # 在第一帧时，新建位图并绘制图标
+    if frame == 0
+      sprite_icon.visible = true
+      sprite_icon.bitmap ||= Bitmap.new(24, 24)
+      sprite_icon.bitmap.clear
+      sprite_icon.ox = 12
+      sprite_icon.oy = 24
+      draw_icon(sprite_icon.bitmap, icon_id, 0, 0)
+      sprite_icon.opacity = 255
+    end
+
+    case frame
+    when 1..29
+      sprite_icon.opacity -= 6
+      sprite_icon.y += (frame/4)
+    when 30..59
+      sprite_icon.opacity += 6
+      sprite_icon.y += ((29-(frame-29))/4)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制图标
+  #     enabled : 有效的标志。false 的时候使用半透明效果绘制
+  #--------------------------------------------------------------------------
+  def self.draw_icon(bitmap, icon_index, x, y, enabled = true)
+    bitmap_ = Cache.system("Iconset")
+    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
+    bitmap.blt(x, y, bitmap_, rect, enabled ? 255 : 120)
+  end
 end
 #=============================================================================
 # ○ Game_Character
@@ -42,15 +87,6 @@ end
 #=============================================================================
 class Sprite_Character < Sprite_Base
   #--------------------------------------------------------------------------
-  # ● 初始化对象
-  #     character : Game_Character
-  #--------------------------------------------------------------------------
-  alias eagle_popicon_init initialize
-  def initialize(viewport, character = nil)
-    @pop_icon = 0
-    eagle_popicon_init(viewport, character)
-  end
-  #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
   alias eagle_popicon_dispose dispose
@@ -70,15 +106,6 @@ class Sprite_Character < Sprite_Base
     update_popicon
   end
   #--------------------------------------------------------------------------
-  # ● 绘制图标
-  #     enabled : 有效的标志。false 的时候使用半透明效果绘制
-  #--------------------------------------------------------------------------
-  def draw_icon(bitmap, icon_index, x, y, enabled = true)
-    bitmap_ = Cache.system("Iconset")
-    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
-    bitmap.blt(x, y, bitmap_, rect, enabled ? 255 : 120)
-  end
-  #--------------------------------------------------------------------------
   # ● 更新图标pop
   #--------------------------------------------------------------------------
   def update_popicon
@@ -86,15 +113,24 @@ class Sprite_Character < Sprite_Base
       end_popicon if @pop_icon != 0
       return
     end
-    # 若icon被手动赋值
-    reset_popicon if @character.pop_icon > 0
+    flag_continue_show = false
+    if @character.pop_icon > 0
+      if @character.pop_icon == @pop_icon # 若与当前显示一致，则继续显示
+        @character.pop_icon = -1
+        flag_continue_show = true
+      else
+        reset_popicon
+      end
+    else
+      return end_popicon if @character.pop_icon == 0
+    end
     if @pop_icon > 0
-      return end_popicon if @popicon_count == @popicon_max || @character.pop_icon == 0
-      # 此处可以加入在第 @popicon_count 帧的额外处理
-
-      @popicon_sprite.x = x
-      @popicon_sprite.y = y - height
-      @popicon_sprite.z = z + 200
+      if !flag_continue_show && POP_ICON::MAX_SHOW_FRAME &&
+         @popicon_count > POP_ICON::MAX_SHOW_FRAME
+        return end_popicon
+      end
+      c = @popicon_count % POP_ICON::MAX_LOOP_FRAME
+      POP_ICON.draw_pop_icon(self, @popicon_sprite, @pop_icon, c)
       @popicon_sprite.update
       @popicon_count += 1
     end
@@ -103,29 +139,16 @@ class Sprite_Character < Sprite_Base
   # ● 重置图标pop
   #--------------------------------------------------------------------------
   def reset_popicon
-    # 若新icon与当前显示的一致，则继续显示
-    if @character.pop_icon == @pop_icon
-      @popicon_count = 0 if @popicon_count == @popicon_max
-      return
-    end
     @pop_icon = @character.pop_icon
-    @character.pop_icon = -1 # 在显示中，则置为-1
-
+    @character.pop_icon = -1 # 在显示中，置为-1
     @popicon_sprite ||= Sprite.new(viewport)
-    @popicon_sprite.bitmap ||= Bitmap.new(24, 24)
-    @popicon_sprite.bitmap.clear
-    @popicon_sprite.ox = 12
-    @popicon_sprite.oy = 24
-    draw_icon(@popicon_sprite.bitmap, @pop_icon, 0, 0)
-
     @popicon_count = 0
-    @popicon_max = POP_ICON::MAX_POP_FRAME # 激活一次后显示的帧数
   end
   #--------------------------------------------------------------------------
   # ● 释放图标pop
   #--------------------------------------------------------------------------
   def end_popicon
-    @popicon_sprite.bitmap.clear
+    @popicon_sprite.visible = false if @popicon_sprite
     @pop_icon = 0
     @character.pop_icon = 0
   end
