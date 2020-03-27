@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.2.24.11 优化wait标签；新增until标签
+# - 2020.3.28.0 对话框更新
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -635,6 +635,7 @@ class Window_Message_Para < Window_Message
   # ● 更新纤程
   #--------------------------------------------------------------------------
   def update_fiber
+    eagle_update_before_fiber
     if @fiber
       return if @para_params[:halt]
       @fiber.resume
@@ -644,6 +645,7 @@ class Window_Message_Para < Window_Message
     else
       game_message.visible = false
     end
+    eagle_update_after_fiber
   end
   #--------------------------------------------------------------------------
   # ● 暂停更新
@@ -705,7 +707,7 @@ class Window_Message_Para < Window_Message
   def eagle_get_pop_obj
     id = game_message.pop_params[:id]
     if @in_map && id == 0
-      @pop_on_map_chara = true
+      @flag_pop_chara = true
       return $game_map.events[@para_params[:id]]
     end
     super
