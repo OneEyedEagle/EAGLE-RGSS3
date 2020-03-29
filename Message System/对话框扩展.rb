@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.3.27.19 新增窗口皮肤与tag皮肤的绑定；优化hold转义符
+# - 2020.3.29.21 优化temp转义符执行时机
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1453,6 +1453,7 @@ class Window_Message
   def close
     eagle_message_reset
     eagle_message_ex_close
+    eagle_process_temp
   end
   #--------------------------------------------------------------------------
   # ● 关闭直至完成
@@ -2215,7 +2216,6 @@ class Window_Message
   def process_input
     eagle_message_ex_process_input
     eagle_process_hold
-    eagle_process_temp
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）处理输入等待
