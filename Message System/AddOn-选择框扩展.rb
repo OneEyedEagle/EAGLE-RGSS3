@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.3.25.22 优化嵌入表现
+# - 2020.3.31.22 调整文字基础位置；修复倒计时过早显示
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -390,6 +390,13 @@ class Window_ChoiceList < Window_Command
   def command_enabled?(index)
     @choices_info[index][:enable]
   end
+
+  #--------------------------------------------------------------------------
+  # ● 获取行高
+  #--------------------------------------------------------------------------
+  def line_height
+    $game_message.font_params[:size] + 4
+  end
   #--------------------------------------------------------------------------
   # ● 绘制项目（覆盖）
   #--------------------------------------------------------------------------
@@ -405,7 +412,7 @@ class Window_ChoiceList < Window_Command
     when 1; x_ = dw / 2
     when 2; x_ = dw
     end
-    s.draw_text_ex(x_ + 2, 3, command_name(index))
+    s.draw_text_ex(x_ + 4, 2, command_name(index))
     # 设置计时器
     if @choices_info[index][:extra][:ri]
       t = @choices_info[index][:extra][:rt] || 5
@@ -650,9 +657,9 @@ class Spriteset_Choice
     @timer_viewport = Viewport.new(@chara_dwin_rect)
     @timer_viewport.z = self.z - 1
     @timer_s = Sprite.new(@timer_viewport)
+    @timer_s.opacity = 0
     @timer_s.bitmap = Bitmap.new(@chara_dwin_rect.width, @chara_dwin_rect.height)
     @timer_s.bitmap.fill_rect(@timer_s.bitmap.rect, Color.new(180,180,180,50))
-    update_timer
   end
   #--------------------------------------------------------------------------
   # ● 更新计时器
@@ -661,6 +668,7 @@ class Spriteset_Choice
     @timer_viewport.rect.x = eagle_charas_x0
     @timer_viewport.rect.y = eagle_charas_y0
     @timer_viewport.rect.width = @timer_s.width * @timer[0] * 1.0 / @timer[1]
+    @timer_s.opacity = @choice_window.openness
     return if (@timer[0] -= 1) > 0
     case @timer[2]
     when :replace

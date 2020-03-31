@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2019.9.28.0 修复无viewport的bug
+# - 2020.3.31.0 优化
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -295,6 +295,7 @@ class Window_ScrollText < Window_Base
   # ● 打开窗口并等待窗口开启完成
   #--------------------------------------------------------------------------
   def open_and_wait
+    eagle_change_windowskin(win_params[:skin])
     self.move(win_params[:x], win_params[:y], win_params[:w], win_params[:h])
     self.opacity = win_params[:opa]
     MESSAGE_EX.reset_xy_origin(self, win_params[:o])
@@ -330,7 +331,6 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   def update
     super
-    update_eagle_params
     update_eagle_sprites
     update_eagle_threads
     if @fiber
@@ -339,12 +339,6 @@ class Window_ScrollText < Window_Base
       @fiber = Fiber.new { fiber_main }
       @fiber.resume
     end
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新参数效果
-  #--------------------------------------------------------------------------
-  def update_eagle_params
-    eagle_change_windowskin(win_params[:skin])
   end
   #--------------------------------------------------------------------------
   # ● 更新全部精灵
@@ -377,7 +371,6 @@ class Window_ScrollText < Window_Base
   def wait(duration)
     duration.times { Fiber.yield }
   end
-
   #--------------------------------------------------------------------------
   # ● 主绘制前的预处理
   #--------------------------------------------------------------------------
@@ -782,6 +775,7 @@ class Window_ScrollText < Window_Base
   def win_params; params[:win]; end
   def eagle_text_control_win(param = "")
     parse_param(params[:win], param, :default)
+    eagle_change_windowskin(win_params[:skin])
   end
   #--------------------------------------------------------------------------
   # ● 变更窗口皮肤
