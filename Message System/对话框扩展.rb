@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.3.29.21 优化temp转义符执行时机
+# - 2020.4.5.10 加速打开关闭；修复空对话框报错BUG
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1556,10 +1556,10 @@ class Window_Message
       d2 = des_h - self.height
       break if d1 == 0 && d2 == 0
       d = d1 / 4
-      d = (d1 > 0 ? 1 : (d1 < 0 ? -1 : 0)) if d == 0
+      d = d1 % 4 if d == 0
       self.width += d
       d = d2 / 4
-      d = (d2 > 0 ? 1 : (d2 < 0 ? -1 : 0)) if d == 0
+      d = d2 % 4 if d == 0
       self.height += d
       eagle_win_update
       update_back_sprite_zoom(max_w, max_h)
@@ -2056,6 +2056,8 @@ class Window_Message
   def recreate_contents_for_charas
     w = @eagle_charas_w + eagle_window_w_empty
     h = @eagle_charas_h + eagle_window_h_empty
+    w = 1 if w == 0
+    h = 1 if h == 0
     f = self.contents.font.dup
     self.contents.dispose if self.contents
     self.contents = Bitmap.new(w, h)

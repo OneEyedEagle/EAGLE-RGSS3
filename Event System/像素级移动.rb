@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.3.18.13 优化载具乘降；修复步数计数BUG
+# - 2020.4.2.12 优化玩家接触事件的执行；新增区域通行设置
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -60,6 +60,20 @@ $imported["EAGLE-PixelMove"] = true
 #
 # - 当玩家位于该事件上时（玩家的坐标处于该事件的碰撞矩形内部），
 #    玩家将首先移动到该事件中心位置，再跟随事件移动
+#-----------------------------------------------------------------------------
+# ○ 区域通行设置
+#-----------------------------------------------------------------------------
+# - 利用脚本设置区域的通行状态
+#
+#     $game_map.set_region(id, f_passable)
+#
+#   其中 id 为区域ID（与编辑器中一致）
+#
+#   其中 f_passable 传入 true 时，该区域设置为 可通行（默认状态）
+#                   传入 false 时，该区域 不可通行（整个图块范围）
+#
+# - 区域通行的设置为 全局范围 生效
+# - 当 图块 可以通行时，才会继续判定区域的通行
 #-----------------------------------------------------------------------------
 # ○ 高级
 #-----------------------------------------------------------------------------
@@ -330,6 +344,21 @@ module EAGLE
   end
 end
 #==============================================================================
+# ■ DataManager
+#==============================================================================
+module DataManager
+  #--------------------------------------------------------------------------
+  # ● （覆盖）如果数据已更新则重载地图
+  #--------------------------------------------------------------------------
+  def self.reload_map_if_updated
+    if $game_system.version_id != $data_system.version_id
+      $game_map.setup($game_map.map_id)
+      $game_player.center($game_player.rgss_x, $game_player.rgss_y)
+      $game_player.make_encounter_count
+    end
+  end
+end
+#==============================================================================
 # ■ Game_Map
 #==============================================================================
 class Game_Map
@@ -593,6 +622,30 @@ class Game_Map
   def scroll_distance
     2 ** @scroll_speed / (8.0 * PIXEL_MOVE::PIXEL_PER_UNIT)
   end
+  #--------------------------------------------------------------------------
+  # ○ 判定区域是否可以通行
+  #--------------------------------------------------------------------------
+  def region_passable?(x, y)
+    id = region_id(x, y)
+    return !regions_unpassable.include?(id)
+  end
+  #--------------------------------------------------------------------------
+  # ○ 获取不可通行区域组
+  #--------------------------------------------------------------------------
+  def regions_unpassable
+    @regions_unpassable ||= []
+    @regions_unpassable
+  end
+  #--------------------------------------------------------------------------
+  # ○ 设置区域的通行状态
+  #--------------------------------------------------------------------------
+  def set_region(region_id, f_passable = false)
+    if f_passable
+      regions_unpassable.delete!(region_id)
+    else
+      regions_unpassable.push(region_id)
+    end
+  end
 end
 #==============================================================================
 # ■ Game_CharacterBase
@@ -631,7 +684,7 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ○ 获取碰撞矩形
-  #  当 raw_rect 为 false 时，返回角色坐标下的碰撞矩形
+  #  当 raw_rect 为 false 时，返回角色在屏幕坐标下的碰撞矩形
   #--------------------------------------------------------------------------
   def get_collision_rect(raw_rect = true)
     return @collision_rect if raw_rect
@@ -722,7 +775,7 @@ class Game_CharacterBase
   # ● （覆盖）计算一帧内移动的距离
   #--------------------------------------------------------------------------
   def distance_per_frame
-    2 ** real_move_speed / (8.0 * PIXEL_MOVE::PIXEL_PER_UNIT)
+    2 ** real_move_speed / 256.0 * PIXEL_MOVE::UNIT_PER_MAP_GRID
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）移动到指定位置
@@ -797,6 +850,7 @@ class Game_CharacterBase
         return false unless map_passable?(x1, y1, d)
         return false unless map_passable?(x2, y2, reverse_dir(d))
       end
+      return false unless region_passable?(x2, y2)
     end
     dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, 7)
     r = get_collision_rect(false)
@@ -805,6 +859,12 @@ class Game_CharacterBase
     return false if collide_with_charas_rect?(r)
     return false if collide_with_events_rect?(r)
     return true
+  end
+  #--------------------------------------------------------------------------
+  # ○ 判定区域是否可以通行
+  #--------------------------------------------------------------------------
+  def region_passable?(x, y)
+    $game_map.region_passable?(x, y)
   end
   #--------------------------------------------------------------------------
   # ○ 判定是否与玩家矩形碰撞
@@ -1009,6 +1069,32 @@ class Game_Player < Game_Character
   def move_diagonal(horz, vert, n = PIXEL_MOVE::UNIT_PER_MAP_GRID)
     @followers.move if diagonal_passable?(@x, @y, horz, vert)
     super
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）非移动中的处理
+  #     last_moving : 此前是否正在移动
+  #--------------------------------------------------------------------------
+  def update_nonmoving(last_moving)
+    return if $game_map.interpreter.running?
+    #if last_moving # 去除上一帧移动的限制，保证不论速度多少，均能触发脚底事件
+      $game_party.on_player_walk
+      return if check_touch_event
+    #end
+    if movable? && Input.trigger?(:C)
+      return if get_on_off_vehicle
+      return if check_action_event
+    end
+    update_encounter if last_moving
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）判定同位置事件是否被启动
+  #--------------------------------------------------------------------------
+  def check_event_trigger_here(triggers)
+    $game_map.events_rect(get_collision_rect(false)).each do |event|
+      if event.trigger_in?(triggers) && event.normal_priority? == false
+        event.start
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）判定前方事件是否被启动
