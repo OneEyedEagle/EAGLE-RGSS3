@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.4.5.10 加速打开关闭；修复空对话框报错BUG
+# - 2020.4.7.22 优化pop索引逻辑，方便扩展
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -2580,15 +2580,14 @@ class Window_Message
   #--------------------------------------------------------------------------
   def pop_params; game_message.pop_params; end
   def eagle_text_control_pop(param = "")
+    @flag_pop_chara = false # 若为行走图类型的精灵，置为true
     pop_params[:id] = nil # 绑定对象的id
     parse_param(pop_params, param, :id)
-
-    # 读取pop对话框所绑定的精灵
-    @flag_pop_chara = false
-    @eagle_pop_obj = eagle_get_pop_obj
+    return if pop_params[:id].nil?
+    @eagle_pop_obj = eagle_get_pop_obj # 获取所绑定的对象
     return pop_params[:id] = nil if @eagle_pop_obj.nil?
     # 存在绑定对象，可以使用pop对话框
-    s = eagle_get_pop_sprite
+    s = eagle_get_pop_sprite # 获取所绑定对象的精灵
     pop_params[:chara_w] = s.width
     pop_params[:chara_h] = s.height
     pop_params[:dw] = MESSAGE_EX.check_bool(pop_params[:dw])
@@ -2602,7 +2601,6 @@ class Window_Message
   # ● 获取pop的弹出对象（需要有x、y、width、height方法）
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj
-    return nil if pop_params[:id].nil?
     return eagle_get_pop_obj_m if @in_map
     return eagle_get_pop_obj_b if @in_battle
     return nil
