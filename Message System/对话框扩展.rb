@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.4.7.22 优化pop索引逻辑，方便扩展
+# - 2020.4.8.22 优化文字外发光
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -60,8 +60,9 @@ $imported["EAGLE-MessageEX"] = true
 #    or/og/ob/oa → 设置边框颜色RGBA（0~255）
 #    p → 底部花纹的类型（0不绘制，1边框，2实心方框）
 #    pc → 底部花纹的颜色索引号（具体查看 Window.png 右下角部分，同默认\c[id]转义符）
-#    l → 是否绘制外发光
+#    l → 是否绘制外发光（若开启，则强制关闭阴影和边框）
 #    lc → 外发光的颜色索引号
+#    lp → 外发光的强度
 #    d → 是否绘制删除线
 #    dc → 删除线的颜色索引号
 #    u → 是否绘制下划线
@@ -409,6 +410,7 @@ module MESSAGE_EX
     :pc => 0, # 底纹颜色index
     :l => 0, # 外发光
     :lc => 0, # 外发光颜色index
+    :lp => 2, # 外发光强度
     :d => 0, # 删除线
     :dc => 0, # 删除线颜色index
     :u => 0, # 下划线
@@ -871,8 +873,12 @@ module MESSAGE_EX
     font.outline = MESSAGE_EX.check_bool(params[:o])
     font.out_color.set(params[:or],params[:og],params[:ob],params[:oa])
     params[:l] = MESSAGE_EX.check_bool(params[:l])
+    params[:lc] ||= 0
+    params[:lp] ||= 2
     params[:d] = MESSAGE_EX.check_bool(params[:d])
+    params[:dc] ||= 0
     params[:u] = MESSAGE_EX.check_bool(params[:u])
+    params[:uc] ||= 0
   end
   #--------------------------------------------------------------------------
   # ● 重置指定对象的显示原点位置
@@ -3304,12 +3310,14 @@ class Font_EagleCharacter
   # ● 绘制外发光
   #--------------------------------------------------------------------------
   def draw_param_l(bitmap, x, y, w, h, c, ali)
+    bitmap.font.outline = false
+    bitmap.font.shadow = false
     color = bitmap.font.color.dup
     bitmap.font.color = text_color(@params[:lc])
-    bitmap.font.size += 1
-    bitmap.draw_text(x, y, w*2, h, c, ali)
-    bitmap.blur
-    bitmap.font.size -= 1
+    @params[:lp].times do
+      bitmap.draw_text(x, y, w+4, h, c, ali)
+      bitmap.blur
+    end
     bitmap.font.color = color
   end
   def draw_param_l_rect(bitmap, x, y, w, h)
@@ -3404,7 +3412,24 @@ class Sprite_EagleCharacter < Sprite
   def reset(x, y, w, h)
     self.bitmap.dispose if self.bitmap
     self.bitmap = Bitmap.new(w, h)
-    self.visible = true
+    # (x0,y0) 当前的文字显示区域的左上角的屏幕坐标
+    @x0 = 0; @y0 = 0
+    # (_ox,_oy) 当前的文字显示区域的显示原点位置（对话框内部坐标系）
+    @_ox = 0; @_oy = 0
+    # 左对齐时，本文字的显示位置（存储为标准位置，方便对齐）
+    @origin_x = x; @origin_y = y
+    # 设置本文字的显示位置
+    reset_xy(x, y)
+    reset_oxy(7)
+    # 动态移动时的偏移值
+    @dx = 0; @dy = 0
+    @flag_move = nil # 在移动中？
+    # 重置特效参数
+    @effects = {} # effect_sym => param_string
+    @params = {} # effect_sym => param_hash
+    @bitmaps ||= [] # 备用位图
+    @bitmaps.each { |b| b.dispose }
+    # 重置精灵参数
     self.zoom_x = self.zoom_y = 1.0
     self.angle = 0
     self.wave_amp    = 0
@@ -3412,24 +3437,12 @@ class Sprite_EagleCharacter < Sprite
     self.wave_speed  = 0
     self.wave_phase  = 0
     self.mirror = false
-    self.opacity = 255
     self.blend_type = 0
-    # (x0,y0) 为文字区域左上点的屏幕坐标
-    @x0 = 0; @y0 = 0
-    # (_ox,_oy) 为当前可视区域的左上点的坐标（文字区域坐标系中）
-    @_ox = @_oy = 0
-    @origin_x = x; @origin_y = y # 存储左对齐时，文字的显示位置（作为标准位置）
-    reset_xy(x, y)
-    reset_oxy(7)
-    @dx = @dy = 0 # 移动的实时偏移值
-    @effects = {} # effect_sym => param_string
-    @params = {} # effect_sym => param_hash
-    @bitmaps ||= [] # 备用位图
-    @bitmaps.each { |b| b.dispose }
-    @flag_move = nil # 在移动中？
+    self.opacity = 255
+    self.visible = true
   end
   #--------------------------------------------------------------------------
-  # ● 设置相对偏移值
+  # ● 设置相对偏移值（以对话框中的文字显示区域的屏幕左上角为原点）
   #--------------------------------------------------------------------------
   def reset_xy(x, y)
     @_x = x # 存储文字相对对话框左上角的显示位置
