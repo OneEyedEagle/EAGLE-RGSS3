@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ScrollTextEX"] = true
 #=============================================================================
-# - 2020.3.31.0 优化
+# - 2020.4.8.14 修改并行称呼
 #==============================================================================
 # - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
 # - 关于转义符：
@@ -261,9 +261,9 @@ class Window_ScrollText < Window_Base
     @last_chara_sprite = nil
     @eagle_sprite_pause = Sprite_EaglePauseTag.new(self) # 初始化等待按键的精灵
     @eagle_sprite_pause.z = self.z + 10
-    @eagle_threads = {} # 存储并行绘制的线程 id => fiber
-    @eagle_threads_params = {} # 存储待处理的并行绘制 id => text
-    @eagle_last_thread_id = 0 # 并行线程id计数
+    @eagle_fibers = {} # 存储并行绘制的线程 id => fiber
+    @eagle_fibers_params = {} # 存储待处理的并行绘制 id => text
+    @eagle_last_fiber_id = 0 # 并行线程id计数
     @eagle_rbs = {} # 存储需要执行的脚本 id => string
     @eagle_rb_count = 0 # 脚本记录计数
     @eagle_pics = {} # 存储显示的图片精灵 sym => Sprite
@@ -307,7 +307,7 @@ class Window_ScrollText < Window_Base
   # ● 关闭窗口并等待关闭完成
   #--------------------------------------------------------------------------
   def close_and_wait
-    @eagle_last_thread_id = 0
+    @eagle_last_fiber_id = 0
     chara_sprites_move_out
     @eagle_pics.each { |sym, s| s.bitmap.dispose; s.dispose }
     @eagle_pics.clear
@@ -332,7 +332,7 @@ class Window_ScrollText < Window_Base
   def update
     super
     update_eagle_sprites
-    update_eagle_threads
+    update_eagle_fibers
     if @fiber
       @fiber.resume
     elsif $game_message.scroll_mode && $game_message.has_text?
@@ -350,8 +350,8 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   # ● 更新并行线程
   #--------------------------------------------------------------------------
-  def update_eagle_threads
-    @eagle_threads.each { |id, thread| thread.resume }
+  def update_eagle_fibers
+    @eagle_fibers.each { |id, fiber| fiber.resume }
   end
 
   #--------------------------------------------------------------------------
@@ -416,9 +416,9 @@ class Window_ScrollText < Window_Base
     }
     # 如果发现并行绘制标签对，则创建线程，并替换成转义符来启动并行绘制
     text.gsub!(/<para>(.*?)<\/para>/) {
-      @eagle_last_thread_id += 1
-      @eagle_threads_params[@eagle_last_thread_id] = $1
-      "\epara[#{@eagle_last_thread_id}]"
+      @eagle_last_fiber_id += 1
+      @eagle_fibers_params[@eagle_last_fiber_id] = $1
+      "\epara[#{@eagle_last_fiber_id}]"
     }
     text
   end
@@ -673,7 +673,7 @@ class Window_ScrollText < Window_Base
     when '!'; input_pause
     when '>'; @line_show_fast = true
     when '<'; @line_show_fast = false
-    when 'PARA'; eagle_activate_thread(obtain_escape_param(text), pos)
+    when 'PARA'; eagle_activate_fiber(obtain_escape_param(text), pos)
     when 'C'
       font_params[:c] = obtain_escape_param(text)
       change_color(text_color(font_params[:c]))
@@ -719,17 +719,17 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   # ● 激活并行绘制
   #--------------------------------------------------------------------------
-  def eagle_activate_thread(id, pos)
+  def eagle_activate_fiber(id, pos)
     pos_ = { :x => pos[:x], :y => pos[:y] }
-    @eagle_threads[id] = Fiber.new { eagle_thread_main(id, pos_) }
-    @eagle_threads[id].resume
+    @eagle_fibers[id] = Fiber.new { eagle_fiber_main(id, pos_) }
+    @eagle_fibers[id].resume
   end
   #--------------------------------------------------------------------------
   # ● 并行绘制的逻辑
   #--------------------------------------------------------------------------
-  def eagle_thread_main(id, pos)
-    process_all_text(@eagle_threads_params[id], pos)
-    @eagle_threads.delete(id)
+  def eagle_fiber_main(id, pos)
+    process_all_text(@eagle_fibers_params[id], pos)
+    @eagle_fibers.delete(id)
   end
 
   #--------------------------------------------------------------------------
