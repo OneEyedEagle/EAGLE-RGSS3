@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.4.8.22 优化文字外发光
+# - 2020.4.11.20 优化fix开启时，pop的tag可能位置不正确的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1656,6 +1656,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_win_update
     return eagle_pop_update if game_message.pop?
+    eagle_change_windowskin
     self.x = win_params[:x] || 0
     self.y = win_params[:y] || (game_message.position * (Graphics.height - self.height) / 2)
     eagle_reset_xy_dorigin(self, nil, win_params[:do]) if win_params[:do] < 0
@@ -1664,8 +1665,14 @@ class Window_Message
     self.y += win_params[:dy]
     eagle_fix_position if win_params[:fix]
     eagle_set_charas_viewport
-    eagle_change_windowskin
     eagle_name_update if game_message.name?
+  end
+  #--------------------------------------------------------------------------
+  # ● 修正位置（确保对话框完整显示）
+  #--------------------------------------------------------------------------
+  def eagle_fix_position
+    self.x = [[self.x, 0].max, Graphics.width - self.width].min
+    self.y = [[self.y, 0].max, Graphics.height - self.height].min
   end
   #--------------------------------------------------------------------------
   # ● 设置文字显示区域的矩形（屏幕坐标）
@@ -1676,22 +1683,16 @@ class Window_Message
       eagle_charas_max_h + eagle_window_h_empty)
   end
   #--------------------------------------------------------------------------
-  # ● 修正位置（确保对话框完整显示）
-  #--------------------------------------------------------------------------
-  def eagle_fix_position
-    self.x = [[self.x, 0].max, Graphics.width - self.width].min
-    self.y = [[self.y, 0].max, Graphics.height - self.height].min
-  end
-  #--------------------------------------------------------------------------
   # ● 更新pop参数组
   #--------------------------------------------------------------------------
   def eagle_pop_update
+    eagle_change_windowskin(pop_params[:skin])
     # 对话框左上角定位到绑定对象位图的对应o位置
     _x = 0; _y = 0
-    if @flag_pop_chara # 如果在地图上使用的行走图，定位到位图底部中心的屏幕位置
+    if @flag_pop_chara # 如果对象使用的是行走图，定位到位图底部中心的屏幕位置
       _x = @eagle_pop_obj.screen_x
       _y = @eagle_pop_obj.screen_y
-    else # 否则与对应精灵的坐标一致（注意：精灵底部中心为显示原点）
+    else # 如果对象为精灵，则与对应精灵的坐标一致（注意：精灵底部中心为显示原点）
       _x = @eagle_pop_obj.x
       _y = @eagle_pop_obj.y
     end
@@ -1710,10 +1711,12 @@ class Window_Message
     # 坐标的补足偏移量
     self.x += pop_params[:dx]
     self.y += pop_params[:dy]
-    eagle_fix_position if pop_params[:fix]
-    eagle_set_charas_viewport
-    eagle_change_windowskin(pop_params[:skin])
     eagle_pop_tag_update if pop_params[:tag] > 0
+    if pop_params[:fix]
+      eagle_fix_position
+      eagle_pop_tag_fix_position if pop_params[:tag] > 0
+    end
+    eagle_set_charas_viewport
     eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
@@ -1734,6 +1737,18 @@ class Window_Message
     when 1,2,3; @eagle_sprite_pop_tag.y -= pop_params[:td]
     when 7,8,9; @eagle_sprite_pop_tag.y += pop_params[:td]
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 修正pop的tag的位置
+  #--------------------------------------------------------------------------
+  def eagle_pop_tag_fix_position
+    # 若tag因为对话框的fix position而位于对话框内，则隐藏
+    s = @eagle_sprite_pop_tag
+    return if s.x + pop_params[:td] >= self.x + self.width
+    return if s.x + s.width - pop_params[:td] <= self.x
+    return if s.y + pop_params[:td] >= self.y + self.height
+    return if s.y + s.height - pop_params[:td] <= self.y
+    @eagle_sprite_pop_tag.visible = false
   end
   #--------------------------------------------------------------------------
   # ● 更新face参数组
