@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 角色头顶显示图标 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.3.26.22 优化
+# - 2020.4.14.10 优化
 #==============================================================================
 # - 本插件新增了在地图上角色头顶显示指定图标的功能（仿气泡）
 #--------------------------------------------------------------------------
@@ -93,7 +93,7 @@ class Sprite_Character < Sprite_Base
   def dispose
     eagle_popicon_dispose
     if @popicon_sprite
-      @popicon_sprite.bitmap.dispose
+      @popicon_sprite.bitmap.dispose if @popicon_sprite.bitmap
       @popicon_sprite.dispose
     end
   end
@@ -113,6 +113,7 @@ class Sprite_Character < Sprite_Base
       end_popicon if @pop_icon != 0
       return
     end
+    reset_popicon if @popicon_sprite.nil?
     flag_continue_show = false
     if @character.pop_icon > 0
       if @character.pop_icon == @pop_icon # 若与当前显示一致，则继续显示

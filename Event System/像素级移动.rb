@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.4.2.12 优化玩家接触事件的执行；新增区域通行设置
+# - 2020.4.14.0 修复delete失败bug
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -641,7 +641,7 @@ class Game_Map
   #--------------------------------------------------------------------------
   def set_region(region_id, f_passable = false)
     if f_passable
-      regions_unpassable.delete!(region_id)
+      regions_unpassable.delete(region_id)
     else
       regions_unpassable.push(region_id)
     end

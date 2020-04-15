@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.4.11.20 优化fix开启时，pop的tag可能位置不正确的bug
+# - 2020.4.14.10 修复pop在小于-1时报错的BUG
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -2641,7 +2641,7 @@ class Window_Message
     elsif id < 0 # 队伍中数据库id号角色（不存在则取队长）
       id = id.abs
       $game_player.followers.each { |f|
-        return f.actor if f.actor && f.actor.actor.id == id
+        return f if f.actor && f.actor.actor.id == id
       }
       return $game_player
     end
