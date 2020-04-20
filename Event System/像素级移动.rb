@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.4.14.0 修复delete失败bug
+# - 2020.4.16.17 修复跳跃格子错误BUG
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -715,13 +715,13 @@ class Game_CharacterBase
   # ● （覆盖）获取画面 X 坐标
   #--------------------------------------------------------------------------
   def screen_x
-    PIXEL_MOVE.unit2pixel($game_map.adjust_x(@real_x))
+    PIXEL_MOVE.unit2pixel($game_map.adjust_x(@real_x))+1
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）获取画面 Y 坐标
   #--------------------------------------------------------------------------
   def screen_y
-    PIXEL_MOVE.unit2pixel($game_map.adjust_y(@real_y)) - shift_y - jump_height
+    PIXEL_MOVE.unit2pixel($game_map.adjust_y(@real_y)) - shift_y - jump_height+1
   end
   #--------------------------------------------------------------------------
   # ○ 获取编辑器中 X 坐标
@@ -983,6 +983,28 @@ class Game_Character < Game_CharacterBase
       end
     end
     result
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）跳跃
+  #     x_plus : X 坐标增加值
+  #     y_plus : Y 坐标增加值
+  #  IN：rgssXY
+  #--------------------------------------------------------------------------
+  def jump(x_plus, y_plus)
+    if x_plus.abs > y_plus.abs
+      set_direction(x_plus < 0 ? 4 : 6) if x_plus != 0
+    else
+      set_direction(y_plus < 0 ? 8 : 2) if y_plus != 0
+    end
+    x_plus_unit, e = PIXEL_MOVE.rgss2unit(x_plus)
+    y_plus_unit, e = PIXEL_MOVE.rgss2unit(y_plus)
+    @x += x_plus_unit
+    @y += y_plus_unit
+    distance = Math.sqrt(x_plus * x_plus + y_plus * y_plus).round
+    @jump_peak = 10 + distance - @move_speed
+    @jump_count = @jump_peak * 2
+    @stop_count = 0
+    straighten
   end
 end
 #==============================================================================
