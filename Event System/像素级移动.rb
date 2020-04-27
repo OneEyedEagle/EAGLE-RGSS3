@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.4.16.17 修复跳跃格子错误BUG
+# - 2020.4.27.14 优化角色相关坐标，现在能正确展现草木深度等信息
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -80,7 +80,7 @@ $imported["EAGLE-PixelMove"] = true
 # - 以下为脚本中可用的新增方法一览
 #   设 chara 为 Game_CharacterBase 类的实例
 #
-#  chara.rgss_x 与 chara.rgss_y 获取在编辑器中网格的坐标
+#  chara.rgss_x 与 chara.rgss_y 获取角色碰撞矩形的左上角，在编辑器网格中的坐标
 #
 #  chara.get_collision_rect(raw=true) 获取碰撞矩形Rect
 #      若传入 true ，返回以 chara 所在坐标为原点的碰撞矩形
@@ -651,12 +651,15 @@ end
 # ■ Game_CharacterBase
 #==============================================================================
 class Game_CharacterBase
+  attr_reader :rgss_x, :rgss_y
   #--------------------------------------------------------------------------
   # ● 初始化公有成员变量
   #--------------------------------------------------------------------------
   alias eagle_pixel_move_init init_public_members
   def init_public_members
     eagle_pixel_move_init
+    @rgss_x = 0 # 碰撞矩形的左上角在编辑器中的 X 坐标
+    @rgss_y = 0
     @collision_rect = Rect.new
     set_collision_rect(default_collisin_rect)
   end
@@ -724,18 +727,19 @@ class Game_CharacterBase
     PIXEL_MOVE.unit2pixel($game_map.adjust_y(@real_y)) - shift_y - jump_height+1
   end
   #--------------------------------------------------------------------------
-  # ○ 获取编辑器中 X 坐标
+  # ● 更新画面
   #--------------------------------------------------------------------------
-  def rgss_x
-    x, y = PIXEL_MOVE.event_unit2rgss(@x, @y)
-    x
+  alias eagle_pixel_move_charabase_update update
+  def update
+    eagle_pixel_move_charabase_update
+    update_rgss_xy
   end
   #--------------------------------------------------------------------------
-  # ○ 获取编辑器中 Y 坐标
+  # ○ 更新编辑器中坐标
   #--------------------------------------------------------------------------
-  def rgss_y
-    x, y = PIXEL_MOVE.event_unit2rgss(@x, @y)
-    y
+  def update_rgss_xy
+    @rgss_x, e = PIXEL_MOVE.unit2rgss(@x)
+    @rgss_y, e = PIXEL_MOVE.unit2rgss(@y)
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）坐标一致判定
@@ -797,6 +801,7 @@ class Game_CharacterBase
     @y = y
     @real_x = @x
     @real_y = @y
+    update_rgss_xy
     @prelock_direction = 0
     straighten
     update_bush_depth
@@ -948,6 +953,30 @@ class Game_CharacterBase
     end
     set_direction(horz) if @direction == reverse_dir(horz)
     set_direction(vert) if @direction == reverse_dir(vert)
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）判定是否梯子
+  #--------------------------------------------------------------------------
+  def ladder?
+    $game_map.ladder?(@rgss_x, @rgss_y)
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）判定是否草木茂密处
+  #--------------------------------------------------------------------------
+  def bush?
+    $game_map.bush?(@rgss_x, @rgss_y)
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）获取地形标志
+  #--------------------------------------------------------------------------
+  def terrain_tag
+    $game_map.terrain_tag(@rgss_x, @rgss_y)
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）获取区域 ID
+  #--------------------------------------------------------------------------
+  def region_id
+    $game_map.region_id(@rgss_x, @rgss_y)
   end
 end
 #==============================================================================
