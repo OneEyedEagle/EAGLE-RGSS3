@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.4.20.12 修复文字移出一瞬间位置错误的BUG
+# - 2020.4.28.9 优化文字池
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1486,7 +1486,7 @@ class Window_Message
       c = win_params[:cor] ? @eagle_chara_sprites.pop : @eagle_chara_sprites.shift
       ensure_character_visible(c)
       c.move_out # 已经交由文字池进行后续更新释放
-      win_params[:cwo].times { Fiber.yield }
+      win_params[:cwo].times { Fiber.yield } unless @eagle_force_close
     end
   end
 
@@ -3178,10 +3178,9 @@ end
 #==============================================================================
 module MESSAGE_EX
   #--------------------------------------------------------------------------
-  # ● 重置（每次Scene新建/释放时调用）
+  # ● 重置
   #--------------------------------------------------------------------------
   def self.charapool_reset
-    @pool_charas_valid ||= [] # 备份精灵，防止频繁释放
     @pool_charas ||= []
     @pool_charas.each { |s| s.dispose }
     @pool_charas.clear
@@ -3196,17 +3195,22 @@ module MESSAGE_EX
   # ● 放入文字池中
   #--------------------------------------------------------------------------
   def self.charapool_push(s)
-    return @pool_charas_valid.push(s) if s.finish?
+    return @pool_charas.unshift(s) if s.finish?
     @pool_charas.push(s)
   end
   #--------------------------------------------------------------------------
   # ● 获取一个可用的精灵
   #--------------------------------------------------------------------------
   def self.charapool_new(window, font, x,y,w,h, viewport)
-    s = @pool_charas_valid.shift
-    if s.nil? || s.disposed?
-      return Sprite_EagleCharacter.new(window, font, x,y,w,h, viewport)
+    s = nil
+    while true
+      s = @pool_charas.shift
+      break if s.nil?
+      next if s.disposed?
+      next @pool_charas.push(s) if !s.finish?
+      break
     end
+    return Sprite_EagleCharacter.new(window, font, x,y,w,h, viewport) if s.nil?
     s.viewport = viewport
     s.bind_window(window)
     s.bind_font(font)
@@ -3219,12 +3223,12 @@ end
 #=============================================================================
 class Scene_Base
   #--------------------------------------------------------------------------
-  # ● 开始后处理
+  # ● 开始处理
   #--------------------------------------------------------------------------
-  alias eagle_charapool_post_start post_start
-  def post_start
-    eagle_charapool_post_start
+  alias eagle_charapool_start start
+  def start
     MESSAGE_EX.charapool_reset
+    eagle_charapool_start
   end
   #--------------------------------------------------------------------------
   # ● 更新画面（基础）

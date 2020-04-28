@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.4.11.19 优化事件的并行对话的逻辑
+# - 2020.4.28.8 优化并行对话的强制关闭
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -406,6 +406,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @window = nil  # 当前正在处理的window
     @f_ensure_fin = false # 保证必定显示完？（场景切换时只暂时暂停并关闭）
     @fiber = Fiber.new { fiber_main }
+    @finish = false # 结束的标志
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -427,6 +428,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     tag_name, tag_str = parse_next_tag
     method_name = "tag_" + tag_name
     send(method_name, tag_str) if respond_to?(method_name)
+    process_finish if @finish
   end
   #--------------------------------------------------------------------------
   # ● 获取当前绑定的事件
@@ -608,11 +610,17 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @fiber == nil
   end
   #--------------------------------------------------------------------------
-  # ● 直接结束
+  # ● 结束
   #--------------------------------------------------------------------------
   def finish
-    @list_str.clear
+    @finish = true
     @window.finish if @window
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理结束
+  #--------------------------------------------------------------------------
+  def process_finish
+    @list_str.clear
   end
 end
 #==============================================================================
@@ -625,6 +633,7 @@ class Window_Message_Para < Window_Message
   def initialize(list, para_params)
     @list = list
     @para_params = para_params
+    @input_wait_c = nil
     super()
   end
   #--------------------------------------------------------------------------
@@ -665,7 +674,7 @@ class Window_Message_Para < Window_Message
   # ● 强制结束当前对话框的更新
   #--------------------------------------------------------------------------
   def finish
-    @fiber_para = nil
+    @eagle_force_close = true
     @input_wait_c = 0
   end
   #--------------------------------------------------------------------------
@@ -675,7 +684,7 @@ class Window_Message_Para < Window_Message
     game_message.visible = true
     update_background
     update_placement
-    @fiber_para = Fiber.new { process_all_text; @fiber_para = nil }
+    process_all_text
     process_input
     @gold_window.close
     close_and_wait
@@ -686,11 +695,13 @@ class Window_Message_Para < Window_Message
   # ● 输入处理
   #--------------------------------------------------------------------------
   def process_input
-    @input_wait_c = @para_params[:w]
-    while @fiber_para || @input_wait_c.nil? || @input_wait_c > 0
+    @input_wait_c ||= @para_params[:w]
+    while true
       Fiber.yield
-      next @fiber_para.resume if @fiber_para
-      @input_wait_c -= 1 if @input_wait_c
+      if @input_wait_c
+        break if @input_wait_c <= 0
+        @input_wait_c -= 1
+      end
     end
   end
   #--------------------------------------------------------------------------
