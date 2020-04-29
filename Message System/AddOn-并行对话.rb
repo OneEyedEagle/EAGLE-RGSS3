@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.4.28.8 优化并行对话的强制关闭
+# - 2020.4.29.19 修复条件错误
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -371,7 +371,7 @@ module MESSAGE_PARA
     e = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
     hash = {}
     text.scan(/<list ?(\{.*?\})? ?(.*?)>(.*?)<\/list>/m).each do |params|
-      next if params[0] && eval(params[0]) == false
+      next if params[0] && eval(params[0][1..-2]) == false
       hash[ params[1] ] = params[2]
     end
     hash
