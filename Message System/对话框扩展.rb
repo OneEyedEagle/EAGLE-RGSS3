@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.4.29.18 新增基础自动换行；新增对话框跨指令显示
+# - 2020.4.29.20 新增基础自动换行；新增对话框跨指令显示
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1497,9 +1497,9 @@ class Window_Message
   #--------------------------------------------------------------------------
   alias eagle_message_ex_close close
   def close
-    eagle_message_reset
     eagle_message_ex_close
     eagle_process_temp
+    eagle_message_reset
   end
   #--------------------------------------------------------------------------
   # ● 关闭直至完成
@@ -2202,6 +2202,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_auto_new_line(c_w, pos)
     return if game_message.auto_wrap == false
+    return if game_message.draw == false
     max_w = eagle_charas_max_w
     return if max_w <= 0
     return if pos[:x] + c_w <= max_w # 若当前文字绘制完成后会超出边界，则换行
@@ -2802,8 +2803,8 @@ class Window_Message
     @eagle_face_bitmap.dispose if @eagle_face_bitmap
     @eagle_face_bitmap = Cache.face(face_name)
     face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
-    face_params[:num_line] = $1 ? $1.to_i : 2
-    face_params[:num_col] = $2 ? $2.to_i : 4
+    face_params[:num_line] = $1 ? $1.to_i : face_default_line
+    face_params[:num_col] = $2 ? $2.to_i : face_default_col
     face_params[:sole_w] = @eagle_face_bitmap.width / face_params[:num_col]
     face_params[:sole_h] = @eagle_face_bitmap.height / face_params[:num_line]
     # 脸图以底部中心为显示原点
@@ -2818,6 +2819,11 @@ class Window_Message
     eagle_face_apply
     eagle_face_move_in
   end
+  #--------------------------------------------------------------------------
+  # ● 脸图默认规格（行和列）
+  #--------------------------------------------------------------------------
+  def face_default_line; 2; end
+  def face_default_col;  4; end
   #--------------------------------------------------------------------------
   # ● 初始化脸图移入
   #--------------------------------------------------------------------------
