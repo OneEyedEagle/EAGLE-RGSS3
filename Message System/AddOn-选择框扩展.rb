@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.4.5.11 修复因按键过快导致的文字无法消除BUG
+# - 2020.4.30.18 随对话框更新
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -281,34 +281,38 @@ class Window_ChoiceList < Window_Command
     self.width = width_min + standard_padding * 2
     w_limit = $game_message.choice_params[:w]
     self.width = w_limit if w_limit > self.width
-    # 嵌入时宽度最小值（不含边界）
-    width_min = self.width - standard_padding * 2
 
-    # 嵌入对话框时的特别处理
-    if @message_window.open? && $game_message.choice_params[:do] == 0
-      self.openness = 255
+    # 处理嵌入的特殊情况
+    @flag_in_msg_window = @message_window.open? && $game_message.choice_params[:do] == 0
+    new_w = self.width
+    if @flag_in_msg_window
+      # 嵌入时对话框所需宽度最小值（不含边界）
+      width_min = self.width - standard_padding * 2
+      # 对话框实际能提供的宽度（文字区域宽度）
       win_w = @message_window.eagle_charas_w
-      if @message_window.eagle_dynamic_w?
-        d = width_min - win_w
-        if d > 0
+      d = width_min - win_w
+      if d > 0
+        if @message_window.eagle_add_w_by_child_window?
           $game_message.child_window_w_des = d # 扩展对话框的宽度
-        else # 宽度 = 文字区域宽度
-          self.width = win_w + standard_padding * 2
+        else
+          @flag_in_msg_window = false
         end
-      else # 宽度 = 对话框宽度 - 脸图占用宽度
-        self.width = @message_window.width - @message_window.eagle_face_width
+      else # 宽度 = 文字区域宽度
+        new_w = win_w + standard_padding * 2
       end
       win_h = @message_window.height - @message_window.eagle_charas_h
-      if @message_window.eagle_dynamic_h? # 扩展对话框的高度
-        d = self.height - win_h
-        d += standard_padding if @message_window.eagle_charas_h > 0
-        $game_message.child_window_h_des = d if d > 0
-      else # 压缩高度
-        self.height = [[height, win_h].min-standard_padding*2, item_height].max
-        # 确保是行高的正整数倍数
-        self.height = self.height/item_height*item_height + standard_padding*2
+      d = self.height - win_h
+      d += standard_padding if @message_window.eagle_charas_h > 0
+      if d > 0
+        if @message_window.eagle_add_h_by_child_window?
+          $game_message.child_window_h_des = d # 扩展对话框的高度
+        else
+          @flag_in_msg_window = false
+        end
       end
     end
+    self.width = new_w if @flag_in_msg_window
+
     self.z = @message_window.z + 10 # 在文字绘制之前设置，保证文字精灵的z值
     self.ox = self.oy = 0
   end
@@ -324,16 +328,16 @@ class Window_ChoiceList < Window_Command
     o = $game_message.choice_params[:o]
     if (d_o = $game_message.choice_params[:do]) < 0 # 相对于屏幕
       MESSAGE_EX.reset_xy_dorigin(self, nil, d_o)
-    else
-      if @message_window.open?
-        if d_o == 0 # 嵌入对话框
+    elsif @message_window.open?
+      if d_o == 0 # 嵌入对话框
+        if @flag_in_msg_window
           self.x = @message_window.eagle_charas_x0 - standard_padding
           self.y = @message_window.eagle_charas_y0 + @message_window.eagle_charas_h
           self.y -= standard_padding if @message_window.eagle_charas_h == 0
           o = 7
-        else
-          MESSAGE_EX.reset_xy_dorigin(self, @message_window, d_o)
         end
+      else
+        MESSAGE_EX.reset_xy_dorigin(self, @message_window, d_o)
       end
     end
     MESSAGE_EX.reset_xy_origin(self, o)
@@ -347,10 +351,12 @@ class Window_ChoiceList < Window_Command
     @skin = @message_window.get_cur_windowskin_index($game_message.choice_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(@skin)
     self.opacity = $game_message.choice_params[:opa]
-    if @message_window.open? && $game_message.choice_params[:do] == 0
-      self.opacity = 0
-    end
     self.contents_opacity = 255
+
+    if @flag_in_msg_window # 如果嵌入，则不执行打开
+      self.opacity = 0
+      self.openness = 255
+    end
 
     if cancel_enabled? && $game_message.choice_params[:cd] > 0
       count = $game_message.choice_params[:cd] * 60

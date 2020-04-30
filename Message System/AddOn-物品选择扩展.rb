@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ItemChoiceEX"] = true
 #=============================================================================
-# - 2020.4.5.10 修复参数错误BUG
+# - 2020.4.30.18 随对话框更新
 #==============================================================================
 # - 在对话框中利用 \keyitem[param] 对物品选择框进行部分参数设置：
 #     type → 【默认】物品选择范围的类型index（见 index → 物品种类的符号数组 的映射）
@@ -180,39 +180,40 @@ class Window_KeyItem < Window_ItemList
   # ● 更新窗口的大小
   #--------------------------------------------------------------------------
   def update_size
-    # 宽度
     self.width = $game_message.keyitem_params[:w] if $game_message.keyitem_params[:w] > self.width
-    # 嵌入时宽度最小值（不含边界）
-    width_min = self.width - standard_padding * 2
-    # 高度
     h = eagle_check_param_h($game_message.keyitem_params[:h])
     self.height = h + standard_padding * 2 if h > 0
-    # 嵌入对话框时的特别处理
-    if @message_window.open? && $game_message.keyitem_params[:do] == 0
-      self.openness = 255
+
+    # 处理嵌入的特殊情况
+    @flag_in_msg_window = @message_window.open? && $game_message.keyitem_params[:do] == 0
+    new_w = self.width
+    if @flag_in_msg_window
+      # 嵌入时对话框所需宽度最小值（不含边界）
+      width_min = self.width - standard_padding * 2
+      # 对话框实际能提供的宽度（文字区域宽度）
       win_w = @message_window.eagle_charas_w
-      if @message_window.eagle_dynamic_w?
-        d = width_min - win_w
-        if d > 0
+      d = width_min - win_w
+      if d > 0
+        if @message_window.eagle_add_w_by_child_window?
           $game_message.child_window_w_des = d # 扩展对话框的宽度
-        else # 宽度 = 文字区域宽度
-          self.width = win_w + standard_padding * 2
+        else
+          @flag_in_msg_window = false
         end
-      else # 宽度 = 对话框宽度 - 脸图占用宽度
-        self.width = @message_window.width - @message_window.eagle_face_width
+      else # 宽度 = 文字区域宽度
+        new_w = win_w + standard_padding * 2
       end
       win_h = @message_window.height - @message_window.eagle_charas_h
-      # 如果对话框内容高度为0，或动态高度对话框，则扩展对话框的高度
-      if @message_window.eagle_dynamic_h? || @message_window.eagle_charas_h == 0
-        d = self.height - win_h
-        d += standard_padding if @message_window.eagle_charas_h > 0
-        $game_message.child_window_h_des = d if d > 0
-      else # 压缩高度
-        self.height = [[height, win_h].min-standard_padding*2, item_height].max
-        # 确保是行高的正整数倍数
-        self.height = self.height/item_height*item_height + standard_padding*2
+      d = self.height - win_h
+      d += standard_padding if @message_window.eagle_charas_h > 0
+      if d > 0
+        if @message_window.eagle_add_h_by_child_window?
+          $game_message.child_window_h_des = d # 扩展对话框的高度
+        else
+          @flag_in_msg_window = false
+        end
       end
     end
+    self.width = new_w if @flag_in_msg_window
   end
   #--------------------------------------------------------------------------
   # ● 更新窗口的位置
@@ -226,16 +227,16 @@ class Window_KeyItem < Window_ItemList
     o = $game_message.keyitem_params[:o]
     if (d_o = $game_message.keyitem_params[:do]) < 0 # 相对于屏幕
       MESSAGE_EX.reset_xy_dorigin(self, nil, d_o)
-    else
-      if @message_window.open?
-        if d_o == 0 # 嵌入对话框
+    elsif @message_window.open?
+      if d_o == 0 # 嵌入对话框
+        if @flag_in_msg_window
           self.x = @message_window.eagle_charas_x0 - standard_padding
           self.y = @message_window.eagle_charas_y0 + @message_window.eagle_charas_h
           self.y -= standard_padding if @message_window.eagle_charas_h == 0
           o = 7
-        else
-          MESSAGE_EX.reset_xy_dorigin(self, @message_window, d_o)
         end
+      else
+        MESSAGE_EX.reset_xy_dorigin(self, @message_window, d_o)
       end
     end
     MESSAGE_EX.reset_xy_origin(self, o)
@@ -250,8 +251,12 @@ class Window_KeyItem < Window_ItemList
     skin = @message_window.get_cur_windowskin_index($game_message.keyitem_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(skin)
     self.opacity = $game_message.keyitem_params[:opa]
-    self.opacity = 0 if $game_message.keyitem_params[:do] == 0
     self.contents_opacity = 255
+
+    if @flag_in_msg_window # 如果嵌入，则不执行打开
+      self.opacity = 0
+      self.openness = 255
+    end
   end
 
   #--------------------------------------------------------------------------

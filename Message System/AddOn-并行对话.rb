@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.4.29.19 修复条件错误
+# - 2020.4.30.23 删去子窗口，优化性能；当Scene切换时，将强制关闭
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -19,6 +19,7 @@ $imported["EAGLE-MessagePara"] = true
 # - 可用标签一览：
 #    <msg>...</msg>  → 预设对话文本，当执行该标签对时，解析将暂停，直至对话框关闭
 #         其中...替换成所需的对话文本
+#         与【对话框扩展】中的转义符保持一致，但【警告！不可使用 \$ 转义符！】
 #
 #    <face face_name [face_index]>  → 预设之后对话框所显示脸图的参数
 #         其中 face_name 替换成 Graphics/Faces 目录下的脸图文件名，
@@ -68,7 +69,7 @@ $imported["EAGLE-MessagePara"] = true
 #
 #        MESSAGE_PARA.add(name, list_str[, ensure_fin])
 #
-#    其中 name 为任意的唯一标识符（若有重名，则先前存在的会被删除）
+#    其中 name 为任意的唯一标识符（若有重名，则先前存在的会被强制结束）
 #       推荐使用 Symbol 或 String 类型
 #    其中 list_str 为“标签序列”字符串（注意！转义符需要用 \\ 代替 \）
 #    其中 ensure_fin 传入 true 时，将保证当前对话序列完全显示【可选】
@@ -150,6 +151,25 @@ $imported["EAGLE-MessagePara"] = true
 #  ·进行 场所移动 / Scene切换 时，会自动结束全部“标签序列”
 #      除了 ensure_fin 设置为 true 的序列
 #  ·打开S_ID_NO_MSG号开关时，会自动结束全部“标签序列”并禁止产生新的
+#--------------------------------------------------------------------------
+# ○ 高级
+#--------------------------------------------------------------------------
+# - 利用脚本进行锁定与解锁，当存在任一锁时，将不会显示任何新的并行对话
+#
+#     MESSAGE_PARA.lock(type) → 添加以 type 为名称的锁
+#     MESSAGE_PARA.unlock(type) → 解除以 type 为名称的锁
+#
+# - 利用脚本移出指定名称的并行对话序列
+#
+#     MESSAGE_PARA.list_finish(name[, force])
+#       → 结束名称为 name 的并行对话序列，
+#          若传入 force 为 true，则不会进行移出，而是直接隐藏，
+#          默认 force 为 false，即保留对话框移出特效
+#
+# - 利用脚本移出全部并行对话序列
+#
+#     MESSAGE_PARA.all_finish(force = false)
+#
 #==============================================================================
 
 #==============================================================================
@@ -158,7 +178,6 @@ $imported["EAGLE-MessagePara"] = true
 module MESSAGE_PARA
   #--------------------------------------------------------------------------
   # ●【常量】当该ID号开关打开时，关闭全部并行对话，并且不再生成新对话
-  # type_id => type_sym
   #--------------------------------------------------------------------------
   S_ID_NO_MSG = 0
   #--------------------------------------------------------------------------
@@ -267,7 +286,8 @@ module MESSAGE_PARA
   #--------------------------------------------------------------------------
   # list_str - "<msg params>foo</msg><msg params>foo</msg>"
   def self.add(id, list_str, ensure_fin = false)
-    @lists[id].dispose if @lists[id]
+    return false if lock?
+    @lists[id].finish(true).dispose if @lists[id]
     @lists[id] = MessagePara_List.new(id, list_str)
     @lists[id].f_ensure_fin = ensure_fin
     return true
@@ -295,25 +315,26 @@ module MESSAGE_PARA
   end
   #--------------------------------------------------------------------------
   # ● 直接结束
+  #  force - 是否强制立即关闭（取消移出特效）
   #--------------------------------------------------------------------------
-  def self.list_finish(id)
+  def self.list_finish(id, force = false)
     return if !list_exist?(id)
     return if @lists[id].finish?
-    @lists[id].finish
+    @lists[id].finish(force)
   end
   #--------------------------------------------------------------------------
-  # ● 全部结束
+  # ● 全部强制结束
   #--------------------------------------------------------------------------
-  def self.all_finish
-    @lists.each { |id, l| l.finish }
+  def self.all_finish(force = false)
+    @lists.each { |id, l| l.finish(force) }
   end
   #--------------------------------------------------------------------------
   # ● 全部结束（除了保证显示完的list）
   #--------------------------------------------------------------------------
-  def self.all_finish_sys
+  def self.all_finish_sys(force = false)
     @lists.each do |id, l|
       next l.halt if l.f_ensure_fin
-      l.finish
+      l.finish(force)
     end
   end
   #--------------------------------------------------------------------------
@@ -600,7 +621,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    @window.dispose if @window
+    @window.hide.dispose if @window
     @window = nil
   end
   #--------------------------------------------------------------------------
@@ -612,9 +633,12 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   #--------------------------------------------------------------------------
   # ● 结束
   #--------------------------------------------------------------------------
-  def finish
+  def finish(force = false)
     @finish = true
-    @window.finish if @window
+    if @window
+      force ? @window.finish_force : @window.finish
+    end
+    self
   end
   #--------------------------------------------------------------------------
   # ● 处理结束
@@ -641,6 +665,15 @@ class Window_Message_Para < Window_Message
   #--------------------------------------------------------------------------
   def game_message
     @list.game_message
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）去除全部子窗口
+  #--------------------------------------------------------------------------
+  def create_all_windows
+  end
+  def dispose_all_windows
+  end
+  def update_all_windows
   end
   #--------------------------------------------------------------------------
   # ● 更新纤程
@@ -671,11 +704,23 @@ class Window_Message_Para < Window_Message
     @para_params[:halt] = false
   end
   #--------------------------------------------------------------------------
-  # ● 强制结束当前对话框的更新
+  # ● 强制结束当前对话框
+  #--------------------------------------------------------------------------
+  def finish_force
+    self.openness = 0
+    @eagle_force_close = true
+    @input_wait_c = 0
+    eagle_message_sprites_move_out
+    eagle_move_out_assets
+    update
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束当前对话框（保留移出）
   #--------------------------------------------------------------------------
   def finish
     @eagle_force_close = true
     @input_wait_c = 0
+    update
   end
   #--------------------------------------------------------------------------
   # ● 处理纤程的主逻辑
@@ -686,10 +731,16 @@ class Window_Message_Para < Window_Message
     update_placement
     process_all_text
     process_input
-    @gold_window.close
     close_and_wait
     game_message.visible = false
     @fiber = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新窗口的位置
+  #--------------------------------------------------------------------------
+  def update_placement
+    @position = $game_message.position
+    self.y = @position * (Graphics.height - height) / 2
   end
   #--------------------------------------------------------------------------
   # ● 输入处理
@@ -697,11 +748,11 @@ class Window_Message_Para < Window_Message
   def process_input
     @input_wait_c ||= @para_params[:w]
     while true
-      Fiber.yield
       if @input_wait_c
         break if @input_wait_c <= 0
         @input_wait_c -= 1
       end
+      Fiber.yield
     end
   end
   #--------------------------------------------------------------------------
@@ -750,9 +801,9 @@ class Game_Player
   #--------------------------------------------------------------------------
   alias eagle_message_para_reserve_transfer reserve_transfer
   def reserve_transfer(map_id, x, y, d = 2)
-    eagle_message_para_reserve_transfer(map_id, x, y, d)
     MESSAGE_PARA.lock(:player)
-    MESSAGE_PARA.all_finish_sys
+    eagle_message_para_reserve_transfer(map_id, x, y, d)
+    MESSAGE_PARA.all_finish_sys(false)
   end
   #--------------------------------------------------------------------------
   # ● 执行场所移动
@@ -769,13 +820,20 @@ end
 #==============================================================================
 class Scene_Base
   #--------------------------------------------------------------------------
+  # ● 开始处理
+  #--------------------------------------------------------------------------
+  alias eagle_message_para_start start
+  def start
+    MESSAGE_PARA.unlock(:scene_end)
+    eagle_message_para_start
+  end
+  #--------------------------------------------------------------------------
   # ● 开始后处理
   #--------------------------------------------------------------------------
   alias eagle_message_para_post_start post_start
   def post_start
     eagle_message_para_post_start
     MESSAGE_PARA.all_go_on
-    MESSAGE_PARA.unlock(:scene_end)
   end
   #--------------------------------------------------------------------------
   # ● 基础更新
@@ -791,7 +849,7 @@ class Scene_Base
   alias eagle_message_para_pre_terminate pre_terminate
   def pre_terminate
     MESSAGE_PARA.lock(:scene_end)
-    MESSAGE_PARA.all_finish_sys
+    MESSAGE_PARA.all_finish_sys(true)
     eagle_message_para_pre_terminate
   end
 end
@@ -828,7 +886,6 @@ class Game_Event < Game_Character
   def update
     eagle_message_para_update
     return if MESSAGE_PARA.lock?
-    return MESSAGE_PARA.list_finish(@id) if @locked
     @eagle_message_para.each do |type, param|
       flag = method("check_message_para_#{type}").call(param[1])
       add_para_message(flag, param[0], param[1])

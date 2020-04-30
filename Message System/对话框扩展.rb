@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.4.29.20 新增基础自动换行；新增对话框跨指令显示
+# - 2020.4.30.23 优化dw和fw的逻辑；优化移入移出表现；优化背景精灵的显示原点
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -84,15 +84,15 @@ $imported["EAGLE-MessageEX"] = true
 #    dx/dy → x、y坐标的补足偏移量（默认0）
 #    fix → 是否修正对话框位置（保证对话框完整显示在屏幕内）
 #  （窗口大小相关）
-#    w → 窗口内容的固定宽度（不含边框）（默认0不设置）
+#    w → 窗口内容的固定宽度（不含边框）（默认0不设置）（优先级高于dw和fw）
 #    dw → 窗口内容宽度是否随文字绘制而动态变更（默认false）
-#    fw → 窗口内容宽度是否指定为全部文字绘制完成时的所需宽度值（dw为true时生效）
-#    wmin/wmax → 设置窗口内容的宽度上下限（dw为true时生效）（默认0不设置）
-#    h → 窗口内容的固定高度（不含边框）（默认0不设置）
+#    fw → 窗口内容宽度是否指定为全部文字绘制完成时的所需宽度值（优先级高于dw）
+#    wmin/wmax → 窗口内容宽度的上下限（启用dw/fw时生效）（默认0不设置）
+#    h → 窗口内容的固定高度（不含边框）（默认0不设置）（优先级高于dh和fh）
 #       （若小于对话框的 line_height 方法值，则识别为行数，并进行二次计算）
-#    dh → 窗口内容高度是否随文字绘制而动态变更（默认false）（不自动翻页）
-#    fh → 窗口内容高度是否指定为全部文字绘制完成时的所需高度值（dh为true时生效）
-#    hmin/hmax → 窗口内容高度的上下限（dh为true时生效）（若小于行高，则修正为行数）
+#    dh → 窗口内容高度是否随文字绘制而动态变更（默认false）（不翻页）
+#    fh → 窗口内容高度是否指定为全部文字绘制完成时的所需高度值（优先级高于dh）
+#    hmin/hmax → 窗口内容高度的上下限（启用dh/fh时生效）（若小于行高，则修正为行数）
 #  （文本显示相关）
 #    se → 启用的打字音类型index（默认0，按常量设置进行 index → 声效SE设置 映射）
 #    ali → 文本的对齐方式（0左对齐，1居中对齐，2右对齐；默认0）
@@ -119,13 +119,13 @@ $imported["EAGLE-MessageEX"] = true
 #    d → 对话框显示原点远离绑定对象的中心点的像素值（依据do自动选择增减x或y）（默认0）
 #    dx/dy → x、y方向上的补足偏移量（默认0）
 #    fix → 是否进行位置修正（保证pop对话框完整显示在屏幕内）
-#    w → pop对话框的内容固定宽度（覆盖win中的w）（默认0不设置）
+#    w → pop对话框的内容固定宽度（覆盖win中的w）（默认0不设置）（优先级高于dw/fw）
 #    h → pop对话框的内容固定高度（覆盖win中的h）
 #       （若小于对话框的 line_height 方法值，则认定为行数，并进行二次计算）
 #    dw → 是否随文字绘制而动态变更pop对话框的内容宽度（默认false）
-#    fw → 是否指定为全部文字绘制完成时的所需宽度值（dw为true时生效）
-#    dh → 是否随文字绘制而动态变更pop对话框的内容高度（默认false）（不自动翻页）
-#    fh → 是否指定为全部文字绘制完成时的所需高度值（dw为true时生效）
+#    fw → 是否指定为全部文字绘制完成时的所需宽度值（覆盖dw）
+#    dh → 是否随文字绘制而动态变更pop对话框的内容高度（默认false）（不翻页）
+#    fh → 是否指定为全部文字绘制完成时的所需高度值（覆盖dh）
 #
 #  \popt[param] → 【预先】指向性箭头的设置（当对话框为pop类型时才显示）
 #    tag → 【默认】所用箭头图片的index（按常量设置进行 index → tag名称 映射）
@@ -453,11 +453,11 @@ module MESSAGE_EX
     :w => 0,
     :h => 0,
     :dw => 0, # 若为1，则代表宽度会依据文字动态调整
-    :fw => 1, # 若为1，则窗口打开时即为文字绘制完成时所需宽度值（当dw==1时生效）
+    :fw => 0, # 若为1，则窗口打开时即为文字绘制完成时所需宽度值
     :wmin => 0, # 设置宽度的上下限（当dw==1时生效）
     :wmax => 0, # （有脸图时宽度会自动增加脸图宽度）
     :dh => 0, # 若为1，则代表高度会依据文字动态调整
-    :fh => 1, # 若为1，则窗口打开时即为文字绘制完成时所需高度值（当dh==1时生效）
+    :fh => 0, # 若为1，则窗口打开时即为文字绘制完成时所需高度值
     :hmin => 0, # 设置高度的上下限（当dh==1时生效）
     :hmax => 0,
     # 文本显示相关
@@ -484,10 +484,10 @@ module MESSAGE_EX
     :fix => 0, # 是否进行位置修正
     :w => 0, # 指定固定的宽度和高度（优先级高于win_params）
     :h => 0,
-    :dw => 1, # 若为1，则代表宽度会依据文字动态调整
-    :fw => 1, # 若为1，则窗口打开时将预绘制成文字区域最终大小（dw==1时有效）
-    :dh => 1, # 若为1，则代表高度会依据文字动态调整
-    :fh => 1, # 若为1，则窗口打开时将预绘制成文字区域最终大小（dh==1时有效）
+    :dw => 0, # 若为1，则代表宽度会依据文字动态调整
+    :fw => 1, # 若为1，则窗口打开时将预绘制成文字区域最终大小
+    :dh => 0, # 若为1，则代表高度会依据文字动态调整
+    :fh => 1, # 若为1，则窗口打开时将预绘制成文字区域最终大小
   # \popt[]
     :tag => 1, # tag所用文件名index（0时表示不启用）
     :td => 3, # 与绑定事件格子中心位置的偏移值
@@ -898,6 +898,40 @@ module MESSAGE_EX
     params[:dc] ||= 0
     params[:u] = MESSAGE_EX.check_bool(params[:u])
     params[:uc] ||= 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置指定精灵的显示原点
+  #--------------------------------------------------------------------------
+  def self.reset_sprite_oxy(obj, o)
+    case o # 固定不动点的位置类型 以九宫格小键盘察看
+    when 1
+      obj.ox = 0
+      obj.oy = obj.height
+    when 2
+      obj.ox = obj.width / 2
+      obj.oy = obj.height
+    when 3
+      obj.ox = obj.width
+      obj.oy = obj.height
+    when 4
+      obj.ox = 0
+      obj.oy = obj.height / 2
+    when 5
+      obj.ox = obj.width / 2
+      obj.oy = obj.height / 2
+    when 6
+      obj.ox = obj.width
+      obj.oy = obj.height / 2
+    when 7 # 【默认】显示原点为左上角
+      obj.ox = 0
+      obj.oy = 0
+    when 8
+      obj.ox = obj.width / 2
+      obj.oy = 0
+    when 9
+      obj.ox = obj.width
+      obj.oy = 0
+    end
   end
   #--------------------------------------------------------------------------
   # ● 重置指定对象的显示原点位置
@@ -1314,7 +1348,7 @@ class Window_Message
     eagle_message_init_assets
     eagle_message_init_params
     eagle_message_reset
-    eagle_set_wh(1, 1, true)
+    eagle_set_wh(1, 1, true, true)
   end
   #--------------------------------------------------------------------------
   # ● 初始化组件
@@ -1398,7 +1432,9 @@ class Window_Message
   def dispose
     eagle_message_ex_dispose
     @eagle_face_bitmap.dispose if @eagle_face_bitmap
-    @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
+    if !$RGD
+      @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
+    end
     @eagle_sprite_face.dispose
     @eagle_window_name.dispose
     @eagle_sprite_pop_tag.bitmap.dispose if @eagle_sprite_pop_tag.bitmap
@@ -1468,6 +1504,47 @@ class Window_Message
   end
 
   #--------------------------------------------------------------------------
+  # ● 更新fiber
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_update_fiber update_fiber
+  def update_fiber
+    eagle_update_before_fiber
+    eagle_message_ex_update_fiber
+    eagle_update_after_fiber
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新（在 @fiber 更新之前）
+  #--------------------------------------------------------------------------
+  def eagle_update_before_fiber
+    eagle_update_assets_after_open if self.openness > 0
+    eagle_face_update_move if game_message.face_params[:params_move]
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新（在 @fiber 更新之后）
+  #--------------------------------------------------------------------------
+  def eagle_update_after_fiber
+    @eagle_chara_sprites.each { |s| s.update }
+    eagle_update_dup_windows
+  end
+  #--------------------------------------------------------------------------
+  # ● 对话框打开后进行组件更新
+  #--------------------------------------------------------------------------
+  def eagle_update_assets_after_open
+    eagle_pop_update if game_message.pop?
+    eagle_face_update if game_message.face?
+    @eagle_window_name.update if game_message.name?
+    @eagle_sprite_pause.update if @eagle_sprite_pause.visible
+    force_close if MESSAGE_EX.skip?
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新拷贝窗口
+  #--------------------------------------------------------------------------
+  def eagle_update_dup_windows
+    @eagle_dup_windows.delete_if { |w| w.disposed? }
+    @eagle_dup_windows.each { |w| w.update; w.dispose if w.openness <= 0 }
+  end
+
+  #--------------------------------------------------------------------------
   # ● 打开直至完成（当有文字绘制完成时执行）
   #--------------------------------------------------------------------------
   def eagle_open_and_wait
@@ -1475,11 +1552,11 @@ class Window_Message
     @eagle_window_name.open if game_message.name?
     @flag_open_close = true
     if game_message.default_open_type # using default open
-      eagle_set_wh(nil, nil, true)
+      eagle_set_wh(nil, nil, true, true)
       open_and_wait
     else
       self.openness = 255
-      eagle_set_wh
+      eagle_set_wh(nil, nil, false, true)
     end
     game_message.need_open = false
     @flag_open_close = false
@@ -1531,50 +1608,9 @@ class Window_Message
   end
 
   #--------------------------------------------------------------------------
-  # ● 更新fiber
-  #--------------------------------------------------------------------------
-  alias eagle_message_ex_update_fiber update_fiber
-  def update_fiber
-    eagle_update_before_fiber
-    eagle_message_ex_update_fiber
-    eagle_update_after_fiber
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新（在 @fiber 更新之前）
-  #--------------------------------------------------------------------------
-  def eagle_update_before_fiber
-    eagle_update_assets_after_open if self.openness > 0
-    eagle_face_update_move if game_message.face_params[:params_move]
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新（在 @fiber 更新之后）
-  #--------------------------------------------------------------------------
-  def eagle_update_after_fiber
-    @eagle_chara_sprites.each { |s| s.update }
-    eagle_update_dup_windows
-  end
-  #--------------------------------------------------------------------------
-  # ● 对话框打开后进行组件更新
-  #--------------------------------------------------------------------------
-  def eagle_update_assets_after_open
-    eagle_pop_update if game_message.pop?
-    eagle_face_update if game_message.face?
-    @eagle_window_name.update if game_message.name?
-    @eagle_sprite_pause.update if @eagle_sprite_pause.visible
-    force_close if MESSAGE_EX.skip?
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新拷贝窗口
-  #--------------------------------------------------------------------------
-  def eagle_update_dup_windows
-    @eagle_dup_windows.delete_if { |w| w.disposed? }
-    @eagle_dup_windows.each { |w| w.update; w.dispose if w.openness <= 0 }
-  end
-
-  #--------------------------------------------------------------------------
   # ● 设置对话框的宽高
   #--------------------------------------------------------------------------
-  def eagle_set_wh(des_w = nil, des_h = nil, instant = false)
+  def eagle_set_wh(des_w = nil, des_h = nil, _instant = false, _open = false)
     if des_w.nil?
       des_w  = eagle_window_width
       des_w += eagle_window_width_add(des_w)
@@ -1583,33 +1619,39 @@ class Window_Message
       des_h  = eagle_window_height
       des_h += eagle_window_height_add(des_h)
     end
-    if instant
+    if _instant
       self.width = des_w
       self.height = des_h
     end
+    if _open # 如果为打开，则记录下最终稳定的宽高
+      win_params[:des_w] = des_w
+      win_params[:des_h] = des_h
+    end
     eagle_recreate_back_bitmap(des_w, des_h)
-    wait_until_des_wh(des_w, des_h)
+    wait_until_des_wh(des_w, des_h) if !_instant
     eagle_win_update
   end
   #--------------------------------------------------------------------------
   # ● 更新对话框宽高直至完成
   #--------------------------------------------------------------------------
   def wait_until_des_wh(des_w, des_h)
+    init_w = self.width;  d_w = des_w - init_w
+    init_h = self.height; d_h = des_h - init_h
+    return if d_w == 0 && d_h == 0
     max_w = des_w > self.width ? des_w : self.width
     max_h = des_h > self.height ? des_h : self.height
+    _i = 0; _t = 20
     while(true)
-      d1 = des_w - self.width
-      d2 = des_h - self.height
-      break if d1 == 0 && d2 == 0
-      d = d1 / 4
-      d = d1 % 4 if d == 0
-      self.width += d
-      d = d2 / 4
-      d = d2 % 4 if d == 0
-      self.height += d
+      break if _i > _t
+      break if self.openness == 0
+      per = _i * 1.0 / _t
+      per = (_i == _t ? 1 : (1 - 2**(-10 * per)))
+      self.width = init_w + d_w * per
+      self.height = init_h + d_h * per
       eagle_win_update
       update_back_sprite_zoom(max_w, max_h)
       Fiber.yield
+      _i += 1
     end
   end
   #--------------------------------------------------------------------------
@@ -1622,9 +1664,10 @@ class Window_Message
     if win_params[:w] > 0
       return win_params[:w] + standard_padding * 2
     end
-    if eagle_dynamic_w?
-      w = @eagle_charas_w
-      w = @eagle_charas_w_final if eagle_dyn_fit_w?
+    w = nil
+    w = @eagle_charas_w       if eagle_dynamic_w?
+    w = @eagle_charas_w_final if eagle_dyn_fit_w?
+    if w
       w = win_params[:wmin] if win_params[:wmin] > 0 && w < win_params[:wmin]
       w = win_params[:wmax] if win_params[:wmax] > 0 && w > win_params[:wmax]
       w += standard_padding * 2
@@ -1640,9 +1683,10 @@ class Window_Message
     if win_params[:h] > 0
       return eagle_check_param_h(win_params[:h]) + standard_padding * 2
     end
-    if eagle_dynamic_h?
-      h = @eagle_charas_h
-      h = @eagle_charas_h_final if eagle_dyn_fit_h?
+    h = nil
+    h = @eagle_charas_h       if eagle_dynamic_h?
+    h = @eagle_charas_h_final if eagle_dyn_fit_h?
+    if h
       h = win_params[:hmin] if win_params[:hmin] > 0 && h < win_params[:hmin]
       h = win_params[:hmax] if win_params[:hmax] > 0 && h > win_params[:hmax]
       h += standard_padding * 2
@@ -1652,11 +1696,22 @@ class Window_Message
   end
   #--------------------------------------------------------------------------
   # ● 检查内容高度参数
+  #  如果h小于行高，则判定其为行数
   #--------------------------------------------------------------------------
   def eagle_check_param_h(h)
-    # 如果h小于行高，则判定其为行数
     h = line_height * h + win_params[:ld] * (h - 1) if h < line_height
     return h
+  end
+  #--------------------------------------------------------------------------
+  # ● 直接指定宽度高度？
+  #--------------------------------------------------------------------------
+  def eagle_fix_w?
+    return pop_params[:w] > 0 if game_message.pop?
+    return win_params[:w] > 0
+  end
+  def eagle_fix_h?
+    return pop_params[:h] > 0 if game_message.pop?
+    return win_params[:h] > 0
   end
   #--------------------------------------------------------------------------
   # ● 动态调整宽度高度？
@@ -1675,6 +1730,19 @@ class Window_Message
   end
   def eagle_dyn_fit_h?
     game_message.pop? ? pop_params[:fh] : win_params[:fh]
+  end
+  #--------------------------------------------------------------------------
+  # ● 可由子窗口增加对话框的宽度高度？
+  #--------------------------------------------------------------------------
+  def eagle_add_w_by_child_window?
+    return false if eagle_fix_w?
+    return true  if eagle_dynamic_w? || eagle_dyn_fit_w?
+    return false
+  end
+  def eagle_add_h_by_child_window?
+    return false if eagle_fix_h?
+    return true  if eagle_dynamic_h? || eagle_dyn_fit_h?
+    return false
   end
   #--------------------------------------------------------------------------
   # ● 额外增加的窗口宽度高度
@@ -1702,7 +1770,7 @@ class Window_Message
     return eagle_pop_update if game_message.pop?
     eagle_change_windowskin
     self.x = win_params[:x] || 0
-    self.y = win_params[:y] || (game_message.position * (Graphics.height - self.height) / 2)
+    self.y = win_params[:y] || default_init_y
     eagle_reset_xy_dorigin(self, nil, win_params[:do]) if win_params[:do] < 0
     eagle_reset_xy_origin(self, win_params[:o])
     self.x += win_params[:dx]
@@ -1710,6 +1778,12 @@ class Window_Message
     eagle_fix_position if win_params[:fix]
     eagle_set_charas_viewport
     eagle_name_update if game_message.name?
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取对话框的初始y位置
+  #--------------------------------------------------------------------------
+  def default_init_y
+    (@position * (Graphics.height - win_params[:des_h]) / 2)
   end
   #--------------------------------------------------------------------------
   # ● 修正位置（确保对话框完整显示）
@@ -1936,7 +2010,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def update_back_sprite
     eagle_reset_xy_dorigin(@back_sprite, self, win_params[:bgo])
-    eagle_reset_xy_origin(@back_sprite, win_params[:bgo])
+    MESSAGE_EX.reset_sprite_oxy(@back_sprite, win_params[:bgo])
     @back_sprite.opacity = openness
     @back_sprite.update
   end
@@ -2057,7 +2131,6 @@ class Window_Message
   def process_all_text
     text = eagle_all_text; pos = {}
     new_page(text, pos)
-    calc_charas_wh(text, pos) if eagle_dyn_fit_w? || eagle_dyn_fit_h?
     loop do
       break if text.empty?
       process_character(text.slice!(0, 1), text, pos)
@@ -2082,18 +2155,19 @@ class Window_Message
     eagle_check_pre_settings(text)
     eagle_draw_face(game_message.face_name, game_message.face_index)
     eagle_draw_name(text)
+
+    # 当预先转义符全部处理完成，进行一次预绘制
+    pre_calc_charas_wh(text, pos)
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）获取换行位置
   #--------------------------------------------------------------------------
-  def new_line_x
-    0
-  end
+  def new_line_x; 0; end
   #--------------------------------------------------------------------------
   # ● 计算文字区域最终绘制完成时的宽度高度
   #  本质上为预先全部绘制一次（但不真实绘制）
   #--------------------------------------------------------------------------
-  def calc_charas_wh(text, pos)
+  def pre_calc_charas_wh(text, pos)
     text_ = text.clone; pos_ = pos.clone
     game_message.save_params
     game_message.draw = false
@@ -2203,6 +2277,7 @@ class Window_Message
   def eagle_auto_new_line(c_w, pos)
     return if game_message.auto_wrap == false
     return if game_message.draw == false
+    return if !eagle_fix_w? && eagle_dynamic_w?
     max_w = eagle_charas_max_w
     return if max_w <= 0
     return if pos[:x] + c_w <= max_w # 若当前文字绘制完成后会超出边界，则换行
@@ -2230,10 +2305,10 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_process_draw_update
     # 第一个文字绘制后打开窗口
-    eagle_open_and_wait if game_message.need_open
+    return eagle_open_and_wait if game_message.need_open
     eagle_set_wh(nil, nil, true) # 重设对话框宽高，并更新对话框位置
     # 对齐需要用到对话框的宽高，因此在更新后执行
-    eagle_charas_reset_alignment(game_message.win_params[:ali])
+    eagle_charas_reset_alignment(win_params[:ali])
     # 确保最后绘制的文字在视图区域内
     ensure_character_visible(@eagle_chara_sprites[-1])
   end
@@ -2282,6 +2357,7 @@ class Window_Message
   # ● 确保指定文字在视图内
   #--------------------------------------------------------------------------
   def ensure_character_visible(c)
+    return if c.nil?
     self.ox = 0 if c._x < self.ox
     d = c._x + c.width - @eagle_chara_viewport.rect.width
     self.ox = d if d > 0
@@ -2317,14 +2393,6 @@ class Window_Message
     pos[:y] += pos[:height]
     pos[:height] = line_height
   end
-  #--------------------------------------------------------------------------
-  # ● 判定是否需要翻页
-  #--------------------------------------------------------------------------
-  alias eagle_message_ex_need_new_page? need_new_page?
-  def need_new_page?(text, pos)
-    return false if eagle_dynamic_h?
-    eagle_message_ex_need_new_page?(text, pos)
-  end
 
   #--------------------------------------------------------------------------
   # ● 输入处理（此处为全部绘制完成后，判定接下来的输入类型）
@@ -2355,7 +2423,7 @@ class Window_Message
     # 当pause精灵位于句末且紧靠边界时
     #  增加对话框宽度保证它在对话框内部（不可占用padding）
     if game_message.pause_params[:v] != 0 && game_message.pause_params[:do] <= 0 &&
-       eagle_dynamic_w? && game_message.input_pause?
+       (!eagle_fix_w? && eagle_dynamic_w?) && game_message.input_pause?
       d = @eagle_charas_w + win_params[:cdw] - @eagle_next_chara_x
       d -= @eagle_sprite_pause.width
       @eagle_sprite_pause_width_add = -d if d < 0
@@ -2373,9 +2441,10 @@ class Window_Message
     self.arrows_visible = true
     while true
       Fiber.yield
+      # 处理自动继续
       if @eagle_auto_continue_c
         break if @eagle_auto_continue_c <= 0
-        @eagle_sprite_pause.redraw_auto_countdown(@eagle_auto_continue_c)
+        process_while_auto_wait_input_pause(@eagle_auto_continue_c)
         @eagle_auto_continue_c -= 1
       end
       break if check_input_pause?
@@ -2404,6 +2473,13 @@ class Window_Message
     end
     self.arrows_visible = false
     Input.update
+  end
+  #--------------------------------------------------------------------------
+  # ● 等待按键时，启用auto时的额外处理
+  #  c 为自动继续的剩余帧数，用 game_message.auto_t 获取总等待帧数
+  #--------------------------------------------------------------------------
+  def process_while_auto_wait_input_pause(c)
+    @eagle_sprite_pause.redraw_auto_countdown(c)
   end
   #--------------------------------------------------------------------------
   # ● 检查输入等待的按键
@@ -2485,7 +2561,7 @@ class Window_Message
   def eagle_process_temp
     return if @flag_temp_params == false
     @flag_temp_params = false
-    game_message.load_params(nil, :temp)
+    game_message.load_params(nil, :temp) # 已经在预绘制时存储了参数
   end
   #--------------------------------------------------------------------------
   # ● 设置/执行hold指令
@@ -2567,9 +2643,9 @@ class Window_Message
         ""
       end
     }
+    parse_pre_params(text, 'name', name_params, :o)
     return if name_params[:name] == str_name
     name_params[:name] = str_name
-    parse_pre_params(text, 'name', name_params, :o)
     return if name_params[:name].empty?
     @eagle_window_name.reset
   end
@@ -2808,10 +2884,16 @@ class Window_Message
     face_params[:sole_w] = @eagle_face_bitmap.width / face_params[:num_col]
     face_params[:sole_h] = @eagle_face_bitmap.height / face_params[:num_line]
     # 脸图以底部中心为显示原点
-    @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
-    @eagle_sprite_face.bitmap = Bitmap.new(face_params[:sole_w], face_params[:sole_h])
-    @eagle_sprite_face.ox = @eagle_sprite_face.width / 2
-    @eagle_sprite_face.oy = @eagle_sprite_face.height
+    if $RGD
+      @eagle_sprite_face.bitmap = @eagle_face_bitmap
+      @eagle_sprite_face.ox = face_params[:sole_w] / 2
+      @eagle_sprite_face.oy = face_params[:sole_h]
+    else
+      @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
+      @eagle_sprite_face.bitmap = Bitmap.new(face_params[:sole_w], face_params[:sole_h])
+      @eagle_sprite_face.ox = @eagle_sprite_face.width / 2
+      @eagle_sprite_face.oy = @eagle_sprite_face.height
+    end
     @eagle_sprite_face.opacity = 0
     # 覆盖部分face参数
     eagle_text_control_face
@@ -2846,13 +2928,17 @@ class Window_Message
   # （根据设置好的参数，重新绘制脸图精灵的bitmap）
   #--------------------------------------------------------------------------
   def eagle_face_apply
-    @eagle_sprite_face.bitmap.clear
     w = face_params[:sole_w]
     h = face_params[:sole_h]
     x = face_params[:i] % face_params[:num_col] * w
     y = face_params[:i] / face_params[:num_col] * h
     rect = Rect.new(x, y, w, h)
-    @eagle_sprite_face.bitmap.blt(0,0, @eagle_face_bitmap,rect)
+    if $RGD
+      @eagle_sprite_face.src_rect = rect
+    else
+      @eagle_sprite_face.bitmap.clear
+      @eagle_sprite_face.bitmap.blt(0,0, @eagle_face_bitmap,rect)
+    end
   end
   #--------------------------------------------------------------------------
   # ● 脸图占用的宽度
@@ -2914,6 +3000,7 @@ class Window_Message
     game_message.auto_t = h[:t]
     game_message.auto_r = MESSAGE_EX.check_bool(h[:r])
   end
+
   #--------------------------------------------------------------------------
   # ● 设置shake参数
   #--------------------------------------------------------------------------
@@ -2946,6 +3033,7 @@ class Window_Message
       Fiber.yield
     end
   end
+
   #--------------------------------------------------------------------------
   # ● 设置扩展参数
   #--------------------------------------------------------------------------
@@ -3305,6 +3393,7 @@ module MESSAGE_EX
   # ● 放入文字池中
   #--------------------------------------------------------------------------
   def self.charapool_push(s)
+    return if s.disposed?
     return @pool_charas.unshift(s) if s.finish?
     @pool_charas.push(s)
   end
@@ -3313,12 +3402,17 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   def self.charapool_new(window, font, x,y,w,h, viewport)
     s = nil
-    while true
-      s = @pool_charas.shift
-      break if s.nil?
-      next if s.disposed?
-      next @pool_charas.push(s) if !s.finish?
-      break
+    if $RGD
+      while true
+        s = @pool_charas.shift
+        break if s.nil?
+        next if s.disposed?
+        if !s.finish?
+          @pool_charas.push(s)
+          s = nil
+        end
+        break
+      end
     end
     return Sprite_EagleCharacter.new(window, font, x,y,w,h, viewport) if s.nil?
     s.viewport = viewport
@@ -3581,18 +3675,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 设置显示原点
   #--------------------------------------------------------------------------
   def reset_oxy(o)
-    w = self.width; h = self.height
-    case o
-    when 1; self.ox = 0; self.oy = h
-    when 2; self.ox = w/2; self.oy = h
-    when 3; self.ox = w; self.oy = h
-    when 4; self.ox = 0; self.oy = h/2
-    when 5; self.ox = w/2; self.oy = h/2
-    when 6; self.ox = w; self.oy = h/2
-    when 7; self.ox = 0; self.oy = 0
-    when 8; self.ox = w/2; self.oy = 0
-    when 9; self.ox = w; self.oy = 0
-    end
+    MESSAGE_EX.reset_sprite_oxy(self, o)
   end
   #--------------------------------------------------------------------------
   # ● 结束
