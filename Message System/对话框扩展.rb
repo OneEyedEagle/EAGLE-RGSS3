@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.4.30.23 优化dw和fw的逻辑；优化移入移出表现；优化背景精灵的显示原点
+# - 2020.5.2.17 修复可能的viewport卡死BUG；优化XY实时更新
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1776,8 +1776,7 @@ class Window_Message
     self.x += win_params[:dx]
     self.y += win_params[:dy]
     eagle_fix_position if win_params[:fix]
-    eagle_set_charas_viewport
-    eagle_name_update if game_message.name?
+    eagle_after_update_xy
   end
   #--------------------------------------------------------------------------
   # ● 获取对话框的初始y位置
@@ -1791,6 +1790,13 @@ class Window_Message
   def eagle_fix_position
     self.x = [[self.x, 0].max, Graphics.width - self.width].min
     self.y = [[self.y, 0].max, Graphics.height - self.height].min
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新xy后的操作
+  #--------------------------------------------------------------------------
+  def eagle_after_update_xy
+    eagle_set_charas_viewport
+    eagle_name_update if game_message.name?
   end
   #--------------------------------------------------------------------------
   # ● 设置文字显示区域的矩形（屏幕坐标）
@@ -1834,8 +1840,7 @@ class Window_Message
       eagle_fix_position
       eagle_pop_tag_fix_position if pop_params[:tag] > 0
     end
-    eagle_set_charas_viewport
-    eagle_name_update if game_message.name?
+    eagle_after_update_xy
   end
   #--------------------------------------------------------------------------
   # ● 更新pop的tag
@@ -2264,7 +2269,7 @@ class Window_Message
   def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
     f = Font_EagleCharacter.new(font_params)
     f.set_param(:skin, win_params[:skin])
-    f.set_param(:cg, ex_params[:cg])
+    f.set_param(:ex_cg, ex_params[:cg])
 
     s = MESSAGE_EX.charapool_new(self, f, c_x, c_y, c_w, c_h, @eagle_chara_viewport)
     s.start_effects(game_message.chara_params)
@@ -3021,7 +3026,7 @@ class Window_Message
       shake_direction = 1 if shake < - h[:p] * 2
       h[:t] -= 1
       self.x += shake
-      eagle_name_update if game_message.name? # 姓名框跟着移动
+      eagle_after_update_xy
       Fiber.yield
     end
     shake = shake.to_i # 平滑移动回初始位置
@@ -3029,7 +3034,7 @@ class Window_Message
     while shake != 0
       shake += d
       self.x += shake
-      eagle_name_update if game_message.name? # 姓名框跟着移动
+      eagle_after_update_xy
       Fiber.yield
     end
   end
@@ -3387,7 +3392,7 @@ module MESSAGE_EX
   # ● 更新
   #--------------------------------------------------------------------------
   def self.charapool_update
-    @pool_charas.each { |s| s.update if !s.finish? }
+    @pool_charas.each { |s| s.update if !s.disposed? && !s.finish? }
   end
   #--------------------------------------------------------------------------
   # ● 放入文字池中
@@ -3402,20 +3407,18 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   def self.charapool_new(window, font, x,y,w,h, viewport)
     s = nil
-    if $RGD
-      while true
-        s = @pool_charas.shift
-        break if s.nil?
-        next if s.disposed?
-        if !s.finish?
-          @pool_charas.push(s)
-          s = nil
-        end
-        break
+    while true
+      s = @pool_charas.shift
+      break if s.nil?
+      next if s.disposed?
+      if !s.finish?
+        @pool_charas.unshift(s)
+        break s = nil
       end
+      break
     end
     return Sprite_EagleCharacter.new(window, font, x,y,w,h, viewport) if s.nil?
-    s.viewport = viewport
+    s.bind_viewport(viewport)
     s.bind_window(window)
     s.bind_font(font)
     s.reset(x,y,w,h)
@@ -3495,8 +3498,8 @@ class Font_EagleCharacter
 
     draw_param_p(bitmap, x, y, w, h) if @params[:p]
     draw_param_l(bitmap, x, y, w, h, c, ali) if @params[:l]
-    if defined?(Sion_GradientText) && @params[:cg] && @params[:cg] != ''
-      grad_cs = get_gradient_color(@params[:cg])
+    if defined?(Sion_GradientText) && @params[:ex_cg] && @params[:ex_cg] != ''
+      grad_cs = get_gradient_color(@params[:ex_cg])
       Sion_GradientText.draw_text(bitmap,x,y,w*2,h,c,ali,grad_cs)
     else
       bitmap.draw_text(x, y, w*2, h, c, ali)
@@ -3579,6 +3582,7 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def initialize(window_bind, font_bind, x, y, w, h, viewport = nil)
     super(viewport)
+    bind_viewport(viewport)
     bind_window(window_bind)
     bind_font(font_bind)
     reset(x, y, w, h)
@@ -3593,6 +3597,13 @@ class Sprite_EagleCharacter < Sprite
     return false if x_ < 0 || x_ > self.viewport.rect.width
     return false if y_ < 0 || y_ > self.viewport.rect.height
     return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置绑定的视图
+  #--------------------------------------------------------------------------
+  def bind_viewport(vp)
+    @viewport_bind = vp
+    self.viewport = vp
   end
   #--------------------------------------------------------------------------
   # ● 设置绑定的窗口
@@ -3611,15 +3622,13 @@ class Sprite_EagleCharacter < Sprite
   # ● 取消绑定视图
   #--------------------------------------------------------------------------
   def unbind_viewport
-    @viewport_old = self.viewport
     self.viewport = nil
   end
   #--------------------------------------------------------------------------
   # ● 重新绑定视图
   #--------------------------------------------------------------------------
   def rebind_viewport
-    self.viewport = @viewport_old
-    @viewport_old = nil
+    self.viewport = @viewport_bind
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -3682,14 +3691,15 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def finish
     self.opacity = 0
-    self.viewport = nil
-    update
+    bind_viewport(nil)
+    @window_bind = nil # 取消窗口的绑定
+    update_position
   end
   #--------------------------------------------------------------------------
   # ● 结束使命？
   #--------------------------------------------------------------------------
   def finish?
-    self.disposed? || self.opacity == 0
+    self.opacity == 0
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -3739,10 +3749,10 @@ class Sprite_EagleCharacter < Sprite
     if sym == :cin
       self.zoom_x = self.zoom_y = 1.0
       self.opacity = 255
+      update_position
     elsif sym == :cout
-      self.opacity = 0
+      finish
     end
-    update_position
     @flag_move = nil
   end
   #--------------------------------------------------------------------------
@@ -3835,25 +3845,20 @@ class Sprite_EagleCharacter < Sprite
   # ● 执行移出
   #--------------------------------------------------------------------------
   def move_out
+    finish if !in_viewport? # 若精灵在视图外，则直接结束
     unbind_viewport
-    if !(@params[:cout].nil? || @params[:cout].empty?)
-      @dx = @dy = @_zoom = 0
-      reset_oxy(5)
-      @flag_move = :cout
-    elsif !@params[:uout].nil?
-      move_out_uout(@params[:uout])
-    else
-      self.opacity = 0
+    if self.opacity > 0
+      if !(@params[:cout].nil? || @params[:cout].empty?)
+        @dx = @dy = @_zoom = 0
+        reset_oxy(5)
+        @flag_move = :cout
+      elsif !@params[:uout].nil?
+        move_out_uout(@params[:uout])
+      else
+        finish
+      end
     end
-    check_move_out
     process_move_out
-  end
-  #--------------------------------------------------------------------------
-  # ● 判断移出条件
-  #--------------------------------------------------------------------------
-  def check_move_out
-    # 若精灵在视图外，则直接结束
-    self.opacity = 0 if !in_viewport?
   end
   #--------------------------------------------------------------------------
   # ● 执行移出

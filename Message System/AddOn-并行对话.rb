@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.4.30.23 删去子窗口，优化性能；当Scene切换时，将强制关闭
+# - 2020.5.1.23 事件执行时，禁止自身的并行对话；事件超出屏幕时，不更新并行对话
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -857,6 +857,14 @@ end
 #==============================================================================
 # ○ 地图事件的并行对话
 #==============================================================================
+class Game_Map
+  #--------------------------------------------------------------------------
+  # ● 指定事件正在执行？
+  #--------------------------------------------------------------------------
+  def is_event_running?(event_id)
+    @interpreter.running? && @interpreter.event_id == event_id
+  end
+end
 class Game_Event < Game_Character
   #--------------------------------------------------------------------------
   # ● 设置事件页
@@ -886,6 +894,8 @@ class Game_Event < Game_Character
   def update
     eagle_message_para_update
     return if MESSAGE_PARA.lock?
+    return if $game_map.is_event_running?(self.id)
+    return if !near_the_screen?
     @eagle_message_para.each do |type, param|
       flag = method("check_message_para_#{type}").call(param[1])
       add_para_message(flag, param[0], param[1])
@@ -938,7 +948,6 @@ class Game_Event < Game_Character
     d <= list_params[:d]
   end
 end
-
 class Scene_Map < Scene_Base
   #--------------------------------------------------------------------------
   # ● 开始后处理

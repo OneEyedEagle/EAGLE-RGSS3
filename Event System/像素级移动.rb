@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.4.27.14 优化角色相关坐标，现在能正确展现草木深度等信息
+# - 2020.5.1.23 新增移动指定像素
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -87,6 +87,9 @@ $imported["EAGLE-PixelMove"] = true
 #      若传入 false，返回划分后网格坐标中的碰撞矩形
 #
 #  chara.pos_rect?(rect) 是否与矩形相交（划分后网格坐标）
+#
+#  chara.move_unit(d, n[, turn_ok]) 朝d方向（2468）移动n个单位
+#  chara.move_forwart_unit(n) 朝前方移动n个单位
 #
 #  $game_map.events_rect(rect) 获取与 rect 相交的全部事件
 #                             （rect 为划分后网格坐标中的矩形）
@@ -181,7 +184,7 @@ module PIXEL_MOVE
   def self.unit2rgss(v, e = 0)
     _s = v * PIXEL_PER_UNIT + e
     _r = _s / 32 # 格子数
-    _e = _s - _r * 32 # 剩余不足一格长度的像素数
+    _e = _s % 32 # 剩余不足一格长度的像素数
     return _r, _e
   end
   #--------------------------------------------------------------------------
@@ -191,7 +194,7 @@ module PIXEL_MOVE
   def self.rgss2unit(v, e = 0)
     _s = v * 32 + e
     _r = _s / PIXEL_PER_UNIT # 移动单位数
-    _e = _s - _r * PIXEL_PER_UNIT # 不足一个移动单位的像素数
+    _e = _s % PIXEL_PER_UNIT # 不足一个移动单位的像素数
     return _r, _e
   end
 #==============================================================================
@@ -312,6 +315,19 @@ module PIXEL_MOVE
     when 8; return rect.x+(rect.width-1)/2, rect.y
     when 9; return rect.x+(rect.width-1),   rect.y
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取矩形指定边的端点ID数组
+  #--------------------------------------------------------------------------
+  def self.get_rect_border(d)
+    border = []
+    case d
+    when 2; border.push(1); border.push(3) # 左下和右下
+    when 4; border.push(1); border.push(7) # 左上和左下
+    when 6; border.push(3); border.push(9) # 右上和右下
+    when 8; border.push(7); border.push(9) # 左上和右上
+    end
+    border
   end
   #--------------------------------------------------------------------------
   # ● 矩形之间碰撞？
@@ -828,13 +844,7 @@ class Game_CharacterBase
   #  IN: unitXY
   #--------------------------------------------------------------------------
   def passable?(x, y, d)
-    pos = []
-    case d
-    when 2; pos.push(1); pos.push(3) # 左下和右下
-    when 4; pos.push(1); pos.push(7) # 左上和左下
-    when 6; pos.push(3); pos.push(9) # 右上和右下
-    when 8; pos.push(7); pos.push(9) # 左上和右上
-    end
+    pos = PIXEL_MOVE.get_rect_border(d)
     pos.each do |p_|
       dx, dy = PIXEL_MOVE.get_rect_xy(@collision_rect, p_)
       # 移动前坐标 unitXY
@@ -929,6 +939,20 @@ class Game_CharacterBase
       set_direction(d)
       check_event_trigger_touch_front
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 向指定方向移动 n 个单位
+  #     d       : 方向（2,4,6,8）
+  #     turn_ok : 是否可以改变方向
+  #--------------------------------------------------------------------------
+  def move_unit(d, n = 1, turn_ok = true)
+    move_straight(d, turn_ok, n)
+  end
+  #--------------------------------------------------------------------------
+  # ● 向前方移动 n 个单位
+  #--------------------------------------------------------------------------
+  def move_forward_unit(n = 1)
+    move_straight(@direction, true, n)
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）斜向移动
