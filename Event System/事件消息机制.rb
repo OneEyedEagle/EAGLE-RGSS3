@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventMsg"] = true
 #==============================================================================
-# - 2020.5.1.23 新增触发限制
+# - 2020.5.17.16 修复当无激活的事件页时，给事件传入msg(.,true)会报错的bug
 #==============================================================================
 # - 本插件新增消息机制，以直接触发事件中的指令
 #--------------------------------------------------------------------------
@@ -248,6 +248,7 @@ class Game_Event
   #--------------------------------------------------------------------------
   def msg(label, cur_page = false)
     return true if msg_trigger_running?(label)
+    return false if cur_page && @page.nil?
     lists = (cur_page ? [@page.list] : @event.pages.collect { |e| e.list })
     return msg_trigger_call(label, lists)
   end

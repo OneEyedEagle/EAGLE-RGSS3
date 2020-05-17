@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.5.1.23 事件执行时，禁止自身的并行对话；事件超出屏幕时，不更新并行对话
+# - 2020.5.16.23 修复game_message参数随主对话框刷新的bug
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -421,6 +421,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @id = id
     @list_str = list_str   # 待处理的标签队列
     @game_message = $game_message.clone
+    @game_message.clear
     @face = ["", 0]
     @params = MESSAGE_PARA::PARA_MESSAGE_PARAMS.dup
     @params[:id] = id
@@ -739,7 +740,7 @@ class Window_Message_Para < Window_Message
   # ● 更新窗口的位置
   #--------------------------------------------------------------------------
   def update_placement
-    @position = $game_message.position
+    @position = game_message.position
     self.y = @position * (Graphics.height - height) / 2
   end
   #--------------------------------------------------------------------------
