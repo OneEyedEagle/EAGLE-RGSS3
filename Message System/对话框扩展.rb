@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.5.2.17 修复可能的viewport卡死BUG；优化XY实时更新
+# - 2020.5.21.14 修复pause精灵无法显示的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -2428,7 +2428,7 @@ class Window_Message
     # 当pause精灵位于句末且紧靠边界时
     #  增加对话框宽度保证它在对话框内部（不可占用padding）
     if game_message.pause_params[:v] != 0 && game_message.pause_params[:do] <= 0 &&
-       (!eagle_fix_w? && eagle_dynamic_w?) && game_message.input_pause?
+       !eagle_fix_w? && game_message.input_pause?
       d = @eagle_charas_w + win_params[:cdw] - @eagle_next_chara_x
       d -= @eagle_sprite_pause.width
       @eagle_sprite_pause_width_add = -d if d < 0
