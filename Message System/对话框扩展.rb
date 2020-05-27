@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.5.21.14 修复pause精灵无法显示的bug
+# - 2020.5.27.19 文字精灵新增对src_rect的动态参数；现在能正确显示第一个文字的移入
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -202,6 +202,10 @@ $imported["EAGLE-MessageEX"] = true
 #    vyt/vy → 每vyt（最小值1）帧y偏移值增加vy像素的值
 #    vzt/vz → 每zvt（最小值1）帧zoom放缩值增加vz的值（整数）
 #    va → 每帧内angle的增值
+#  （以下参数不受 r 的影响）
+#    vo → 每帧不透明度的增量（默认为 255/t）
+#    rxt/rx → 每rxt（最小值1）帧src_rect的x偏移值增加rx像素的值（默认0）
+#    ryt/ry → 每ryt（最小值1）帧src_rect的x偏移值增加ry像素的值（默认0）
 #
 #  \cout[param] → 开启文字移出的特效【独占】（移出时关闭其余特效更新）
 #    r → 是否将以下全部变量的值变更为正负范围内的随机数？
@@ -211,6 +215,10 @@ $imported["EAGLE-MessageEX"] = true
 #    vyt/vy → 每vyt（最小值1）帧y偏移值增加vy像素的值
 #    vzt/vz → 每zvt（最小值1）帧zoom放缩值增加vz的值（整数）
 #    va → 每帧内angle的增值
+#  （以下参数不受 r 的影响）
+#    vo → 每帧不透明度的减量（默认为 255/t）
+#    rxt/rx → 每rxt（最小值1）帧src_rect的x偏移值增加rx像素的值（默认0）
+#    ryt/ry → 每ryt（最小值1）帧src_rect的x偏移值增加ry像素的值（默认0）
 #
 #  \uout[param] → 利用消散移出文字【需要前置Unravel_Bitmap插件】
 #    n → 消散的粒子总数（大约）
@@ -238,8 +246,8 @@ $imported["EAGLE-MessageEX"] = true
 #
 #  \czoom[param] → 开启缩放特效（本质为精灵缩放）
 #    t → 在进行一次缩放变更后的等待帧数
-#    dx → x方向的每次缩放增量
-#    dy → y方向的每次缩放增量
+#    dx → x方向的每次缩放增量（单位%，即 1 代表每t帧放大1%，zoom_x增加0.01）
+#    dy → y方向的每次缩放增量（单位%，即 1 代表每t帧放大1%，zoom_y增加0.01）
 #    o → 缩放不动点所在位置类型（键盘九宫格）
 #    min → x和y方向上缩放总量的最小值
 #          （在RGSS3中，负数的缩放量不会显示，推荐设置为自然数）
@@ -547,9 +555,13 @@ module MESSAGE_EX
     :vxt => 1,
     :vy => 0,  # 每vyt帧y的增量
     :vyt => 1,
-    :vz => -5,  # 每vzt帧zoom的增量
+    :vz => 0,  # 每vzt帧zoom的增量
     :vzt => 1,
     :va => 0,  # 每帧角度增量
+    :rxt => 1, # 每rxt帧src_rect.x的增量
+    :rx => 0,
+    :ryt => 1, # 每ryt帧src_rect.y的增值
+    :ry => 0,
   }
   COUT_PARAMS_INIT = {
   # \cout[]
@@ -559,9 +571,13 @@ module MESSAGE_EX
     :vxt => 1,
     :vy => 0,  # 每vyt帧y的增量
     :vyt => 1,
-    :vz => 5,  # 每vzt帧zoom的增量
+    :vz => 0,  # 每vzt帧zoom的增量
     :vzt => 1,
     :va => 0,  # 每帧角度增量
+    :rxt => 1, # 每rxt帧src_rect.x的增量
+    :rx => 0,
+    :ryt => 1, # 每ryt帧src_rect.y的增值
+    :ry => 0,
   }
   UOUT_PARAMS_INIT = {
   # \uout[]
@@ -1560,7 +1576,7 @@ class Window_Message
     end
     game_message.need_open = false
     @flag_open_close = false
-    @eagle_chara_sprites.each { |c| c.visible = true }
+    @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）更新打开处理
@@ -3662,6 +3678,7 @@ class Sprite_EagleCharacter < Sprite
     @bitmaps ||= [] # 备用位图
     @bitmaps.each { |b| b.dispose }
     # 重置精灵参数
+    self.src_rect = Rect.new(0,0,self.width,self.height)
     self.zoom_x = self.zoom_y = 1.0
     self.angle = 0
     self.wave_amp    = 0
@@ -3699,7 +3716,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 结束使命？
   #--------------------------------------------------------------------------
   def finish?
-    self.opacity == 0
+    self.opacity == 0 && @window_bind == nil
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -3707,7 +3724,7 @@ class Sprite_EagleCharacter < Sprite
   def update
     super
     update_position
-    return move_update(@flag_move)  if @flag_move
+    return move_update(@flag_move) if @flag_move
     update_effects if !@effects.empty?
   end
   #--------------------------------------------------------------------------
@@ -3734,14 +3751,22 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def move_update(sym = :cin) # 只有移动结束时，才进行其他更新
     params = @params[sym]
-    params[:t] -= 1
+    params[:tc] -= 1
     (params[:vxc] = 0; @dx += params[:vx]) if (params[:vxc] += 1) == params[:vxt]
     (params[:vyc] = 0; @dy += params[:vy]) if (params[:vyc] += 1) == params[:vyt]
     (params[:vzc] = 0;@_zoom += params[:vz]) if (params[:vzc] += 1) == params[:vzt]
+    if (params[:rxc] += 1) == params[:rxt]
+      params[:rxc] = 0
+      self.src_rect.x += params[:rx]
+    end
+    if (params[:ryc] += 1) == params[:ryt]
+      params[:ryc] = 0
+      self.src_rect.y += params[:ry]
+    end
     self.zoom_x = self.zoom_y = 1.0 + @_zoom/100.0
     self.angle += params[:va]
     self.opacity += params[:vo]
-    move_end(sym) if params[:t] == 0
+    move_end(sym) if params[:tc] == 0
   end
   def move_end(sym = :cin)
     rebind_viewport
@@ -3802,36 +3827,44 @@ class Sprite_EagleCharacter < Sprite
     params[:vyt] = 1 if params[:vyt] < 1
     params[:vzt] = 1 if params[:vzt] < 1
     rand_cin(params, param_s) if params[:r] != 0
-    params[:vo] = [255 / params[:t], 1].max # 移入时每帧不透明度增量
+    params[:vo] ||= 255 / params[:t] # 移入时每帧不透明度增量
+    params[:vo] = [params[:vo], 1].max
+    params[:rxc] = 0; params[:ryc] = 0
+    params[:rxt] = 1 if params[:rxt] < 1
+    params[:ryt] = 1 if params[:ryt] < 1
     move_in if flag_move_in
   end
   #--------------------------------------------------------------------------
   # ● 随机移入
   #--------------------------------------------------------------------------
+  RAND_V = lambda { |v| rand(v * 2 + 1) - v }
   def rand_cin(params, param_s)
-    rand_v = lambda { |v| rand(v * 2 + 1) - v }
     params[:t] = rand(params[:t]) + 1
-    params[:vx] = rand_v.call(params[:vx])
+    params[:vx] = RAND_V.call(params[:vx])
     params[:vxt] = rand(params[:vxt]) + 1
-    params[:vy] = rand_v.call(params[:vy])
+    params[:vy] = RAND_V.call(params[:vy])
     params[:vyt] = rand(params[:vyt]) + 1
-    params[:vz] = rand_v.call(params[:vz])
+    params[:vz] = RAND_V.call(params[:vz])
     params[:vzt] = rand(params[:vzt]) + 1
-    params[:va] = rand_v.call(params[:va])
+    params[:va] = RAND_V.call(params[:va])
   end
   #--------------------------------------------------------------------------
   # ● 执行移入
   #--------------------------------------------------------------------------
   def move_in
-    unbind_viewport
     params = @params[:cin]
+    return if params.nil?
+    unbind_viewport
     @dx = -(params[:t]/params[:vxt]) * params[:vx]
     @dy = -(params[:t]/params[:vyt]) * params[:vy]
     @_zoom = -(params[:t]/params[:vzt]) * params[:vz]
     self.angle = -params[:t] * params[:va]
+    self.src_rect.x = -(params[:t]/params[:rxt]) * params[:rx]
+    self.src_rect.y = -(params[:t]/params[:ryt]) * params[:ry]
     self.opacity = 0
     self.zoom_x = self.zoom_y = 1.0 + @_zoom/100.0
     reset_oxy(5)
+    params[:tc] = params[:t]
     @flag_move = :cin
   end
   #--------------------------------------------------------------------------
@@ -3851,6 +3884,7 @@ class Sprite_EagleCharacter < Sprite
       if !(@params[:cout].nil? || @params[:cout].empty?)
         @dx = @dy = @_zoom = 0
         reset_oxy(5)
+        @params[:cout][:tc] = @params[:cout][:t]
         @flag_move = :cout
       elsif !@params[:uout].nil?
         move_out_uout(@params[:uout])
