@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventSelfMoveEX"] = true
 #=============================================================================
-# - 2020.3.15.23
+# - 2020.5.24.16 增强性能
 #=============================================================================
 # - 本插件对事件的自主移动模式进行了扩展
 #-----------------------------------------------------------------------------
@@ -126,8 +126,7 @@ class Game_Event < Game_Character
     @move_speed         = page.move_speed
     @move_frequency     = page.move_frequency
     @move_route         = page.move_route
-    @move_route_index   = 0
-    @move_route_forcing = false
+    clear_move_type
   end
   #--------------------------------------------------------------------------
   # ● 设置自主移动模式
@@ -145,7 +144,14 @@ class Game_Event < Game_Character
     @move_speed         = @eagle_origin_move_speed
     @move_frequency     = @eagle_origin_move_frequency
     @move_route         = @eagle_origin_move_route
+    clear_move_type
+  end
+  #--------------------------------------------------------------------------
+  # ● 清除当前移动
+  #--------------------------------------------------------------------------
+  def clear_move_type
     @move_route_index   = 0
     @move_route_forcing = false
+    @wait_count = 0
   end
 end
