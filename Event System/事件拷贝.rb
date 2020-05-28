@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventCopy"] = true
 #=============================================================================
-# - 2020.4.10.10 增加临时变量
+# - 2020.5.28.21 优化
 #=============================================================================
 # - 原始创意：Yanfly Engine Ace - Spawn Event
 # - 本插件新增了拷贝事件的方法
@@ -136,7 +136,9 @@ class Game_Map
       e.update
       @events_copy[e.copy_origin[0]][e.copy_origin[1]].push(id)
     end
-    get_cur_scene.spriteset.add_characters_tmp
+    s = get_cur_scene
+    return if !s.respond_to?(:spriteset)
+    s.spriteset.add_characters_tmp
     @events.merge!(@events_tmp)
     @events_tmp.clear
   end

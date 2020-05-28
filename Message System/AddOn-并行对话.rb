@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.5.16.23 修复game_message参数随主对话框刷新的bug
+# - 2020.5.28.22 重构地图事件页的并行对话，增强扩展性
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -88,87 +88,95 @@ $imported["EAGLE-MessagePara"] = true
 #    其中 name 为任意的唯一标识符（将覆盖原有的预设）
 #    其中 list_str 为“标签序列”字符串（注意！转义符需要用 \\ 代替 \）
 #
-#--------------------------------------------------------------------------
-# ○ 呼叫预设的“标签序列”
-#--------------------------------------------------------------------------
-# - 利用脚本 MESSAGE_PARA.call(name, [, ensure_fin]) 呼叫预设中 name 名称的序列
+# - 利用脚本呼叫预设中 name 名称的“标签序列”，只执行一次
+#
+#        MESSAGE_PARA.call(name, [, ensure_fin])
 #
 #--------------------------------------------------------------------------
 # ○ 文本文件中预设“标签序列”
 #--------------------------------------------------------------------------
-# - 在指定的文本文件中，按 <list name>...</list> 填写
+# - 可在文本文件中预设“标签序列”，其中按 <list name>...</list> 格式编写
 #     其中 name 替换成该“标签序列”的唯一名称，便于进行调用
 #     其中 ... 替换成“标签序列”（转义符正常写法）
 #
-# - 注意：
+#   注意：
+#    ·文本文件的路径需添加到 FILES_MSG_LIST 常量数组中，将在游戏开启时按序读入
 #    ·文本文件的编码必须为 UTF-8
 #    ·文本文件不局限于.txt，只要其中只包含UTF-8编码的文本，可以为任意后缀名
-#    ·由于技术受限，暂时无法读取VA加密档案中的文本文件，请不要放置于加密路径下
-#      若已经有了能够读取加密档案路径下纯文本文件的方法，请替换全部EAGLE.load_text
+#    ·若使用了【组件-读取加密档案中的TXT by老鹰】，则可将文本文件放置于加密文件路径下
 #
 #--------------------------------------------------------------------------
 # ○ 地图事件页中设置“标签序列”
 #--------------------------------------------------------------------------
 # - 事件页第一个指令为 注释 时，按下述格式填入该事件页的“标签序列”：
 #
-#        <list[ {cond}][ params]>...</list>
+#        <list[ 'name'][ {cond}][ params]>...</list>
 #
 #   其中 ... 替换成“标签序列”（转义符正常写法）
-#   其中 {cond} 替换成触发条件，若被 eval 后返回 false，则不触发
-#     可用 s 代替 $game_switches， v 代替 $game_variables
-#          p 代替 $game_player， e 代替 $game_map.events 或 $game_troop.members
-#   其中 params 替换成 变量名+参数值 的字符串（可选）
+#
+#  【可选】'name' 替换成该“标签序列”的唯一标识符（强制为字符串形式）
+#      若不写，则为当前事件的ID（数字形式）
+#
+#  【可选】{cond} 替换成触发条件，若被 eval 后返回 true，则将会触发
+#      若不写，则默认为 true，即自动触发
+#      可用 s 代替 $game_switches， v 代替 $game_variables
+#          pl 代替 $game_player， a 代表当前事件 $game_map.events[@event_id]
+#          e 代替 $game_map.events 或 $game_troop.members
+#          d 代替 a.distance_to(0)，即当前事件与玩家的dx+dy的值
+#
+#  【可选】params 替换成 变量名+参数值 的字符串（同对话框扩展中）
 #      可设置变量一览：
-#       type → 设置该组并行对话的类型
-#             （0玩家接近事件时触发，1自动触发，2鼠标停留触发）
-#    （玩家接近时触发）（每次玩家接近只触发一次）
-#       d → 玩家与事件的距离（x差值的绝对值+y差值的绝对值）小于等于d时触发
-#    （自动触发）
-#       tc → 第一次触发前的等待帧数
-#       t → 显示完成后的等待帧数（nil代表不再重复显示）
-#    （鼠标停留触发【需 鼠标系统】）
-#       d → 与鼠标（所在格子）距离小于等于d时触发
+#       f → 当cond条件不满足时，是否立即结束显示？
+#       w → 显示结束后需再等待w帧，才能再次触发
+#          （若为nil，则与事件暂时消除效果一致，直至下次回到地图前不再触发）
 #
 #   示例（无参数）：
 #      <list><msg>第一句台词</msg><msg>第二句台词</msg></list>
-#      → 为该事件页添加 EVENT_MSG_TYPE_ID_DEFAULT 类型的对话组，
+#      → 该事件页增加 name 为事件ID数字，自动循环执行的对话组
 #         使用当前对话框的参数，依次显示这两句台词
 #
 #   示例（含参数）：
-#      <list {s[1]}>...</list> → 当1号开关关闭时，不触发该并行对话
-#      <list type0d3>...</list> → 设置玩家与事件间的距离不大于3时触发
-#      <list type1t60>...</list> → 设置为自动触发，两次触发间隔60帧
+#      <list {s[1]} w60>...</list> → 当1号开关开启时，自动循环显示，且间隔60帧
+#      <list 'DEMO' {d<=3}>...</list> → 设置玩家与事件间的距离不大于3时触发
+#      <list {v[1]>0} f0>...</list> → 当1号变量大于0时，自动循环显示，
+#                                      且不会因为条件不满足而强制结束
 #
 # - 注意：
 #    ·若文本量超出单个注释窗口，可以拆分成多个连续的 注释 指令，脚本将一并读取
-#    ·对于每个事件，同时只会执行一个“标签序列”
+#    ·对于每个事件，同时只会执行一个并行对话
 #    ·当事件被触发时，它正在执行的并行对话将被强制结束，且不会再次生成
 #    ·事件的并行对话占用了以 事件ID（数字）为唯一标识符的name，
-#       请尽量不要使用 数字ID 作为name来命名自己的并行对话
+#       因此请尽量不要使用 数字ID 作为name来命名自己的“标签序列”
+#
 #--------------------------------------------------------------------------
 # ○ 注意
 #--------------------------------------------------------------------------
 #  ·进行 场所移动 / Scene切换 时，会自动结束全部“标签序列”
 #      除了 ensure_fin 设置为 true 的序列
 #  ·打开S_ID_NO_MSG号开关时，会自动结束全部“标签序列”并禁止产生新的
+#
 #--------------------------------------------------------------------------
 # ○ 高级
 #--------------------------------------------------------------------------
-# - 利用脚本进行锁定与解锁，当存在任一锁时，将不会显示任何新的并行对话
+# - 利用脚本进行锁定与解锁，当存在任一锁时，将不会显示任何新的“标签序列”
 #
 #     MESSAGE_PARA.lock(type) → 添加以 type 为名称的锁
 #     MESSAGE_PARA.unlock(type) → 解除以 type 为名称的锁
 #
-# - 利用脚本移出指定名称的并行对话序列
+# - 利用脚本移出指定名称的“标签序列”
 #
 #     MESSAGE_PARA.list_finish(name[, force])
 #       → 结束名称为 name 的并行对话序列，
 #          若传入 force 为 true，则不会进行移出，而是直接隐藏，
 #          默认 force 为 false，即保留对话框移出特效
 #
-# - 利用脚本移出全部并行对话序列
+# - 利用脚本移出全部“标签序列”
 #
 #     MESSAGE_PARA.all_finish(force = false)
+#
+# - 为 Game_Event类新增实例方法 distance_to(event_id)
+#     如 event.distance_to(event_id) 获取 event 与第 event_id 号事件的距离|dx|+|dy|
+#     特别的，event.distance_to(0) 获取 event 与玩家的距离|dx|+|dy|
 #
 #==============================================================================
 
@@ -195,32 +203,11 @@ module MESSAGE_PARA
   #--------------------------------------------------------------------------
   FILES_MSG_LIST = ["Eagle/PARA.eagle"]
   #--------------------------------------------------------------------------
-  # ●【常量】事件页注释里的并行对话类型
-  # type_id => type_sym
-  #--------------------------------------------------------------------------
-  EVENT_MSG_ID_TO_TYPE = {
-    0 => :near,
-    1 => :auto,
-    2 => :mouse,
-  }
-  #--------------------------------------------------------------------------
-  # ●【常量】事件页默认并行对话类型id
-  #--------------------------------------------------------------------------
-  EVENT_MSG_TYPE_ID_DEFAULT = 0
-  #--------------------------------------------------------------------------
-  # ●【常量】事件页注释里的并行对话队列参数
+  # ●【常量】事件页注释里的list参数预设
   #--------------------------------------------------------------------------
   EVENT_PARAMS = {
-    :near => { # id为0时“玩家接近触发”
-      :d => 2, # 与玩家距离小于等于d时触发
-    },
-    :auto => { # id为1时“自动触发”
-      :tc => 10, # 第一次触发前的等待帧数
-      :t => 180, # 循环触发后的等待帧数
-    },
-    :mouse => { # id为2时“鼠标停留触发”
-      :d => 0, # 与鼠标（所在格子）距离小于等于d时触发
-    },
+    :f => 1, # 当cond条件不满足时，是否立即结束显示？
+    :w => 0, # 显示结束后需再等待w帧，才能再次触发（若为nil，则不再触发）
   }
 end
 #==============================================================================
@@ -242,10 +229,12 @@ module EAGLE
   #--------------------------------------------------------------------------
   # ● 读取TXT文本
   #--------------------------------------------------------------------------
+  if !$imported["EAGLE-LoadTXT"]
   def self.load_text(filename)
     text = ""
     File.open(filename, 'r') { |f| f.each_line { |l| text += l } }
     text.encode("UTF-8")
+  end
   end
 end
 #==============================================================================
@@ -382,31 +371,6 @@ module MESSAGE_PARA
   def self.lock?
     !@lock_count.empty?
   end
-  #--------------------------------------------------------------------------
-  # ● 解析含“标签序列”的字符串（地图事件页用）
-  #--------------------------------------------------------------------------
-  # hash - 存储解析出的全部 name => 并行对话文本list_msg
-  def self.parse_event_list_str(text)
-    s = $game_switches; v = $game_variables; p = $game_player
-    e = $game_map.events if SceneManager.scene_is?(Scene_Map)
-    e = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
-    hash = {}
-    text.scan(/<list ?(\{.*?\})? ?(.*?)>(.*?)<\/list>/m).each do |params|
-      next if params[0] && eval(params[0][1..-2]) == false
-      hash[ params[1] ] = params[2]
-    end
-    hash
-  end
-  #--------------------------------------------------------------------------
-  # ● 初始化参数组（地图事件页用）
-  #--------------------------------------------------------------------------
-  def self.event_init_params(hash)
-    type = EVENT_MSG_ID_TO_TYPE[ (hash[:type] || EVENT_MSG_TYPE_ID_DEFAULT) ]
-    hash = hash.merge(EVENT_PARAMS[type]) { |k, v1, v2| v1 }
-    hash[:type] = type
-    hash[:active] = false # 已经触发？
-    hash
-  end
 end
 #==============================================================================
 # ○ 并行对话列表
@@ -429,28 +393,6 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @f_ensure_fin = false # 保证必定显示完？（场景切换时只暂时暂停并关闭）
     @fiber = Fiber.new { fiber_main }
     @finish = false # 结束的标志
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    @fiber.resume if @fiber
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新线程
-  #--------------------------------------------------------------------------
-  def fiber_main
-    parse_list while !@list_str.empty?
-    @fiber = nil
-  end
-  #--------------------------------------------------------------------------
-  # ● 解析序列字符串
-  #--------------------------------------------------------------------------
-  def parse_list
-    tag_name, tag_str = parse_next_tag
-    method_name = "tag_" + tag_name
-    send(method_name, tag_str) if respond_to?(method_name)
-    process_finish if @finish
   end
   #--------------------------------------------------------------------------
   # ● 获取当前绑定的事件
@@ -476,6 +418,28 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
       $game_player.followers.each { |f| return f.actor if f.actor && f.actor.actor.id == id }
       return $game_player
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    @fiber.resume if @fiber
+  end
+  #--------------------------------------------------------------------------
+  # ● 线程
+  #--------------------------------------------------------------------------
+  def fiber_main
+    parse_list while !@list_str.empty?
+    @fiber = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 解析序列字符串
+  #--------------------------------------------------------------------------
+  def parse_list
+    tag_name, tag_str = parse_next_tag
+    method_name = "tag_" + tag_name
+    send(method_name, tag_str) if respond_to?(method_name)
+    process_finish if @finish
   end
   #--------------------------------------------------------------------------
   # ● 解析下一个标签（移除首位的非标签内容）
@@ -879,14 +843,26 @@ class Game_Event < Game_Character
   # ● 设置注释中的“标签序列”
   #--------------------------------------------------------------------------
   def set_para_message
-    @eagle_message_para = {} # type => [list_str, list_params] # 每种一个
     t = EAGLE.event_comment_head(@list)
-    hash = MESSAGE_PARA.parse_event_list_str(t) # params => list_str
-    hash.each do |key, value|
-      hash_ = {}; MESSAGE_EX.parse_param(hash_, key)
-      hash_ = MESSAGE_PARA.event_init_params(hash_)
-      @eagle_message_para[hash_[:type]] = [value, hash_]
+    @eagle_para_params = {} # name => params_hash
+    @eagle_para_msgs = parse_event_list_str(t) # name => [cond, list_str]
+  end
+  #--------------------------------------------------------------------------
+  # ● 解析含“标签序列”的字符串
+  #--------------------------------------------------------------------------
+  def parse_event_list_str(text)
+    hash = {}
+    text.scan(/<list ?('.*?')? ?(\{.*?\})? ?(.*?)?>(.*?)<\/list>/m).each do |params|
+      name = self.id
+      name = params[0][1..-2] if params[0]
+      cond = "true"
+      cond = params[1][1..-2] if params[1]
+      hash[name] = [cond, params[3]]
+      @eagle_para_params[name] = MESSAGE_PARA::EVENT_PARAMS.dup
+      MESSAGE_EX.parse_param(@eagle_para_params[name], params[2])
+      @eagle_para_params[name][:f] = MESSAGE_EX.check_bool(@eagle_para_params[name][:f])
     end
+    hash
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -894,59 +870,66 @@ class Game_Event < Game_Character
   alias eagle_message_para_update update
   def update
     eagle_message_para_update
-    return if MESSAGE_PARA.lock?
-    return if $game_map.is_event_running?(self.id)
-    return if !near_the_screen?
-    @eagle_message_para.each do |type, param|
-      flag = method("check_message_para_#{type}").call(param[1])
-      add_para_message(flag, param[0], param[1])
+    return if !update_para?
+    @eagle_para_msgs.each do |name, ps|
+      update_para(name, ps[0], ps[1], @eagle_para_params[name])
     end
   end
   #--------------------------------------------------------------------------
-  # ● 新增一个“标签序列”（在一次激活后，不重复处理）
+  # ● 能够更新并行对话？
   #--------------------------------------------------------------------------
-  def add_para_message(flag, list_msg, list_params)
-    if flag # flag 为 true 代表满足对话生成条件
-      if !list_params[:active] # 防止二次覆盖
-        list_params[:active] = true
-        MESSAGE_PARA.add(@id, list_msg)
+  def update_para?
+    return false if MESSAGE_PARA.lock?
+    return false if $game_map.is_event_running?(self.id)
+    return false if !near_the_screen?
+    return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新指定名称的并行对话
+  #--------------------------------------------------------------------------
+  def update_para(name, cond_str, list_str, params)
+    if params[:wc]
+      return if params[:wc] < 0
+      params[:wc] -= 1
+      return if params[:wc] > 0
+      params[:wc] = nil
+    end
+    f_exist = MESSAGE_PARA.list_exist?(name)
+    f_cond = para_cond_meet?(cond_str)
+    if f_exist
+      if !f_cond && params[:f] == true
+        params[:wc] = nil
+        MESSAGE_PARA.list_finish(name)
       end
     else
-      if list_params[:active]
-        list_params[:active] = false
-        MESSAGE_PARA.list_finish(@id)
+      if params[:last_exist] == true # 若上一帧有，当前帧没了，则进入等待
+        params[:wc] = params[:w] || -1
+      else # 若上一帧也没有，则新加入
+        MESSAGE_PARA.add(name, list_str) if f_cond
       end
     end
+    params[:last_exist] = f_exist
   end
   #--------------------------------------------------------------------------
-  # ● 检查“玩家邻近”的并行对话
+  # ● 符合并行对话条件？
   #--------------------------------------------------------------------------
-  def check_message_para_near(list_params)
-    d = distance_x_from($game_player.x).abs + distance_y_from($game_player.y).abs
-    d <= list_params[:d]
+  def para_cond_meet?(cond_str)
+    s = $game_switches; v = $game_variables
+    pl = $game_player; a = self
+    e = $game_map.events if SceneManager.scene_is?(Scene_Map)
+    e = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
+    d = distance_to(0)
+    eval(cond_str) == true
   end
   #--------------------------------------------------------------------------
-  # ● 检查“自动执行”的并行对话
+  # ● 获取与指定ID号事件的距离
   #--------------------------------------------------------------------------
-  def check_message_para_auto(list_params)
-    # 若已经生成，则保证一直满足条件让它更新
-    return true if MESSAGE_PARA.list_exist?(@id)
-    return false if list_params[:tc].nil?
-    list_params[:tc] -= 1
-    if list_params[:tc] <= 0
-      list_params[:tc] = list_params[:t]
-      return true
-    end
-    return false
-  end
-  #--------------------------------------------------------------------------
-  # ● 检查“鼠标停留”的并行对话
-  #--------------------------------------------------------------------------
-  def check_message_para_mouse(list_params)
-    x_ = Mouse.x / 32 + $game_map.display_x
-    y_ = Mouse.y / 32 + $game_map.display_y
-    d = distance_x_from(x_).abs + distance_y_from(y_).abs
-    d <= list_params[:d]
+  def distance_to(id)
+    chara = nil
+    chara = $game_player if id == 0
+    chara = $game_map.events[id] if id > 0
+    return 9999 if chara.nil?
+    return distance_x_from(chara.x).abs + distance_y_from(chara.y).abs
   end
 end
 class Scene_Map < Scene_Base
