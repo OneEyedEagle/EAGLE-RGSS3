@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.5.27.19 文字精灵新增对src_rect的动态参数；现在能正确显示第一个文字的移入
+# - 2020.5.29.10 修复并行对话可以造成的卡死bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -3710,13 +3710,12 @@ class Sprite_EagleCharacter < Sprite
     self.opacity = 0
     bind_viewport(nil)
     @window_bind = nil # 取消窗口的绑定
-    update_position
   end
   #--------------------------------------------------------------------------
   # ● 结束使命？
   #--------------------------------------------------------------------------
   def finish?
-    self.opacity == 0 && @window_bind == nil
+    self.opacity == 0
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -3878,29 +3877,30 @@ class Sprite_EagleCharacter < Sprite
   # ● 执行移出
   #--------------------------------------------------------------------------
   def move_out
-    finish if !in_viewport? # 若精灵在视图外，则直接结束
-    unbind_viewport
-    if self.opacity > 0
+    if !in_viewport? # 若精灵在视图外，则直接结束
+      finish
+    else
+      bind_viewport(nil)
       if !(@params[:cout].nil? || @params[:cout].empty?)
-        @dx = @dy = @_zoom = 0
-        reset_oxy(5)
-        @params[:cout][:tc] = @params[:cout][:t]
-        @flag_move = :cout
+        move_out_cout(@params[:cout])
       elsif !@params[:uout].nil?
         move_out_uout(@params[:uout])
       else
         finish
       end
     end
-    process_move_out
+    MESSAGE_EX.charapool_push(self) # 由文字池接管
   end
   #--------------------------------------------------------------------------
-  # ● 执行移出
+  # ● 执行默认移出
   #--------------------------------------------------------------------------
-  def process_move_out
-    update_position # 补充更新一次位置
-    @window_bind = nil # 取消窗口的绑定
-    MESSAGE_EX.charapool_push(self) # 由文字池接管后续更新
+  def move_out_cout(params)
+    @dx = @dy = @_zoom = 0
+    reset_oxy(5)
+    params[:tc] = params[:t]
+    @flag_move = :cout
+    update_position # 更新一次位置
+    @window_bind = nil
   end
   #--------------------------------------------------------------------------
   # ● 消散移出
@@ -3913,7 +3913,7 @@ class Sprite_EagleCharacter < Sprite
   def move_out_uout(parmas)
     Unravel_Bitmap.new(self.x, self.y, self.bitmap.clone, 0, 0, self.width,
       self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
-    self.opacity = 0
+    finish
   end
   #--------------------------------------------------------------------------
   # ● 正弦扭曲特效

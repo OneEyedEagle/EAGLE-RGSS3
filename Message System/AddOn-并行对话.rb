@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.5.28.22 重构地图事件页的并行对话，增强扩展性
+# - 2020.5.29.11 重构地图事件页的并行对话，增强扩展性，优化触发条件
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -21,10 +21,11 @@ $imported["EAGLE-MessagePara"] = true
 #         其中...替换成所需的对话文本
 #         与【对话框扩展】中的转义符保持一致，但【警告！不可使用 \$ 转义符！】
 #
-#    <face face_name [face_index]>  → 预设之后对话框所显示脸图的参数
+#    <face face_name[ face_index]>  → 预设之后对话框所显示脸图的参数
 #         其中 face_name 替换成 Graphics/Faces 目录下的脸图文件名，
-#            文件名可省略后缀，但不可含有空格
+#            文件名不可含有空格，可不写后缀
 #         其中 face_index 替换成脸图的序号id（0-7）（该项可省略，默认重置为 0）
+#    <face>  → 重置脸图参数，变更为无脸图
 #
 #    <msgp param_str>  → 预设之后对话框的参数
 #         其中 param_str 替换成 变量名+参数值 的字符串（同 对话框扩展 中）
@@ -122,9 +123,9 @@ $imported["EAGLE-MessagePara"] = true
 #      可用 s 代替 $game_switches， v 代替 $game_variables
 #          pl 代替 $game_player， a 代表当前事件 $game_map.events[@event_id]
 #          e 代替 $game_map.events 或 $game_troop.members
-#          d 代替 a.distance_to(0)，即当前事件与玩家的dx+dy的值
+#          d 代替 a.distance_to(0)，即当前事件与玩家的距离|dx|+|dy|的值
 #
-#  【可选】params 替换成 变量名+参数值 的字符串（同对话框扩展中）
+#  【可选】params 替换成 变量名+参数值 的字符串（同对话框扩展中的格式）
 #      可设置变量一览：
 #       f → 当cond条件不满足时，是否立即结束显示？
 #       w → 显示结束后需再等待w帧，才能再次触发
@@ -136,9 +137,9 @@ $imported["EAGLE-MessagePara"] = true
 #         使用当前对话框的参数，依次显示这两句台词
 #
 #   示例（含参数）：
-#      <list {s[1]} w60>...</list> → 当1号开关开启时，自动循环显示，且间隔60帧
+#      <list {s[1]} w$>...</list> → 当1号开关开启时，显示一次，直到重新回到该地图
 #      <list 'DEMO' {d<=3}>...</list> → 设置玩家与事件间的距离不大于3时触发
-#      <list {v[1]>0} f0>...</list> → 当1号变量大于0时，自动循环显示，
+#      <list {v[1]>0} f0w60>...</list> → 当1号变量大于0，自动循环显示，且间隔60帧
 #                                      且不会因为条件不满足而强制结束
 #
 # - 注意：
@@ -152,7 +153,7 @@ $imported["EAGLE-MessagePara"] = true
 # ○ 注意
 #--------------------------------------------------------------------------
 #  ·进行 场所移动 / Scene切换 时，会自动结束全部“标签序列”
-#      除了 ensure_fin 设置为 true 的序列
+#     （除了 ensure_fin 设置为 true 的序列）
 #  ·打开S_ID_NO_MSG号开关时，会自动结束全部“标签序列”并禁止产生新的
 #
 #--------------------------------------------------------------------------
@@ -207,7 +208,7 @@ module MESSAGE_PARA
   #--------------------------------------------------------------------------
   EVENT_PARAMS = {
     :f => 1, # 当cond条件不满足时，是否立即结束显示？
-    :w => 0, # 显示结束后需再等待w帧，才能再次触发（若为nil，则不再触发）
+    :w => 60, # 显示结束后需再等待w帧，才能再次触发（若为nil，则不再触发）
   }
 end
 #==============================================================================
@@ -308,7 +309,6 @@ module MESSAGE_PARA
   #--------------------------------------------------------------------------
   def self.list_finish(id, force = false)
     return if !list_exist?(id)
-    return if @lists[id].finish?
     @lists[id].finish(force)
   end
   #--------------------------------------------------------------------------
@@ -476,7 +476,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   #--------------------------------------------------------------------------
   def tag_face(tag_str)
     ps = tag_str.split(' ')
-    @face[0] = ps[0]
+    @face[0] = (ps[0] ? ps[0] : "")
     @face[1] = (ps[1] ? ps[1].to_i : 0)
   end
   #--------------------------------------------------------------------------
@@ -845,12 +845,12 @@ class Game_Event < Game_Character
   def set_para_message
     t = EAGLE.event_comment_head(@list)
     @eagle_para_params = {} # name => params_hash
-    @eagle_para_msgs = parse_event_list_str(t) # name => [cond, list_str]
+    @eagle_para_msgs = parse_event_para_list(t) # name => [cond, list_str]
   end
   #--------------------------------------------------------------------------
   # ● 解析含“标签序列”的字符串
   #--------------------------------------------------------------------------
-  def parse_event_list_str(text)
+  def parse_event_para_list(text)
     hash = {}
     text.scan(/<list ?('.*?')? ?(\{.*?\})? ?(.*?)?>(.*?)<\/list>/m).each do |params|
       name = self.id
@@ -870,9 +870,9 @@ class Game_Event < Game_Character
   alias eagle_message_para_update update
   def update
     eagle_message_para_update
-    return if !update_para?
+    f_update = update_para?
     @eagle_para_msgs.each do |name, ps|
-      update_para(name, ps[0], ps[1], @eagle_para_params[name])
+      update_para(f_update, name, ps[0], ps[1], @eagle_para_params[name])
     end
   end
   #--------------------------------------------------------------------------
@@ -887,17 +887,20 @@ class Game_Event < Game_Character
   #--------------------------------------------------------------------------
   # ● 更新指定名称的并行对话
   #--------------------------------------------------------------------------
-  def update_para(name, cond_str, list_str, params)
-    if params[:wc]
+  def update_para(f_update, name, cond_str, list_str, params)
+    if params[:wc] # 处理显示后的等待
       return if params[:wc] < 0
       params[:wc] -= 1
       return if params[:wc] > 0
       params[:wc] = nil
     end
+    if !f_update # 若此时不能更新，则直接移出
+      return MESSAGE_PARA.list_finish(name, true)
+    end
     f_exist = MESSAGE_PARA.list_exist?(name)
     f_cond = para_cond_meet?(cond_str)
-    if f_exist
-      if !f_cond && params[:f] == true
+    if f_exist # 若当前存在
+      if !f_cond && params[:f] == true # 若已经不满足条件，则移出
         params[:wc] = nil
         MESSAGE_PARA.list_finish(name)
       end
@@ -930,15 +933,5 @@ class Game_Event < Game_Character
     chara = $game_map.events[id] if id > 0
     return 9999 if chara.nil?
     return distance_x_from(chara.x).abs + distance_y_from(chara.y).abs
-  end
-end
-class Scene_Map < Scene_Base
-  #--------------------------------------------------------------------------
-  # ● 开始后处理
-  #--------------------------------------------------------------------------
-  alias eagle_message_para_map_post_start post_start
-  def post_start
-    eagle_message_para_map_post_start
-    $game_map.events.each { |id, e| e.set_para_message }
   end
 end
