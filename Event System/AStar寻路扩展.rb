@@ -4,13 +4,30 @@
 $imported ||= {}
 $imported["EAGLE-AStar"] = true
 #==============================================================================
-# - 2020.2.16.19
+# - 2020.5.30.23 扩展事件脚本功能，方便使用
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 #-----------------------------------------------------------------------------
-# - 对于 Game_Character类，新增 astar_goto(x, y) 方法，
-#   返回从角色当前位置到（x,y）的移动方向的数组
-# - 【兼容】若使用了【像素级移动 by老鹰】，将依然按照原始网格进行搜索寻路
+# 【使用】
+# - 在事件脚本中，使用该脚本将事件移动到目的地并等待结束
+#        astar_goto(chara_id, x, y[, wait])
+#
+#     其中 chara_id 为 -1 是玩家、0 是本事件、正数 是指定的事件ID
+#     其中 (x,y) 为地图编辑器中的坐标
+#     其中 wait 为是否等待移动结束，可不传入，默认等待
+#
+# - 示例：
+#     astar_goto(0, 5,5,false)  → 当前事件寻路移动至(5,5)处，且事件继续执行
+#     astar_goto(-1, 12,1)      → 玩家寻路移动至(12,1)处，等待移动结束
+#-----------------------------------------------------------------------------
+# 【兼容】
+# - 若使用了【像素级移动 by老鹰】，将依然按照原始网格进行搜索寻路
+#-----------------------------------------------------------------------------
+# 【高级】
+# - 为 Game_Character类新增了方法：
+#     .astar_one_step(x, y)  → 朝(x,y)寻路前进一步
+#     .astar_until(x, y)     → 朝(x,y)寻路直至到达
+#     .astar_moving          → 若在寻路中，则返回 true
 #=============================================================================
 
 module Eagle_AStar
@@ -81,8 +98,8 @@ module Eagle_AStar
   end
 end
 
-class Game_Character
 if $imported["EAGLE-PixelMove"]
+class Game_Character
   #--------------------------------------------------------------------------
   # ● 可以通行？
   #  IN: rgssXY
@@ -134,11 +151,69 @@ if $imported["EAGLE-PixelMove"]
     $game_map.boat.pos_rect_nt?(r) || $game_map.ship.pos_rect_nt?(r)
   end
 end
+end
+
+class Game_Character
+  attr_reader :astar_moving
+  #--------------------------------------------------------------------------
+  # ● 寻路前进一步
+  #--------------------------------------------------------------------------
+  def astar_one_step(x, y)
+    list = Eagle_AStar.do(self, x, y)
+    return false if list.nil?
+    move_straight(list[0]) if list
+    return list[0]
+  end
+  #--------------------------------------------------------------------------
+  # ● 强制移动路径
+  #--------------------------------------------------------------------------
+  def astar_until(x, y)
+    @astar_moving = true
+    @astar_des_x = x
+    @astar_des_y = y
+    @astar_wait = 1
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新停止
+  #--------------------------------------------------------------------------
+  alias eagle_astar_update_stop update_stop
+  def update_stop
+    eagle_astar_update_stop
+    update_astar_move if @astar_moving
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新寻路
+  #--------------------------------------------------------------------------
+  def update_astar_move
+    if @astar_wait > 0
+      @astar_wait -= 1
+      return
+    end
+    return @astar_moving = false if astar_reach?
+    f = astar_one_step(@astar_des_x, @astar_des_y)
+    return @astar_wait = 60 if f == false
+    set_direction(f)
+  end
+  #--------------------------------------------------------------------------
+  # ● 到达目的地？
+  #--------------------------------------------------------------------------
+  def astar_reach?
+    if $imported["EAGLE-PixelMove"]
+      return @astar_des_x == self.rgss_x && @astar_des_y == self.rgss_y
+    end
+    @astar_des_x == self.x && @astar_des_y == self.y
+  end
+end
+class Game_Interpreter
   #--------------------------------------------------------------------------
   # ● 寻路
+  #     chara_id : -1 则玩家、0 则本事件、其他 则是指定的事件ID
   #--------------------------------------------------------------------------
-  def astar_goto(x, y)
-    list = Eagle_AStar.do(self, x, y)
-    move_straight(list[0]) if list
+  def astar_goto(chara_id, x, y, wait = true)
+    $game_map.refresh if $game_map.need_refresh
+    character = get_character(chara_id)
+    return if character.nil?
+    character.astar_until(x, y)
+    Fiber.yield while character.astar_moving if wait
   end
 end
