@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.5.29.11 重构地图事件页的并行对话，增强扩展性，优化触发条件
+# - 2020.6.1.9 统一eval可用变量
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -51,15 +51,15 @@ $imported["EAGLE-MessagePara"] = true
 #    <wait count> → 等待 count 帧数
 #
 #    <until>str</until> → 等待，直至 eval(str) 返回 true
+#         可用 s 代替 $game_switches， v 代替 $game_variables
+#              pl 代替 $game_player， e 代替 当前事件 或 当前敌人
 #
 #    <break> → 直接结束当前序列
 #
 #    <call list_name>  → 呼叫预设的“标签序列”
 #         在文本文件预设的序列中查找名为 list_name 的序列，并开始解析它
 #
-#    <if>cond_str</if> → 如果 eval(cond_str) 返回 false，则跳过下一个标签
-#         可用 s 代替 $game_switches， v 代替 $game_variables
-#              p 代替 $game_player， e 代替 当前事件 或 当前敌人
+#    <if>str</if> → 如果 eval(str) 返回 false，则跳过下一个标签
 #
 #    <rb>str</rb> → 执行脚本 eval(str)
 #
@@ -554,7 +554,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   # ● 执行字符串
   #--------------------------------------------------------------------------
   def eval_str(str)
-    s = $game_switches; v = $game_variables; p = $game_player
+    s = $game_switches; v = $game_variables; pl = $game_player
     e = get_bind_event
     eval(str)
   end
