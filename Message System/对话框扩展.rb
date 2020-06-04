@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.6.2.10 新增文字乱序移出
+# - 2020.6.4.21 新增文字乱序移出；修复hold报错问题
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -186,7 +186,7 @@ $imported["EAGLE-MessageEX"] = true
 #  \hold → 【结尾】保留当前对话框，直至没有该指令的对话框关闭，关闭所有保留的对话框
 #
 #  \temp → 【结尾】当前对话框对转义符参数的变更不会被保留
-#          （在当前对话框关闭前，转义符参数仍然生效）
+#          （在当前对话框关闭前，转义符参数的修改仍然生效）
 #
 #----------------------------------------------------------------------------
 # - 文字特效类
@@ -315,10 +315,13 @@ $imported["EAGLE-MessageEX"] = true
 #----------------------------------------------------------------------------
 # - 对话框Open/Close特效优化
 #
-# · 对话框的开启关闭特效已被优化为 动态展开收缩，而非默认的 上下打开关闭
+#   对话框的开启关闭特效已被优化为 动态展开收缩，而非默认的 上下打开关闭
+#   利用该脚本设置对话框开启关闭特效类型（默认 true）
 #
-# · 若 $game_message.default_open_type 赋值为 true，则使用默认的 上下打开关闭
-#    若 $game_message.default_open_type 赋值为 false，则使用 动态展开收缩
+#          $game_message.default_open_type = true 或 false
+#
+# · 若为 true，则使用默认的 上下打开关闭
+#    若为 false，则使用 动态展开收缩
 #----------------------------------------------------------------------------
 # - 并行处理子窗口
 #
@@ -481,6 +484,9 @@ module MESSAGE_EX
     :cdx => 0, # 文本左侧与窗口padding的间距
     :cdy => 0, # 文本上边距
     :cdw => 0, # 文本右边距
+  # \auto[]
+    :auto_t => nil,   # 在 t 帧后自动继续对话
+    :auto_r => 0,  # 是否重置 t 参数
   }
   POP_PARAMS_INIT = {
   # \pop[]
@@ -1129,10 +1135,9 @@ class Game_Message
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :ex_params # 存储扩展params
   attr_accessor :escape_strings # 存储预定要添加的字符串
-  attr_accessor :auto_r, :auto_t
-  attr_accessor :hold, :instant, :draw, :para, :event_id
+  attr_accessor :hold, :instant, :draw, :para, :event_id, :need_open
   attr_accessor :child_window_w_des, :child_window_h_des
-  attr_accessor :default_open_type, :auto_wrap, :need_open, :no_close
+  attr_accessor :default_open_type, :auto_wrap, :no_close
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -1141,9 +1146,6 @@ class Game_Message
     eagle_message_ex_init
     @temp_game_messages = {} # sym => game_message
     set_default_params
-    @auto_r = true # 是否重置 @auto_t
-    @auto_t = nil # 自动对话的倒计时（nil时为不自动继续）
-    @default_open_type = false # 使用默认的窗口打开方式？
   end
   #--------------------------------------------------------------------------
   # ● 获取全部可保存params的符号的数组
@@ -1183,6 +1185,7 @@ class Game_Message
   alias eagle_message_ex_clear clear
   def clear
     eagle_message_ex_clear
+    @need_open = true # 当为 true 时，需要执行open_and_wait
     @draw = true # 开启绘制？
     @hold = false # 当前对话框要保留显示？
     @instant = false # 当前对话框立即显示？
@@ -1190,7 +1193,8 @@ class Game_Message
     @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
     @child_window_w_des = 0 # 因子窗口嵌入而额外增加的宽高
     @child_window_h_des = 0
-    @need_open = true # 当为 true 时，需要执行open_and_wait
+
+    @default_open_type ||= false # 使用默认的窗口打开方式？
     @auto_wrap ||= true # 开启自动换行？
     @no_close ||= true # 当为 true 时，开启对话框跨指令显示
   end
@@ -1305,6 +1309,9 @@ class Game_Message
       m = "#{sym}_params"
       t.send("#{m}=".to_sym, method(m.to_sym).call.clone)
     end
+    t.default_open_type = @default_open_type
+    t.auto_wrap = @auto_wrap
+    t.no_close = @no_close
     t
   end
   #--------------------------------------------------------------------------
@@ -1387,7 +1394,6 @@ class Window_Message
     @in_battle = SceneManager.scene_is?(Scene_Battle) # 战斗场景中？
     self.arrows_visible = false # 内容位图未完全显示时出现的箭头
     @flag_open_close = false # 当正在进行打开/关闭时，置为 true
-    @flag_pop_chara = true # pop绑定的对象为地图场景上的行走图？
     @flag_temp_params = false # 当前对话框的转义符不会保存到game_message中？
   end
   #--------------------------------------------------------------------------
@@ -1430,6 +1436,7 @@ class Window_Message
     t.eagle_sprite_pause.bind_window(t)
     # 拷贝pop对象
     t.eagle_pop_obj = @eagle_pop_obj
+    t.flag_pop_chara = @flag_pop_chara
     # 集体更新z值
     t.eagle_reset_z
     # 自身初始化组件与重置
@@ -1480,13 +1487,16 @@ class Window_Message
     @eagle_charas_w_final = @eagle_charas_h_final = 0
     # 重置pop、face、name参数
     pop_params[:id] = nil
+    @eagle_pop_obj = nil
+    @flag_pop_chara = false # pop绑定的对象为地图场景上的行走图？
     face_params[:name] = ""
     name_params[:name] = ""
     # 重置pause精灵的文末位置
     @eagle_sprite_pause.bind_last_chara(nil)
     @eagle_sprite_pause_width_add = 0 # 因pause精灵而扩展的窗口宽度
     # 重置auto的设置帧数
-    game_message.auto_t = nil if game_message.auto_r # nil时为不自动继续
+    MESSAGE_EX.check_bool(win_params[:auto_r])
+    win_params[:auto_t] = nil if win_params[:auto_r] # nil时为不自动继续
     # 重置强制关闭flag
     @eagle_force_close = false
     # 重置集体的z值
@@ -1795,7 +1805,7 @@ class Window_Message
   # ● 更新win参数组（初始化/一页绘制完成时调用）
   #--------------------------------------------------------------------------
   def eagle_win_update
-    return eagle_pop_update if game_message.pop?
+    return eagle_pop_update if game_message.pop? && @eagle_pop_obj
     eagle_change_windowskin
     self.x = win_params[:x] || 0
     self.y = win_params[:y] || default_init_y
@@ -2467,7 +2477,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def process_input_pause
     recreate_contents_for_charas
-    @eagle_auto_continue_c = game_message.auto_t
+    @eagle_auto_continue_c = win_params[:auto_t]
     ox_max = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
     oy_max = self.oy
     d_oxy = 1; last_input = nil; last_input_c = 0
@@ -2509,7 +2519,7 @@ class Window_Message
   end
   #--------------------------------------------------------------------------
   # ● 等待按键时，启用auto时的额外处理
-  #  c 为自动继续的剩余帧数，用 game_message.auto_t 获取总等待帧数
+  #  c 为自动继续的剩余帧数，从 win_params[:auto_t] 获取总等待帧数
   #--------------------------------------------------------------------------
   def process_while_auto_wait_input_pause(c)
     @eagle_sprite_pause.redraw_auto_countdown(c)
@@ -2606,6 +2616,7 @@ class Window_Message
   def eagle_process_hold
     if game_message.hold
       @eagle_dup_windows.unshift( self.clone )
+      self.opacity = 0
       self.openness = 0
     else
       eagle_release_hold
@@ -2807,7 +2818,6 @@ class Window_Message
   #--------------------------------------------------------------------------
   def pop_params; game_message.pop_params; end
   def eagle_text_control_pop(param = "")
-    @flag_pop_chara = false # 若为行走图类型的精灵，置为true
     pop_params[:id] = nil # 绑定对象的id
     parse_param(pop_params, param, :id)
     return if pop_params[:id].nil?
@@ -2856,6 +2866,7 @@ class Window_Message
   # ● 获取pop的对象（战斗场景中）（Sprite_Battler的实例）
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj_b
+    @flag_pop_chara = false
     id = pop_params[:id]
     return nil if id.nil?
     if id > 0 # 敌人index
@@ -2874,8 +2885,8 @@ class Window_Message
   # ● 获取pop对象的精灵（用于计算偏移值）
   #--------------------------------------------------------------------------
   def eagle_get_pop_sprite
-    # 地图场景中，所存储的并非精灵，需要再次检索
     return @eagle_pop_obj if !@flag_pop_chara
+    # 地图场景中，所存储的并非精灵，需要再次检索
     SceneManager.scene.spriteset.character_sprites.each do |s|
       return s if s.character == @eagle_pop_obj
     end
@@ -3026,11 +3037,11 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_text_control_auto(param = '0')
     h = {}
-    h[:t] = game_message.auto_t # 自动继续的帧数
-    h[:r] = game_message.auto_r ? 1 : 0
+    h[:t] = win_params[:auto_t] # 自动继续的帧数
+    h[:r] = win_params[:auto_r]
     parse_param(h, param, :t)
-    game_message.auto_t = h[:t]
-    game_message.auto_r = MESSAGE_EX.check_bool(h[:r])
+    win_params[:auto_t] = h[:t]
+    win_params[:auto_r] = MESSAGE_EX.check_bool(h[:r])
   end
 
   #--------------------------------------------------------------------------
@@ -3089,7 +3100,7 @@ class Window_Message_Clone < Window_Message
   attr_accessor :eagle_chara_viewport
   attr_accessor :eagle_chara_sprites, :eagle_sprite_pop_tag
   attr_accessor :eagle_sprite_face, :eagle_window_name, :eagle_sprite_pause
-  attr_accessor :eagle_pop_obj
+  attr_accessor :eagle_pop_obj, :flag_pop_chara
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -3393,7 +3404,7 @@ class Sprite_EaglePauseTag < Sprite
   def redraw_auto_countdown(cd)
     return if !$imported["EAGLE-UtilsDrawing"]
     @sprite_auto_countdown.bitmap.clear
-    a2 = 360 - (360.0 * cd / @window_bind.game_message.auto_t).to_i
+    a2 = 360 - (360.0 * cd / @window_bind.win_params[:auto_t]).to_i
     [[4,4],[5,5],[6,6],[5,7],[4,8],
      [6,3],[7,4],[8,5],[9,6],[8,7],[7,8],[6,9]].each do |xy|
       @sprite_auto_countdown.bitmap.set_pixel(xy[0], xy[1], Color.new(255,255,255))
