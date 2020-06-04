@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.5.29.10 修复并行对话可以造成的卡死bug
+# - 2020.6.2.10 新增文字乱序移出
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -101,7 +101,7 @@ $imported["EAGLE-MessageEX"] = true
 #    ld → 增加的行间距值（默认0）（默认行间距为0）（每一行行高将取其最大字号）
 #    cwi → 单个文字绘制完成后的等待帧数（最小值0）
 #    cwo → 单个文字移出开始后的等待帧数（最小值0）
-#    cor → 是否逆序移出全部文字（默认false，正序）
+#    cor → 全部文字移出的顺序类型（0正序，1逆序，2乱序，默认0）
 #    cfast → 是否允许按键快进（默认true）
 #    cdx/cdy/cdw → 文本绘制区域与窗口左侧/上侧/右侧padding的间距（默认0）
 #
@@ -476,7 +476,7 @@ module MESSAGE_EX
     :ld => 4, # 增加的行间距值
     :cwi => 2, # 单个文字绘制后的等待帧数（最小值0）
     :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
-    :cor => 0, # 是否逆序移出全部文字？
+    :cor => 0, # 全部文字移出的顺序类型
     :cfast => 1, # 是否允许快进
     :cdx => 0, # 文本左侧与窗口padding的间距
     :cdy => 0, # 文本上边距
@@ -1616,10 +1616,22 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_message_sprites_move_out
     while(!@eagle_chara_sprites.empty?)
-      c = win_params[:cor] ? @eagle_chara_sprites.pop : @eagle_chara_sprites.shift
+      c = eagle_take_out_a_chara
       ensure_character_visible(c)
       c.move_out # 已经交由文字池进行后续更新释放
       win_params[:cwo].times { Fiber.yield } unless @eagle_force_close
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 取出一个文字精灵
+  #--------------------------------------------------------------------------
+  def eagle_take_out_a_chara
+    case win_params[:cor]
+    when 0, false; return @eagle_chara_sprites.shift
+    when 1, true; return @eagle_chara_sprites.pop
+    when 2;
+      i = rand(@eagle_chara_sprites.size)
+      return @eagle_chara_sprites.delete_at(i)
     end
   end
 
@@ -2776,7 +2788,6 @@ class Window_Message
     win_params[:fh] = MESSAGE_EX.check_bool(win_params[:fh])
     win_params[:cwi] = 0 if win_params[:cwi] < 0
     win_params[:cwo] = 0 if win_params[:cwo] < 0
-    win_params[:cor] = MESSAGE_EX.check_bool(win_params[:cor])
     win_params[:cfast] = MESSAGE_EX.check_bool(win_params[:cfast])
     win_params[:fix] = MESSAGE_EX.check_bool(win_params[:fix])
     eagle_reset_z

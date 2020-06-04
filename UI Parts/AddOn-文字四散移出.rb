@@ -2,7 +2,7 @@
 # ■ Add-On 文字四散移出 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【Add-On 部分粒子模板 by老鹰】之下
 #==============================================================================
-# - 2019.8.25.13 整合对话框扩展文字逆序移出
+# - 2020.6.2.10 整合对话框扩展文字乱序移出
 #==============================================================================
 # - 本插件为 文字精灵组的粒子化 实现了一个简单便捷的调用接口
 #----------------------------------------------------------------------------
@@ -109,7 +109,7 @@ class Window_Message
     if game_message.pout_params[:type] && game_message.pout_params[:type] > 0
       if win_params[:cwo] > 0
         while(!@eagle_chara_sprites.empty?)
-          c = win_params[:cor] ? @eagle_chara_sprites.pop : @eagle_chara_sprites.shift
+          c = eagle_take_out_a_chara
           ensure_character_visible(c)
           c.finish
           ParticleManager.pout(:msg_charas, [c], game_message.pout_params)
