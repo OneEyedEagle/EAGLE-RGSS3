@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.6.5.11 新增文字乱序移出；修复hold报错问题；新增文字渐变更新特效
+# - 2020.6.6.21 优化文字移出写法，方便扩展
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -3623,6 +3623,7 @@ end
 #=============================================================================
 class Sprite_EagleCharacter < Sprite
   attr_reader :origin_x, :origin_y, :_x, :_y, :eagle_font
+  attr_accessor :flag_update_pos
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #  window_bind ：所绑定的显示窗口，需要有以下方法
@@ -3706,6 +3707,7 @@ class Sprite_EagleCharacter < Sprite
     reset_oxy(7)
     # 动态移动时的偏移值
     @dx = 0; @dy = 0
+    @flag_update_pos = true # 需要时刻更新位置？
     @flag_move = nil # 在移动中？
     # 重置特效参数
     @effects = {} # effect_sym => param_string
@@ -3741,10 +3743,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 结束
   #--------------------------------------------------------------------------
   def finish
-    finish_effects
     self.opacity = 0
-    bind_viewport(nil)
-    @window_bind = nil # 取消窗口的绑定
   end
   #--------------------------------------------------------------------------
   # ● 结束使命？
@@ -3752,6 +3751,7 @@ class Sprite_EagleCharacter < Sprite
   def finish?
     self.opacity == 0
   end
+
   #--------------------------------------------------------------------------
   # ● 解析参数
   #--------------------------------------------------------------------------
@@ -3796,6 +3796,7 @@ class Sprite_EagleCharacter < Sprite
       m = ("finish_effect_" + sym.to_s).to_sym
       method(m).call(@params[sym]) if respond_to?(m)
     }
+    @effects.clear
   end
   # def finish_effect_code(param)  code → 转义符
   # end
@@ -3804,10 +3805,12 @@ class Sprite_EagleCharacter < Sprite
   # ● 更新
   #--------------------------------------------------------------------------
   def update
-    super
-    update_position
+    update_position if @flag_update_pos
     return move_update(@flag_move) if @flag_move
-    update_effects if !@effects.empty?
+    if !@effects.empty?
+      super
+      update_effects
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新位置
@@ -3922,22 +3925,26 @@ class Sprite_EagleCharacter < Sprite
     params[:vo] *= -1
   end
   #--------------------------------------------------------------------------
-  # ● 执行移出
+  # ● 执行移出（外部调用的方法）
   #--------------------------------------------------------------------------
   def move_out
-    if !in_viewport? # 若精灵在视图外，则直接结束
-      finish
-    else
-      bind_viewport(nil)
-      if !(@params[:cout].nil? || @params[:cout].empty?)
-        move_out_cout(@params[:cout])
-      elsif !@params[:uout].nil?
-        move_out_uout(@params[:uout])
-      else
-        finish
-      end
+    finish_effects # 先结束全部特效
+    finish if !in_viewport? # 若精灵在视图外，则会直接结束
+    bind_viewport(nil) # 取消视图，确保不会出现资源崩溃，且不再限制可见范围
+    if !finish?
+      update_position # 更新一次位置
+      process_move_out  # 处理移出模式
     end
+    @window_bind = nil # 取消窗口的绑定
     MESSAGE_EX.charapool_push(self) # 由文字池接管
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理移出模式
+  #--------------------------------------------------------------------------
+  def process_move_out
+    return move_out_cout(@params[:cout]) if @params[:cout] && !@params[:cout].empty?
+    return move_out_uout(@params[:uout]) if @params[:uout] && !@params[:uout].empty?
+    finish # 如果未预订任何移出模式，则直接结束
   end
   #--------------------------------------------------------------------------
   # ● 执行默认移出
@@ -3947,8 +3954,6 @@ class Sprite_EagleCharacter < Sprite
     reset_oxy(5)
     params[:tc] = params[:t]
     @flag_move = :cout
-    update_position # 更新一次位置
-    @window_bind = nil
   end
   #--------------------------------------------------------------------------
   # ● 消散移出
@@ -3958,7 +3963,7 @@ class Sprite_EagleCharacter < Sprite
     params[:dir] = MESSAGE_EX::CU_PARAM_DIR[ params[:dir] ]
     params[:s] = MESSAGE_EX::CU_PARAM_S[ params[:s] ]
   end
-  def move_out_uout(parmas)
+  def move_out_uout(params)
     Unravel_Bitmap.new(self.x, self.y, self.bitmap.clone, 0, 0, self.width,
       self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
     finish
