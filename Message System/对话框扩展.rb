@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.6.4.21 新增文字乱序移出；修复hold报错问题
+# - 2020.6.5.11 新增文字乱序移出；修复hold报错问题；新增文字渐变更新特效
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -275,6 +275,12 @@ $imported["EAGLE-MessageEX"] = true
 #    n → 从文字组中挑选出 n 个字符作为切换文字
 #    t → 文字切换一次后的等待帧数
 #    r → 是否启用随机切换
+#
+#  \cgrad[param] → 开启文字渐变更新特效（本质为精灵color属性的叠加）
+#    t → 颜色之间的渐变帧数
+#    c → 【可重复填写】指定渐变颜色的索引号
+#        从 当前颜色开始（默认0号颜色），按照传入顺序依次渐变
+#        如 \cgrad[t60c1c10c17] 将会按照 0→1→10→17→1→10→17... 进行渐变
 #
 #----------------------------------------------------------------------------
 # - 扩展类
@@ -668,6 +674,10 @@ module MESSAGE_EX
   }
   CTOG_CHARAS = { # 定义文字切换特效的文字组
     0 => ['▀', '▄', '█', '▌', '✖'],
+  }
+  CGRAD_PARAMS_INIT = {
+  # \cgrad[]
+    :t => 60, # 颜色之间的切换帧数
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义初始激活的扩展类转义符的预设变量参数字符串
@@ -1087,6 +1097,11 @@ module MESSAGE_EX::CHARA_EFFECTS
   #--------------------------------------------------------------------------
   def eagle_chara_effect_ctog(param = '')
   end
+  #--------------------------------------------------------------------------
+  # ● 文字渐变特效预定
+  #--------------------------------------------------------------------------
+  def eagle_chara_effect_cgrad(param = '')
+  end
 end
 
 #=============================================================================
@@ -1133,7 +1148,7 @@ class Game_Message
   attr_accessor :chara_params # 存储文字特效预设 code_symbol => param_string
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
-  attr_accessor :ex_params # 存储扩展params
+  attr_accessor :ex_params
   attr_accessor :escape_strings # 存储预定要添加的字符串
   attr_accessor :hold, :instant, :draw, :para, :event_id, :need_open
   attr_accessor :child_window_w_des, :child_window_h_des
@@ -1164,7 +1179,7 @@ class Game_Message
     @escape_strings = [] # 存储等待执行的转义符字符串
   end
   #--------------------------------------------------------------------------
-  # ● 检查params是否都存在
+  # ● 检查params是否都存在（读档后调用，确保新增变量写入旧存档中）
   #--------------------------------------------------------------------------
   def check_params
     eagle_params.each do |sym|
@@ -1178,6 +1193,9 @@ class Game_Message
         self.send("#{sym}_params=".to_sym, params)
       end
     end
+    @default_open_type ||= false # 使用默认的窗口打开方式？
+    @auto_wrap ||= true # 开启自动换行？
+    @no_close ||= true # 当为 true 时，开启对话框跨指令显示
   end
   #--------------------------------------------------------------------------
   # ● 清除（每次对话框开启时被调用）
@@ -1193,10 +1211,6 @@ class Game_Message
     @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
     @child_window_w_des = 0 # 因子窗口嵌入而额外增加的宽高
     @child_window_h_des = 0
-
-    @default_open_type ||= false # 使用默认的窗口打开方式？
-    @auto_wrap ||= true # 开启自动换行？
-    @no_close ||= true # 当为 true 时，开启对话框跨指令显示
   end
   #--------------------------------------------------------------------------
   # ● 判定是否需要进入等待按键状态
@@ -3672,7 +3686,6 @@ class Sprite_EagleCharacter < Sprite
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    @bitmaps.each { |b| b.dispose }; @bitmaps.clear
     self.bitmap.dispose if !self.bitmap.disposed?
     super
   end
@@ -3697,8 +3710,6 @@ class Sprite_EagleCharacter < Sprite
     # 重置特效参数
     @effects = {} # effect_sym => param_string
     @params = {} # effect_sym => param_hash
-    @bitmaps ||= [] # 备用位图
-    @bitmaps.each { |b| b.dispose }
     # 重置精灵参数
     self.src_rect = Rect.new(0,0,self.width,self.height)
     self.zoom_x = self.zoom_y = 1.0
@@ -3709,6 +3720,7 @@ class Sprite_EagleCharacter < Sprite
     self.wave_phase  = 0
     self.mirror = false
     self.blend_type = 0
+    self.color = Color.new(255,255,255)
     self.opacity = 255
     self.visible = true
   end
@@ -3729,6 +3741,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 结束
   #--------------------------------------------------------------------------
   def finish
+    finish_effects
     self.opacity = 0
     bind_viewport(nil)
     @window_bind = nil # 取消窗口的绑定
@@ -3739,6 +3752,54 @@ class Sprite_EagleCharacter < Sprite
   def finish?
     self.opacity == 0
   end
+  #--------------------------------------------------------------------------
+  # ● 解析参数
+  #--------------------------------------------------------------------------
+  def parse_param(params, param_s, default_type = "default")
+    MESSAGE_EX.parse_param(params, param_s, default_type)
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化特效的默认参数
+  #--------------------------------------------------------------------------
+  def init_effect_params(sym)
+    @params[sym] = MESSAGE_EX.get_default_params(sym).dup # 初始化
+  end
+  #--------------------------------------------------------------------------
+  # ● 开始特效（整合）
+  #--------------------------------------------------------------------------
+  def start_effects(effects)
+    @effects = effects.dup # code_symbol => param_string
+    @effects.each { |sym, param_s|
+      m = ("start_effect_" + sym.to_s).to_sym
+      init_effect_params(sym)
+      method(m).call(@params[sym], param_s.dup) if respond_to?(m)
+    }
+  end
+  # def start_effect_code(param)  code → 转义符
+  # end
+  #--------------------------------------------------------------------------
+  # ● 更新特效（整合）
+  #--------------------------------------------------------------------------
+  def update_effects
+    @effects.each { |sym, param|
+      m = ("update_effect_" + sym.to_s).to_sym
+      method(m).call(@params[sym]) if respond_to?(m)
+    }
+  end
+  # def update_effect_code(param)  code → 转义符
+  # end
+  #--------------------------------------------------------------------------
+  # ● 结束特效（整合）
+  #--------------------------------------------------------------------------
+  def finish_effects
+    @effects.each { |sym, param|
+      m = ("finish_effect_" + sym.to_s).to_sym
+      method(m).call(@params[sym]) if respond_to?(m)
+    }
+  end
+  # def finish_effect_code(param)  code → 转义符
+  # end
+
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
@@ -3801,42 +3862,7 @@ class Sprite_EagleCharacter < Sprite
     end
     @flag_move = nil
   end
-  #--------------------------------------------------------------------------
-  # ● 解析参数
-  #--------------------------------------------------------------------------
-  def parse_param(params, param_s, default_type = "default")
-    MESSAGE_EX.parse_param(params, param_s, default_type)
-  end
-  #--------------------------------------------------------------------------
-  # ● 初始化特效的默认参数
-  #--------------------------------------------------------------------------
-  def init_effect_params(sym)
-    @params[sym] = MESSAGE_EX.get_default_params(sym).dup # 初始化
-  end
-  #--------------------------------------------------------------------------
-  # ● 开始特效（整合）
-  #--------------------------------------------------------------------------
-  def start_effects(effects)
-    @effects = effects.dup # code_symbol => param_string
-    @effects.each { |sym, param_s|
-      m = ("start_effect_" + sym.to_s).to_sym
-      init_effect_params(sym)
-      method(m).call(@params[sym], param_s.dup) if respond_to?(m)
-    }
-  end
-  # def start_effect_code(param)  code → 转义符
-  # end
-  #--------------------------------------------------------------------------
-  # ● 更新特效（整合）
-  #--------------------------------------------------------------------------
-  def update_effects
-    @effects.each { |sym, param|
-      m = ("update_effect_" + sym.to_s).to_sym
-      method(m).call(@params[sym]) if respond_to?(m)
-    }
-  end
-  # def update_effect_code(param)  code → 转义符
-  # end
+
   #--------------------------------------------------------------------------
   # ● 移入
   #--------------------------------------------------------------------------
@@ -4073,15 +4099,16 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def start_effect_ctog(params, param_s)
     parse_param(params, param_s)
-    @bitmaps.push(self.bitmap)
+    params[:bitmaps] = []
+    params[:bitmaps].push(self.bitmap)
     charas = MESSAGE_EX.get_tog_charas(params[:i], params[:n])
     charas.each do |c|
       s = Bitmap.new(self.width, self.height)
       @eagle_font.draw(s, 0, 0, s.width*2, s.height, c, 0)
-      @bitmaps.push(s)
+      params[:bitmaps].push(s)
     end
     params[:i_cur] = 0
-    params[:i_max] = @bitmaps.size
+    params[:i_max] = params[:bitmaps].size
     params[:tc] = 0
   end
   def update_effect_ctog(params)
@@ -4093,6 +4120,45 @@ class Sprite_EagleCharacter < Sprite
       params[:i_cur] += 1
       params[:i_cur] %= params[:i_max]
     end
-    self.bitmap = @bitmaps[params[:i_cur]]
+    self.bitmap = params[:bitmaps][params[:i_cur]]
+  end
+  def finish_effect_ctog(params)
+    params[:bitmaps].each { |b| b.dispose }
+    params[:bitmaps].clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 颜色渐变更新特效
+  #--------------------------------------------------------------------------
+  def start_effect_cgrad(params, param_s)
+    params[:c] = []
+    s = param_s.downcase
+    while(s != "")
+      sym = s.slice!(/\D+/)
+      v = (s.slice!(/\d+/)).to_i
+      next params[:c].push(v) if sym == "c"
+      params[sym.to_sym] = v
+    end
+    params[:tc] = 0
+    params[:c1] = self.color
+    params[:c2] = @window_bind.text_color(params[:c][0])
+    params[:i] = 0
+  end
+  def update_effect_cgrad(params)
+    return if @window_bind.nil?
+    params[:tc] += 1
+    self.color.red = params[:c1].red +
+      (params[:c2].red - params[:c1].red)*1.0/ params[:t] * params[:tc]
+    self.color.green = params[:c1].green +
+      (params[:c2].green - params[:c1].green)*1.0 / params[:t] * params[:tc]
+    self.color.blue = params[:c1].blue +
+      (params[:c2].blue - params[:c1].blue)*1.0 / params[:t] * params[:tc]
+
+    if params[:tc] >= params[:t]
+      params[:c1] = @window_bind.text_color(params[:c][params[:i]])
+      params[:i] += 1
+      params[:i] = 0 if params[:i] >= params[:c].size
+      params[:c2] = @window_bind.text_color(params[:c][params[:i]])
+      params[:tc] = 0
+    end
   end
 end
