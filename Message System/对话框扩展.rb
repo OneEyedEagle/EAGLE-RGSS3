@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.6.6.21 优化文字移出写法，方便扩展
+# - 2020.6.9.23 优化ctog转义符的绘制
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -272,7 +272,7 @@ $imported["EAGLE-MessageEX"] = true
 #
 #  \ctog[param] → 开启文字切换特效（本质为位图切换）
 #    i → 使用 i 号对应的文字组
-#    n → 从文字组中挑选出 n 个字符作为切换文字
+#    n → 从文字组中挑选出 n 个字符作为切换文字（若为0，则取全部）
 #    t → 文字切换一次后的等待帧数
 #    r → 是否启用随机切换
 #
@@ -798,6 +798,7 @@ module MESSAGE_EX
   def self.get_tog_charas(index, num)
     array = CTOG_CHARAS[index]
     return [] if array.nil?
+    return array if num == 0
     return array.sample(num)
   end
   #--------------------------------------------------------------------------
@@ -4109,7 +4110,7 @@ class Sprite_EagleCharacter < Sprite
     charas = MESSAGE_EX.get_tog_charas(params[:i], params[:n])
     charas.each do |c|
       s = Bitmap.new(self.width, self.height)
-      @eagle_font.draw(s, 0, 0, s.width*2, s.height, c, 0)
+      @eagle_font.draw(s, 0, 0, s.width/2+1, s.height, c, 1)
       params[:bitmaps].push(s)
     end
     params[:i_cur] = 0
