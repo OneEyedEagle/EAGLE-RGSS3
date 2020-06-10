@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.6.9.23 优化ctog转义符的绘制
+# - 2020.6.10.10 优化ctog转义符的绘制；新增cmc绘制叠加文字；修复颜色绘制失效
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -271,7 +271,7 @@ $imported["EAGLE-MessageEX"] = true
 #    其余同 \uout 的变量
 #
 #  \ctog[param] → 开启文字切换特效（本质为位图切换）
-#    i → 使用 i 号对应的文字组
+#    i → 使用 i 号对应的文字组（具体见 CTOG_CHARAS 常量，设置 i → 文字组）
 #    n → 从文字组中挑选出 n 个字符作为切换文字（若为0，则取全部）
 #    t → 文字切换一次后的等待帧数
 #    r → 是否启用随机切换
@@ -281,6 +281,11 @@ $imported["EAGLE-MessageEX"] = true
 #    c → 【可重复填写】指定渐变颜色的索引号
 #        从 当前颜色开始（默认0号颜色），按照传入顺序依次渐变
 #        如 \cgrad[t60c1c10c17] 将会按照 0→1→10→17→1→10→17... 进行渐变
+#
+#  \cmc[param] → 叠加绘制文字
+#    i → 使用 i 号对应的文字组（具体见 CMC_CHARAS 常量，设置 i → 文字组）
+#    n → 从文字组中挑选出 n 个字符作为切换文字（若为0，则取全部）
+#    c → 指定叠加绘制的文字的颜色索引号（-1时与原始文字颜色一致）
 #
 #----------------------------------------------------------------------------
 # - 扩展类
@@ -668,17 +673,29 @@ module MESSAGE_EX
   CTOG_PARAMS_INIT = {
   # \ctog[]
     :i => 0,  # 选取i号文字组
-    :n => 4,  # 从文字组中选取n个字符
+    :n => 0,  # 从文字组中选取n个字符
     :t => 10, # 文字切换的等待帧数
     :r => 0,  # 是否随机选择下一个文字？
   }
-  CTOG_CHARAS = { # 定义文字切换特效的文字组
+  CTOG_CHARAS = { # 定义文字切换特效的文字组（若为数字，则取 IconSet 中的图标）
     0 => ['▀', '▄', '█', '▌', '✖'],
+    1 => [376,377,378,379,380,381,382,383],
   }
   CGRAD_PARAMS_INIT = {
   # \cgrad[]
     :t => 60, # 颜色之间的切换帧数
   }
+  CMC_PARAMS_INIT = {
+  # \cmc[]
+    :i => 0,  # 选取i号文字组
+    :n => 0,  # 从文字组中选取n个字符（若为0，则取全部）
+    :c => 10,  # 叠加绘制的文字的颜色索引号
+  }
+  CMC_CHARAS = { # 定义文字叠加绘制的文字组（若为数字，则取 IconSet 中的图标）
+    0 => ['✖'],
+    1 => [4],
+  }
+
   #--------------------------------------------------------------------------
   # ● 【设置】定义初始激活的扩展类转义符的预设变量参数字符串
   #--------------------------------------------------------------------------
@@ -793,10 +810,11 @@ module MESSAGE_EX
     MESSAGE_EX.const_get("#{param_sym.to_s.upcase}_PARAMS_INIT".to_sym) rescue {}
   end
   #--------------------------------------------------------------------------
-  # ● 读取文字切换特效的文字组
+  # ● 读取指定文字组
   #--------------------------------------------------------------------------
-  def self.get_tog_charas(index, num)
-    array = CTOG_CHARAS[index]
+  def self.get_charas_array(sym, index, num)
+    h = MESSAGE_EX.const_get("#{sym.to_s.upcase}_CHARAS".to_sym) rescue {}
+    array = h[index]
     return [] if array.nil?
     return array if num == 0
     return array.sample(num)
@@ -1019,7 +1037,7 @@ module MESSAGE_EX
   #  k → 字符间距  ld → 行间距
   #--------------------------------------------------------------------------
   def self.calculate_text_wh(bitmap, text, k = 0, ld = 0)
-    text_clone, array_width, array_height = text.dup, [], []
+    text_clone = text.dup; array_width = []; array_height = []
     # 转义符替换
     text_clone.gsub!(/\\/)      { "\e" }
     text_clone.gsub!(/\e\e/)    { "\\" }
@@ -1102,6 +1120,11 @@ module MESSAGE_EX::CHARA_EFFECTS
   # ● 文字渐变特效预定
   #--------------------------------------------------------------------------
   def eagle_chara_effect_cgrad(param = '')
+  end
+  #--------------------------------------------------------------------------
+  # ● 文字叠加绘制预定
+  #--------------------------------------------------------------------------
+  def eagle_chara_effect_cmc(param = '')
   end
 end
 
@@ -3557,6 +3580,7 @@ class Font_EagleCharacter
     else
       bitmap.draw_text(x, y, w*2, h, c, ali)
     end
+    draw_param_m(bitmap, x, y, w, h) if @params[:m]
     draw_param_d(bitmap) if @params[:d]
     draw_param_u(bitmap) if @params[:u]
   end
@@ -3569,6 +3593,7 @@ class Font_EagleCharacter
     _bitmap = Cache.system("Iconset")
     rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
     bitmap.blt(x, y, _bitmap, rect, 255)
+    draw_param_m(bitmap, x, y, 24, 24) if @params[:m]
     draw_param_d(bitmap) if @params[:d]
     draw_param_u(bitmap) if @params[:u]
   end
@@ -3617,6 +3642,23 @@ class Font_EagleCharacter
   def draw_param_u(bitmap)
     c = text_color(@params[:uc])
     bitmap.fill_rect(0, bitmap.height - 1, bitmap.width, 1, c)
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制叠加文字
+  #--------------------------------------------------------------------------
+  def draw_param_m(bitmap, x, y, w, h)
+    color = bitmap.font.color.dup
+    bitmap.font.color = text_color(@params[:mc]) if @params[:mc] >= 0
+    @params[:m].each do |c|
+      if c.is_a?(Integer)
+        _bitmap = Cache.system("Iconset")
+        rect = Rect.new(c % 16 * 24, c / 16 * 24, 24, 24)
+        bitmap.blt(x+w/2-12, y+h/2-12, _bitmap, rect, 255)
+      else
+        bitmap.draw_text(x, y, w, h, c, 1)
+      end
+    end
+    bitmap.font.color = color
   end
 end
 #=============================================================================
@@ -3723,7 +3765,7 @@ class Sprite_EagleCharacter < Sprite
     self.wave_phase  = 0
     self.mirror = false
     self.blend_type = 0
-    self.color = Color.new(255,255,255)
+    self.color = Color.new(255,255,255,0)
     self.opacity = 255
     self.visible = true
   end
@@ -4107,10 +4149,14 @@ class Sprite_EagleCharacter < Sprite
     parse_param(params, param_s)
     params[:bitmaps] = []
     params[:bitmaps].push(self.bitmap)
-    charas = MESSAGE_EX.get_tog_charas(params[:i], params[:n])
+    charas = MESSAGE_EX.get_charas_array(:ctog, params[:i], params[:n])
     charas.each do |c|
       s = Bitmap.new(self.width, self.height)
-      @eagle_font.draw(s, 0, 0, s.width/2+1, s.height, c, 1)
+      if c.is_a?(Integer)
+        @eagle_font.draw_icon(s, 0+self.width/2-12, 0+self.height/2-12, c)
+      else
+        @eagle_font.draw(s, 0, 0, s.width/2+1, s.height, c, 1)
+      end
       params[:bitmaps].push(s)
     end
     params[:i_cur] = 0
@@ -4146,6 +4192,7 @@ class Sprite_EagleCharacter < Sprite
     end
     params[:tc] = 0
     params[:c1] = self.color
+    params[:c1].alpha = 255
     params[:c2] = @window_bind.text_color(params[:c][0])
     params[:i] = 0
   end
@@ -4166,5 +4213,14 @@ class Sprite_EagleCharacter < Sprite
       params[:c2] = @window_bind.text_color(params[:c][params[:i]])
       params[:tc] = 0
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 文字叠加绘制
+  #--------------------------------------------------------------------------
+  def start_effect_cmc(params, param_s)
+    parse_param(params, param_s)
+    charas = MESSAGE_EX.get_charas_array(:cmc, params[:i], params[:n])
+    @eagle_font.set_param(:m, charas)
+    @eagle_font.set_param(:mc, params[:c])
   end
 end
