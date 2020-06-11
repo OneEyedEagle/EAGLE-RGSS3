@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-SpriteGhost"] = true
 #==============================================================================
-# - 2020.6.9.23
+# - 2020.6.10.19 新增事件残影
 #=============================================================================
 # - 本插件新增了精灵残影特效的全局模块
 #-----------------------------------------------------------------------------
@@ -16,7 +16,12 @@ $imported["EAGLE-SpriteGhost"] = true
 #
 #     其中 obj 为 Sprite类及其子类的实例
 #     其中 params 为传入参数的Hash，可省略
-#              （具体参数及预设值见 INIT_PARAMS 常量）
+#              （具体参数及预设值可见 INIT_PARAMS 常量）
+#     参数一览：
+#       :t  → 残影的出现间隔时间
+#       :tc  → 每次残影出现间隔的倒计时（当倒计时为0时出现残影，之后赋值 :t）
+#       :opa → 残影每帧减少的透明度
+#       :blend_type → 残影显示模式（0正常，1加法，2减法）
 #
 #  - 利用脚本为指定精灵解除残影
 #
@@ -30,8 +35,8 @@ $imported["EAGLE-SpriteGhost"] = true
 #        SPRITE_GHOST.add_pic(id[, params])
 #
 #     其中 id 为显示图片的ID序号（同编辑器中显示序号）
-#    【注意】在事件的显示图片指令后，请手动等待1帧，确保图片精灵生成
-#         再调用该脚本绑定残影
+#    【注意】在事件的显示图片指令后，请手动等待1帧，确保图片精灵生成，
+#            再调用该脚本绑定残影
 #
 #  - 利用脚本为指定显示图片解除残影
 #
@@ -40,6 +45,25 @@ $imported["EAGLE-SpriteGhost"] = true
 # 【示例】
 #
 #     SPRITE_GHOST.add_pic(1) → 为 1 号显示图片绑定残影效果
+#
+#-----------------------------------------------------------------------------
+# 【使用 - 地图上的人物】
+#
+#  - 利用脚本为指定事件添加残影更新
+#
+#        SPRITE_GHOST.add_chara(id[, params])
+#
+#     其中 id 为正整数时，代表对应 id 号的事件
+#             为负整数时，代表队伍中 数据库 id 号角色
+#             为 0 或未找到对应角色时，代表玩家
+#
+#  - 利用脚本为指定事件解除残影
+#
+#        SPRITE_GHOST.finish_chara(obj)
+#
+# 【示例】
+#
+#     SPRITE_GHOST.add_chara(0) → 为玩家绑定残影效果
 #
 #-----------------------------------------------------------------------------
 # 【原理】
@@ -59,6 +83,7 @@ module SPRITE_GHOST
     :t => 1, # 残影的出现间隔时间
     :tc => 0, # 每次残影出现间隔的倒计时（当倒计时为0时出现残影，之后赋值 :t）
     :opa => 20, # 残影每帧减少的透明度
+    :blend_type => 0, # 残影显示模式（0正常，1加法，2减法）
   }
   #--------------------------------------------------------------------------
   # ● 新增残影处理
@@ -85,7 +110,7 @@ module SPRITE_GHOST
       s = SceneManager.scene.spriteset.get_picture_sprite(id)
       add(s, params)
     rescue
-      p "请不要在 Scene_Map 和 Scene_Battle 之外的场景使用 SPRITE_GHOST！"
+      p "请不要在 Scene_Map 和 Scene_Battle 之外的场景使用 SPRITE_GHOST.add_pic"
     end
   end
   def self.finish_pic(id)
@@ -93,7 +118,26 @@ module SPRITE_GHOST
       s = SceneManager.scene.spriteset.get_picture_sprite(id)
       finish(s)
     rescue
-      p "请不要在 Scene_Map 和 Scene_Battle 之外的场景使用 SPRITE_GHOST！"
+      p "请不要在 Scene_Map 和 Scene_Battle 之外的场景使用 SPRITE_GHOST.finish_pic"
+    end
+  end
+#=============================================================================
+# ○ RGSS地图人物
+#=============================================================================
+  def self.add_chara(id, params = {})
+    begin
+      s = SceneManager.scene.spriteset.get_chara_sprite(id)
+      add(s, params)
+    rescue
+      p "请不要在 Scene_Map 之外的场景使用 SPRITE_GHOST.add_chara"
+    end
+  end
+  def self.finish_chara(id)
+    begin
+      s = SceneManager.scene.spriteset.get_chara_sprite(id)
+      finish(s)
+    rescue
+      p "请不要在 Scene_Map 之外的场景使用 SPRITE_GHOST.finish_chara"
     end
   end
 #=============================================================================
@@ -197,6 +241,7 @@ class Process_Ghost
       s.dispose
     end
     s = Sprite_Ghost.new(@obj)
+    s.blend_type = @params[:blend_type]
     @sprites.push(s)
     @params[:tc] = @params[:t]
   end
@@ -303,11 +348,37 @@ end
 # ○ Scene_Map
 #=============================================================================
 class Spriteset_Map
+  attr_reader :character_sprites
   #--------------------------------------------------------------------------
   # ● 获取图片精灵
   #--------------------------------------------------------------------------
   def get_picture_sprite(id)
     @picture_sprites[id] || nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取事件对象
+  #--------------------------------------------------------------------------
+  def get_chara_obj(id)
+    if id > 0 # 第id号事件
+      chara = $game_map.events[id]
+      chara ||= $game_map.events[game_message.event_id]
+      return chara
+    elsif id < 0 # 队伍中数据库id号角色
+      id = id.abs
+      $game_player.followers.each { |f|
+        return f if f.actor && f.actor.actor.id == id
+      }
+    end
+    return $game_player
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取事件精灵
+  #--------------------------------------------------------------------------
+  def get_chara_sprite(id)
+    chara = get_chara_obj(id)
+    @character_sprites.each do |s|
+      return s if s.character == chara
+    end
   end
 end
 class Scene_Map; attr_reader :spriteset; end
