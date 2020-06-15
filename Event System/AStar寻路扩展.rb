@@ -4,9 +4,10 @@
 $imported ||= {}
 $imported["EAGLE-AStar"] = true
 #==============================================================================
-# - 2020.5.30.23 扩展事件脚本功能，方便使用
+# - 2020.6.15.18 优化
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
+# - 参考：https://taroxd.github.io/rgss/astar.html
 #-----------------------------------------------------------------------------
 # 【使用】
 # - 在事件脚本中，使用该脚本将事件移动到目的地并等待结束
@@ -19,6 +20,14 @@ $imported["EAGLE-AStar"] = true
 # - 示例：
 #     astar_goto(0, 5,5,false)  → 当前事件寻路移动至(5,5)处，且事件继续执行
 #     astar_goto(-1, 12,1)      → 玩家寻路移动至(12,1)处，等待移动结束
+#
+# - 注意：
+#     当寻路失败时（被其他事件挡住所有通路；目的地周围不可通行），
+#      将强制等待 1s，之后再重新进行寻路
+#-----------------------------------------------------------------------------
+# 【使用】
+# - 若 S_ID_EVENT_CHASE_PLAYER_ON 所对应的开关开启，
+#   则在事件的自主移动中，会将 类型：接近 模式替换成A*寻路算法
 #-----------------------------------------------------------------------------
 # 【兼容】
 # - 若使用了【像素级移动 by老鹰】，将依然按照原始网格进行搜索寻路
@@ -32,62 +41,93 @@ $imported["EAGLE-AStar"] = true
 
 module Eagle_AStar
   #--------------------------------------------------------------------------
-  # ● A*节点
+  # ● 【常量】当开关开启时，
   #--------------------------------------------------------------------------
-  class AStar_Node
-    attr_reader    :x, :y, :f, :g, :pre, :dir
-    def initialize(x, y, des_x, des_y, g=0, pre=nil, dir=0)
-      @x = x; @y = y; @g = g
-      @f = calc_f(@g, @x, @y, des_x, des_y)
-      @pre = pre; @dir = dir
-    end
-    def calc_f(g, x, y, des_x, des_y) # 启发函数
-      g + (x - des_x).abs + (y - des_y).abs
-    end
-  end
+  S_ID_EVENT_CHASE_PLAYER_ON = 1
+
   #--------------------------------------------------------------------------
   # ● A*寻路算法
   #--------------------------------------------------------------------------
-  DIR_TO_DXY = { 2 => [0, 1], 4 => [-1, 0], 6 => [1, 0], 8 => [0, -1] }
   def self.do(chara, des_x, des_y)
-    x_init = chara.x
-    y_init = chara.y
+    @chara = chara
+    @des_x = des_x
+    @des_y = des_y
+    x_init = @chara.x
+    y_init = @chara.y
     if $imported["EAGLE-PixelMove"]
-      des_xp, des_yp = PIXEL_MOVE.event_rgss2unit(des_x, des_y)
-      return if chara.pos?(des_xp, des_yp)
+      des_xp, des_yp = PIXEL_MOVE.event_rgss2unit(@des_x, @des_y)
+      return true if @chara.pos?(des_xp, des_yp)
       x_init, y_init = PIXEL_MOVE.event_unit2rgss(x_init, y_init)
     else
-      return if chara.pos?(des_x, des_y)
+      return true if @chara.pos?(@des_x, @des_y)
     end
-    _open = [AStar_Node.new(x_init, y_init, des_x, des_y)]; _close = []
-    final_node = nil
-    while(final_node == nil)
-      break if _open.empty?
-      cur = _open.min { |a, b| a.f <=> b.f }
-      _open.delete(cur); _close.push(cur)
+
+    w = $game_map.width; h = $game_map.height
+    @g_data = Table.new(w, h)
+    @f_data = Table.new(w, h)
+    @dir_data = Table.new(w, h)
+
+    @open = [ [x_init, y_init] ]
+    @g_data[x_init, y_init] = 2
+    @f_data[x_init, y_init] = 1
+    @dir_data[x_init, y_init] = 5
+    @flag_fin = false
+    do_search
+    return nil if !@flag_fin
+    return output_path
+  end
+  #--------------------------------------------------------------------------
+  # ● 搜索
+  #--------------------------------------------------------------------------
+  DIR_TO_DXY = { 2 => [0, 1], 4 => [-1, 0], 6 => [1, 0], 8 => [0, -1] }
+    {1 => [-1, 1], 3 => [1, 1], 7 => [-1, -1], 9 => [1, -1] }
+  def self.do_search
+    cur = nil
+    while( !@flag_fin )
+      break if @open.empty?
+      cur = @open.shift
+      cur_g = @g_data[cur[0], cur[1]]
       DIR_TO_DXY.each do |dir, dxy|
-        n = AStar_Node.new(cur.x + dxy[0], cur.y + dxy[1], des_x, des_y,
-          cur.g + 1, cur, dir)
-        break final_node = n if n.x == des_x && n.y == des_y
-        next if !passable?(chara, cur.x, cur.y, dir)
-        i = nil
-        _close.each_with_index{ |m, index| break i = index if m.x == n.x && m.y == n.y }
-        next if i
-        _open.each_with_index { |m, index| break i = index if m.x == n.x && m.y == n.y }
-        if i
-          _open[i] = n if n.g < _open[i].g
-        else
-          _open.push(n)
-        end
+        x_ = cur[0] + dxy[0]
+        y_ = cur[1] + dxy[1]
+        check_point(cur[0], cur[1], dir, x_, y_, cur_g)
       end
     end
-    return if final_node == nil
-    path = [final_node.dir]; cur = final_node
-    while(true)
-      cur = cur.pre
-      cur.dir == 0 ? break : path.unshift( cur.dir )
+    if @g_data[@des_x, @des_y] == 1
+      @des_x = cur[0]
+      @des_y = cur[1]
     end
-    return path
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查指定位置
+  #--------------------------------------------------------------------------
+  def self.check_point(x_old, y_old, dir, x, y, g)
+    return if @g_data[x, y] > 1 # 已经被索引过
+    if !passable?(@chara, x_old, y_old, dir)
+      @dir_data[x, y] = 1
+      @g_data[x, y] = 1
+      @f_data[x, y] = calc_f(g, x ,y)
+    else
+      @dir_data[x, y] = dir
+      @g_data[x, y] = g + 1
+      f = @f_data[x, y] = calc_f(g, x ,y)
+      point = @open[0]
+      if point.nil? || f > @f_data[point[0], point[1]]
+        @open.push( [x, y] )
+      else
+        @open.unshift( [x, y] )
+      end
+    end
+    if x == @des_x && y == @des_y
+      @dir_data[x, y] = dir
+      @flag_fin = true
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 启发函数
+  #--------------------------------------------------------------------------
+  def self.calc_f(g, x, y)
+    g + (x - @des_x).abs + (y - @des_y).abs
   end
   #--------------------------------------------------------------------------
   # ● 可从(x,y)朝dir方向通行？
@@ -95,6 +135,20 @@ module Eagle_AStar
   def self.passable?(chara, x, y, dir)
     return chara.passable_pixel?(x, y, dir) if $imported["EAGLE-PixelMove"]
     chara.passable?(x, y, dir)
+  end
+  #--------------------------------------------------------------------------
+  # ● 输出移动的数组（2,4,6,8）
+  #--------------------------------------------------------------------------
+  def self.output_path
+    path = []; x = @des_x; y = @des_y; dir = @dir_data[x, y]
+    while ( dir != 5 )
+      break if @dir_data[x, y] == 1
+      path.unshift( dir )
+      x = x + DIR_TO_DXY[ 10 - dir ][0]
+      y = y + DIR_TO_DXY[ 10 - dir ][1]
+      dir = @dir_data[x, y]
+    end
+    path
   end
 end
 
@@ -160,8 +214,9 @@ class Game_Character
   #--------------------------------------------------------------------------
   def astar_one_step(x, y)
     list = Eagle_AStar.do(self, x, y)
-    return false if list.nil?
-    move_straight(list[0]) if list
+    return true if list == true
+    return false if list.nil? || list.empty?
+    move_straight(list[0])
     return list[0]
   end
   #--------------------------------------------------------------------------
@@ -185,10 +240,7 @@ class Game_Character
   # ● 更新寻路
   #--------------------------------------------------------------------------
   def update_astar_move
-    if @astar_wait > 0
-      @astar_wait -= 1
-      return
-    end
+    return if (@astar_wait -= 1) > 0
     return @astar_moving = false if astar_reach?
     f = astar_one_step(@astar_des_x, @astar_des_y)
     return @astar_wait = 60 if f == false
@@ -204,6 +256,23 @@ class Game_Character
     @astar_des_x == self.x && @astar_des_y == self.y
   end
 end
+
+class Game_Event
+  #--------------------------------------------------------------------------
+  # ● 移动类型 : 接近
+  #--------------------------------------------------------------------------
+  alias eagle_astar_move_type_toward_player move_type_toward_player
+  def move_type_toward_player
+    if $game_switches[Eagle_AStar::S_ID_EVENT_CHASE_PLAYER_ON]
+      return if @astar_wait && (@astar_wait -= 1) > 0
+      f = astar_one_step($game_player.x, $game_player.y)
+      return @astar_wait = 60 if f == false
+    else
+      eagle_astar_move_type_toward_player
+    end
+  end
+end
+
 class Game_Interpreter
   #--------------------------------------------------------------------------
   # ● 寻路

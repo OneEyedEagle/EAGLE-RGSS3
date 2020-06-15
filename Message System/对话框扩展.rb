@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.6.10.10 优化ctog转义符的绘制；新增cmc绘制叠加文字；修复颜色绘制失效
+# - 2020.6.13.21 新增姓名框的图片背景；新增eval转义符用于动态执行脚本
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -154,6 +154,10 @@ $imported["EAGLE-MessageEX"] = true
 #    【注】param 中用 | 分隔 姓名字符串（其中转义符用<>代替[]）与 变量参数字符串
 #      （若无变量参数的设置，可省略 | 符号）
 #    skin → 姓名框所用皮肤的index（默认nil，同win中设置）
+#    bg → 姓名框背景图片的index（按常量设置进行 index → 图片名称 映射）
+#        （若读取成功，将不显示窗口皮肤；若读取失败，仍绘制窗口皮肤）
+#    bgo → 姓名框背景图片与姓名框的对齐原点（对应九宫格小键盘）
+#        （默认背景图片的左上角与姓名框左上角对齐7）
 #    o → 姓名框的显示原点的类型（对应九宫格小键盘）（默认左上角7）
 #    do → 基于对话框的九宫格位置，姓名框的显示原点所在位置（默认左上角7）
 #    dx/dy → x、y坐标的补足偏移量
@@ -187,6 +191,15 @@ $imported["EAGLE-MessageEX"] = true
 #
 #  \temp → 【结尾】当前对话框对转义符参数的变更不会被保留
 #          （在当前对话框关闭前，转义符参数的修改仍然生效）
+#
+#  \eval{string} → 当绘制到该转义符时，执行 eval(string)，并丢弃返回值
+#    【注意】该转义符使用花括号，同时 string 中不可以出现花括号
+#    可用 s 代替 $game_switches ，用 v 代替 $game_variables
+#    可用 msg 代表当前对话（Window_Message类的实例）
+#      如 \eval{s[1]=true} 就是当文字绘制到该转义符时，打开1号开关，并继续绘制
+#    【注意】由于文本替换类的转义符优先级最高，因此实际绘制文本不受这个的影响
+#            即如果存在 \eval{v[1]=5}\v[1]，其中1号变量初值为0，
+#            那么尽管在绘制过程中其值变为了5，但\v[1]显示的仍然为对话框打开时的值0
 #
 #----------------------------------------------------------------------------
 # - 文字特效类
@@ -542,7 +555,9 @@ module MESSAGE_EX
     :dx => 0, # 位置的偏移增量
     :dy => 0,
     :opa => 255, # 背景不透明度
-    :skin => nil, # 皮肤类型
+    :skin => nil, # 姓名框所用windowskin的类型（nil为与对话框一致）
+    :bg => nil, # 姓名框背景所用图片index（覆盖窗口皮肤）
+    :bgo => 7,  # 姓名框背景图片与姓名框的对齐原点
   }
   PAUSE_PARAMS_INIT = {
   # \pause[]
@@ -740,7 +755,11 @@ module MESSAGE_EX
   # （其中 index 必须为整数）
   # （图片存储于 Graphics/System 目录下）
   #--------------------------------------------------------------------------
-  INDEX_TO_WINDOW_BG = {
+  INDEX_TO_WINDOW_BG = { # 对话框背景
+    # 数字 => "背景图片名称"
+  }
+  INDEX_TO_NAME_BG = { # 姓名框背景
+    # 数字 => " 背景图片名称"
   }
   #--------------------------------------------------------------------------
   # ● 【设置】定义 index → 打字音效 的映射
@@ -842,14 +861,13 @@ module MESSAGE_EX
     end
   end
   #--------------------------------------------------------------------------
-  # ● 读取对应的 window bg 位图
+  # ● 读取对应的 bg 位图
   #--------------------------------------------------------------------------
   def self.windowbg(index)
-    begin
-      return Cache.system(INDEX_TO_WINDOW_BG[index])
-    rescue
-      return nil
-    end
+    Cache.system(INDEX_TO_WINDOW_BG[index]) rescue nil
+  end
+  def self.namebg(index)
+    Cache.system(INDEX_TO_NAME_BG[index]) rescue nil
   end
   #--------------------------------------------------------------------------
   # ● 播放对应的SE
@@ -1423,6 +1441,7 @@ class Window_Message
     @eagle_window_name = Window_EagleMsgName.new(self) # 初始化姓名框窗口
     @eagle_sprite_pause = Sprite_EaglePauseTag.new(self) # 初始化等待按键的精灵
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
+    @eagle_evals = [] # 存储当前对话框的动态脚本 [eval_str, eval_str...]
   end
   #--------------------------------------------------------------------------
   # ● 初始化参数（只需要最初执行一次）
@@ -1492,7 +1511,7 @@ class Window_Message
   alias eagle_message_ex_dispose dispose
   def dispose
     eagle_message_ex_dispose
-    @eagle_face_bitmap.dispose if @eagle_face_bitmap
+    @eagle_face_bitmap = nil
     if !$RGD
       @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
     end
@@ -1513,7 +1532,7 @@ class Window_Message
   end
 
   #--------------------------------------------------------------------------
-  # ● 重置对话框（打开时）
+  # ● 重置对话框
   #--------------------------------------------------------------------------
   def eagle_message_reset
     # 移出全部组件
@@ -2011,6 +2030,7 @@ class Window_Message
 
     @eagle_window_name.x += name_params[:dx]
     @eagle_window_name.y += name_params[:dy]
+    @eagle_window_name.update
   end
 
   #--------------------------------------------------------------------------
@@ -2626,6 +2646,7 @@ class Window_Message
     eagle_check_temp(text)
     eagle_check_hold(text)
     eagle_check_instant(text)
+    eagle_check_eval(text)
     eagle_check_popt(text)
     eagle_check_facep(text)
   end
@@ -2669,6 +2690,17 @@ class Window_Message
   def eagle_check_instant(text)
     text.gsub!(/\e(ins|instant)/i) { game_message.instant = true if $1; "" }
   end
+  #--------------------------------------------------------------------------
+  # ● 设置eval指令
+  #--------------------------------------------------------------------------
+  def eagle_check_eval(text)
+    @eagle_evals.clear # 清除旧的
+    text.gsub!(/\eeval\{(.*?)\}/m) {
+      @eagle_evals.push($1) # ID 从 1 开始，防止之后param传入nil出错
+      "\eeval[#{@eagle_evals.size}]"
+    }
+  end
+
   #--------------------------------------------------------------------------
   # ● 分析【预先】转义符的全部参数（按出现顺序处理）
   #--------------------------------------------------------------------------
@@ -2957,7 +2989,6 @@ class Window_Message
     face_params[:i] = face_index
     return if face_name == ""
 
-    @eagle_face_bitmap.dispose if @eagle_face_bitmap
     @eagle_face_bitmap = Cache.face(face_name)
     face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
     face_params[:num_line] = $1 ? $1.to_i : face_default_line
@@ -3083,7 +3114,7 @@ class Window_Message
   end
 
   #--------------------------------------------------------------------------
-  # ● 设置shake参数
+  # ● 执行shake
   #--------------------------------------------------------------------------
   def eagle_text_control_shake(param = '0')
     return if !game_message.draw
@@ -3112,6 +3143,18 @@ class Window_Message
       self.x += shake
       eagle_after_update_xy
       Fiber.yield
+    end
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 执行eval指令
+  #--------------------------------------------------------------------------
+  def eagle_text_control_eval(param = '0')
+    return if !game_message.draw
+    id_ = param.to_i
+    if id_ > 0 && @eagle_evals[id_ - 1]
+      s = $game_switches; v = $game_variables; msg = self
+      eval( @eagle_evals[id_ - 1] )
     end
   end
 
@@ -3228,6 +3271,7 @@ class Window_EagleMsgName < Window_Base
     bind_window(window_msg)
     super(0, 0, 32, 32)
     self.openness = 0
+    @back_sprite = Sprite.new
   end
   #--------------------------------------------------------------------------
   # ● 绑定对话框
@@ -3248,6 +3292,15 @@ class Window_EagleMsgName < Window_Base
     @window_msg.font_params[:size]
   end
   #--------------------------------------------------------------------------
+  # ● 获取全部文本
+  #--------------------------------------------------------------------------
+  def all_text
+    t = MESSAGE_EX.get_name_prefix + name_params[:name]
+    t.gsub!(/<(.*?)>/) { "[" + $1 + "]" }
+    t = @window_msg.convert_escape_characters(t)
+    t
+  end
+  #--------------------------------------------------------------------------
   # ● 重绘
   #--------------------------------------------------------------------------
   def reset
@@ -3260,22 +3313,49 @@ class Window_EagleMsgName < Window_Base
     MESSAGE_EX.apply_font_params(contents.font, @window_msg.font_params)
     draw_text_ex(0, 0, t)
 
-    skin = @window_msg.get_cur_windowskin_index(name_params[:skin])
-    self.windowskin = MESSAGE_EX.windowskin(skin)
-    self.opacity = name_params[:opa]
-    self.back_opacity = name_params[:opa]
+    if name_params[:bg] && eagle_draw_bg_pic
+    else
+      @name_bg_draw = nil
+      skin = @window_msg.get_cur_windowskin_index(name_params[:skin])
+      self.windowskin = MESSAGE_EX.windowskin(skin)
+      self.opacity = name_params[:opa]
+      self.back_opacity = name_params[:opa]
+    end
     self.contents_opacity = 255
     self.openness = 0
     self.show
   end
   #--------------------------------------------------------------------------
-  # ● 获取全部文本
+  # ● 绘制背景图片
   #--------------------------------------------------------------------------
-  def all_text
-    t = MESSAGE_EX.get_name_prefix + name_params[:name]
-    t.gsub!(/<(.*?)>/) { "[" + $1 + "]" }
-    t = @window_msg.convert_escape_characters(t)
-    t
+  def eagle_draw_bg_pic
+    @back_sprite.visible = true
+    self.opacity = 0
+    self.back_opacity = 0
+    return true if @name_bg_draw == name_params[:bg]
+    _bitmap = MESSAGE_EX.namebg(name_params[:bg])
+    if _bitmap != nil
+      @back_sprite.bitmap = _bitmap
+      @name_bg_draw = name_params[:bg]
+      return true
+    end
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新背景精灵
+  #--------------------------------------------------------------------------
+  def update_back_sprite
+    eagle_reset_xy_dorigin(@back_sprite, self, name_params[:bgo])
+    MESSAGE_EX.reset_sprite_oxy(@back_sprite, name_params[:bgo])
+    @back_sprite.opacity = openness
+    @back_sprite.update
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    super
+    update_back_sprite
   end
 end
 
