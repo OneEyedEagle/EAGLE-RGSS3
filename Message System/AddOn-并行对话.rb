@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.6.1.9 统一eval可用变量
+# - 2020.6.18.16 整合hold转义符
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -338,7 +338,7 @@ module MESSAGE_PARA
   def self.update
     update_lock
     @lists.each { |id, l| l.update }
-    @lists.delete_if { |id, l| l.finish? }
+    @lists.delete_if { |id, l| f = l.finish?; l.dispose if f; f }
   end
   #--------------------------------------------------------------------------
   # ● 更新锁定
@@ -376,7 +376,7 @@ end
 # ○ 并行对话列表
 #==============================================================================
 class MessagePara_List # 该list中每一时刻只显示一个对话框
-  attr_reader   :game_message
+  attr_reader   :game_message, :params
   attr_accessor  :f_ensure_fin
   #--------------------------------------------------------------------------
   # ● 初始化对象
@@ -389,7 +389,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @face = ["", 0]
     @params = MESSAGE_PARA::PARA_MESSAGE_PARAMS.dup
     @params[:id] = id
-    @window = nil  # 当前正在处理的window
+    @window = Window_Message_Para.new(self)
     @f_ensure_fin = false # 保证必定显示完？（场景切换时只暂时暂停并关闭）
     @fiber = Fiber.new { fiber_main }
     @finish = false # 结束的标志
@@ -424,6 +424,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   #--------------------------------------------------------------------------
   def update
     @fiber.resume if @fiber
+    @window.update if @window
   end
   #--------------------------------------------------------------------------
   # ● 线程
@@ -465,11 +466,8 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   def tag_msg(tag_str)
     @list_str.slice!(/^(.*?)<\/msg>/m)
     set_new_window($1)
-    while @game_message.visible
-      @window.update
-      Fiber.yield
-    end
-    dispose
+    Fiber.yield while @game_message.visible
+    @game_message.clear
   end
   #--------------------------------------------------------------------------
   # ● 标签：预设脸图参数
@@ -568,19 +566,18 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @game_message.face_index = @face[1]
     @game_message.background = @params[:bg]
     @game_message.position = @params[:pos]
-    @game_message.visible = true
     @game_message.win_params[:z] = @params[:z]
     @game_message.pause_params[:v] = 0
-    @window = Window_Message_Para.new(self, @params)
+    @game_message.visible = true
   end
   #--------------------------------------------------------------------------
   # ● 对话暂停与继续
   #--------------------------------------------------------------------------
   def halt
-    @window.halt if @window
+    @params[:halt] = true
   end
   def go_on
-    @window.go_on if @window
+    @params[:halt] = false
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -593,7 +590,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   # ● 结束？
   #--------------------------------------------------------------------------
   def finish?
-    @fiber == nil
+    @fiber == nil && @game_message.visible == false
   end
   #--------------------------------------------------------------------------
   # ● 结束
@@ -619,9 +616,8 @@ class Window_Message_Para < Window_Message
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
-  def initialize(list, para_params)
+  def initialize(list)
     @list = list
-    @para_params = para_params
     @input_wait_c = nil
     super()
   end
@@ -630,6 +626,9 @@ class Window_Message_Para < Window_Message
   #--------------------------------------------------------------------------
   def game_message
     @list.game_message
+  end
+  def para_params
+    @list.params
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）去除全部子窗口
@@ -646,27 +645,13 @@ class Window_Message_Para < Window_Message
   def update_fiber
     eagle_update_before_fiber
     if @fiber
-      return if @para_params[:halt]
+      return if para_params[:halt]
       @fiber.resume
-    elsif game_message.busy? && !game_message.scroll_mode
+    elsif game_message.busy?
       @fiber = Fiber.new { fiber_main }
       @fiber.resume
-    else
-      game_message.visible = false
     end
     eagle_update_after_fiber
-  end
-  #--------------------------------------------------------------------------
-  # ● 暂停更新
-  #--------------------------------------------------------------------------
-  def halt
-    @para_params[:halt] = true
-  end
-  #--------------------------------------------------------------------------
-  # ● 继续更新
-  #--------------------------------------------------------------------------
-  def go_on
-    @para_params[:halt] = false
   end
   #--------------------------------------------------------------------------
   # ● 强制结束当前对话框
@@ -693,7 +678,6 @@ class Window_Message_Para < Window_Message
   def fiber_main
     game_message.visible = true
     update_background
-    update_placement
     process_all_text
     process_input
     close_and_wait
@@ -704,14 +688,12 @@ class Window_Message_Para < Window_Message
   # ● 更新窗口的位置
   #--------------------------------------------------------------------------
   def update_placement
-    @position = game_message.position
-    self.y = @position * (Graphics.height - height) / 2
   end
   #--------------------------------------------------------------------------
   # ● 输入处理
   #--------------------------------------------------------------------------
   def process_input
-    @input_wait_c ||= @para_params[:w]
+    @input_wait_c = para_params[:w]
     while true
       if @input_wait_c
         break if @input_wait_c <= 0
@@ -719,6 +701,7 @@ class Window_Message_Para < Window_Message
       end
       Fiber.yield
     end
+    eagle_process_hold
   end
   #--------------------------------------------------------------------------
   # ● 处理输入等待
@@ -737,7 +720,7 @@ class Window_Message_Para < Window_Message
     id = game_message.pop_params[:id]
     if @in_map && id == 0
       @flag_pop_chara = true
-      return $game_map.events[@para_params[:id]]
+      return $game_map.events[para_params[:id]]
     end
     super
   end

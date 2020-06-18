@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.4.30.18 随对话框更新
+# - 2020.6.18.9 删除多余语句
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -141,7 +141,6 @@ class Game_Message
   alias eagle_choicelist_ex_init initialize
   def initialize
     eagle_choicelist_ex_init
-    set_default_params
     @choice_cancel_i_e = -1 # 取消分支的判别序号（事件中序号）
     @choice_cancel_i_w = -1 # 取消分支的序号（窗口中序号）
     @choice_result = -1     # 结果分支的序号（事件中序号）

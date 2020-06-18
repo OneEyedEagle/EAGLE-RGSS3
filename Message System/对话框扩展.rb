@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.6.13.21 新增姓名框的图片背景；新增eval转义符用于动态执行脚本
+# - 2020.6.18.20 修复name的BUG；修复font的ca的无效BUG
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1456,8 +1456,8 @@ class Window_Message
   #--------------------------------------------------------------------------
   # ● 拷贝自身
   #--------------------------------------------------------------------------
-  def clone
-    t = Window_Message_Clone.new(game_message.clone)
+  def clone(window = Window_Message_Clone)
+    t = window.new(game_message.clone)
     t.game_message.win_params[:z] = 0
     t.x = self.x; t.y = self.y; t.width = self.width; t.height = self.height
     t.z = self.z - 5
@@ -1499,10 +1499,6 @@ class Window_Message
     # 自身初始化组件与重置
     eagle_message_init_assets
     eagle_message_reset
-    # 重置之前存储的窗口的z值（确保最近的显示在最上面）
-    @eagle_dup_windows.each_with_index do |w, i|
-      w.z = t.z - (i+1) * 5; w.eagle_reset_z
-    end
     t
   end
   #--------------------------------------------------------------------------
@@ -1623,8 +1619,13 @@ class Window_Message
   # ● 更新拷贝窗口
   #--------------------------------------------------------------------------
   def eagle_update_dup_windows
-    @eagle_dup_windows.delete_if { |w| w.disposed? }
-    @eagle_dup_windows.each { |w| w.update; w.dispose if w.openness <= 0 }
+    if @eagle_dup_windows.size > 0
+      @eagle_dup_windows.each { |w| w.update }
+      if @eagle_dup_windows[-1].openness <= 0
+        t = @eagle_dup_windows.pop
+        t.dispose
+      end
+    end
   end
 
   #--------------------------------------------------------------------------
@@ -2524,10 +2525,17 @@ class Window_Message
     # 当pause精灵位于句末且紧靠边界时
     #  增加对话框宽度保证它在对话框内部（不可占用padding）
     if game_message.pause_params[:v] != 0 && game_message.pause_params[:do] <= 0 &&
-       !eagle_fix_w? && game_message.input_pause?
-      d = @eagle_charas_w + win_params[:cdw] - @eagle_next_chara_x
-      d -= @eagle_sprite_pause.width
-      @eagle_sprite_pause_width_add = -d if d < 0
+       game_message.input_pause? && eagle_add_w_by_child_window?
+      # 最大可用于文字绘制的宽度 eagle_charas_max_w
+      # 全部文字实际绘制的宽度 @eagle_charas_w_final + win_params[:cdw]
+      # 最后一行所需的绘制宽度 @eagle_next_chara_x
+      if @eagle_next_chara_x >= @eagle_charas_w_final
+        @eagle_sprite_pause_width_add = @eagle_sprite_pause.width
+      else
+        d = @eagle_charas_w_final + win_params[:cdw] - @eagle_next_chara_x
+        d -= @eagle_sprite_pause.width
+        @eagle_sprite_pause_width_add = -d if d < 0
+      end
     end
   end
   #--------------------------------------------------------------------------
@@ -2674,7 +2682,12 @@ class Window_Message
   end
   def eagle_process_hold
     if game_message.hold
-      @eagle_dup_windows.unshift( self.clone )
+      t = self.clone
+      # 重置之前存储的窗口的z值（确保最近的显示在最上面）
+      @eagle_dup_windows.each_with_index do |w, i|
+        w.z = t.z - (i+1) * 5; w.eagle_reset_z
+      end
+      @eagle_dup_windows.unshift(t)
       self.opacity = 0
       self.openness = 0
     else
@@ -2822,8 +2835,8 @@ class Window_Message
   def font_params; game_message.font_params; end
   def eagle_text_control_font(param = "")
     parse_param(font_params, param, :size)
-    MESSAGE_EX.apply_font_params(self.contents.font, font_params)
     change_color(text_color(font_params[:c]))
+    MESSAGE_EX.apply_font_params(self.contents.font, font_params)
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）重置字体设置
@@ -2831,6 +2844,7 @@ class Window_Message
   def reset_font_settings
     change_color(normal_color)
     font_params[:c] = 0
+    font_params[:ca] = 255
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）放大字体尺寸
@@ -2845,14 +2859,6 @@ class Window_Message
   def make_font_smaller
     self.contents.font.size -= 4 if self.contents.font.size >= 16
     font_params[:size] = self.contents.font.size
-  end
-  #--------------------------------------------------------------------------
-  # ● （覆盖）更改内容绘制颜色
-  #     enabled : 有效的标志。false 的时候使用半透明效果绘制
-  #--------------------------------------------------------------------------
-  def change_color(color, enabled = true)
-    super(color, enabled)
-    font_params[:ca] = self.contents.font.color.alpha
   end
 
   #--------------------------------------------------------------------------
@@ -3310,6 +3316,7 @@ class Window_EagleMsgName < Window_Base
     move(0, 0, w + standard_padding * 2, h + standard_padding * 2)
     create_contents
 
+    change_color(text_color(@window_msg.font_params[:c]))
     MESSAGE_EX.apply_font_params(contents.font, @window_msg.font_params)
     draw_text_ex(0, 0, t)
 
@@ -3345,7 +3352,7 @@ class Window_EagleMsgName < Window_Base
   # ● 更新背景精灵
   #--------------------------------------------------------------------------
   def update_back_sprite
-    eagle_reset_xy_dorigin(@back_sprite, self, name_params[:bgo])
+    MESSAGE_EX.reset_xy_dorigin(@back_sprite, self, name_params[:bgo])
     MESSAGE_EX.reset_sprite_oxy(@back_sprite, name_params[:bgo])
     @back_sprite.opacity = openness
     @back_sprite.update
