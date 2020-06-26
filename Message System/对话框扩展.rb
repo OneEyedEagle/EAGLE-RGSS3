@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.6.18.20 修复name的BUG；修复font的ca的无效BUG
+# - 2020.6.26.15 pop新增绑定到地图格子上
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -106,19 +106,25 @@ $imported["EAGLE-MessageEX"] = true
 #    cdx/cdy/cdw → 文本绘制区域与窗口左侧/上侧/右侧padding的间距（默认0）
 #
 #  \pop[param] → 启用气泡类型对话框时的设置
+#  （窗口属性相关）
+#    skin → pop状态下对话框所用皮肤的index（按常量设置进行 index → skin名称 映射）
+#         （默认nil，取win转义符中的skin变量的值）
+#  （窗口位置相关）
 #    id → 【重置】【默认】所绑定对象的id
 #     【地图】传入 0 时取执行当前对话框的事件的id
 #            传入 正数id 时取当前地图id号的事件，目标事件不存在时取当前事件
 #            传入 负数id 时取队列中数据库id号的角色，目标角色不在队伍中时取队首角色
 #     【战斗】传入 正数id 时取敌群中index序号为id的敌人，目标敌人不存在时pop无效
 #            传入 负数id 时取我方参战角色中数据库id号的角色，目标角色不存在时pop无效
-#    skin → pop状态下对话框所用皮肤的index（按常量设置进行 index → skin名称 映射）
-#         （默认nil，取win转义符中的skin变量的值）
-#    do → 对话框相对于绑定对象的位置类型（默认目标顶部中间8）
+#    mx/my → 【重置】绑定到地图的 (mx, my) 处（同编辑器坐标）（格子中心为显示原点）
+#           （当未设置id时，才会应用该变量）
+#    do → 对话框相对于绑定对象的位置类型（默认8，即对话框位于目标顶部中间）
 #         （基于绑定对象的九宫格小键盘位置，5代表目标中心）
+#         （对话框的显示原点固定为 10-do，即当do为8时，对话框显示原点为底部中点2）
 #    d → 对话框显示原点远离绑定对象的中心点的像素值（依据do自动选择增减x或y）（默认0）
 #    dx/dy → x、y方向上的补足偏移量（默认0）
 #    fix → 是否进行位置修正（保证pop对话框完整显示在屏幕内）
+#  （窗口大小相关）
 #    w → pop对话框的内容固定宽度（覆盖win中的w）（默认0不设置）（优先级高于dw/fw）
 #    h → pop对话框的内容固定高度（覆盖win中的h）
 #       （若小于对话框的 line_height 方法值，则认定为行数，并进行二次计算）
@@ -1264,7 +1270,7 @@ class Game_Message
   # ● 使用pop类型？
   #--------------------------------------------------------------------------
   def pop?
-    @pop_params[:id] != nil
+    @pop_params[:type] != nil
   end
   #--------------------------------------------------------------------------
   # ● 使用脸图？
@@ -1493,7 +1499,6 @@ class Window_Message
     t.eagle_sprite_pause.bind_window(t)
     # 拷贝pop对象
     t.eagle_pop_obj = @eagle_pop_obj
-    t.flag_pop_chara = @flag_pop_chara
     # 集体更新z值
     t.eagle_reset_z
     # 自身初始化组件与重置
@@ -1539,9 +1544,8 @@ class Window_Message
     @eagle_charas_w = @eagle_charas_h = 0
     @eagle_charas_w_final = @eagle_charas_h_final = 0
     # 重置pop、face、name参数
-    pop_params[:id] = nil
     @eagle_pop_obj = nil
-    @flag_pop_chara = false # pop绑定的对象为地图场景上的行走图？
+    pop_params[:type] = nil # pop绑定对象的类型
     face_params[:name] = ""
     name_params[:name] = ""
     # 重置pause精灵的文末位置
@@ -1907,17 +1911,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_pop_update
     eagle_change_windowskin(pop_params[:skin])
-    # 对话框左上角定位到绑定对象位图的对应o位置
-    _x = 0; _y = 0
-    if @flag_pop_chara # 如果对象使用的是行走图，定位到位图底部中心的屏幕位置
-      _x = @eagle_pop_obj.screen_x
-      _y = @eagle_pop_obj.screen_y
-    else # 如果对象为精灵，则与对应精灵的坐标一致（注意：精灵底部中心为显示原点）
-      _x = @eagle_pop_obj.x
-      _y = @eagle_pop_obj.y
-    end
-    self.x = _x
-    self.y = _y
+    eagle_pop_init_xy
     eagle_reset_xy_origin(self, 10 - pop_params[:do]) # 显示原点恰好相反
     # 将对话框移动到绑定对象的对应方向上，并加上偏移量
     case pop_params[:do]
@@ -1937,6 +1931,26 @@ class Window_Message
       eagle_pop_tag_fix_position if pop_params[:tag] > 0
     end
     eagle_after_update_xy
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新pop的初始位置
+  #--------------------------------------------------------------------------
+  def eagle_pop_init_xy
+    # 对话框左上角定位到绑定对象位图的对应o位置
+    case pop_params[:type]
+    when :map_chara
+      # 如果对象使用的是行走图，则为Game_Chacter（行走图底部中心为显示原点）
+      self.x = @eagle_pop_obj.screen_x
+      self.y = @eagle_pop_obj.screen_y
+    when :battle_sprite
+      # 如果对象为战斗者精灵，则为Sprite_Battler（底部中心为显示原点）
+      self.x = @eagle_pop_obj.x
+      self.y = @eagle_pop_obj.y
+    when :map_grid
+      # 如果为地图格子，则格子中心为显示原点
+      self.x = $game_map.adjust_x(@eagle_pop_obj[0]) * 32 + 16
+      self.y = $game_map.adjust_y(@eagle_pop_obj[1]) * 32 + 16
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新pop的tag
@@ -2894,15 +2908,15 @@ class Window_Message
   #--------------------------------------------------------------------------
   def pop_params; game_message.pop_params; end
   def eagle_text_control_pop(param = "")
-    pop_params[:id] = nil # 绑定对象的id
+    pop_params[:id] = nil # 重置绑定对象
+    pop_params[:mx] = nil
+    pop_params[:my] = nil
     parse_param(pop_params, param, :id)
-    return if pop_params[:id].nil?
+    pop_params[:type] = nil # 清除可能的误设置
     @eagle_pop_obj = eagle_get_pop_obj # 获取所绑定的对象
-    return pop_params[:id] = nil if @eagle_pop_obj.nil?
-    # 存在绑定对象，可以使用pop对话框
+    return pop_params[:type] = nil if @eagle_pop_obj.nil?
     s = eagle_get_pop_sprite # 获取所绑定对象的精灵
-    pop_params[:chara_w] = s.width
-    pop_params[:chara_h] = s.height
+    eagle_set_pop_sprite_info(s)
     pop_params[:dw] = MESSAGE_EX.check_bool(pop_params[:dw])
     pop_params[:fw] = MESSAGE_EX.check_bool(pop_params[:fw])
     pop_params[:dh] = MESSAGE_EX.check_bool(pop_params[:dh])
@@ -2914,15 +2928,17 @@ class Window_Message
   # ● 获取pop的弹出对象（需要有x、y、width、height方法）
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj
-    return eagle_get_pop_obj_m if @in_map
-    return eagle_get_pop_obj_b if @in_battle
-    return nil
+    if pop_params[:id]
+      return eagle_get_pop_obj_m if @in_map
+      return eagle_get_pop_obj_b if @in_battle
+    end
+    return eagle_get_pop_obj_ex
   end
   #--------------------------------------------------------------------------
   # ● 获取pop的对象（地图场景中）（Game_Character的实例）
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj_m
-    @flag_pop_chara = true
+    pop_params[:type] = :map_chara
     id = pop_params[:id]
     if id == 0 # 当前事件
       return $game_map.events[game_message.event_id]
@@ -2942,7 +2958,7 @@ class Window_Message
   # ● 获取pop的对象（战斗场景中）（Sprite_Battler的实例）
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj_b
-    @flag_pop_chara = false
+    pop_params[:type] = :battle_sprite
     id = pop_params[:id]
     return nil if id.nil?
     if id > 0 # 敌人index
@@ -2958,15 +2974,40 @@ class Window_Message
     return nil
   end
   #--------------------------------------------------------------------------
+  # ● 获取pop的对象（无 id 设置时）
+  #--------------------------------------------------------------------------
+  def eagle_get_pop_obj_ex
+    if @in_map && pop_params[:mx] && pop_params[:my]
+      pop_params[:type] = :map_grid
+      return [pop_params[:mx], pop_params[:my]]
+    end
+    return nil
+  end
+  #--------------------------------------------------------------------------
   # ● 获取pop对象的精灵（用于计算偏移值）
   #--------------------------------------------------------------------------
   def eagle_get_pop_sprite
-    return @eagle_pop_obj if !@flag_pop_chara
     # 地图场景中，所存储的并非精灵，需要再次检索
-    SceneManager.scene.spriteset.character_sprites.each do |s|
-      return s if s.character == @eagle_pop_obj
+    if pop_params[:type] == :map_chara
+      SceneManager.scene.spriteset.character_sprites.each do |s|
+        return s if s.character == @eagle_pop_obj
+      end
+      return nil
     end
-    return nil
+    return @eagle_pop_obj
+  end
+  #--------------------------------------------------------------------------
+  # ● 存储用于pop更新的精灵对象的信息
+  #--------------------------------------------------------------------------
+  def eagle_set_pop_sprite_info(s)
+    if s.is_a?(Sprite)
+      pop_params[:chara_w] = s.width
+      pop_params[:chara_h] = s.height
+    end
+    if pop_params[:type] == :map_grid
+      pop_params[:chara_w] = 32
+      pop_params[:chara_h] = 32
+    end
   end
 
   #--------------------------------------------------------------------------
@@ -3187,7 +3228,7 @@ class Window_Message_Clone < Window_Message
   attr_accessor :eagle_chara_viewport
   attr_accessor :eagle_chara_sprites, :eagle_sprite_pop_tag
   attr_accessor :eagle_sprite_face, :eagle_window_name, :eagle_sprite_pause
-  attr_accessor :eagle_pop_obj, :flag_pop_chara
+  attr_accessor :eagle_pop_obj
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------

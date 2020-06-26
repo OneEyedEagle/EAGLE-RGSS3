@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.6.18.16 整合hold转义符
+# - 2020.6.26.16 整合pop转义符的新参数
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -431,6 +431,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   #--------------------------------------------------------------------------
   def fiber_main
     parse_list while !@list_str.empty?
+    dispose
     @fiber = nil
   end
   #--------------------------------------------------------------------------
@@ -590,7 +591,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   # ● 结束？
   #--------------------------------------------------------------------------
   def finish?
-    @fiber == nil && @game_message.visible == false
+    @fiber == nil
   end
   #--------------------------------------------------------------------------
   # ● 结束
@@ -693,13 +694,14 @@ class Window_Message_Para < Window_Message
   # ● 输入处理
   #--------------------------------------------------------------------------
   def process_input
+    return if @eagle_force_close
     @input_wait_c = para_params[:w]
     while true
+      Fiber.yield
       if @input_wait_c
         break if @input_wait_c <= 0
         @input_wait_c -= 1
       end
-      Fiber.yield
     end
     eagle_process_hold
   end
@@ -717,9 +719,8 @@ class Window_Message_Para < Window_Message
   # ● 获取pop的弹出对象（需要有x、y方法）
   #--------------------------------------------------------------------------
   def eagle_get_pop_obj
-    id = game_message.pop_params[:id]
-    if @in_map && id == 0
-      @flag_pop_chara = true
+    if @in_map && pop_params[:id] == 0
+      pop_params[:type] = :map_chara
       return $game_map.events[para_params[:id]]
     end
     super
@@ -871,14 +872,14 @@ class Game_Event < Game_Character
   # ● 更新指定名称的并行对话
   #--------------------------------------------------------------------------
   def update_para(f_update, name, cond_str, list_str, params)
+    if !f_update # 若此时不能更新，则直接移出
+      return MESSAGE_PARA.list_finish(name, true)
+    end
     if params[:wc] # 处理显示后的等待
       return if params[:wc] < 0
       params[:wc] -= 1
       return if params[:wc] > 0
       params[:wc] = nil
-    end
-    if !f_update # 若此时不能更新，则直接移出
-      return MESSAGE_PARA.list_finish(name, true)
     end
     f_exist = MESSAGE_PARA.list_exist?(name)
     f_cond = para_cond_meet?(cond_str)
