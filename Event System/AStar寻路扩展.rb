@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-AStar"] = true
 #==============================================================================
-# - 2020.6.15.18 优化
+# - 2020.6.27.21 优化
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -23,11 +23,12 @@ $imported["EAGLE-AStar"] = true
 #
 # - 注意：
 #     当寻路失败时（被其他事件挡住所有通路；目的地周围不可通行），
-#      将强制等待 1s，之后再重新进行寻路
+#      将强制等待 WAIT_WHEN_FAIL_ASTAR 帧，以保证不会重复多次寻路造成卡顿
 #-----------------------------------------------------------------------------
 # 【使用】
 # - 若 S_ID_EVENT_CHASE_PLAYER_ON 所对应的开关开启，
-#   则在事件的自主移动中，会将 类型：接近 模式替换成A*寻路算法
+#   则事件的自主移动中，会将 类型：接近 替换成使用A*寻路算法，
+#   也会将移动路线设置中的 接近玩家 替换成使用A*寻路算法
 #-----------------------------------------------------------------------------
 # 【兼容】
 # - 若使用了【像素级移动 by老鹰】，将依然按照原始网格进行搜索寻路
@@ -41,10 +42,13 @@ $imported["EAGLE-AStar"] = true
 
 module Eagle_AStar
   #--------------------------------------------------------------------------
-  # ● 【常量】当开关开启时，
+  # ● 【常量】当开关开启时，将事件的接近玩家更改为使用自动寻路
   #--------------------------------------------------------------------------
   S_ID_EVENT_CHASE_PLAYER_ON = 1
-
+  #--------------------------------------------------------------------------
+  # ● 【常量】当寻路失败，强制等待的帧数（防止多次寻路造成卡顿）
+  #--------------------------------------------------------------------------
+  WAIT_WHEN_FAIL_ASTAR = 40
   #--------------------------------------------------------------------------
   # ● A*寻路算法
   #--------------------------------------------------------------------------
@@ -62,14 +66,14 @@ module Eagle_AStar
       return true if @chara.pos?(@des_x, @des_y)
     end
 
-    w = $game_map.width; h = $game_map.height
-    @g_data = Table.new(w, h)
-    @f_data = Table.new(w, h)
-    @dir_data = Table.new(w, h)
+    @w = $game_map.width; @h = $game_map.height
+    @g_data = Table.new(@w, @h)
+    @f_data = Table.new(@w, @h)
+    @dir_data = Table.new(@w, @h)
 
     @open = [ [x_init, y_init] ]
-    @g_data[x_init, y_init] = 2
-    @f_data[x_init, y_init] = 1
+    @g_data[x_init, y_init] = 1
+    @f_data[x_init, y_init] = calc_f(1, x_init ,y_init)
     @dir_data[x_init, y_init] = 5
     @flag_fin = false
     do_search
@@ -93,19 +97,16 @@ module Eagle_AStar
         check_point(cur[0], cur[1], dir, x_, y_, cur_g)
       end
     end
-    if @g_data[@des_x, @des_y] == 1
-      @des_x = cur[0]
-      @des_y = cur[1]
-    end
   end
   #--------------------------------------------------------------------------
   # ● 检查指定位置
   #--------------------------------------------------------------------------
   def self.check_point(x_old, y_old, dir, x, y, g)
-    return if @g_data[x, y] > 1 # 已经被索引过
+    return if x >= @w || y >= @h
+    return if @g_data[x, y] > 0 # 已经被索引过
     if !passable?(@chara, x_old, y_old, dir)
-      @dir_data[x, y] = 1
-      @g_data[x, y] = 1
+      @dir_data[x, y] = -1
+      @g_data[x, y] = 999
       @f_data[x, y] = calc_f(g, x ,y)
     else
       @dir_data[x, y] = dir
@@ -142,7 +143,7 @@ module Eagle_AStar
   def self.output_path
     path = []; x = @des_x; y = @des_y; dir = @dir_data[x, y]
     while ( dir != 5 )
-      break if @dir_data[x, y] == 1
+      break if @dir_data[x, y] == -1
       path.unshift( dir )
       x = x + DIR_TO_DXY[ 10 - dir ][0]
       y = y + DIR_TO_DXY[ 10 - dir ][1]
@@ -243,7 +244,7 @@ class Game_Character
     return if (@astar_wait -= 1) > 0
     return @astar_moving = false if astar_reach?
     f = astar_one_step(@astar_des_x, @astar_des_y)
-    return @astar_wait = 60 if f == false
+    return @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR if f == false
     set_direction(f)
   end
   #--------------------------------------------------------------------------
@@ -255,6 +256,25 @@ class Game_Character
     end
     @astar_des_x == self.x && @astar_des_y == self.y
   end
+  #--------------------------------------------------------------------------
+  # ● 接近玩家
+  #--------------------------------------------------------------------------
+  alias eagle_astar_move_toward_player move_toward_player
+  def move_toward_player
+    if $game_switches[Eagle_AStar::S_ID_EVENT_CHASE_PLAYER_ON]
+      return if move_toward_player_astar
+    end
+    eagle_astar_move_toward_player
+  end
+  #--------------------------------------------------------------------------
+  # ● Astar接近玩家（一步）
+  #--------------------------------------------------------------------------
+  def move_toward_player_astar
+    return false if @astar_wait && (@astar_wait -=1) > 0
+    r = astar_one_step($game_player.x, $game_player.y)
+    @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR if !r
+    return r
+  end
 end
 
 class Game_Event
@@ -264,14 +284,12 @@ class Game_Event
   alias eagle_astar_move_type_toward_player move_type_toward_player
   def move_type_toward_player
     if $game_switches[Eagle_AStar::S_ID_EVENT_CHASE_PLAYER_ON]
-      return if @astar_wait && (@astar_wait -= 1) > 0
-      f = astar_one_step($game_player.x, $game_player.y)
-      return @astar_wait = 60 if f == false
-    else
-      eagle_astar_move_type_toward_player
+      return if move_toward_player_astar
     end
+    eagle_astar_move_type_toward_player
   end
 end
+
 
 class Game_Interpreter
   #--------------------------------------------------------------------------
