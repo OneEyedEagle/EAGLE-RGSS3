@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-AStar"] = true
 #==============================================================================
-# - 2020.6.27.21 优化
+# - 2020.6.28.18 优化
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -102,6 +102,7 @@ module Eagle_AStar
   # ● 检查指定位置
   #--------------------------------------------------------------------------
   def self.check_point(x_old, y_old, dir, x, y, g)
+    return if x < 0 || y < 0
     return if x >= @w || y >= @h
     return if @g_data[x, y] > 0 # 已经被索引过
     if !passable?(@chara, x_old, y_old, dir)

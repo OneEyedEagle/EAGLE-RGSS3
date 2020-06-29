@@ -5,14 +5,14 @@
 $imported ||= {}
 $imported["JSONParser"] = true
 #=============================================================================
-# - 2020.1.13.10
+# - 2020.6.29.11
 #=============================================================================
 # - 使用示例
 =begin
 text = '{ "programmers": [
-    { "firstName": "Brett", "lastName":"McLaughlin", "email": "brett@newInstance.com" },
-    { "firstName": "Jason", "lastName":"Hunter", "email": "jason@servlets.com" },
-    { "firstName": "Elliotte", "lastName":"Harold", "email": "elharo@macfaq.com" }
+    { "firstName": "Brett", "lastName":"McLaughlin", "age": 26, "email": "brett@newInstance.com" },
+    { "firstName": "Jason", "lastName":"Hunter", "age": 24, "email": "jason@servlets.com" },
+    { "firstName": "Elliotte", "lastName":"Harold", "age": 31, "email": "elharo@macfaq.com" }
    ] }'
 s = JSONParser.new(text)
 p hash_result = s.parse
