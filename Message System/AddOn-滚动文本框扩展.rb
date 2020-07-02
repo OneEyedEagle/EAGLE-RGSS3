@@ -257,10 +257,10 @@ class Window_ScrollText < Window_Base
     super(0, 0, Graphics.width, Graphics.height)
     @eagle_chara_viewport = Viewport.new # 文字精灵的显示区域
     @eagle_chara_viewport.z = self.z + 1
-    @eagle_chara_sprites = []
-    @last_chara_sprite = nil
     @eagle_sprite_pause = Sprite_EaglePauseTag.new(self) # 初始化等待按键的精灵
     @eagle_sprite_pause.z = self.z + 10
+    @eagle_chara_sprites = []
+    @last_chara_sprite = nil
     @eagle_fibers = {} # 存储并行绘制的线程 id => fiber
     @eagle_fibers_params = {} # 存储待处理的并行绘制 id => text
     @eagle_last_fiber_id = 0 # 并行线程id计数
@@ -388,11 +388,16 @@ class Window_ScrollText < Window_Base
     pos[:x] = pos[:x_line]; pos[:y] = pos[:y_line]
     return t + text, pos
   end
+
+  def eagle_new_page # TODO
+    @eagle_pages = []
+  end
   #--------------------------------------------------------------------------
   # ● 重置字体设置
   #--------------------------------------------------------------------------
   def reset_font_settings
     change_color(normal_color)
+    self.contents.font.color.alpha = font_params[:ca]
     font_params[:c] = 0
   end
   #--------------------------------------------------------------------------
@@ -674,6 +679,7 @@ class Window_ScrollText < Window_Base
     when '>'; @line_show_fast = true
     when '<'; @line_show_fast = false
     when 'PARA'; eagle_activate_fiber(obtain_escape_param(text), pos)
+    when 'PAGE'; eagle_new_page
     when 'C'
       font_params[:c] = obtain_escape_param(text)
       change_color(text_color(font_params[:c]))
@@ -864,25 +870,5 @@ class Sprite_EagleCharacter_ScrollText < Sprite_EagleCharacter
   def init_effect_params(sym)
     @params[sym] = MESSAGE_EX.get_default_params(sym).dup
     @params[sym].merge!(MESSAGE_EX.get_default_cparams_st(sym))
-  end
-end
-
-#==============================================================================
-# ○ 事件解释器
-#==============================================================================
-class Game_Interpreter
-  #--------------------------------------------------------------------------
-  # ● 显示滚动文字
-  #--------------------------------------------------------------------------
-  def command_105
-    Fiber.yield while $game_message.visible
-    $game_message.scroll_mode = true
-    $game_message.scroll_speed = @params[0]
-    $game_message.scroll_no_fast = @params[1]
-    while next_event_code == 405
-      @index += 1
-      $game_message.add(@list[@index].parameters[0])
-    end
-    wait_for_message
   end
 end
