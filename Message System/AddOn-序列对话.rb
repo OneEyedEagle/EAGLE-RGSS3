@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.7.4.11 优化
+# - 2020.7.4.15 优化
 #==============================================================================
 # - 本插件为对话框新增了自动向上/下移动的序列对话模式
 #----------------------------------------------------------------------------
@@ -84,8 +84,12 @@ class Window_Message
   #--------------------------------------------------------------------------
   alias eagle_seq_open_and_wait eagle_open_and_wait
   def eagle_open_and_wait
+    if @eagle_seq_windows.size > 0
+      des_h  = eagle_window_height
+      des_h += eagle_window_height_add(des_h)
+      @eagle_seq_windows.each { |w| w.add_new_window_h(des_h) }
+    end
     eagle_seq_open_and_wait
-    @eagle_seq_windows.each { |w| w.add_new_window_h(self.height) }
   end
   #--------------------------------------------------------------------------
   # ● 更新复制对话框
@@ -203,6 +207,7 @@ class Window_Message_Seq_Clone < Window_Message_Clone
     _i = 0; _t = 20
     while(true)
       break if _i >= _t
+      break if @fin
       per = _i * 1.0 / _t
       per = (_i == _t ? 1 : (1 - 2**(-10 * per)))
       @seq_dy = (seq_dy_init + d_y * per)
@@ -215,11 +220,11 @@ class Window_Message_Seq_Clone < Window_Message_Clone
   # ● 处理纤程的主逻辑
   #--------------------------------------------------------------------------
   def fiber_main
-    eagle_set_wh # 由于pause精灵需要去除，增加更新宽高
+    eagle_set_wh(nil, nil, true) # 由于pause精灵需要去除，增加更新宽高
     loop do
       Fiber.yield
-      reset_seq_window_xy
       break if @fin
+      reset_seq_window_xy
     end
     close_and_wait
     @fiber = nil
