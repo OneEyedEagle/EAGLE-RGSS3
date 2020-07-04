@@ -2,7 +2,7 @@
 # ■ Add-On 关键词信息查看 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
-# - 2020.2.8.11 优化提示文本绘制
+# - 2020.7.4.13 适配20200704对话框
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细信息
 #------------------------------------------------------------------------------
@@ -153,11 +153,11 @@ class Window_Message
   #--------------------------------------------------------------------------
   # ● 初始化组件
   #--------------------------------------------------------------------------
-  alias eagle_keyword_info_init_assets eagle_message_init_assets
-  def eagle_message_init_assets
+  alias eagle_keyword_info_init_params eagle_message_init_params
+  def eagle_message_init_params
     @eagle_keywords = [] # [text]
     @eagle_window_keyword_info = Window_Keyword_Info.new(self)
-    eagle_keyword_info_init_assets
+    eagle_keyword_info_init_params
   end
   #--------------------------------------------------------------------------
   # ● 关闭

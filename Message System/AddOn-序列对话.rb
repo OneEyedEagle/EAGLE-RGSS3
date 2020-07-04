@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.6.27.0 不要忘记dispose
+# - 2020.7.4.11 优化
 #==============================================================================
 # - 本插件为对话框新增了自动向上/下移动的序列对话模式
 #----------------------------------------------------------------------------
@@ -64,11 +64,11 @@ end
 class Window_Message
   def seq_params; game_message.seq_params; end
   #--------------------------------------------------------------------------
-  # ● 初始化组件
+  # ● 初始化参数
   #--------------------------------------------------------------------------
-  alias eagle_seq_message_init_assets eagle_message_init_assets
-  def eagle_message_init_assets
-    eagle_seq_message_init_assets
+  alias eagle_seq_message_init_params eagle_message_init_params
+  def eagle_message_init_params
+    eagle_seq_message_init_params
     @eagle_seq_windows ||= [] # 时间正序存储
   end
   #--------------------------------------------------------------------------
@@ -168,9 +168,9 @@ end
 #=============================================================================
 class Window_Message_Seq_Clone < Window_Message_Clone
   #--------------------------------------------------------------------------
-  # ● 初始化组件
+  # ● 初始化参数（只需要最初执行一次）
   #--------------------------------------------------------------------------
-  def eagle_message_init_assets
+  def eagle_message_init_params
     super
     @seq_des_dy = 0 # y的最终偏移值
     @seq_dy = 0     # y的实际偏移值
