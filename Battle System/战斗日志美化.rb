@@ -2,7 +2,7 @@
 # ■ 战斗日志美化 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
-# - 2019.11.15.17
+# - 2020.7.3.13
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-BattleLog"] = true
@@ -140,6 +140,21 @@ class Window_BattleLog < Window_Selectable
   def wait_and_clear
     clear
   end
+  #--------------------------------------------------------------------------
+  # ● 显示伤害
+  #--------------------------------------------------------------------------
+  def display_damage(target, item)
+    if target.result.missed
+      display_miss(target, item)
+    elsif target.result.evaded
+      display_evasion(target, item)
+    else
+      return if defined?(SideView)
+      display_hp_damage(target, item)
+      display_mp_damage(target, item)
+      display_tp_damage(target, item)
+    end
+  end
 end
 
 class Window_Batterlog_Block < Sprite
@@ -185,7 +200,7 @@ class Window_Batterlog_Block < Sprite
   #--------------------------------------------------------------------------
   def draw_text
     reset_font_settings
-    d = Process_DrawTextEX.new(@text, {:x => [24], :y => [0]}, self.bitmap)
+    d = Process_DrawTextEX.new(@text, {:x => [24], :y => [2]}, self.bitmap)
     d.run
   end
   #--------------------------------------------------------------------------

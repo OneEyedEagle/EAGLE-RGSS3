@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 技能多段伤害 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2019.11.24.17 兼容 YEA-BattleCore
+# - 2020.7.3.11 兼容 SideView
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-SkillDamageEX"] = true
@@ -172,6 +172,9 @@ class Process_AnimDamage
     item = @items[frame]
     if item
       @object.item_apply(@subject, item)
+      if defined?(SideView)
+        SceneManager.scene.spriteset.set_damage_pop(@object)
+      end
       SceneManager.scene.log_window.display_action_results(@object, item)
     end
     end_apply_item_effects if finish?
@@ -181,6 +184,7 @@ class Process_AnimDamage
   #--------------------------------------------------------------------------
   def end_apply_item_effects
     @object.remove_state(EAGLE::SkillDamage_EX::STATE_IMMUNE_DIE) # 移除不死
+    @object.result.clear
     if $imported["YEA-BattleEngine"]
       SceneManager.scene.perform_collapse_check(@object)
     else
@@ -245,6 +249,14 @@ class Scene_Battle < Scene_Base
   def use_item
     eagle_skill_damage_ex_use_item
     eagle_wait_for_animation
+  end
+  #--------------------------------------------------------------------------
+  # ● 发动技能／物品
+  #--------------------------------------------------------------------------
+  alias eagle_skill_damage_ex_invoke_item invoke_item
+  def invoke_item(target, item)
+    eagle_skill_damage_ex_invoke_item(target, item)
+    eagle_wait_for_animation # 兼容sideview，增加额外的等待
   end
   #--------------------------------------------------------------------------
   # ●（覆盖）处理攻击动画
