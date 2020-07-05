@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.7.4.13 新增对话框的show和hide方法；扩展\c[id]转义符；新增\pic转义符
+# - 2020.7.4.21 新增对话框的show和hide方法；扩展\c[id]转义符；新增\pic转义符
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -949,6 +949,12 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   def self.pause_params(index)
     INDEX_TO_PAUSE[index] || INDEX_TO_PAUSE[0]
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取绘制图片时的图片名称
+  #--------------------------------------------------------------------------
+  def self.get_pic_file(filename)
+    filename
   end
 #==============================================================================
 # ○ 共享方法
@@ -2466,7 +2472,7 @@ class Window_Message
   def process_draw_pic(text, pos)
     param = text.slice!(/^\[.*?\]/)[1..-2]
     params = param.split('|') # [filename, param_str]
-    _bitmap = Cache.picture(params[0]) rescue return
+    _bitmap = Cache.picture(MESSAGE_EX.get_pic_file(params[0])) rescue return
     h = {}
     parse_param(h, params[1], :opa) if params[1]
     h[:w] ||= _bitmap.width
