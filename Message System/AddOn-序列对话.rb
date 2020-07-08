@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageSeq"] = true
 #==============================================================================
-# - 2020.7.4.15 优化
+# - 2020.7.7.0 优化
 #==============================================================================
 # - 本插件为对话框新增了自动向上/下移动的序列对话模式
 #----------------------------------------------------------------------------
@@ -87,9 +87,17 @@ class Window_Message
     if @eagle_seq_windows.size > 0
       des_h  = eagle_window_height
       des_h += eagle_window_height_add(des_h)
-      @eagle_seq_windows.each { |w| w.add_new_window_h(des_h) }
+      @eagle_seq_windows.each { |w| w.add_new_window_h(des_h); w.update }
     end
     eagle_seq_open_and_wait
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新背景精灵的缩放
+  #--------------------------------------------------------------------------
+  alias eagle_seq_update_back_sprite_zoom update_back_sprite_zoom
+  def update_back_sprite_zoom(max_w = nil, max_h = nil)
+    eagle_seq_update_back_sprite_zoom(max_w, max_h)
+    eagle_update_seq_windows # 补充更新，在对话框打开时，也要更新序列对话框
   end
   #--------------------------------------------------------------------------
   # ● 更新复制对话框
@@ -222,9 +230,9 @@ class Window_Message_Seq_Clone < Window_Message_Clone
   def fiber_main
     eagle_set_wh(nil, nil, true) # 由于pause精灵需要去除，增加更新宽高
     loop do
+      reset_seq_window_xy
       Fiber.yield
       break if @fin
-      reset_seq_window_xy
     end
     close_and_wait
     @fiber = nil
