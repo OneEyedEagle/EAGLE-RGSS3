@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-AStar"] = true
 #==============================================================================
-# - 2020.6.28.18 优化
+# - 2020.7.11.18 优化
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -36,6 +36,7 @@ $imported["EAGLE-AStar"] = true
 # 【高级】
 # - 为 Game_Character类新增了方法：
 #     .astar_one_step(x, y)  → 朝(x,y)寻路前进一步
+#     .astar_toward(chara_id)→ 朝 chara_id 的事件寻路前进一步
 #     .astar_until(x, y)     → 朝(x,y)寻路直至到达
 #     .astar_moving          → 若在寻路中，则返回 true
 #=============================================================================
@@ -53,6 +54,15 @@ module Eagle_AStar
   # ● A*寻路算法
   #--------------------------------------------------------------------------
   def self.do(chara, des_x, des_y)
+    pro = Process.new(chara, des_x, des_y)
+    pro.do_search
+    pro.output_path
+  end
+class Process
+  #--------------------------------------------------------------------------
+  # ● A*寻路算法
+  #--------------------------------------------------------------------------
+  def initialize(chara, des_x, des_y)
     @chara = chara
     @des_x = des_x
     @des_y = des_y
@@ -75,17 +85,14 @@ module Eagle_AStar
     @g_data[x_init, y_init] = 1
     @f_data[x_init, y_init] = calc_f(1, x_init ,y_init)
     @dir_data[x_init, y_init] = 5
-    @flag_fin = false
-    do_search
-    return nil if !@flag_fin
-    return output_path
   end
   #--------------------------------------------------------------------------
   # ● 搜索
   #--------------------------------------------------------------------------
   DIR_TO_DXY = { 2 => [0, 1], 4 => [-1, 0], 6 => [1, 0], 8 => [0, -1] }
     {1 => [-1, 1], 3 => [1, 1], 7 => [-1, -1], 9 => [1, -1] }
-  def self.do_search
+  def do_search
+    @flag_fin = false
     cur = nil
     while( !@flag_fin )
       break if @open.empty?
@@ -101,7 +108,7 @@ module Eagle_AStar
   #--------------------------------------------------------------------------
   # ● 检查指定位置
   #--------------------------------------------------------------------------
-  def self.check_point(x_old, y_old, dir, x, y, g)
+  def check_point(x_old, y_old, dir, x, y, g)
     return if x < 0 || y < 0
     return if x >= @w || y >= @h
     return if @g_data[x, y] > 0 # 已经被索引过
@@ -128,20 +135,21 @@ module Eagle_AStar
   #--------------------------------------------------------------------------
   # ● 启发函数
   #--------------------------------------------------------------------------
-  def self.calc_f(g, x, y)
+  def calc_f(g, x, y)
     g + (x - @des_x).abs + (y - @des_y).abs
   end
   #--------------------------------------------------------------------------
   # ● 可从(x,y)朝dir方向通行？
   #--------------------------------------------------------------------------
-  def self.passable?(chara, x, y, dir)
+  def passable?(chara, x, y, dir)
     return chara.passable_pixel?(x, y, dir) if $imported["EAGLE-PixelMove"]
     chara.passable?(x, y, dir)
   end
   #--------------------------------------------------------------------------
   # ● 输出移动的数组（2,4,6,8）
   #--------------------------------------------------------------------------
-  def self.output_path
+  def output_path
+    return nil if !@flag_fin
     path = []; x = @des_x; y = @des_y; dir = @dir_data[x, y]
     while ( dir != 5 )
       break if @dir_data[x, y] == -1
@@ -152,6 +160,7 @@ module Eagle_AStar
     end
     path
   end
+end # end of class
 end
 
 if $imported["EAGLE-PixelMove"]
@@ -222,6 +231,31 @@ class Game_Character
     return list[0]
   end
   #--------------------------------------------------------------------------
+  # ● 获取事件
+  #     param : -1 则玩家、0 则本事件、其他 则是指定的事件ID
+  #--------------------------------------------------------------------------
+  def get_character(param)
+    if $game_party.in_battle
+      nil
+    elsif param < 0
+      $game_player
+    else
+      events = same_map? ? $game_map.events : {}
+      events[param > 0 ? param : @event_id]
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 寻路前进一步
+  #--------------------------------------------------------------------------
+  def astar_toward(chara_id)
+    ch = get_character(chara_id)
+    x = ch.x; y = ch.y
+    if $imported["EAGLE-PixelMove"]
+      x = ch.rgss_x; y = ch.rgss_y
+    end
+    return astar_one_step(x, y)
+  end
+  #--------------------------------------------------------------------------
   # ● 强制移动路径
   #--------------------------------------------------------------------------
   def astar_until(x, y)
@@ -290,7 +324,6 @@ class Game_Event
     eagle_astar_move_type_toward_player
   end
 end
-
 
 class Game_Interpreter
   #--------------------------------------------------------------------------
