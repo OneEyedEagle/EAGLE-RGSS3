@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.7.4.21 新增对话框的show和hide方法；扩展\c[id]转义符；新增\pic转义符
+# - 2020.7.16.20 重写脸图逻辑，新增\facem转义符
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -162,19 +162,31 @@ $imported["EAGLE-MessageEX"] = true
 #         将设置该脸图文件的规格为 行数（数字1）x列数（数字2）（默认2行x4列）
 #     示例： face_actor_1x1.png → 该脸图规格为 1×1，含有一张脸图，只有index为0有效
 #    i → 【重置】【默认】显示当前文件中指定序号的脸图（默认同va对话框传入参数）
-#    ls/le → 【重置】定义脸图循环播放的开始index/结束index（负数代表不启用循环）
+#    ls/le → 【重置】定义脸图自动播放的开始index/结束index（-1时不启用自动播放）
 #    lt → 循环播放时，每两帧之间的等待间隔帧数
-#    lw → 循环播放时，每一次loop结束时的等待帧数（nil代表只播放一次）
+#    lw → 循环播放时，每一次loop结束时的等待帧数（nil代表不循环）
 #
 #  \facep[param] → 【预先】脸图的基础设置
 #    dir → 【默认】脸图的显示位置（0左侧，1右侧；默认0）
 #    m → 是否镜像显示脸图（默认false）
-#    it/iv/io → 脸图移入时所用帧数/每帧x的增量/每帧不透明度的增量
-#    ot/ov/oo → 脸图移出时所用帧数/每帧x的增量/每帧不透明度的减量
+#    it → 脸图淡入时所用帧数
+#    ot → 脸图淡出时所用帧数
 #    dx → 脸图在x方向上的偏移增量（默认0）
 #    dy → 脸图在y方向上的偏移增量（默认0）
 #    dw → 当嵌入对话框内时，脸图宽度的补足增量（默认0）
 #    z → 脸图的z值增量（默认1，在对话框上面）（在对话框下面时，将不占用对话框宽度）
+#
+#  \facem[str|param] → 执行脸图动作
+#                其中 str 替换成下列的脸图动作（英语字符串）
+#                其中 |param 可选，替换为对应动作的变量参数字符串
+#    【注】脸图动作期间，对话框不会暂停绘制，请自行调用 wait 转义符进行等待
+#    jump → 脸图进行一次短暂跳跃（无可设置参数）
+#            使用示例： \facem[jump] 脸图小幅度跳跃一次
+#    move → 脸图移动到指定位置
+#           x/y → 直接指定移动的目的地（以初始显示位置为原点）
+#         dx/dy → 指定移动在当前坐标基础上的相对偏移量
+#             t → 移动所需的时间（三次立方平滑）
+#            使用示例： \facem[move|dx50] 脸图朝右侧移动50像素
 #
 #  \name[param] → 【预先】姓名框的设置
 #    【注】param 中用 | 分隔 姓名字符串（其中转义符用<>代替[]）与 变量参数字符串
@@ -563,12 +575,8 @@ module MESSAGE_EX
   # \facep[]
     :dir => 0, # 脸图显示方向 1为右侧
     :m => 0, # 脸图镜像显示
-    :it => 10, # 脸图移入所需帧数
-    :iv => 1, # 脸图移入每帧x增量
-    :io => 26, # 脸图移入每帧不透明度增量
+    :it => 15, # 脸图移入所需帧数
     :ot => 10, # 脸图移出所需帧数
-    :ov => 1, # 脸图移出每帧x增量
-    :oo => 26, # 脸图移出每帧不透明度减量
     :dx => 0, # 脸图x方向的偏移增量
     :dy => 0, # 脸图y方向的偏移增量
     :dw => 8, # 脸图显示宽度的补足量
@@ -1500,7 +1508,7 @@ class Window_Message
     @eagle_chara_sprites = [] # 存储全部的文字精灵
     @eagle_sprite_pop_tag = Sprite.new # 初始化pop状态下的tag精灵
     eagle_reset_pop_tag_bitmap # 初始化tag的位图
-    @eagle_sprite_face = Sprite.new # 初始化脸图精灵
+    @eagle_sprite_face = nil # 初始化脸图精灵
     @eagle_window_name = Window_EagleMsgName.new(self) # 初始化姓名框窗口
     @eagle_sprite_pause = Sprite_EaglePauseTag.new(self) # 初始化等待按键的精灵
   end
@@ -1546,7 +1554,10 @@ class Window_Message
     t.eagle_pop_tag_bitmap = @eagle_pop_tag_bitmap
     t.eagle_sprite_pop_tag = @eagle_sprite_pop_tag
     # 拷贝脸图
-    t.eagle_sprite_face = @eagle_sprite_face
+    if @eagle_sprite_face
+      t.eagle_sprite_face = @eagle_sprite_face
+      t.eagle_sprite_face.bind_window(t)
+    end
     # 拷贝姓名框
     t.eagle_window_name = @eagle_window_name
     t.eagle_window_name.bind_window(t)
@@ -1574,11 +1585,6 @@ class Window_Message
   alias eagle_message_ex_dispose dispose
   def dispose
     eagle_message_ex_dispose
-    @eagle_face_bitmap = nil
-    if !$RGD
-      @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
-    end
-    @eagle_sprite_face.dispose
     @eagle_window_name.dispose
     @eagle_sprite_pop_tag.bitmap.dispose if @eagle_sprite_pop_tag.bitmap
     @eagle_sprite_pop_tag.dispose
@@ -1630,7 +1636,7 @@ class Window_Message
     # 隐藏pop的tag
     @eagle_sprite_pop_tag.visible = false
     # 移出显示的脸图
-    eagle_face_move_out if @eagle_sprite_face.opacity > 0 # 上一次的初始化移出
+    eagle_move_out_face
     # 关闭姓名框（因为对话框关闭后，姓名框不再更新，调小openness确保先关闭）
     @eagle_window_name.close
     @eagle_window_name.openness -= 15
@@ -1641,11 +1647,10 @@ class Window_Message
   # ● 重设z值
   #--------------------------------------------------------------------------
   def eagle_reset_z
-    self.z = game_message.win_params[:z] if game_message.win_params[:z] > 0
+    self.z = win_params[:z] if win_params[:z] > 0
     @back_sprite.z = self.z
     @eagle_chara_viewport.z = self.z + 1
     @eagle_sprite_pop_tag.z = self.z + 1
-    @eagle_sprite_face.z = self.z + game_message.face_params[:z]
     @eagle_window_name.z = self.z + 2
     @eagle_sprite_pause.z = self.z + 2
   end
@@ -1664,7 +1669,6 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_update_before_fiber
     eagle_update_assets_after_open if self.openness > 0
-    eagle_face_update_move if game_message.face_params[:params_move]
   end
   #--------------------------------------------------------------------------
   # ● 更新（在 @fiber 更新之后）
@@ -1678,7 +1682,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_update_assets_after_open
     eagle_pop_update if game_message.pop?
-    eagle_face_update if game_message.face?
+    @eagle_sprite_face.update if @eagle_sprite_face
     @eagle_window_name.update if game_message.name?
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
     force_close if MESSAGE_EX.skip?
@@ -1704,7 +1708,7 @@ class Window_Message
     self.visible = true
     @eagle_chara_sprites.each { |s| s.move_in }
     @eagle_sprite_pop_tag.visible = true
-    @eagle_sprite_face.visible = true
+    @eagle_sprite_face.visible = true if @eagle_sprite_face
     @eagle_window_name.show
     @eagle_sprite_pause.visible = true
     self
@@ -1716,7 +1720,7 @@ class Window_Message
     self.visible = false
     @eagle_chara_sprites.each { |s| s.move_out_temp }
     @eagle_sprite_pop_tag.visible = false
-    @eagle_sprite_face.visible = false
+    @eagle_sprite_face.visible = false if @eagle_sprite_face
     @eagle_window_name.hide
     @eagle_sprite_pause.visible = false
     self
@@ -2074,52 +2078,6 @@ class Window_Message
     return if s.y + pop_params[:td] >= self.y + self.height
     return if s.y + s.height - pop_params[:td] <= self.y
     @eagle_sprite_pop_tag.visible = false
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新face参数组
-  #--------------------------------------------------------------------------
-  def eagle_face_update
-    if face_params[:dir] # 脸图放置于右侧时
-      @eagle_sprite_face.x = self.x + self.width - standard_padding - @eagle_sprite_face.ox
-    else # 脸图放置于左侧时
-      @eagle_sprite_face.x = self.x + standard_padding + @eagle_sprite_face.ox
-    end
-    @eagle_sprite_face.x += face_params[:dx]
-    @eagle_sprite_face.y = self.y + self.height - standard_padding + face_params[:dy]
-    @eagle_sprite_face.mirror = face_params[:m]
-
-    # 更新脸图循环播放
-    if face_params[:flag_l]
-      if face_params[:li_c] >= face_params[:le]
-        # 每次loop之间的等待
-        return if face_params[:lw].nil?
-        face_params[:lw_c] -= 1
-        return if face_params[:lw_c] > 0
-        face_params[:lw_c] = face_params[:lw]
-        face_params[:li_c] = face_params[:ls]
-      else
-        # 每帧之间的等待
-        face_params[:lt_c] -= 1
-        return if face_params[:lt_c] > 0
-        face_params[:lt_c] = face_params[:lt]
-        face_params[:li_c] += 1
-      end
-      face_params[:i] = face_params[:li_c]
-      eagle_face_apply
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新face参数组中的移动（用于滞后移出效果）
-  #--------------------------------------------------------------------------
-  def eagle_face_update_move
-    if face_params[:params_move][0] > 0
-      face_params[:params_move][0] -= 1
-      face_params[:params_move][2] += face_params[:params_move][1]
-      @eagle_sprite_face.x += face_params[:params_move][2]
-      @eagle_sprite_face.opacity += face_params[:params_move][3]
-    else
-      face_params[:params_move] = nil
-    end
   end
   #--------------------------------------------------------------------------
   # ● 更新name参数组（随win/pop参数组更新）
@@ -2951,7 +2909,7 @@ class Window_Message
   # ● （覆盖）获取控制符的实际形式（这个方法会破坏原始数据）
   #--------------------------------------------------------------------------
   def obtain_escape_code(text)
-    text.slice!(/^[\$\.\|\^!><\{\}\\]|^[A-Z]+/i)
+    text.slice!(/^[\$\.\|\^!><\{\}\\]|^[\d\w]+/i)
   end
   #--------------------------------------------------------------------------
   # ● 获取控制符的参数（变量参数字符串形式）（这个方法会破坏原始数据）
@@ -3144,17 +3102,19 @@ class Window_Message
   #--------------------------------------------------------------------------
   def face_params; game_message.face_params; end
   def eagle_text_control_face(param = "")
-    return if face_params[:name] == ""
     face_params[:ls] = -1 # 设置循环开始编号（+1直至le，再从ls循环）
     face_params[:le] = -1 # 设置循环结束编号
     parse_param(face_params, param, :i)
-
-    # 判断是否需要循环的flag
-    face_params[:flag_l] = (face_params[:ls] > -1 && face_params[:le] > face_params[:ls])
-    face_params[:li_c] = face_params[:ls] # 循环用index计数
-    face_params[:lt_c] = face_params[:lt] # 循环用time计数
-    face_params[:lw_c] = face_params[:lw] # 循环后wait计数
-    eagle_face_apply
+    @eagle_sprite_face.apply_face_params if @eagle_sprite_face
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行facem
+  #--------------------------------------------------------------------------
+  def eagle_text_control_facem(param = "")
+    return if !game_message.draw
+    return if @eagle_sprite_face == nil
+    params = param.split('|')
+    @eagle_sprite_face.motion(params[0], params[1] || "")
   end
   #--------------------------------------------------------------------------
   # ● 初始化脸图
@@ -3165,68 +3125,18 @@ class Window_Message
     face_params[:i] = face_index
     return if face_name == ""
 
-    @eagle_face_bitmap = Cache.face(face_name)
-    face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
-    face_params[:num_line] = $1 ? $1.to_i : face_default_line
-    face_params[:num_col] = $2 ? $2.to_i : face_default_col
-    face_params[:sole_w] = @eagle_face_bitmap.width / face_params[:num_col]
-    face_params[:sole_h] = @eagle_face_bitmap.height / face_params[:num_line]
-    # 脸图以底部中心为显示原点
-    if $RGD
-      @eagle_sprite_face.bitmap = @eagle_face_bitmap
-      @eagle_sprite_face.ox = face_params[:sole_w] / 2
-      @eagle_sprite_face.oy = face_params[:sole_h]
-    else
-      @eagle_sprite_face.bitmap.dispose if @eagle_sprite_face.bitmap
-      @eagle_sprite_face.bitmap = Bitmap.new(face_params[:sole_w], face_params[:sole_h])
-      @eagle_sprite_face.ox = @eagle_sprite_face.width / 2
-      @eagle_sprite_face.oy = @eagle_sprite_face.height
-    end
-    @eagle_sprite_face.opacity = 0
-    # 覆盖部分face参数
-    eagle_text_control_face
-    # 显示
-    eagle_face_apply
-    eagle_face_move_in
+    @eagle_sprite_face = MESSAGE_EX.facepool_new
+    @eagle_sprite_face.reset(self)
+    @eagle_sprite_face.motion(:fade_in)
   end
   #--------------------------------------------------------------------------
-  # ● 脸图默认规格（行和列）
+  # ● 移出脸图
   #--------------------------------------------------------------------------
-  def face_default_line; 2; end
-  def face_default_col;  4; end
-  #--------------------------------------------------------------------------
-  # ● 初始化脸图移入
-  #--------------------------------------------------------------------------
-  def eagle_face_move_in
-    # 用于控制移入移出的参数组 [time, v_x, dx, v_opa]
-    t = face_params[:it]
-    v_x = face_params[:iv] * (face_params[:dir] ? -1 : 1)
-    face_params[:params_move] = [t, v_x, v_x*t*-1, face_params[:io]]
-  end
-  #--------------------------------------------------------------------------
-  # ● 初始化脸图移出
-  #--------------------------------------------------------------------------
-  def eagle_face_move_out
-    t = face_params[:ot]
-    v_x = face_params[:ov] * (face_params[:dir] ? 1 : -1)
-    face_params[:params_move] = [t, v_x, 0, -1*face_params[:oo]]
-  end
-  #--------------------------------------------------------------------------
-  # ● 应用设置的脸图
-  # （根据设置好的参数，重新绘制脸图精灵的bitmap）
-  #--------------------------------------------------------------------------
-  def eagle_face_apply
-    w = face_params[:sole_w]
-    h = face_params[:sole_h]
-    x = face_params[:i] % face_params[:num_col] * w
-    y = face_params[:i] / face_params[:num_col] * h
-    rect = Rect.new(x, y, w, h)
-    if $RGD
-      @eagle_sprite_face.src_rect = rect
-    else
-      @eagle_sprite_face.bitmap.clear
-      @eagle_sprite_face.bitmap.blt(0,0, @eagle_face_bitmap,rect)
-    end
+  def eagle_move_out_face
+    return if @eagle_sprite_face.nil?
+    @eagle_sprite_face.motion(:fade_out)
+    MESSAGE_EX.facepool_push(@eagle_sprite_face) # 由精灵池接管
+    @eagle_sprite_face = nil
   end
   #--------------------------------------------------------------------------
   # ● 脸图占用的宽度
@@ -3234,7 +3144,7 @@ class Window_Message
   def eagle_face_width
     return 0 if !game_message.face?
     return 0 if face_params[:z] < 0
-    @eagle_sprite_face.width + face_params[:dw]
+    face_params[:width] + face_params[:dw]
   end
   #--------------------------------------------------------------------------
   # ● 脸图在左侧占用的宽度（用于调整文字区域的左侧起始位置）
@@ -3723,51 +3633,93 @@ class Sprite_EaglePauseTag < Sprite
 end
 
 #==============================================================================
-# ○ 文字池（用于更新需要移出的文字精灵）
+# ○ 精灵池（用于更新需要延迟消失的精灵）
 #==============================================================================
 module MESSAGE_EX
   #--------------------------------------------------------------------------
   # ● 重置
   #--------------------------------------------------------------------------
-  def self.charapool_reset
-    @pool_charas ||= []
-    @pool_charas.each { |s| s.dispose }
-    @pool_charas.clear
+  def self.pools_reset
+    all_pools.each do |type|
+      get_pool(type).each { |s| s.dispose }
+      get_pool(type).clear
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
-  def self.charapool_update
-    @pool_charas.each { |s| s.update if !s.disposed? && !s.finish? }
+  def self.pools_update
+    all_pools.each do |type|
+      get_pool(type).each { |s| s.update if !s.disposed? && !s.finish? }
+    end
   end
   #--------------------------------------------------------------------------
-  # ● 放入文字池中
+  # ● 从指定池子中取出一个可用的精灵（失败则返回nil）
   #--------------------------------------------------------------------------
-  def self.charapool_push(s)
-    return if s.disposed?
-    return @pool_charas.unshift(s) if s.finish?
-    @pool_charas.push(s)
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取一个可用的精灵
-  #--------------------------------------------------------------------------
-  def self.charapool_new(window, font, x,y,w,h, viewport)
-    s = nil
+  def self.pool_new(type)
     while true
-      s = @pool_charas.shift
-      break if s.nil?
+      s = get_pool(type).shift
+      return nil if s.nil?
       next if s.disposed?
       if !s.finish?
-        @pool_charas.unshift(s)
-        break s = nil
+        get_pool(type).unshift(s)
+        return nil
       end
-      break
+      return s
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 将指定精灵放入指定池子
+  # 【注】精灵需要存在 finish? 方法，该方法返回 true 代表可以被重置复用
+  #      返回 false 代表需要继续自己的 update
+  #--------------------------------------------------------------------------
+  def self.pool_push(type, s)
+    return if s.disposed?
+    return get_pool(type).unshift(s) if s.finish?
+    get_pool(type).push(s)
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 定义可用的池
+  #--------------------------------------------------------------------------
+  def self.all_pools
+    [:chara, :face]
+  end
+  #--------------------------------------------------------------------------
+  # ● 定义全局数组
+  #--------------------------------------------------------------------------
+  @pool_charas = [] # 文字精灵池
+  @pool_faces  = [] # 脸图精灵池
+  def self.get_pool(type)
+    return @pool_charas if type == :chara
+    return @pool_faces if type == :face
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 对文字精灵池的操作
+  #--------------------------------------------------------------------------
+  def self.charapool_push(s)
+    pool_push(:chara, s)
+  end
+  def self.charapool_new(window, font, x,y,w,h, viewport)
+    s = pool_new(:chara)
     return Sprite_EagleCharacter.new(window, font, x,y,w,h, viewport) if s.nil?
     s.bind_viewport(viewport)
     s.bind_window(window)
     s.bind_font(font)
     s.reset(x,y,w,h)
+    s
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 对脸图精灵池的操作
+  #--------------------------------------------------------------------------
+  def self.facepool_push(s)
+    pool_push(:face, s)
+  end
+  def self.facepool_new
+    s = pool_new(:face)
+    return Sprite_EagleFace.new if s.nil?
     s
   end
 end
@@ -3778,28 +3730,250 @@ class Scene_Base
   #--------------------------------------------------------------------------
   # ● 开始处理
   #--------------------------------------------------------------------------
-  alias eagle_charapool_start start
+  alias eagle_message_pool_start start
   def start
-    MESSAGE_EX.charapool_reset
-    eagle_charapool_start
+    MESSAGE_EX.pools_reset
+    eagle_message_pool_start
   end
   #--------------------------------------------------------------------------
   # ● 更新画面（基础）
   #--------------------------------------------------------------------------
-  alias eagle_charapool_update_basic update_basic
+  alias eagle_message_pool_update_basic update_basic
   def update_basic
-    eagle_charapool_update_basic
-    MESSAGE_EX.charapool_update
+    eagle_message_pool_update_basic
+    MESSAGE_EX.pools_update
   end
   #--------------------------------------------------------------------------
   # ● 结束处理
   #--------------------------------------------------------------------------
-  alias eagle_charapool_terminate terminate
+  alias eagle_message_pool_terminate terminate
   def terminate
-    eagle_charapool_terminate
-    MESSAGE_EX.charapool_reset
+    eagle_message_pool_terminate
+    MESSAGE_EX.pools_reset
   end
 end
+
+#=============================================================================
+# ○ 脸图精灵
+#=============================================================================
+class Sprite_EagleFace < Sprite
+  #--------------------------------------------------------------------------
+  # ● 绑定
+  #--------------------------------------------------------------------------
+  def bind_window(w); @window = w; end
+  def face_params; @window.face_params; end
+  #--------------------------------------------------------------------------
+  # ● 已经结束使用？
+  #--------------------------------------------------------------------------
+  def finish?
+    @flag_fin == true
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化/重置
+  #--------------------------------------------------------------------------
+  def reset(window)
+    bind_window(window)
+    init_params
+    apply_face_bitmap
+    apply_face_params
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化参数
+  #--------------------------------------------------------------------------
+  def init_params
+    @params = {}   # 自用参数组
+    @flag_fin = false  # 可复用的标志
+    @fiber = nil # 移动用 fiber
+    # 为了更好的扩展性，不直接使用默认属性，而是利用中间变量去赋值
+    @x0 = @y0 = 0 # 因绑定对话框而获得的基础坐标
+    @x1 = @y1 = 0 # 因为移动而增加的偏移
+    @opa ||= 0 # 不透明度
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置脸图文件
+  #--------------------------------------------------------------------------
+  def apply_face_bitmap
+    face_name = face_params[:name]
+    self.bitmap = Cache.face(face_name)
+    face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
+    @params[:num_line] = $1 ? $1.to_i : face_default_line
+    @params[:num_col] = $2 ? $2.to_i : face_default_col
+    @params[:sole_w] = self.bitmap.width / @params[:num_col]
+    @params[:sole_h] = self.bitmap.height / @params[:num_line]
+    # 传出脸图宽度，用于对话框中文字位移
+    face_params[:width] = @params[:sole_w]
+    # 脸图以底部中心为显示原点
+    self.ox = @params[:sole_w] / 2
+    self.oy = @params[:sole_h]
+  end
+  #--------------------------------------------------------------------------
+  # ● 脸图默认规格（行和列）
+  #--------------------------------------------------------------------------
+  def face_default_line; 2; end
+  def face_default_col;  4; end
+  #--------------------------------------------------------------------------
+  # ● 导入face参数
+  #--------------------------------------------------------------------------
+  def apply_face_params
+    # 移入移出的参数
+    @params[:it] = face_params[:it]
+    @params[:ot] = face_params[:ot]
+
+    # 判断是否需要循环的flag
+    @params[:flag_l] = (face_params[:ls] > -1 && face_params[:le] > face_params[:ls])
+    @params[:ls] = face_params[:ls]
+    @params[:lt] = face_params[:lt]
+    @params[:lw] = face_params[:lw]
+    @params[:li_c] = face_params[:ls] # 循环用index计数
+    @params[:lt_c] = face_params[:lt] # 循环用time计数
+    @params[:lw_c] = face_params[:lw] # 循环后wait计数
+
+    @params[:i] = face_params[:i]
+    apply_index
+  end
+  #--------------------------------------------------------------------------
+  # ● 应用当前帧
+  #--------------------------------------------------------------------------
+  def apply_index
+    w = @params[:sole_w]
+    h = @params[:sole_h]
+    x = @params[:i] % @params[:num_col] * w
+    y = @params[:i] / @params[:num_col] * h
+    rect = Rect.new(x, y, w, h)
+    self.src_rect = rect
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    super
+    @fiber.resume if @fiber
+    update_position
+    update_pattern
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新位置
+  #--------------------------------------------------------------------------
+  def update_position
+    if @window
+      if face_params[:dir] # 脸图放置于右侧时
+        @x0 = @window.x + @window.width - @window.standard_padding - self.ox
+      else # 脸图放置于左侧时
+        @x0 = @window.x + @window.standard_padding + self.ox
+      end
+      @x0 += face_params[:dx]
+      @y0 = @window.y + @window.height - @window.standard_padding + face_params[:dy]
+      self.mirror = face_params[:m]
+      self.z = @window.z + face_params[:z]
+    end
+    self.x = @x0 + @x1
+    self.y = @y0 + @y1
+    self.opacity = @opa
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新自动播放
+  #--------------------------------------------------------------------------
+  def update_pattern
+    if @params[:flag_l]
+      if @params[:li_c] >= @params[:le]
+        # 每次loop之间的等待
+        return if @params[:lw].nil?
+        @params[:lw_c] -= 1
+        return if @params[:lw_c] > 0
+        @params[:lw_c] = @params[:lw]
+        @params[:li_c] = @params[:ls]
+      else
+        # 每帧之间的等待
+        @params[:lt_c] -= 1
+        return if @params[:lt_c] > 0
+        @params[:lt_c] = @params[:lt]
+        @params[:li_c] += 1
+      end
+      @params[:i] = @params[:li_c]
+      apply_index
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行动作
+  #--------------------------------------------------------------------------
+  def motion(type, param_str = "")
+    Fiber.yield while @fiber # 保证动作能全部按顺序完成
+    m_c = ("fiber_#{type}").to_sym
+    if respond_to?(m_c)
+      @fiber = Fiber.new { method(m_c).call(param_str); @fiber = nil }
+    else
+      p "对话框中 \epicm 转义符，指令 #{type} 无效！请检查指令名称及其大小写！"
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 动作：淡入
+  #--------------------------------------------------------------------------
+  def fiber_fade_in(param_str = "")
+    v = 255 / @params[:it] + 1
+    @params[:it].times {
+      @opa += v
+      yield self if block_given?
+      Fiber.yield
+    }
+  end
+  #--------------------------------------------------------------------------
+  # ● 动作：淡出
+  #--------------------------------------------------------------------------
+  def fiber_fade_out(param_str = "")
+    bind_window(nil)
+    v = 255 / @params[:ot] + 1
+    @params[:ot].times {
+      @opa -= v
+      yield self if block_given?
+      Fiber.yield
+    }
+    @flag_fin = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 动作：跳跃
+  #--------------------------------------------------------------------------
+  def fiber_jump(param_str = "")
+    t = 0
+    while t <= 10
+      @y1 = (t-5)**2 * 40 * 1.0/25 - 40
+      yield self if block_given?
+      Fiber.yield
+      t += 1
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 动作：移动
+  #--------------------------------------------------------------------------
+  def fiber_move(param_str = "")
+    h = { :x => nil, :y => nil, :dx => nil, :dy => nil, :t => 30 }
+    MESSAGE_EX.parse_param(h, param_str, :t)
+
+    init_x1 = @x1
+    des_x = init_x1
+    des_x = init_x1 + h[:dx] if h[:dx]
+    des_x = h[:x] if h[:x]
+    init_y1 = @y1
+    des_y = init_y1
+    des_y = init_y1 + h[:dy] if h[:dy]
+    des_y = h[:y] if h[:y]
+    return if init_x1 == des_x && init_y1 == des_y
+    d_x = des_x - init_x1
+    d_y = des_y - init_y1
+
+    _i = 0; _t = h[:t]
+    while(true)
+      break if _i > _t
+      per = _i * 1.0 / _t
+      per = (_i == _t ? 1 : (1 - 2**(-10 * per)))
+      @x1 = init_x1 + d_x * per
+      @y1 = init_y1 + d_y * per
+      yield self if block_given?
+      Fiber.yield
+      _i += 1
+    end
+  end
+end
+
 #=============================================================================
 # ○ 文字绘制类
 #=============================================================================
