@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.7.16.20 重写脸图逻辑，新增\facem转义符
+# - 2020.7.17.20 修复\facem转义符多次调用造成的逻辑错误bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -179,7 +179,9 @@ $imported["EAGLE-MessageEX"] = true
 #  \facem[str|param] → 执行脸图动作
 #                其中 str 替换成下列的脸图动作（英语字符串）
 #                其中 |param 可选，替换为对应动作的变量参数字符串
-#    【注】脸图动作期间，对话框不会暂停绘制，请自行调用 wait 转义符进行等待
+#    【注】脸图动作期间，对话框不会暂停绘制，请自行调用 wait 转义符进行等待。
+#          若在执行动作时，又呼叫了一些新的动作，
+#          则在当前动作执行完成后，只会继续执行最后传入的一个动作。
 #    jump → 脸图进行一次短暂跳跃（无可设置参数）
 #            使用示例： \facem[jump] 脸图小幅度跳跃一次
 #    move → 脸图移动到指定位置
@@ -1586,6 +1588,7 @@ class Window_Message
   def dispose
     eagle_message_ex_dispose
     @eagle_window_name.dispose
+    @eagle_sprite_face.dispose if @eagle_sprite_face
     @eagle_sprite_pop_tag.bitmap.dispose if @eagle_sprite_pop_tag.bitmap
     @eagle_sprite_pop_tag.dispose
     @eagle_sprite_pause.dispose
@@ -3784,6 +3787,7 @@ class Sprite_EagleFace < Sprite
     @params = {}   # 自用参数组
     @flag_fin = false  # 可复用的标志
     @fiber = nil # 移动用 fiber
+    @fiber_tmp = nil # 若fiber未执行完，则只预存一个 fiber
     # 为了更好的扩展性，不直接使用默认属性，而是利用中间变量去赋值
     @x0 = @y0 = 0 # 因绑定对话框而获得的基础坐标
     @x1 = @y1 = 0 # 因为移动而增加的偏移
@@ -3897,19 +3901,31 @@ class Sprite_EagleFace < Sprite
   # ● 执行动作
   #--------------------------------------------------------------------------
   def motion(type, param_str = "")
-    Fiber.yield while @fiber # 保证动作能全部按顺序完成
     m_c = ("fiber_#{type}").to_sym
     if respond_to?(m_c)
-      @fiber = Fiber.new { method(m_c).call(param_str); @fiber = nil }
+      if @fiber
+        @fiber_tmp = Fiber.new { fiber_main(m_c, param_str) }
+      else
+        @fiber = Fiber.new { fiber_main(m_c, param_str) }
+      end
     else
       p "对话框中 \epicm 转义符，指令 #{type} 无效！请检查指令名称及其大小写！"
     end
   end
   #--------------------------------------------------------------------------
+  # ● Fiber主逻辑
+  #--------------------------------------------------------------------------
+  def fiber_main(m_c, param_str)
+    method(m_c).call(param_str)
+    @fiber = nil
+    @fiber = @fiber_tmp if @fiber_tmp
+    @fiber_tmp = nil
+  end
+  #--------------------------------------------------------------------------
   # ● 动作：淡入
   #--------------------------------------------------------------------------
   def fiber_fade_in(param_str = "")
-    v = 255 / @params[:it] + 1
+    v = 255.0 / @params[:it]
     @params[:it].times {
       @opa += v
       yield self if block_given?
@@ -3921,7 +3937,7 @@ class Sprite_EagleFace < Sprite
   #--------------------------------------------------------------------------
   def fiber_fade_out(param_str = "")
     bind_window(nil)
-    v = 255 / @params[:ot] + 1
+    v = 255.0 / @params[:ot]
     @params[:ot].times {
       @opa -= v
       yield self if block_given?
