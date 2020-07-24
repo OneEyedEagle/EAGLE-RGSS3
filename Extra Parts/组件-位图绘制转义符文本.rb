@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2019.11.15.18 修复绘制时y错位的bug
+# - 2020.7.23.21 添加自动换行；删去指定每一行位置
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #-----------------------------------------------------------------------------
@@ -25,9 +25,9 @@ class Process_DrawTextEX
   # ● 初始化
   #  params
   #   :font_size → 绘制初始的文字大小
-  #   :x → 每行起始x位置的数组，默认空数组，均取 0
-  #   :y → 每行起始y位置的数组，默认空数组，均取 0
-  #   :lhu → 文字上方增加的高度（每行文字默认底部对齐）
+  #   :x0 → 指定每行的向右偏移值
+  #   :y0 → 指定首行的向下偏移值
+  #   :w → 规定最大行宽，若超出则会进行自动换行
   #   :lhd → 在换行时，与下一行的间隔距离
   #--------------------------------------------------------------------------
   def initialize(text, params = {}, bitmap = nil)
@@ -35,9 +35,9 @@ class Process_DrawTextEX
     @bitmap = bitmap || Cache.empty_bitmap
     @params = params
     @params[:font_size] ||= @bitmap.font.size
-    @params[:x] ||= [] # line_index => x
-    @params[:y] ||= [] # line_index => y
-    @params[:lhu] ||= 0
+    @params[:x0] ||= 0
+    @params[:y0] ||= 0
+    @params[:w] ||= nil
     @params[:lhd] ||= 0
     @info = {}
     @info[:w] ||= [] # line_index => width
@@ -61,7 +61,9 @@ class Process_DrawTextEX
   # ● 获取总占用高度
   #--------------------------------------------------------------------------
   def height
-    @info[:h].inject(0) { |s, v| s += v }
+    r = @info[:h].inject(0) { |s, v| s += v }
+    r = r + (@info[:h].size - 1) * @params[:lhd] + @params[:y0]
+    r
   end
   #--------------------------------------------------------------------------
   # ● 进行控制符的事前变换
@@ -98,7 +100,8 @@ class Process_DrawTextEX
   #--------------------------------------------------------------------------
   def run(flag_draw = true)
     text = @text.clone
-    pos = { :line => -1, :x0 => 0, :x => 0, :y0 => 0, :y => 0,
+    pos = { :line => -1, :x0 => @params[:x0], :x => 0,
+      :y0 => @params[:y0], :y => 0,
       :w => 0, :h => 0, :flag_draw => flag_draw }
     @bitmap.font.size = @params[:font_size]
     process_new_line(pos)
@@ -109,9 +112,9 @@ class Process_DrawTextEX
   #--------------------------------------------------------------------------
   def process_new_line(pos)
     pos[:line] += 1
-    pos[:x0] = @params[:x][pos[:line]] || pos[:x0]
+    pos[:x0] = @params[:x0] || pos[:x0]
     pos[:x] = pos[:x0]
-    pos[:y0] = @params[:y][pos[:line]] || (pos[:y0] + pos[:h])
+    pos[:y0] = (pos[:y0] + pos[:h])
     pos[:y0] += @params[:lhd] if pos[:line] > 0
     pos[:y] = pos[:y0]
     if pos[:flag_draw]
@@ -120,6 +123,15 @@ class Process_DrawTextEX
     else
       @info[:w][pos[:line]] = 0
       @info[:h][pos[:line]] = 0
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理自动换行
+  #--------------------------------------------------------------------------
+  def process_auto_new_line(pos, w)
+    if @params[:w] && pos[:x] + w > @params[:w]
+      process_new_line(pos)
+      pos[:h] = 0
     end
   end
   #--------------------------------------------------------------------------
@@ -144,7 +156,7 @@ class Process_DrawTextEX
   # ● 处理普通文字
   #--------------------------------------------------------------------------
   def process_normal_character(c, pos)
-    r = @bitmap.text_size(c); w = r.width; h = r.height + @params[:lhu]
+    r = @bitmap.text_size(c); w = r.width; h = r.height
     process_draw_before(pos[:x], pos[:y], w, h, pos)
     @bitmap.draw_text(pos[:x], pos[:y], w * 2, h, c) if pos[:flag_draw]
     process_draw_after(pos[:x], pos[:y], w, h, pos)
@@ -153,6 +165,7 @@ class Process_DrawTextEX
   # ● 绘制前
   #--------------------------------------------------------------------------
   def process_draw_before(x, y, w, h, pos)
+    process_auto_new_line(pos, w)
     pos[:y] = pos[:y0] + pos[:h] - h if pos[:h] > h
   end
   #--------------------------------------------------------------------------

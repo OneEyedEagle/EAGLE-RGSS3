@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.7.17.20 修复\facem转义符多次调用造成的逻辑错误bug
+# - 2020.7.24.11 现在对话框在连续执行时，不再关闭
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -230,7 +230,7 @@ $imported["EAGLE-MessageEX"] = true
 #  \hold → 【结尾】保留当前对话框，直至没有该指令的对话框关闭，关闭所有保留的对话框
 #
 #  \temp → 【结尾】当前对话框对转义符参数的变更不会被保留
-#          （在当前对话框关闭前，转义符参数的修改仍然生效）
+#          （在当前显示文本指令结束前，转义符参数的修改仍然生效）
 #
 #  \eval{string} → 当绘制到该转义符时，执行 eval(string)，并丢弃返回值
 #    【注意】该转义符使用花括号，同时 string 中不可以出现花括号
@@ -359,7 +359,7 @@ $imported["EAGLE-MessageEX"] = true
 #         $game_message.no_close = true 或者 false
 #
 # · 若开启且 settings_changed? 方法返回 false，对话框将不关闭，继续显示下一条指令的文本
-# · 在当前版本中，如果脸图文件名与脸图索引均未更改，则 settings_changed? 返回 false
+# · 在当前版本中，如果对话框背景与对话框位置均未更改，则 settings_changed? 返回 false
 #----------------------------------------------------------------------------
 # - 自动换行
 #
@@ -1257,6 +1257,7 @@ class Game_Message
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :ex_params
+  attr_accessor :eagle_text # 存储实际绘制的文本（去除了预处理的转义符）
   attr_accessor :escape_strings # 存储预定要添加的字符串
   attr_accessor :hold, :instant, :draw, :para, :event_id, :need_open
   attr_accessor :child_window_w_des, :child_window_h_des
@@ -1308,6 +1309,7 @@ class Game_Message
   alias eagle_message_ex_clear clear
   def clear
     eagle_message_ex_clear
+    @eagle_text = ""
     @default_open_type ||= false # 使用默认的窗口打开方式？
     @auto_wrap ||= true # 开启自动换行？
     @no_close ||= true # 当为 true 时，开启对话框跨指令显示
@@ -1686,7 +1688,7 @@ class Window_Message
   def eagle_update_assets_after_open
     eagle_pop_update if game_message.pop?
     @eagle_sprite_face.update if @eagle_sprite_face
-    @eagle_window_name.update if game_message.name?
+    @eagle_window_name.update
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
     force_close if MESSAGE_EX.skip?
     (self.visible ? hide : show) if MESSAGE_EX.toggle_visible?
@@ -1761,8 +1763,8 @@ class Window_Message
   alias eagle_message_ex_close close
   def close
     eagle_message_ex_close
-    eagle_process_temp
     eagle_message_reset
+    eagle_process_temp
   end
   #--------------------------------------------------------------------------
   # ● 关闭直至完成
@@ -2098,7 +2100,7 @@ class Window_Message
 
     @eagle_window_name.x += name_params[:dx]
     @eagle_window_name.y += name_params[:dy]
-    @eagle_window_name.update
+    @eagle_window_name.update_back_sprite
   end
 
   #--------------------------------------------------------------------------
@@ -2212,6 +2214,7 @@ class Window_Message
       eagle_process_before_close
       Fiber.yield
       break unless text_continue?
+      eagle_process_after_check_continue
     end
     close_and_wait
     game_message.visible = false
@@ -2246,9 +2249,17 @@ class Window_Message
   #  若返回 false，则会保留当前对话框不关闭，继续显示下一个指令的文本
   #--------------------------------------------------------------------------
   def settings_changed?
-    return true if game_message.face_name.empty?
-    (face_params[:name] != game_message.face_name ||
-    face_params[:i] != game_message.face_index)
+    @background != $game_message.background ||
+    @position != $game_message.position
+  end
+  #--------------------------------------------------------------------------
+  # ● 继续显示后的处理
+  #--------------------------------------------------------------------------
+  def eagle_process_after_check_continue
+    eagle_process_temp
+    # 隐藏掉不会随绘制而自动刷新的组件
+    @eagle_sprite_pop_tag.visible = false
+    @eagle_sprite_pause.visible = false
   end
 
   #--------------------------------------------------------------------------
@@ -2325,6 +2336,8 @@ class Window_Message
     eagle_draw_face(game_message.face_name, game_message.face_index)
     eagle_draw_name(text)
 
+    # 存储实际绘制的内容，预先转义符已经处理并存储
+    game_message.eagle_text = text.clone
     # 当预先转义符全部处理完成，进行一次预绘制
     pre_calc_charas_wh(text, pos)
   end
@@ -2621,8 +2634,10 @@ class Window_Message
       else
         d = @eagle_charas_w_final + win_params[:cdw] - @eagle_next_chara_x
         d -= @eagle_sprite_pause.width
-        @eagle_sprite_pause_width_add = -d if d < 0
+        @eagle_sprite_pause_width_add = -d if d <= 0
       end
+    else
+      @eagle_sprite_pause_width_add = 0
     end
   end
   #--------------------------------------------------------------------------
@@ -2858,9 +2873,7 @@ class Window_Message
       end
     }
     parse_pre_params(text, 'name', name_params, :o)
-    return if name_params[:name] == str_name
     name_params[:name] = str_name
-    return if name_params[:name].empty?
     @eagle_window_name.reset
   end
 
@@ -3123,12 +3136,14 @@ class Window_Message
   # ● 初始化脸图
   #--------------------------------------------------------------------------
   def eagle_draw_face(face_name, face_index)
-    return if face_params[:name] == face_name && face_params[:i] == face_index
     face_params[:name] = face_name
     face_params[:i] = face_index
-    return if face_name == ""
-
-    @eagle_sprite_face = MESSAGE_EX.facepool_new
+    return eagle_move_out_face if face_name == ""
+    if @eagle_sprite_face
+      return if @eagle_sprite_face.no_change?
+    else
+      @eagle_sprite_face = MESSAGE_EX.facepool_new
+    end
     @eagle_sprite_face.reset(self)
     @eagle_sprite_face.motion(:fade_in)
   end
@@ -3373,6 +3388,7 @@ class Window_EagleMsgName < Window_Base
     super(0, 0, 32, 32)
     self.openness = 0
     @back_sprite = Sprite.new
+    @params = {}
   end
   #--------------------------------------------------------------------------
   # ● 绑定对话框
@@ -3393,6 +3409,12 @@ class Window_EagleMsgName < Window_Base
     @window_msg.font_params[:size]
   end
   #--------------------------------------------------------------------------
+  # ● 姓名没有变化？
+  #--------------------------------------------------------------------------
+  def no_change?
+    @params[:name] == name_params[:name]
+  end
+  #--------------------------------------------------------------------------
   # ● 获取全部文本
   #--------------------------------------------------------------------------
   def all_text
@@ -3405,6 +3427,10 @@ class Window_EagleMsgName < Window_Base
   # ● 重绘
   #--------------------------------------------------------------------------
   def reset
+    @params[:name] = name_params[:name]
+    return close if @params[:name] == ""
+    return if open? && no_change?
+
     t = all_text
     w, h = MESSAGE_EX.calculate_text_wh(@window_msg.contents, t)
     h = [h, @window_msg.font_params[:size]].max
@@ -3425,7 +3451,6 @@ class Window_EagleMsgName < Window_Base
     MESSAGE_EX.apply_font_params(contents.font, @window_msg.font_params)
     draw_text_ex(0, 0, t)
 
-    self.openness = 0
     self.show
   end
   #--------------------------------------------------------------------------
@@ -3452,13 +3477,6 @@ class Window_EagleMsgName < Window_Base
     MESSAGE_EX.reset_sprite_oxy(@back_sprite, name_params[:bgo])
     @back_sprite.opacity = openness
     @back_sprite.update
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    super
-    update_back_sprite
   end
 end
 
@@ -3791,15 +3809,21 @@ class Sprite_EagleFace < Sprite
     # 为了更好的扩展性，不直接使用默认属性，而是利用中间变量去赋值
     @x0 = @y0 = 0 # 因绑定对话框而获得的基础坐标
     @x1 = @y1 = 0 # 因为移动而增加的偏移
-    @opa ||= 0 # 不透明度
+    @opa = 0 # 不透明度
+  end
+  #--------------------------------------------------------------------------
+  # ● 脸图未更改？
+  #--------------------------------------------------------------------------
+  def no_change?
+    @params[:name] == face_params[:name] && @params[:i] == face_params[:i]
   end
   #--------------------------------------------------------------------------
   # ● 设置脸图文件
   #--------------------------------------------------------------------------
   def apply_face_bitmap
-    face_name = face_params[:name]
-    self.bitmap = Cache.face(face_name)
-    face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
+    @params[:name] = face_params[:name]
+    self.bitmap = Cache.face(@params[:name])
+    @params[:name] =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
     @params[:num_line] = $1 ? $1.to_i : face_default_line
     @params[:num_col] = $2 ? $2.to_i : face_default_col
     @params[:sole_w] = self.bitmap.width / @params[:num_col]
@@ -3839,6 +3863,7 @@ class Sprite_EagleFace < Sprite
   # ● 应用当前帧
   #--------------------------------------------------------------------------
   def apply_index
+    return if @params[:i] == nil
     w = @params[:sole_w]
     h = @params[:sole_h]
     x = @params[:i] % @params[:num_col] * w
