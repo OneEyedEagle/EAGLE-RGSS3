@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.7.24.11 现在对话框在连续执行时，不再关闭
+# - 2020.7.26.20 修正对话时存储，读取后无法开启的bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1259,7 +1259,7 @@ class Game_Message
   attr_accessor :ex_params
   attr_accessor :eagle_text # 存储实际绘制的文本（去除了预处理的转义符）
   attr_accessor :escape_strings # 存储预定要添加的字符串
-  attr_accessor :hold, :instant, :draw, :para, :event_id, :need_open
+  attr_accessor :hold, :instant, :draw, :para, :event_id
   attr_accessor :child_window_w_des, :child_window_h_des
   attr_accessor :default_open_type, :auto_wrap, :no_close
   #--------------------------------------------------------------------------
@@ -1313,7 +1313,6 @@ class Game_Message
     @default_open_type ||= false # 使用默认的窗口打开方式？
     @auto_wrap ||= true # 开启自动换行？
     @no_close ||= true # 当为 true 时，开启对话框跨指令显示
-    @need_open = true # 当为 true 时，需要执行open_and_wait
     @draw = true # 开启绘制？
     @hold = false # 当前对话框要保留显示？
     @instant = false # 当前对话框立即显示？
@@ -1526,6 +1525,7 @@ class Window_Message
     self.arrows_visible = false # 内容位图未完全显示时出现的箭头
     @flag_open_close = false # 当正在进行打开/关闭时，置为 true
     @flag_temp_params = false # 当前对话框的转义符不会保存到game_message中？
+    @flag_need_open = true # 当为 true 时，需要执行open_and_wait
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
     @eagle_evals = [] # 存储当前对话框的动态脚本 [eval_str, eval_str...]
   end
@@ -1609,6 +1609,8 @@ class Window_Message
   # ● 重置对话框
   #--------------------------------------------------------------------------
   def eagle_message_reset
+    # 复原参数
+    eagle_process_temp
     # 自身显示
     show if self.visible == false
     # 移出全部组件
@@ -1635,18 +1637,33 @@ class Window_Message
     eagle_reset_z
   end
   #--------------------------------------------------------------------------
+  # ● 重置对话框（继续显示时）
+  #--------------------------------------------------------------------------
+  def eagle_message_reset_continue
+    # 复原参数
+    eagle_process_temp
+    # 自身显示
+    show if self.visible == false
+    # 隐藏pop的tag
+    @eagle_sprite_pop_tag.visible = false
+    # 隐藏pause精灵
+    @eagle_sprite_pause.visible = false
+    # 重置强制关闭flag
+    @eagle_force_close = false
+  end
+  #--------------------------------------------------------------------------
   # ● 移出全部组件
   #--------------------------------------------------------------------------
   def eagle_move_out_assets
     # 隐藏pop的tag
     @eagle_sprite_pop_tag.visible = false
+    # 隐藏pause精灵
+    @eagle_sprite_pause.visible = false
     # 移出显示的脸图
     eagle_move_out_face
     # 关闭姓名框（因为对话框关闭后，姓名框不再更新，调小openness确保先关闭）
     @eagle_window_name.close
     @eagle_window_name.openness -= 15
-    # 隐藏pause精灵
-    @eagle_sprite_pause.visible = false
   end
   #--------------------------------------------------------------------------
   # ● 重设z值
@@ -1715,7 +1732,7 @@ class Window_Message
     @eagle_sprite_pop_tag.visible = true
     @eagle_sprite_face.visible = true if @eagle_sprite_face
     @eagle_window_name.show
-    @eagle_sprite_pause.visible = true
+    @eagle_sprite_pause.visible = true if game_message.input_pause?
     self
   end
   #--------------------------------------------------------------------------
@@ -1746,7 +1763,7 @@ class Window_Message
       self.openness = 255
       eagle_set_wh(nil, nil, false, true)
     end
-    game_message.need_open = false
+    @flag_need_open = false
     @flag_open_close = false
     @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
   end
@@ -1764,7 +1781,6 @@ class Window_Message
   def close
     eagle_message_ex_close
     eagle_message_reset
-    eagle_process_temp
   end
   #--------------------------------------------------------------------------
   # ● 关闭直至完成
@@ -1782,6 +1798,7 @@ class Window_Message
       close
       self.openness = 0
     end
+    @flag_need_open = true
     @flag_open_close = false
   end
   #--------------------------------------------------------------------------
@@ -2256,10 +2273,7 @@ class Window_Message
   # ● 继续显示后的处理
   #--------------------------------------------------------------------------
   def eagle_process_after_check_continue
-    eagle_process_temp
-    # 隐藏掉不会随绘制而自动刷新的组件
-    @eagle_sprite_pop_tag.visible = false
-    @eagle_sprite_pause.visible = false
+    eagle_message_reset_continue
   end
 
   #--------------------------------------------------------------------------
@@ -2507,7 +2521,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_process_draw_update
     # 第一个文字绘制后打开窗口
-    return eagle_open_and_wait if game_message.need_open
+    return eagle_open_and_wait if @flag_need_open
     eagle_set_wh(nil, nil, true) # 重设对话框宽高，并更新对话框位置
     # 对齐需要用到对话框的宽高，因此在更新后执行
     eagle_charas_reset_alignment(win_params[:ali])

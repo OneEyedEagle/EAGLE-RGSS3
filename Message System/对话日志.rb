@@ -2,7 +2,7 @@
 # ■ 对话日志 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
-# - 2020.7.24.14 防止旧存档无法使用
+# - 2020.7.26.16 增加取消键退出
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-MessageLog"] = true
@@ -36,7 +36,7 @@ module MSG_LOG
   # ● 关闭日志？
   #--------------------------------------------------------------------------
   def self.close_scene?
-    Input.trigger?(:L)
+    Input.trigger?(:L) || Input.trigger?(:B)
   end
 
   #--------------------------------------------------------------------------
@@ -75,7 +75,7 @@ module MSG_LOG
     sprite.bitmap.font.size = 14
 
     sprite.bitmap.draw_text(0, 2, sprite.width, sprite.height,
-      "上/下方向键 - 浏览   Q键 - 退出", 1)
+      "上/下方向键 - 浏览 | Q键/取消键 - 退出", 1)
     sprite.bitmap.fill_rect(0, 0, sprite.width, 1,
       Color.new(255,255,255,120))
 

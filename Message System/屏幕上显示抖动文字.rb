@@ -1,29 +1,88 @@
+#encoding:utf-8
 #==============================================================================
-# ■ 屏幕上显示抖动文字 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 显示抖动文字VX by 老鹰
 #==============================================================================
-# - 2019.3.21.17 公开
-#==============================================================================
-# - 在屏幕上指定的位置显示抖动文字组
-# - 通过调用事件 脚本 指令，新增一个抖动文本精灵组：
+# - 2020.6.26.21
+#------------------------------------------------------------------------------
+# - 在固定的位置显示一组抖动文字
+#------------------------------------------------------------------------------
+# 【使用】
 #
-#        map_text(文本字符串[, x, y, 字符间等待帧数, 是否等待按键,
-#                   抖动一像素所用时间, 抖动偏移值])
+#   利用事件脚本新增一组抖动文本
 #
-#  【可选属性】
-#      x, y            ：字符串左上角显示的位置
-#      字符间等待帧数   ：每个字符间显示间隔帧数
-#      是否等待按键     ：等待按下确定键后再继续之后的事件
+#      map_text(文本字符串[, x, y, 字符间等待帧数, 抖动一像素所用时间, 抖动偏移值])
+#
+#   【可选参数】
+#
+#      x, y          ：字符串左上角显示的位置
+#      字符间等待帧数 ：每个字符间显示间隔帧数
 #      抖动一像素所用时间 ：字符移动一像素时所用时间帧数
-#      抖动偏移值       ：单个字符抖动的左右上下最大偏移像素值（有随机修正）
+#      抖动偏移值    ：单个字符抖动的左右上下最大偏移像素值（有随机修正）
 #
-#   示例：
-#     map_text("这里是要显示的字符串", 100, 100) # 在屏幕上(100,100)处显示文本
+#   【注意！】
 #
-# - 通过事件 脚本 指令，清除掉全部抖动文字精灵：
+#     RGSS2中无法按中文字符处理字符串，故需要在每个字符之间利用符号来分割，
+#     默认的分割符号为 % ，可在146行处的 /[%]/ 修改，本质为正则表达式
 #
-#        clear_map_text
+#   【示例】
 #
-# - 给 EAGLE::MapChara类 设置以下属性的预设值，之后显示的文字精灵将应用这些设置
+#     事件脚本 map_text("这%是%一%句%测%试%语%句", 200,100, 10)
+#        → 在屏幕的 (200,100) 处 显示该句，且每个字符之间等待间隔 10 帧
+#
+#------------------------------------------------------------------------------
+# 【使用】
+#
+#   利用事件脚本新增一组抖动文本
+#
+#      shake_text(文本字符串[, 参数Hash])
+#
+#    【参数可选属性】
+#
+#       :x → 数字，定义初始显示位置的屏幕坐标x
+#       :y → 数字，定义初始显示位置的屏幕坐标y
+#       :on_map → true 或 false，当为true时，将显示在地图上的(x,y)格子处
+#                  默认取 false，即显示在屏幕上
+#       :t → 数字，字符间等待帧数
+#       :s → 数字，抖动一像素所用时间
+#       :d → 数字，抖动的最大偏移值
+#       :out → 数字，最大的持续显示时间，当时间到，将自动消失
+#               若不设置或传入 nil，则不会自动消失
+#       :id → 任意，定义唯一标识符，用于移出控制
+#
+#   【示例】
+#
+#      shake_text("这%是%一%句%测%试%语%句", {:x => 13, :y => 9, :on_map => true})
+#        → 在地图的 (20,10) 格子处显示该句
+#
+#------------------------------------------------------------------------------
+# 【使用】
+#
+#   利用事件脚本移出一组抖动文本
+#
+#       move_out_shake_text(id)
+#
+#   其中 id 与上文中的 :id 需要保持完全一致
+#
+#------------------------------------------------------------------------------
+# 【使用】
+#
+#   利用事件脚本移出全部抖动文本
+#
+#       move_out_all_text(t)
+#
+#   其中 t 为移出一句后的等待帧数，不填则取 0
+#
+#------------------------------------------------------------------------------
+# 【使用】
+#
+#   利用事件脚本清除掉全部抖动文字精灵
+#
+#      clear_map_text
+#
+#------------------------------------------------------------------------------
+# 【高级】
+#
+#   通过调用 EAGLE::MapChara 类的类方法，可以对之后显示的文字进行设置
 #
 #     name属性（字符串）  ：设置所用的字体名称
 #     size属性（数字）    ：设置字体大小
@@ -31,32 +90,52 @@
 #     italic属性（布尔值）：设置字体是否倾斜
 #     shadow属性（布尔值）：设置字体是否有阴影
 #     color属性（Color对象）：设置字体颜色
-#     outline属性（布尔值） ：设置字体是否显示边框
-#     out_color属性（Color对象）：设置字体边框的颜色
 #     opacity_down /opacity_up（数字）：设置字符透明度变更的下限/上限
 #
-#   示例：
-#     EAGLE::MapChara.size = 28 # 设置之后的文字字号为 28
-#     EAGLE::MapChara.outline = false # 设置之后的文字关闭边框绘制
-
-# - 实现：在Spriteset_Map中绑定了一个精灵组，用于更新全部抖动文字精灵
+#   【示例】
+#
+#     事件脚本 EAGLE::MapChara.size = 16
+#        → 之后的抖动文字的字号调整为 16
+#
+#     事件脚本 EAGLE::MapChara.color = Color.new(255,0,0)
+#        → 之后的抖动文字的默认绘制颜色调整为 红色
+#
+#------------------------------------------------------------------------------
+# 【实质】
+#
+#   在Spriteset_Map中绑定了一个精灵组，用于更新这些抖动文字精灵
 #==============================================================================
 
 class Game_Interpreter
   #--------------------------------------------------------------------------
   # ● 调用显示地图抖动文本
   #--------------------------------------------------------------------------
-  def map_text(text, x = rand(400), y = rand(400), duration = 15, wait = false,
-       shake = 3, offset = 3)
-    EAGLE::MapChara.add(text, x, y, duration, shake, offset)
-    return unless wait
-    Fiber.yield while !Input.trigger?(:C)
+  def map_text(text, x = rand(400), y = rand(400), duration = 10, shake = 3, offset = 3)
+    EAGLE::MapChara.add(text, {:x => x, :y => y, :t => duration, :s => shake, :d => offset})
+    return true
+  end
+  def shake_text(text, params = {})
+    EAGLE::MapChara.add(text, params)
+    return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 移出指定id的抖动文本
+  #--------------------------------------------------------------------------
+  def move_out_shake_text(id)
+    EAGLE::MapChara.out_id = id
+  end
+  #--------------------------------------------------------------------------
+  # ● 移出全部抖动文本
+  #--------------------------------------------------------------------------
+  def move_out_all_text(t = 0)
+    EAGLE::MapChara.move_out = t
   end
   #--------------------------------------------------------------------------
   # ● 清除地图抖动文本
   #--------------------------------------------------------------------------
   def clear_map_text
     EAGLE::MapChara.clear_all
+    return true
   end
 end
 
@@ -66,21 +145,23 @@ module EAGLE::MapChara
   # ● 属性方法
   #--------------------------------------------------------------------------
   class << self
-    attr_accessor :text, :clear
+    attr_accessor :text, :clear, :out_id, :move_out
     attr_accessor :name, :size, :bold, :italic, :shadow, :color
     attr_accessor :opacity_down, :opacity_up
-    attr_accessor :outline, :out_color
   end
   #--------------------------------------------------------------------------
   # ● 新增
   #--------------------------------------------------------------------------
   @text = []
-  def self.add(text, x, y, duration, shake, offset)
-    t = []
-    text.each_char { |c| t.push(c) }
-    font_params = [@name, @size, @bold, @italic, @shadow, @color,
-      @opacity_down, @opacity_up, @outline, @out_color]
-    @text.push([t, x, y, duration, shake, offset, font_params])
+  def self.add(text, params = {})
+    params[:x] ||= rand(400)
+    params[:y] ||= rand(400)
+    params[:on_map] ||= false
+    params[:t] ||= 10 # duration
+    params[:s] ||= 3 # shake
+    params[:d] ||= 3 # offset
+    t = text.split(/[%]/)
+    @text.push([t, params])
   end
   #--------------------------------------------------------------------------
   # ● 清除标志
@@ -98,10 +179,9 @@ module EAGLE::MapChara
     @italic = Font.default_italic
     @shadow = Font.default_shadow
     @color = Font.default_color
-    @outline = Font.default_outline
-    @out_color = Font.default_out_color
-    @opacity_down = 50
+    @opacity_down = 150
     @opacity_up   = 255
+    @move_out = -1
   end
 end
 
@@ -138,32 +218,57 @@ class Spriteset_MapCharacters
   #--------------------------------------------------------------------------
   def initialize
     EAGLE::MapChara.reset
-    @characters = []    # 存储全部文字精灵的数字
+    @characters = [] # 存储全部文字精灵的数字
+    @ids = {} # id => first_chara
     @duration_count = 0 # 单个字符串中绘制等待计数
     @text_count = 0     # 单个字符串中绘制计数
+    @move_out_count = 0 # 移出时的等待计数
+    @first_chara = true # 当前移入的为该句的第一个文字？
   end
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
   def update
+    clear_first if !@characters.empty?
     @characters.each { |c| c.update }
     clear if EAGLE::MapChara.clear
     draw  if !EAGLE::MapChara.text.empty?
+    move_out if EAGLE::MapChara.move_out >= 0
+    move_out_id if EAGLE::MapChara.out_id
+  end
+  #--------------------------------------------------------------------------
+  # ● 清除头部已经移出的文字
+  #--------------------------------------------------------------------------
+  def clear_first
+    if @characters[0].out?
+      s = @characters.shift
+      s.dispose
+    end
   end
   #--------------------------------------------------------------------------
   # ● 绘制当前缓存的字符串
   #--------------------------------------------------------------------------
   def draw
     return if (@duration_count -= 1) > 0
-    p = EAGLE::MapChara.text[0]
-    t = p[0]
-    x = p[1] + (p[6][1] + 2) * @text_count
-    @duration_count = p[3]
-    @characters.push(Sprite_MapCharacter.new(x, p[2], t[@text_count], p[4], p[5], p[6]))
+    tp = EAGLE::MapChara.text[0]
+    params = tp[1].dup
+    params[:dx] = (EAGLE::MapChara.size + 2) * @text_count
+    params[:dy] = 0
+    s = Sprite_MapCharacter.new(tp[0][@text_count], params)
+    if @first_chara
+      @first_chara = false
+      @ids[params[:id]] = s if params[:id]
+    else
+      @characters[-1].next_chara = s
+    end
+    @characters.push(s)
+
     @text_count += 1
-    if @text_count >= t.size
+    @duration_count = params[:t]
+    if @text_count >= tp[0].size
       EAGLE::MapChara.text.shift
       @text_count = 0
+      @first_chara = true # 该句结束
     end
   end
   #--------------------------------------------------------------------------
@@ -171,18 +276,45 @@ class Spriteset_MapCharacters
   #--------------------------------------------------------------------------
   def clear
     if defined?(Unravel_Bitmap) && Unravel_Bitmap.is_a?(Class)
-    @characters.each { |c|
-    Unravel_Bitmap.new(c.x,c.y,c.bitmap.clone,0,0,c.bitmap.width,c.bitmap.height,100,2,4,:LRUD,:S)
-    }
+    @characters.each do |c|
+      next if c.out?
+      Unravel_Bitmap.new(c.x,c.y,c.bitmap.clone,0,0,c.bitmap.width,c.bitmap.height,100,2,4,:LRUD,:S)
     end
-    @characters.each { |c| c.dispose if c }
-    @characters.clear
-    EAGLE::MapChara.clear = false
+    end
+    dispose
+  end
+  #--------------------------------------------------------------------------
+  # ● 移出全部地图抖动文本
+  #--------------------------------------------------------------------------
+  def move_out
+    @move_out_count -= 1
+    return if @move_out_count > 0
+    @move_out_count = EAGLE::MapChara.move_out
+    @characters.each do |c|
+      if c.params[:out_active] == false
+        if defined?(Unravel_Bitmap) && Unravel_Bitmap.is_a?(Class)
+          Unravel_Bitmap.new(c.x,c.y,c.bitmap.clone,0,0,c.bitmap.width,c.bitmap.height,100,2,4,:LRUD,:S)
+        end
+        return c.move_out
+      end
+    end
+    EAGLE::MapChara.move_out = -1
+  end
+  #--------------------------------------------------------------------------
+  # ● 移出指定文字组
+  #--------------------------------------------------------------------------
+  def move_out_id
+    id = EAGLE::MapChara.out_id
+    if @ids[id] && !@ids[id].disposed?
+      @ids[id].move_out
+    end
+    EAGLE::MapChara.out_id = nil
   end
   #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
+    @ids.clear
     @characters.each { |c| c.dispose if c }
     @characters.clear
     EAGLE::MapChara.clear = false
@@ -190,71 +322,135 @@ class Spriteset_MapCharacters
 end
 
 class Sprite_MapCharacter < Sprite
+  attr_reader   :params
+  attr_accessor :next_chara
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
-  def initialize(x, y, character, shake, offset, font_params)
+  def initialize(c, ps)
     super(nil)
-    self.x = @_x = x
-    self.y = @_y = y
-    self.z = 200
-    @opa1 = font_params[6]
-    @opa2 = font_params[7]
-    self.opacity = @opa1 + rand(@opa2 - @opa1)
-    @dopa = rand(2) == 0 ? -1 : 1
-    @dx = rand(2) == 0 ? -1 : 1
-    @dy = rand(2) == 0 ? -1 : 1
-    @character = character
-    @shake = shake
-    @frame = 0
-    @offset = offset # 抖动偏差值
+    @params = ps
+    @params[:sc] = 0 # 抖动一次后的等待时间计数
+    @params[:sdx] = 0 # 实际抖动的距离
+    @params[:sdy] = 0
+    @params[:vx] = rand(2) == 0 ? -1 : 1
+    @params[:vy] = rand(2) == 0 ? -1 : 1
+    @params[:vo] = rand(2) == 0 ? -1 : 1
+    @params[:oc] = 0 # 移出的等待计数
+    @params[:out_active] = false
+    update_pos
+
+    t1 = EAGLE::MapChara.opacity_down
+    t2 = EAGLE::MapChara.opacity_up
+    self.opacity = t1 + rand(t2 - t1)
+
     set_box
-    @size = font_params[1]
+    @size = EAGLE::MapChara.size
     self.bitmap = Bitmap.new(@size + 5, @size + 5)
-    set_font(font_params)
-    self.bitmap.draw_text(0,0,self.bitmap.width,self.bitmap.height, @character)
+    set_font
+    self.bitmap.draw_text(0,0,self.width,self.height, c)
+
+    @next_chara = nil
   end
   #--------------------------------------------------------------------------
   # ● 设置抖动范围盒
   #--------------------------------------------------------------------------
   def set_box
-    @l = self.x - @offset + rand(2) * @dx - 1
-    @r = self.x + @offset + rand(2) * @dx + 1
-    @u = self.y - @offset + rand(2) * @dy - 1
-    @d = self.y + @offset + rand(2) * @dy - 1
+    @l = - @params[:d] + rand(2) * @params[:vx] - 1
+    @r = + @params[:d] + rand(2) * @params[:vx] + 1
+    @u = - @params[:d] + rand(2) * @params[:vy] - 1
+    @d = + @params[:d] + rand(2) * @params[:vy] - 1
   end
   #--------------------------------------------------------------------------
   # ● 读取字体设置
   #--------------------------------------------------------------------------
-  def set_font(font_params)
-    self.bitmap.font.name    = font_params[0]
-    self.bitmap.font.size    = font_params[1]
-    self.bitmap.font.bold    = font_params[2]
-    self.bitmap.font.italic  = font_params[3]
-    self.bitmap.font.shadow  = font_params[4]
-    self.bitmap.font.color   = font_params[5]
-    self.bitmap.font.outline = font_params[-2]
-    self.bitmap.font.out_color = font_params[-1]
+  def set_font
+    self.bitmap.font.name = EAGLE::MapChara.name
+    self.bitmap.font.size = EAGLE::MapChara.size
+    self.bitmap.font.bold = EAGLE::MapChara.bold
+    self.bitmap.font.italic = EAGLE::MapChara.italic
+    self.bitmap.font.shadow = EAGLE::MapChara.shadow
+    self.bitmap.font.color = EAGLE::MapChara.color
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    super
+    update_shake
+    update_pos
+    return update_move_out if @params[:out_active]
+    update_opacity
+    update_out
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新移出
+  #--------------------------------------------------------------------------
+  def update_move_out
+    self.opacity -= 15
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新透明度
+  #--------------------------------------------------------------------------
+  def update_opacity
+    self.opacity += @params[:vo]
+    @params[:vo] *= -1 if self.opacity < EAGLE::MapChara.opacity_down ||
+      self.opacity >=  EAGLE::MapChara.opacity_up
   end
   #--------------------------------------------------------------------------
   # ● 更新抖动
   #--------------------------------------------------------------------------
-  def update
-    super
-    self.opacity += @dopa
-    @dopa *= -1 if self.opacity < @opa1 || self.opacity >= @opa2
-    return if (@frame -= 1) > 0
-    @frame = @shake
-    self.x += @dx
-    @dx *= -1 if self.x <= @l || self.x >= @r
-    self.y += @dy
-    @dy *= -1 if self.y <= @u || self.y >= @d
+  def update_shake
+    return if (@params[:sc] -= 1) > 0
+    @params[:sc] = @params[:s]
+
+    @params[:sdx] += @params[:vx]
+    @params[:vx] *= -1 if @params[:sdx] <= @l || @params[:sdx] >= @r
+    @params[:sdy] += @params[:vy]
+    @params[:vy] *= -1 if @params[:sdy] <= @u || @params[:sdy] >= @d
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新位置
+  #--------------------------------------------------------------------------
+  def update_pos
+    if @params[:on_map]
+      self.x = ($game_map.adjust_x(@params[:x]*256) + 8007) / 8 - 1000
+      self.y = ($game_map.adjust_y(@params[:y]*256) + 8007) / 8 - 1000
+    else
+      self.x = @params[:x]
+      self.y = @params[:y]
+    end
+    self.x += @params[:dx] + @params[:sdx]
+    self.y += @params[:dy] + @params[:sdy]
+    self.z = 200
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新自动移出
+  #--------------------------------------------------------------------------
+  def update_out
+    return if @params[:out].nil?
+    @params[:oc] += 1
+    return if @params[:oc] < @params[:out]
+    @params[:out_active] = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行移出
+  #--------------------------------------------------------------------------
+  def move_out
+    @next_chara.move_out if @next_chara
+    @params[:out_active] = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 已经移出？
+  #--------------------------------------------------------------------------
+  def out?
+    self.opacity == 0
   end
   #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    super
     self.bitmap.dispose
+    super
   end
 end

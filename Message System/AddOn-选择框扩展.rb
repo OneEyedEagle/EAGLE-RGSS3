@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.6.18.9 删除多余语句
+# - 2020.7.26.11 修正选择时存储，读取后报错的bug
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -552,7 +552,8 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   def dispose
     super
-    @choices.each { |i, s| s.move_out }
+    @choices.each { |i, s| s.dispose }
+    @choices.clear
   end
 end
 #==============================================================================
@@ -641,6 +642,15 @@ class Spriteset_Choice
   def move_out
     @fiber = nil
     @charas.each { |s| s.opacity = 0 if !s.visible; s.move_out }
+    @charas.clear
+    dispose_timer
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  def dispose
+    @fiber = nil
+    @charas.each { |s| s.dispose }
     @charas.clear
     dispose_timer
   end
