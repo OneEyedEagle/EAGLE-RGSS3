@@ -2,7 +2,7 @@
 # ■ 对话日志 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
-# - 2020.7.26.16 增加取消键退出
+# - 2020.8.2.15 新增LOG标题文字
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-MessageLog"] = true
@@ -40,6 +40,10 @@ module MSG_LOG
   end
 
   #--------------------------------------------------------------------------
+  # ○【常量】对于独立的取消分支，显示的日志文本
+  #--------------------------------------------------------------------------
+  LOG_CHOICE_CANCEL = "（取消）"
+  #--------------------------------------------------------------------------
   # ○【常量】最大存储的日志条数
   #--------------------------------------------------------------------------
   LOG_MAX_NUM = 100
@@ -59,6 +63,7 @@ module MSG_LOG
   # ○【常量】显示于顶部的最旧的对话日志，所能到达的最底端的y值
   #--------------------------------------------------------------------------
   DOWN_LIMIT_Y = 26
+
   #--------------------------------------------------------------------------
   # ● 设置背景精灵
   #--------------------------------------------------------------------------
@@ -66,6 +71,19 @@ module MSG_LOG
     sprite.bitmap = Bitmap.new(Graphics.width, Graphics.height)
     sprite.bitmap.fill_rect(0, 0, sprite.width, sprite.height,
       Color.new(0,0,0,200))
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置LOG标题精灵
+  #--------------------------------------------------------------------------
+  def self.set_sprite_info(sprite)
+    sprite.zoom_x = sprite.zoom_y = 3.0
+    sprite.bitmap = Bitmap.new(Graphics.height, Graphics.height)
+    sprite.bitmap.font.size = 64
+    sprite.bitmap.font.color = Color.new(255,255,255,10)
+    sprite.bitmap.draw_text(0,0,sprite.width,64, "LOG", 0)
+    sprite.angle = -90
+    sprite.x = Graphics.width + 48
+    sprite.y = 0
   end
   #--------------------------------------------------------------------------
   # ● 设置按键提示精灵
@@ -97,10 +115,6 @@ module MSG_LOG
     sprite.oy = sprite.height
     sprite.opacity = 0
   end
-  #--------------------------------------------------------------------------
-  # ○【常量】对于独立的取消分支，显示的日志文本
-  #--------------------------------------------------------------------------
-  LOG_CHOICE_CANCEL = "（取消）"
 
   #--------------------------------------------------------------------------
   # ● 获取日志数组
@@ -272,32 +286,37 @@ class << self
   # ● UI-初始化精灵
   #--------------------------------------------------------------------------
   def ui_init_sprites
-    @viewport = Viewport.new(0,0,Graphics.width, Graphics.height-24)
-    @viewport.z = 300
-
     @sprite_bg = Sprite.new
     @sprite_bg.z = 250
     set_sprite_bg(@sprite_bg)
 
+    @sprite_bg_info = Sprite.new
+    @sprite_bg_info.z = @sprite_bg.z + 1
+    set_sprite_info(@sprite_bg_info)
+
     @sprite_more = Sprite.new
-    @sprite_more.z = 400
+    @sprite_more.z = @sprite_bg.z + 20
     set_sprite_more(@sprite_more)
 
     @sprite_hint = Sprite.new
-    @sprite_hint.z = 400
+    @sprite_hint.z = @sprite_bg.z + 20
     set_sprite_hint(@sprite_hint)
+
+    @viewport = Viewport.new(0,0,Graphics.width, Graphics.height-24)
+    @viewport.z = @sprite_bg.z + 10
   end
   #--------------------------------------------------------------------------
   # ● UI-释放
   #--------------------------------------------------------------------------
   def ui_dispose
     @sprites.each { |s| s.dispose }
-    @sprite_more.bitmap.dispose
-    @sprite_more.dispose
-    @sprite_hint.bitmap.dispose
-    @sprite_hint.dispose
-    @sprite_bg.bitmap.dispose
-    @sprite_bg.dispose
+    instance_variables.each do |varname|
+      ivar = instance_variable_get(varname)
+      if ivar.is_a?(Sprite)
+        ivar.bitmap.dispose
+        ivar.dispose
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● UI-等待1帧

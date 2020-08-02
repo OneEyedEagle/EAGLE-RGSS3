@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.7.26.20 修正对话时存储，读取后无法开启的bug
+# - 2020.8.16 修正首次开启选择框时，对话框报错bug
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -1617,6 +1617,9 @@ class Window_Message
     eagle_move_out_assets
     # 重置下一个文字的绘制x（左对齐、不考虑换行）
     @eagle_next_chara_x = 0
+    # 重置对话框宽高
+    win_params[:des_w] = 0
+    win_params[:des_h] = 0
     # 重置文字区域的宽度高度
     @eagle_charas_w = @eagle_charas_h = 0
     @eagle_charas_w_final = @eagle_charas_h_final = 0
