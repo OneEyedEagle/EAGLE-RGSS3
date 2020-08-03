@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.8.3.13 新增文字分组
+# - 2020.8.3.22 新增文字分组
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -4712,7 +4712,7 @@ class Sprite_EagleCharacter < Sprite
     parse_param(params, param_s, :b)
     self.mirror = (params[:b] == '0' ? false : true)
   end
-  def finish_effect_cmirror
+  def finish_effect_cmirror(params)
     self.mirror = false
   end
   #--------------------------------------------------------------------------
