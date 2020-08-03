@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ ROLL点 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.8.2.16
+# - 2020.8.3.14
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-Roll"] = true
@@ -10,15 +10,18 @@ $imported["EAGLE-Roll"] = true
 #------------------------------------------------------------------------------
 # 【使用】
 #
-#    在事件脚本中，利用 ROLL.run("formula", {params}) 来调用roll点方案。
+#    在事件脚本中，利用 ROLL.run("formula", {params}) 来调用roll点方案，
+#    并且该方法将返回roll点结果是数字。
 #
 # ○ 其中 formula 为roll点公式字符串：
 #
+#    用 {string} 的方式写入将会被 eval(string) 替换的字符串（最先进行）
 #    用 ndm 的方式代表投掷 n 个 m面骰，同时也可以利用四则运算等脚本
 #
 #    可用 s 代表开关组，v 代表变量组，pl 代表 $game_player
 #    可用 a 代表 $game_actors，m 代表 $game_party.members
 #
+#    如： "1d{v[1]+1}" 代表投 1 个 1号变量值+1 面骰
 #    如： "1d100 + 10" 代表投 1 个100面骰，再+10作为结果
 #    如： "2d8 + 1d{a[1].atk}" 代表投 2 个8面骰，再投 1 个1号角色攻击面骰
 #
@@ -28,6 +31,7 @@ $imported["EAGLE-Roll"] = true
 #          （首先用 :def 的预设，然后用 :rule所指定的预设覆盖，
 #            最后用当前 params 中的设置覆盖）
 #    :msg  → 是否开启对话框来显示投掷结果
+#    :vid  → 将结果类型的符号存储到 :vid 所对应数字的变量中（仅存储）
 #    :k    → 绑定一个值，用于进行 :r1 等的判定（首先会进行 eval）
 #    :r1   → 指定 :r1 结果类型的判定字符串（具体见 RESULT_TYPE 中的key值）
 #
@@ -96,6 +100,8 @@ module ROLL
     :msg => true,
     # 额外绑定的数值公式
     :k => 50,
+    # 额外的存储结果类型的变量的ID
+    :vid => 10,
     # 各个结果的判定公式
     :r1 => "r > 0 && r <= 5",
     :r2 => "r > 5 && r <= k",
@@ -118,6 +124,7 @@ module ROLL
     params = init_rule(params)
     parse_params(text, params)
     $game_variables[V_ID] = check_result(params)
+    $game_variables[params[:vid]] = $game_variables[V_ID] if params[:vid]
     call_msg(params) if params[:msg] == true
     params[:sum]
   end
@@ -140,12 +147,28 @@ module ROLL
     t += params[:t2]
     $game_message.add(t)
 
-    t = params[:t4].gsub(/(\d{1,})/) { "\\.\\c[1]" + $1 + "\\c[0]" }
-    t = " = " + t
+    t = ""
+    if $imported["EAGLE-MessageEX"]
+      i = -1
+      t = " = " + params[:t4].gsub(/(\d{1,})/) {
+        i += 1
+        maxv = params[:v][i][0] # max v string
+        rv = params[:v][i][2]
+        if params[:v][i][1]
+          rv_str = sprintf("%0#{maxv.size}d", rv)
+          "\\set[1]\\ctog[i1t4]" + rv_str + "\\ctog[0]\\set[0]"
+        else
+          "#{rv}"
+        end
+      }
+      t += "\\|\\setm[1|ctog|0]"
+    else
+      t = " = " + params[:t4].gsub(/(\d{1,})/) { "\\.\\c[1]" + $1 + "\\c[0]" }
+    end
     $game_message.add(t)
 
-    t = " = " + "\\c[1]" + params[:sum].to_s + "\\c[0]"
-    t = t + " \\c[10][" + params[:kv].to_s + "]\\c[0]"
+    t = " = " + "\\c[17]" + params[:sum].to_s + "\\c[0]"
+    t = t + " \\c[1][" + params[:kv].to_s + "]\\c[0]"
     t = t + "\\c[17]" + RESULT_TYPE[$game_variables[V_ID]] + "\\c[0]"
     $game_message.add(t)
 
@@ -192,10 +215,17 @@ class << self
     # 将 d数字 替换成了实际数字
     tmp[:v] = []
     tmp[:t4] = tmp[:t3].dup
-    tmp[:t4].gsub!( /d(\d+)/ ) {
-      vmax = $1
-      vresult = rand( vmax.to_i ) + 1
-      tmp[:v].push( [vmax, vresult] )
+    tmp[:t4].gsub!( /(d?)(\d+)/ ) {
+      vroll = $1 == "d" ? true : false
+      vmax = $2
+      vresult = 0
+      if vroll
+        vresult = rand( vmax.to_i ) + 1
+      else
+        vresult = vmax.to_i
+      end
+      # 按顺序存入数字 [最大值, 是否为roll值, 最终结果]
+      tmp[:v].push( [vmax, vroll, vresult] )
       vresult.to_s
     }
     # 计算实际结果

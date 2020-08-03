@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.8.16 修正首次开启选择框时，对话框报错bug
+# - 2020.8.3.13 新增文字分组
 #=============================================================================
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
@@ -232,15 +232,6 @@ $imported["EAGLE-MessageEX"] = true
 #  \temp → 【结尾】当前对话框对转义符参数的变更不会被保留
 #          （在当前显示文本指令结束前，转义符参数的修改仍然生效）
 #
-#  \eval{string} → 当绘制到该转义符时，执行 eval(string)，并丢弃返回值
-#    【注意】该转义符使用花括号，同时 string 中不可以出现花括号
-#    可用 s 代替 $game_switches ，用 v 代替 $game_variables
-#    可用 msg 代表当前对话（Window_Message类的实例）
-#      如 \eval{s[1]=true} 就是当文字绘制到该转义符时，打开1号开关，并继续绘制
-#    【注意】由于文本替换类的转义符优先级最高，因此实际绘制文本不受这个的影响
-#            即如果存在 \eval{v[1]=5}\v[1]，其中1号变量初值为0，
-#            那么尽管在绘制过程中其值变为了5，但\v[1]显示的仍然为对话框打开时的值0
-#
 #----------------------------------------------------------------------------
 # - 文字特效类
 #     以下 param 传入 任意非0非空字符（如 1） 代表以预设值开启特效
@@ -339,6 +330,35 @@ $imported["EAGLE-MessageEX"] = true
 #    i → 使用 i 号对应的文字组（具体见 CMC_CHARAS 常量，设置 i → 文字组）
 #    n → 从文字组中挑选出 n 个字符作为切换文字（若为0，则取全部）
 #    c → 指定叠加绘制的文字的颜色索引号（-1时与原始文字颜色一致）
+#
+#----------------------------------------------------------------------------
+# - 高级
+#    此处放置高级处理，需要结合一定的脚本知识才能灵活运用
+#
+#  \eval{string} → 当绘制到该转义符时，执行 eval(string)，并丢弃返回值
+#    【注意】该转义符使用花括号，同时 string 中不可以出现花括号
+#    可用 s 代替 $game_switches ，用 v 代替 $game_variables
+#    可用 msg 代表当前对话（Window_Message类的实例）
+#      如 \eval{s[1]=true} 就是当文字绘制到该转义符时，打开1号开关，并继续绘制
+#    【注意】由于文本替换类的转义符优先级最高，因此实际绘制文本不受这个的影响
+#            即如果存在 \eval{v[1]=5}\v[1]，其中1号变量初值为0，
+#            那么尽管在绘制过程中其值变为了5，但\v[1]显示的仍然为对话框打开时的值0
+#
+#  \set[sym] → 创建新分组，其唯一标识为 sym（字符串）
+#
+#  Window_Message类新增方法 chara_set(sym) { |s| do_something }
+#     该方法能够用于对 sym 分组中的文字精灵进行逐个操作，
+#     若 不传入sym 或 传入 0 或 传入 '0' 或传入 ""，则转为对全部文字精灵进行操作
+#
+#  \setm[sym|effect|param] → 对sym分组中的文字精灵，执行 effect特效，传入 param 参数
+#      其中 sym 将被作为字符串，来索引对应分组
+#      其中 effect 为 文字特效类转义符 中的转义符，比如 ctog
+#      其中 param 为传入的文字特效的变量参数字符串，与 文字特效类 中所写一致
+#                 若只传入 0，则为关闭该特效
+#
+#      如：\setm[0|ctog|0] 代表关闭全部文字精灵的ctog特效
+#      如：\set[1]\ctog[1]测试用文字\ctog[0]\set[0]，\!第二句话\setm[1|ctog|0]
+#            代表关闭 1 号组中 “测试用文字” 的 ctog 特效
 #
 #----------------------------------------------------------------------------
 # - 扩展
@@ -725,12 +745,13 @@ module MESSAGE_EX
   # \ctog[]
     :i => 0,  # 选取i号文字组
     :n => 0,  # 从文字组中选取n个字符
-    :t => 10, # 文字切换的等待帧数
-    :r => 0,  # 是否随机选择下一个文字？
+    :t => 5,  # 文字切换的等待帧数
+    :r => 1,  # 是否随机选择下一个文字？
   }
   CTOG_CHARAS = { # 定义文字切换特效的文字组（若为数字，则取 IconSet 中的图标）
     0 => ['▀', '▄', '█', '▌', '✖'],
-    1 => [376,377,378,379,380,381,382,383],
+    1 => ['0','1','2','3','4','5','6','7','8','9'],
+    2 => [376,377,378,379,380,381,382,383],
   }
   CGRAD_PARAMS_INIT = {
   # \cgrad[]
@@ -1528,6 +1549,8 @@ class Window_Message
     @flag_need_open = true # 当为 true 时，需要执行open_and_wait
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
     @eagle_evals = [] # 存储当前对话框的动态脚本 [eval_str, eval_str...]
+    @eagle_chara_sets = {} # 存储文字的分组
+    @eagle_current_set = nil # 指定当前的分组
   end
   #--------------------------------------------------------------------------
   # ● 拷贝自身
@@ -1589,6 +1612,7 @@ class Window_Message
   alias eagle_message_ex_dispose dispose
   def dispose
     eagle_message_ex_dispose
+    @eagle_chara_sprites.each { |s| s.dispose }
     @eagle_window_name.dispose
     @eagle_sprite_face.dispose if @eagle_sprite_face
     @eagle_sprite_pop_tag.bitmap.dispose if @eagle_sprite_pop_tag.bitmap
@@ -1609,48 +1633,45 @@ class Window_Message
   # ● 重置对话框
   #--------------------------------------------------------------------------
   def eagle_message_reset
-    # 复原参数
-    eagle_process_temp
-    # 自身显示
-    show if self.visible == false
+    eagle_message_reset_continue
     # 移出全部组件
     eagle_move_out_assets
-    # 重置下一个文字的绘制x（左对齐、不考虑换行）
-    @eagle_next_chara_x = 0
     # 重置对话框宽高
     win_params[:des_w] = 0
     win_params[:des_h] = 0
     # 重置文字区域的宽度高度
     @eagle_charas_w = @eagle_charas_h = 0
     @eagle_charas_w_final = @eagle_charas_h_final = 0
-    # 重置pop、face、name参数
+    # 重置pop参数
     @eagle_pop_obj = nil
     pop_params[:type] = nil # pop绑定对象的类型
-    face_params[:name] = ""
-    name_params[:name] = ""
-    # 重置pause精灵的文末位置
-    @eagle_sprite_pause.bind_last_chara(nil)
-    @eagle_sprite_pause_width_add = 0 # 因pause精灵而扩展的窗口宽度
-    # 重置auto的设置帧数
-    MESSAGE_EX.check_bool(win_params[:auto_r])
-    win_params[:auto_t] = nil if win_params[:auto_r] # nil时为不自动继续
-    # 重置强制关闭flag
-    @eagle_force_close = false
+    # 重置脸图宽度
+    face_params[:width] = 0
     # 重置集体的z值
     eagle_reset_z
   end
   #--------------------------------------------------------------------------
-  # ● 重置对话框（继续显示时）
+  # ● 重置对话框（对话框不关闭，并继续显示）
   #--------------------------------------------------------------------------
   def eagle_message_reset_continue
     # 复原参数
     eagle_process_temp
+    # 重置文字分组
+    @eagle_chara_sets.clear
     # 自身显示
     show if self.visible == false
+    # 重置auto的设置帧数
+    MESSAGE_EX.check_bool(win_params[:auto_r])
+    win_params[:auto_t] = nil if win_params[:auto_r] # nil时为不自动继续
+    # 重置下一个文字的绘制x（左对齐、不考虑换行）
+    @eagle_next_chara_x = 0
     # 隐藏pop的tag
     @eagle_sprite_pop_tag.visible = false
     # 隐藏pause精灵
     @eagle_sprite_pause.visible = false
+    # 重置pause精灵的文末位置
+    @eagle_sprite_pause.bind_last_chara(nil)
+    @eagle_sprite_pause_width_add = 0 # 因pause精灵而扩展的窗口宽度
     # 重置强制关闭flag
     @eagle_force_close = false
   end
@@ -1814,6 +1835,7 @@ class Window_Message
       c.move_out # 已经交由文字池进行后续更新释放
       win_params[:cwo].times { Fiber.yield } unless @eagle_force_close
     end
+    @eagle_chara_sets.clear
   end
   #--------------------------------------------------------------------------
   # ● 取出一个文字精灵
@@ -2487,7 +2509,9 @@ class Window_Message
 
     s = MESSAGE_EX.charapool_new(self, f, c_x, c_y, c_w, c_h, @eagle_chara_viewport)
     s.start_effects(game_message.chara_params)
-    @eagle_chara_sprites.push(s)
+    # 存入数组
+    @eagle_chara_sprites.push(s) # 实时更新的数组
+    @eagle_chara_sets[@eagle_current_set].push(s) if @eagle_current_set # 分组
     s
   end
   #--------------------------------------------------------------------------
@@ -3276,6 +3300,37 @@ class Window_Message
     if id_ > 0 && @eagle_evals[id_ - 1]
       s = $game_switches; v = $game_variables; msg = self
       eval( @eagle_evals[id_ - 1] )
+    end
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 对指定分组内的文字执行block
+  #   传入空字符串或 0 时为全部文字
+  #--------------------------------------------------------------------------
+  def chara_set(set_sym = nil) # block
+    if set_sym.nil? || set_sym.empty? || set_sym == 0 || set_sym == '0'
+      @eagle_chara_sprites.each { |s| yield(s) }
+      return
+    end
+    return if @eagle_chara_sets[set_sym].nil?
+    @eagle_chara_sets[set_sym].each { |s| yield(s) }
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置set参数
+  #--------------------------------------------------------------------------
+  def eagle_text_control_set(param = '0')
+    return if !game_message.draw
+    return @eagle_current_set = nil if param == '0'
+    @eagle_current_set = param
+    @eagle_chara_sets[@eagle_current_set] ||= []
+  end
+  def eagle_text_control_setm(param = '0')
+    return if !game_message.draw
+    params = param.split('|') # [set_sym, effect_sym, param]
+    if params[2] == "0"
+      chara_set(params[0]) { |s| s.finish_effect(params[1].to_sym) }
+    else
+      chara_set(params[0]) { |s| s.start_effect(params[1].to_sym, params[2]) }
     end
   end
 
@@ -4314,18 +4369,22 @@ class Sprite_EagleCharacter < Sprite
   # ● 初始化特效的默认参数
   #--------------------------------------------------------------------------
   def init_effect_params(sym)
-    @params[sym] = MESSAGE_EX.get_default_params(sym).dup # 初始化
+    MESSAGE_EX.get_default_params(sym)
   end
   #--------------------------------------------------------------------------
   # ● 开始特效（整合）
   #--------------------------------------------------------------------------
   def start_effects(effects)
     @effects = effects.dup # code_symbol => param_string
-    @effects.each { |sym, param_s|
-      m = ("start_effect_" + sym.to_s).to_sym
-      init_effect_params(sym)
-      method(m).call(@params[sym], param_s.dup) if respond_to?(m)
-    }
+    @effects.each { |sym, param_s| start_effect(sym, param_s) }
+  end
+  #--------------------------------------------------------------------------
+  # ● 开始特效
+  #--------------------------------------------------------------------------
+  def start_effect(sym, param_s)
+    @params[sym] = init_effect_params(sym).dup # 初始化
+    m = ("start_effect_" + sym.to_s).to_sym
+    method(m).call(@params[sym], param_s.dup) if respond_to?(m)
   end
   # def start_effect_code(param)  code → 转义符
   # end
@@ -4349,6 +4408,14 @@ class Sprite_EagleCharacter < Sprite
       method(m).call(@params[sym]) if respond_to?(m)
     }
     @effects.clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束特效
+  #--------------------------------------------------------------------------
+  def finish_effect(sym)
+    m = ("finish_effect_" + sym.to_s).to_sym
+    method(m).call(@params[sym]) if respond_to?(m)
+    @effects.delete(sym)
   end
   # def finish_effect_code(param)  code → 转义符
   # end
@@ -4645,6 +4712,9 @@ class Sprite_EagleCharacter < Sprite
     parse_param(params, param_s, :b)
     self.mirror = (params[:b] == '0' ? false : true)
   end
+  def finish_effect_cmirror
+    self.mirror = false
+  end
   #--------------------------------------------------------------------------
   # ● 消散特效
   #--------------------------------------------------------------------------
@@ -4678,7 +4748,9 @@ class Sprite_EagleCharacter < Sprite
       if c.is_a?(Integer)
         @eagle_font.draw_icon(s, 0+self.width/2-12, 0+self.height/2-12, c)
       else
-        @eagle_font.draw(s, 0, 0, s.width/2+1, s.height, c, 1)
+        r = s.text_size(c)
+        @eagle_font.draw(s, (self.width-r.width)/2, (self.height-r.height)/2,
+          self.width, self.height, c, 0)
       end
       params[:bitmaps].push(s)
     end
@@ -4698,6 +4770,7 @@ class Sprite_EagleCharacter < Sprite
     self.bitmap = params[:bitmaps][params[:i_cur]]
   end
   def finish_effect_ctog(params)
+    self.bitmap = params[:bitmaps].shift
     params[:bitmaps].each { |b| b.dispose }
     params[:bitmaps].clear
   end
