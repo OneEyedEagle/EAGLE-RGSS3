@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 快捷功能界面 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.8.2.17
+# - 2020.8.5.22 兼容对话框扩展，新增对话自动播放的设置
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-EventToolbar"] = true
@@ -15,6 +15,7 @@ $imported["EAGLE-EventToolbar"] = true
 # 【兼容】
 #
 #    若使用了【事件指令跳过 by老鹰】，将加入 跳过剧情 的指令。
+#    若使用了【对话框扩展 by老鹰】，将加入 自动剧情 的指令。
 #    若使用了【对话日志 by老鹰】，将加入 对话日志 的指令。
 #    若使用了【快速存读档 by老鹰】，将加入 快速存档 与 快速读档 的指令。
 #
@@ -37,6 +38,8 @@ module TOOLBAR
   #--------------------------------------------------------------------------
   # ● 初始化指令
   #--------------------------------------------------------------------------
+  # 设置不需要退出当前界面的指令
+  COMMANDS_NO_CLOSE = [:msg_auto, :msg_vi]
   def self.init_window_command
     #@window_toolbar.add_command("名称", :唯一符号, 是否允许选择, "说明文本")
     #@window_toolbar.set_handler(:唯一符号, method(:command))
@@ -51,12 +54,26 @@ module TOOLBAR
       @window_toolbar.set_handler(:msg_skip, COMMAND_SKIP.method(:call))
     end
 
+    if $imported["EAGLE-MessageEX"]
+      t = "已\\c[17]关闭\\c[0]自动对话"
+      if v = $game_message.win_params[:auto_t]
+        t = sprintf("在 \\c[17]%0.1f\\c[0]s 后自动继续对话", v * 1.0 / 60)
+      end
+      @window_toolbar.add_command(
+        ">> 自动对话",
+        :msg_auto,
+        true,
+        t
+      )
+      @window_toolbar.set_handler(:msg_auto, TOOLBAR.method(:toggle_msg_auto))
+    end
+
     if $imported["EAGLE-MessageLog"]
       @window_toolbar.add_command(
         ">> 对话日志",
         :msg_log,
         true,
-        "开启对话日志界面，检查过去的记录"
+        "开启对话日志界面，查看对话记录"
       )
       @window_toolbar.set_handler(:msg_log, MSG_LOG.method(:call))
     end
@@ -117,6 +134,20 @@ module TOOLBAR
     msg = scene.message_window rescue return
     msg.visible ? msg.hide : msg.show
   end
+  #--------------------------------------------------------------------------
+  # ● 方法绑定-切换对话框自动播放
+  #--------------------------------------------------------------------------
+  AUTO_MSG_T = [nil, 30, 60, 120]
+  def self.toggle_msg_auto
+    v = $game_message.win_params[:auto_t]
+    i = AUTO_MSG_T.index(v)
+    if i
+      $game_message.win_params[:auto_t] = AUTO_MSG_T[(i + 1) % AUTO_MSG_T.size]
+    else
+      $game_message.win_params[:auto_t] = nil
+    end
+    $game_message.win_params[:auto_r] = false
+  end
 
   #--------------------------------------------------------------------------
   # ● 设置主窗口
@@ -141,10 +172,10 @@ module TOOLBAR
     sprite.bitmap = Bitmap.new(Graphics.height, Graphics.height)
     sprite.bitmap.font.size = 64
     sprite.bitmap.font.color = Color.new(255,255,255,10)
-    sprite.bitmap.draw_text(0,0,sprite.width,64, "TOOL", 0)
-    sprite.angle = 90
-    sprite.x = -32
-    sprite.y = Graphics.height
+    sprite.bitmap.draw_text(0,0,sprite.width,64, "PAUSE", 0)
+    sprite.angle = 0
+    sprite.x = -16
+    sprite.y = Graphics.height - 64 * 2.2
   end
   #--------------------------------------------------------------------------
   # ● 设置线条精灵（上侧）
@@ -339,6 +370,9 @@ class Window_Toolbar < Window_Command
   def clear_command_list
     @list ||= []
   end
+  def clear_command_list_eagle
+    @list = []
+  end
   #--------------------------------------------------------------------------
   # ● 生成指令列表
   #--------------------------------------------------------------------------
@@ -375,6 +409,14 @@ class Window_Toolbar < Window_Command
   #--------------------------------------------------------------------------
   alias eagle_toolbar_call_ok_handler call_ok_handler
   def call_ok_handler
+    if TOOLBAR::COMMANDS_NO_CLOSE.include?(current_symbol)
+      eagle_toolbar_call_ok_handler
+      clear_command_list_eagle
+      TOOLBAR::init_window_command
+      refresh
+      activate
+      return
+    end
     #eagle_toolbar_call_ok_handler
     @flag_ok = true
     close
