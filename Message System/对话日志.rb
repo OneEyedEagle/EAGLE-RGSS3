@@ -2,7 +2,7 @@
 # ■ 对话日志 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
-# - 2020.8.2.15 新增LOG标题文字
+# - 2020.8.22.15 优化对话框扩展的兼容性
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-MessageLog"] = true
@@ -201,7 +201,7 @@ end
   # ● 新增文本日志
   #--------------------------------------------------------------------------
   def self.add_text(msg)
-    if $imported["EAGLE-MessageEX"]
+    if $imported["EAGLE-MessageEX"] && msg.eagle_text != ""
       params = {}
       t = msg.eagle_text
       if $imported["EAGLE-MsgKeywordInfo"]

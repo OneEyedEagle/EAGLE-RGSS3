@@ -4,8 +4,21 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.8.20.11 新增文字移入移出位置指定；透明对话框时不再需要等待打开
+# - 2020.8.22.17 完全独立于默认Window_Message，大幅提升兼容性
 #=============================================================================
+# 【兼容模式】
+#
+# - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
+#
+# - 若此常量被设为 true，则本对话框不再默认生效
+#
+# - 只有当 $game_message.eagle_message 被赋值为 true 时，
+#   本对话框才会在地图/战斗中生效，且覆盖默认对话框
+#----------------------------------------------------------------------------
+EAGLE_MSG_EX_COMPAT_MODE = false
+#----------------------------------------------------------------------------
+# ● 转义符释义
+#----------------------------------------------------------------------------
 # - 对话框中对于 \code[param] 类型的转义符，传入param串、并执行code相对应的指令
 # - code 指令名解析：
 #     下述列举出的转义符（英文字符组合）
@@ -93,6 +106,7 @@ $imported["EAGLE-MessageEX"] = true
 #    z → 对话框的z值（仅正整数有效）（默认取va设置的200）
 #    skin → 对话框所用windowskin的index（按常量设置进行 index → skin名称 映射）
 #    bg → 对话框背景图片的index（按常量设置进行 index → 图片名称 映射）
+#        （只有当事件指令-显示文字-窗口背景为普通窗口时，才生效）
 #        （若读取成功，将不显示窗口皮肤；若读取失败，仍绘制窗口皮肤）
 #    bgo → 对话框背景图片与对话框的对齐原点（对应九宫格小键盘）
 #        （默认背景图片的左上角与对话框左上角对齐7）
@@ -1240,42 +1254,6 @@ module MESSAGE_EX::CHARA_EFFECTS
 end
 
 #=============================================================================
-# ○ DataManager
-#=============================================================================
-class << DataManager
-  #--------------------------------------------------------------------------
-  # ● 设置新游戏
-  #--------------------------------------------------------------------------
-  alias eagle_message_ex_setup_new_game setup_new_game
-  def setup_new_game
-    eagle_message_ex_setup_new_game
-    $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
-  end
-end
-#=============================================================================
-# ○ Scene_Map
-#=============================================================================
-class Spriteset_Map; attr_reader :character_sprites; end
-class Scene_Map; attr_reader :spriteset, :message_window; end
-#=============================================================================
-# ○ Scene_Battle
-#=============================================================================
-class Scene_Battle; attr_reader :spriteset; end
-#=============================================================================
-# ○ Game_System
-#=============================================================================
-class Game_System
-  #--------------------------------------------------------------------------
-  # ● 读档后的处理
-  #--------------------------------------------------------------------------
-  alias eagle_message_ex_on_after_load on_after_load
-  def on_after_load
-    eagle_message_ex_on_after_load
-    $game_message.check_params # 确保新增AddOn时，参数hash存在
-  end
-end
-
-#=============================================================================
 # ○ Game_Message
 #=============================================================================
 class Game_Message
@@ -1284,6 +1262,7 @@ class Game_Message
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :ex_params
+  attr_accessor :eagle_message # 兼容模式
   attr_accessor :eagle_text # 存储实际绘制的文本（去除了预处理的转义符）
   attr_accessor :escape_strings # 存储预定要添加的字符串
   attr_accessor :hold, :instant, :draw, :para, :event_id
@@ -1474,6 +1453,32 @@ class Game_Message
 end
 
 #=============================================================================
+# ○ DataManager
+#=============================================================================
+class << DataManager
+  #--------------------------------------------------------------------------
+  # ● 设置新游戏
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_setup_new_game setup_new_game
+  def setup_new_game
+    eagle_message_ex_setup_new_game
+    $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
+  end
+end
+#=============================================================================
+# ○ Game_System
+#=============================================================================
+class Game_System
+  #--------------------------------------------------------------------------
+  # ● 读档后的处理
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_on_after_load on_after_load
+  def on_after_load
+    eagle_message_ex_on_after_load
+    $game_message.check_params # 确保新增AddOn时，参数hash存在
+  end
+end
+#=============================================================================
 # ○ Game_Interpreter
 #=============================================================================
 class Game_Interpreter
@@ -1488,9 +1493,9 @@ class Game_Interpreter
 end
 
 #=============================================================================
-# ○ Window_Message
+# ○ Window_EagleMessage
 #=============================================================================
-class Window_Message
+class Window_EagleMessage < Window_Base
   include MESSAGE_EX::CHARA_EFFECTS
   attr_reader :eagle_charas_w, :eagle_charas_h, :eagle_chara_viewport
   #--------------------------------------------------------------------------
@@ -1522,18 +1527,29 @@ class Window_Message
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_init initialize
   def initialize
-    eagle_message_ex_init
+    super(0, 0, window_width, window_height)
+    create_all_windows
     eagle_message_init_assets
     eagle_message_init_params
     eagle_message_reset
+    self.openness = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 生成所有子窗口
+  #--------------------------------------------------------------------------
+  def create_all_windows
+    @gold_window = Window_EagleMsgGold.new(self)
+    @choice_window = Window_ChoiceList.new(self)
+    @number_window = Window_NumberInput.new(self)
+    @item_window = Window_KeyItem.new(self)
   end
   #--------------------------------------------------------------------------
   # ● 初始化组件
   # （在进行 clone 时，需要将该方法中的组件传递给拷贝窗口）
   #--------------------------------------------------------------------------
   def eagle_message_init_assets
+    @back_sprite = Sprite.new # 显示背景图片的精灵
     @eagle_chara_viewport = Viewport.new # 文字精灵的显示区域
     @eagle_chara_sprites = [] # 存储全部的文字精灵
     @eagle_sprite_pop_tag = Sprite.new # 初始化pop状态下的tag精灵
@@ -1547,6 +1563,9 @@ class Window_Message
   # （推荐将一些不需要传递给拷贝窗口的数据置于此处）
   #--------------------------------------------------------------------------
   def eagle_message_init_params
+    @fiber = nil                # 纤程
+    @background = 0             # 背景类型
+    @position = 2               # 显示位置
     @in_map = SceneManager.scene_is?(Scene_Map) # 地图场景中？
     @in_battle = SceneManager.scene_is?(Scene_Battle) # 战斗场景中？
     self.arrows_visible = false # 内容位图未完全显示时出现的箭头
@@ -1561,17 +1580,15 @@ class Window_Message
   #--------------------------------------------------------------------------
   # ● 拷贝自身
   #--------------------------------------------------------------------------
-  def clone(window = Window_Message_Clone)
+  def clone(window = Window_EagleMessage_Clone)
     t = window.new(game_message.clone)
     t.game_message.win_params[:z] = 0
     t.x = self.x; t.y = self.y; t.width = self.width; t.height = self.height
     t.z = self.z - 5
     t.windowskin = self.windowskin
     # 拷贝背景精灵
-    t.back_bitmap.dispose
     t.back_bitmap = @back_bitmap
-    t.back_sprite.bitmap = @back_bitmap
-    t.eagle_recreate_back_bitmap
+    t.back_sprite = @back_sprite
     @back_bitmap = nil
     # 拷贝视图
     t.eagle_chara_viewport = @eagle_chara_viewport
@@ -1604,6 +1621,7 @@ class Window_Message
     # 自身初始化组件与重置
     eagle_message_init_assets
     eagle_message_reset
+    eagle_recreate_back_bitmap
     t
   end
   #--------------------------------------------------------------------------
@@ -1617,7 +1635,9 @@ class Window_Message
   #--------------------------------------------------------------------------
   alias eagle_message_ex_dispose dispose
   def dispose
-    eagle_message_ex_dispose
+    dispose_all_windows
+    dispose_back_bitmap
+    @back_sprite.dispose
     @eagle_chara_sprites.each { |s| s.dispose }
     @eagle_window_name.dispose
     @eagle_sprite_face.dispose if @eagle_sprite_face
@@ -1628,7 +1648,16 @@ class Window_Message
     @eagle_chara_viewport.dispose
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）释放背景位图
+  # ● 释放所有窗口
+  #--------------------------------------------------------------------------
+  def dispose_all_windows
+    @gold_window.dispose
+    @choice_window.dispose
+    @number_window.dispose
+    @item_window.dispose
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放背景位图
   #--------------------------------------------------------------------------
   def dispose_back_bitmap
     @back_bitmap.dispose if @back_bitmap
@@ -1655,6 +1684,8 @@ class Window_Message
     face_params[:width] = 0
     # 重置集体的z值
     eagle_reset_z
+    # 清除显示标志
+    clear_flags
   end
   #--------------------------------------------------------------------------
   # ● 重置对话框（对话框不关闭，并继续显示）
@@ -1708,26 +1739,43 @@ class Window_Message
   end
 
   #--------------------------------------------------------------------------
+  # ● 更新画面
+  #--------------------------------------------------------------------------
+  def update
+    super
+    eagle_update_before_fiber
+    update_fiber
+    eagle_update_after_fiber
+  end
+  #--------------------------------------------------------------------------
   # ● 更新fiber
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_update_fiber update_fiber
   def update_fiber
-    eagle_update_before_fiber
-    eagle_message_ex_update_fiber
-    eagle_update_after_fiber
+    if @fiber
+      @fiber.resume
+    elsif game_message.busy? && !game_message.scroll_mode
+      @fiber = Fiber.new { fiber_main }
+      @fiber.resume
+    else
+      game_message.visible = false
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新（在 @fiber 更新之前）
   #--------------------------------------------------------------------------
   def eagle_update_before_fiber
+    update_all_windows
+    update_back_sprite
     eagle_update_assets_after_open if self.openness > 0
   end
   #--------------------------------------------------------------------------
-  # ● 更新（在 @fiber 更新之后）
+  # ● 更新所有窗口
   #--------------------------------------------------------------------------
-  def eagle_update_after_fiber
-    @eagle_chara_sprites.each { |s| s.update }
-    eagle_update_dup_windows
+  def update_all_windows
+    @gold_window.update
+    @choice_window.update
+    @number_window.update
+    @item_window.update
   end
   #--------------------------------------------------------------------------
   # ● 对话框打开后进行组件更新
@@ -1739,6 +1787,13 @@ class Window_Message
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
     force_close if MESSAGE_EX.skip?
     (self.visible ? hide : show) if MESSAGE_EX.toggle_visible?
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新（在 @fiber 更新之后）
+  #--------------------------------------------------------------------------
+  def eagle_update_after_fiber
+    @eagle_chara_sprites.each { |s| s.update }
+    eagle_update_dup_windows
   end
   #--------------------------------------------------------------------------
   # ● 更新拷贝窗口
@@ -1807,9 +1862,8 @@ class Window_Message
   #--------------------------------------------------------------------------
   # ● 关闭
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_close close
   def close
-    eagle_message_ex_close
+    super
     eagle_message_reset
   end
   #--------------------------------------------------------------------------
@@ -1860,7 +1914,8 @@ class Window_Message
   # ● 设置对话框的宽高
   #--------------------------------------------------------------------------
   def eagle_set_wh(des_w = nil, des_h = nil, _instant = false, _open = false)
-    _instant = true if self.opacity == 0 # 若为透明背景，则直接打开
+    # 若为透明背景，则直接完成
+    _instant = true if self.opacity == 0 && !@back_sprite.visible
     if des_w.nil?
       des_w  = eagle_window_width
       des_w += eagle_window_width_add(des_w)
@@ -1905,7 +1960,16 @@ class Window_Message
     end
   end
   #--------------------------------------------------------------------------
-  # ● 获取窗口宽度高度
+  # ● 获取窗口的初始宽度高度
+  #--------------------------------------------------------------------------
+  def window_width
+    Graphics.width
+  end
+  def window_height
+    fitting_height(4)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取窗口的实际宽度高度
   #--------------------------------------------------------------------------
   def eagle_window_width
     if game_message.pop? && pop_params[:w] > 0
@@ -2184,8 +2248,6 @@ class Window_Message
   # ● 重新生成背景位图
   #--------------------------------------------------------------------------
   def eagle_recreate_back_bitmap(w = self.width, h = self.height)
-    return if win_params[:bg] && eagle_draw_bg_pic
-    @win_bg_draw = nil # 清除之前的图片背景
     case game_message.background
     when 1 # 暗色背景
       if @back_bitmap && @back_bitmap.width == w && @back_bitmap.height == h
@@ -2206,9 +2268,23 @@ class Window_Message
       @back_sprite.visible = false
       self.opacity = 0
     else # 普通
+      return if win_params[:bg] && eagle_draw_bg_pic
       @back_sprite.visible = false
       self.opacity = 255
     end
+    @win_bg_draw = nil # 清除之前的图片背景
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取背景色 1
+  #--------------------------------------------------------------------------
+  def back_color1
+    Color.new(0, 0, 0, 160)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取背景色 2
+  #--------------------------------------------------------------------------
+  def back_color2
+    Color.new(0, 0, 0, 0)
   end
   #--------------------------------------------------------------------------
   # ● 绘制背景图片
@@ -2251,12 +2327,11 @@ class Window_Message
   end
 
   #--------------------------------------------------------------------------
-  # ● 处理纤程的主逻辑（覆盖）
+  # ● 处理纤程的主逻辑
   #--------------------------------------------------------------------------
   def fiber_main
     game_message.visible = true
-    update_background
-    update_placement
+    eagle_process_before_start
     loop do
       eagle_process_all_text
       process_input
@@ -2268,6 +2343,13 @@ class Window_Message
     close_and_wait
     game_message.visible = false
     @fiber = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 首次开启对话框时的处理
+  #--------------------------------------------------------------------------
+  def eagle_process_before_start
+    @background = game_message.background
+    @position = game_message.position
   end
   #--------------------------------------------------------------------------
   # ● 处理全部文本（扩展）
@@ -2285,7 +2367,7 @@ class Window_Message
   #--------------------------------------------------------------------------
   def eagle_process_before_close
     game_message.clear
-    @gold_window.close
+    @gold_window.close if @gold_window
   end
   #--------------------------------------------------------------------------
   # ● 判定文字是否继续显示（覆盖）
@@ -2295,6 +2377,7 @@ class Window_Message
   end
   #--------------------------------------------------------------------------
   # ● 判定对话框设置是否被更改（覆盖）
+  #  此时 $game_message 中存储了下一条指令的对话信息
   #  若返回 false，则会保留当前对话框不关闭，继续显示下一个指令的文本
   #--------------------------------------------------------------------------
   def settings_changed?
@@ -2325,12 +2408,11 @@ class Window_Message
   #    在实际绘制前、将控制符替换为实际的内容。
   #    为了减少歧异，文字「\」会被首先替换为转义符（\e）。
   #--------------------------------------------------------------------------
-  alias eagle_convert_escape_characters convert_escape_characters
   def convert_escape_characters(text)
     result = text.to_s.clone
     result = eagle_process_conv(result)
     result = eagle_process_rb(result)
-    result = eagle_convert_escape_characters(result) # 此处将 \\ 替换成了 \e
+    result = super(result) # 此处将 \\ 替换成了 \e
     result.gsub!(/\eINFO\[(\w)(\d+)\]/i) { MESSAGE_EX.get_data_info($1, $2.to_i) }
     result.gsub!(/\enl|\enew_line/i) { "\n" } # 替换换行转义符
     result
@@ -2386,6 +2468,14 @@ class Window_Message
     game_message.eagle_text = text.clone
     # 当预先转义符全部处理完成，进行一次预绘制
     pre_calc_charas_wh(text, pos)
+  end
+  #--------------------------------------------------------------------------
+  # ● 清除标志
+  #--------------------------------------------------------------------------
+  def clear_flags
+    @show_fast = false          # 快进的标志
+    @line_show_fast = false     # 行单位快进的标志
+    @pause_skip = false         # “不等待输入”的标志
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）获取换行位置
@@ -2616,13 +2706,13 @@ class Window_Message
     self.oy = d if d > 0
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）处于快进显示？
+  # ● 处于快进显示？
   #--------------------------------------------------------------------------
   def show_fast?
     game_message.instant || @show_fast || @line_show_fast
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）输出一个字符后的等待
+  # ● 输出一个字符后的等待
   #--------------------------------------------------------------------------
   def wait_for_one_character
     MESSAGE_EX.se(game_message.win_params[:se])
@@ -2633,7 +2723,13 @@ class Window_Message
     end
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）换行文字的处理（删去翻页）
+  # ● 监听“确定”键的按下，更新快进的标志
+  #--------------------------------------------------------------------------
+  def update_show_fast
+    @show_fast = true if Input.trigger?(:C)
+  end
+  #--------------------------------------------------------------------------
+  # ● 换行文字的处理（删去翻页）
   #  由于自动对齐的存在，无需预先计算当前行高，text参数无效
   #--------------------------------------------------------------------------
   def process_new_line(text = '', pos)
@@ -2647,13 +2743,20 @@ class Window_Message
   #--------------------------------------------------------------------------
   # ● 输入处理（此处为全部绘制完成后，判定接下来的输入类型）
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_process_input process_input
   def process_input
-    eagle_message_ex_process_input
+    if game_message.choice?
+      input_choice
+    elsif game_message.num_input?
+      input_number
+    elsif game_message.item_choice?
+      input_item
+    else
+      input_pause unless @pause_skip
+    end
     eagle_process_hold
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）处理输入等待
+  # ● 处理输入等待
   #--------------------------------------------------------------------------
   def input_pause
     return if !game_message.draw
@@ -2838,8 +2941,8 @@ class Window_Message
         w.z = t.z - (i+1) * 5; w.eagle_reset_z
       end
       @eagle_dup_windows.unshift(t)
-      self.opacity = 0
       self.openness = 0
+      @flag_need_open = true
     else
       eagle_release_hold
     end
@@ -2931,7 +3034,6 @@ class Window_Message
   #     text : 绘制处理中的字符串缓存（字符串可能会被修改）
   #     pos  : 绘制位置 {:x, :y, :new_x, :height}
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_process_escape_character process_escape_character
   def process_escape_character(code, text, pos)
     return if eagle_call_process_escape(code, text, pos)
     temp_code = code.downcase
@@ -2947,7 +3049,7 @@ class Window_Message
       game_message.chara_params[temp_code.to_sym] = param
       method(m_e).call(param)
     else
-      eagle_message_ex_process_escape_character(code, text, pos)
+      super(code, text, pos)
     end
   end
   #--------------------------------------------------------------------------
@@ -2958,12 +3060,35 @@ class Window_Message
   #  返回 true 则代表转义符执行成功，否则继续匹配组件和默认转义符
   #--------------------------------------------------------------------------
   def eagle_call_process_escape(code, text, pos)
-    if code.upcase == 'C'
+    c = code.upcase
+    if c == '$' && @gold_window
+      @gold_window.open? ? @gold_window.close : @gold_window.open
+      return true
+    end
+    if c == '.'
+      wait(15); return true
+    end
+    if c == '|'
+      wait(60); return true
+    end
+    if c == '!'
+      input_pause; return true
+    end
+    if c == '>'
+      @line_show_fast = true; return true
+    end
+    if c == '<'
+      @line_show_fast = false; return true
+    end
+    if c == '^'
+      @pause_skip = true; return true
+    end
+    if c == 'C'
       font_params[:c] = obtain_escape_param_string(text)
       change_color(text_color(font_params[:c]))
       return true
     end
-    if code.upcase == "PIC"
+    if c == "PIC"
       process_draw_pic(text, pos)
       return true
     end
@@ -3047,11 +3172,10 @@ class Window_Message
   #--------------------------------------------------------------------------
   # ● （覆盖）获取基础行高
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_line_height line_height
   def line_height
     h = win_params[:lh]
     return h if h > 0
-    return eagle_message_ex_line_height
+    return super
   end
 
   #--------------------------------------------------------------------------
@@ -3359,7 +3483,7 @@ end # end of class Window_Message
 #=============================================================================
 # ○ 对话框拷贝
 #=============================================================================
-class Window_Message_Clone < Window_Message
+class Window_EagleMessage_Clone < Window_EagleMessage
   attr_accessor :back_bitmap, :back_sprite
   attr_accessor :eagle_chara_viewport
   attr_accessor :eagle_chara_sprites, :eagle_sprite_pop_tag, :eagle_pop_tag_bitmap
@@ -3419,14 +3543,12 @@ class Window_Message_Clone < Window_Message
   # ● 更新纤程
   #--------------------------------------------------------------------------
   def update_fiber
-    eagle_update_before_fiber
     if @fiber
       @fiber.resume
     elsif self.openness >= 255 && !@fin
       @fiber = Fiber.new { fiber_main }
       @fiber.resume
     end
-    eagle_update_after_fiber
   end
   #--------------------------------------------------------------------------
   # ● 处理纤程的主逻辑
@@ -3445,6 +3567,60 @@ class Window_Message_Clone < Window_Message
   #--------------------------------------------------------------------------
   def close_clone
     @fin = true
+  end
+end
+
+#=============================================================================
+# ○ 金钱框窗口
+#=============================================================================
+class Window_EagleMsgGold < Window_Base
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  def initialize(window_msg)
+    bind_window(window_msg)
+    super(0, 0, window_width, fitting_height(1))
+    self.x = Graphics.width - self.width
+    self.y = 0
+    self.openness = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 绑定对话框
+  #--------------------------------------------------------------------------
+  def bind_window(window)
+    @window_msg = window
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取窗口的宽度
+  #--------------------------------------------------------------------------
+  def window_width
+    return 160
+  end
+  #--------------------------------------------------------------------------
+  # ● 刷新
+  #--------------------------------------------------------------------------
+  def refresh
+    contents.clear
+    draw_currency_value(value, currency_unit, 4, 0, contents.width - 8)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取持有金钱
+  #--------------------------------------------------------------------------
+  def value
+    $game_party.gold
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取货币单位
+  #--------------------------------------------------------------------------
+  def currency_unit
+    Vocab::currency_unit
+  end
+  #--------------------------------------------------------------------------
+  # ● 打开窗口
+  #--------------------------------------------------------------------------
+  def open
+    refresh
+    super
   end
 end
 
@@ -4536,12 +4712,12 @@ class Sprite_EagleCharacter < Sprite
     params = @params[:cin]
     return self.opacity = 255 if params.nil?
     unbind_viewport
+    @dx = @dy = 0
     update_position # 用于获取实际的最终显示位置（屏幕坐标）
 
     _rect = Rect.new(self.x, self.y, self.width, self.height)
     if params[:do] != 0
       MESSAGE_EX.reset_xy_dorigin(_rect, @window_bind, params[:do])
-      MESSAGE_EX.reset_xy_origin(_rect, 5)
     end
     @dx = params[:dx_init] = _rect.x + params[:dx] - self.x
     @dy = params[:dy_init] = _rect.y + params[:dy] - self.y
@@ -4845,4 +5021,80 @@ class Sprite_EagleCharacter < Sprite
     @eagle_font.set_param(:m, charas)
     @eagle_font.set_param(:mc, params[:c])
   end
+end
+
+#=============================================================================
+# ○ 兼容模式
+#=============================================================================
+module MESSAGE_EX::COMPA_MODE
+  #--------------------------------------------------------------------------
+  # ● 更新画面
+  #--------------------------------------------------------------------------
+  def update_all_windows
+    if $game_message.eagle_message == true
+      @message_window = @msg_windows[1]
+    else
+      @message_window = @msg_windows[0]
+    end
+    eagle_message_ex_compa_mode_update_all_windows
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放所有窗口
+  #--------------------------------------------------------------------------
+  def dispose_all_windows
+    @msg_windows.each { |w| w.dispose }
+    @message_window = nil
+    eagle_message_ex_compa_mode_dispose_all_windows
+  end
+end
+#=============================================================================
+# ○ Scene_Map
+#=============================================================================
+class Spriteset_Map; attr_reader :character_sprites; end
+class Scene_Map
+  attr_reader :spriteset, :message_window
+if EAGLE_MSG_EX_COMPAT_MODE == true
+  alias eagle_message_ex_compa_mode_update_all_windows update_all_windows
+  alias eagle_message_ex_compa_mode_dispose_all_windows dispose_all_windows
+  include MESSAGE_EX::COMPA_MODE
+  #--------------------------------------------------------------------------
+  # ● 生成信息窗口
+  #--------------------------------------------------------------------------
+  def create_message_window
+    @msg_windows = [Window_Message.new, Window_EagleMessage.new]
+    @message_window = @msg_windows[0]
+  end
+else
+  #--------------------------------------------------------------------------
+  # ● 生成信息窗口
+  #--------------------------------------------------------------------------
+  def create_message_window
+    @message_window = Window_EagleMessage.new
+  end
+end
+end
+#=============================================================================
+# ○ Scene_Battle
+#=============================================================================
+class Scene_Battle
+  attr_reader :spriteset, :message_window
+if EAGLE_MSG_EX_COMPAT_MODE == true
+  alias eagle_message_ex_compa_mode_update_all_windows update_all_windows
+  alias eagle_message_ex_compa_mode_dispose_all_windows dispose_all_windows
+  include MESSAGE_EX::COMPA_MODE
+  #--------------------------------------------------------------------------
+  # ● 生成信息窗口
+  #--------------------------------------------------------------------------
+  def create_message_window
+    @msg_windows = [Window_Message.new, Window_EagleMessage.new]
+    @message_window = @msg_windows[0]
+  end
+else
+  #--------------------------------------------------------------------------
+  # ● 生成信息窗口
+  #--------------------------------------------------------------------------
+  def create_message_window
+    @message_window = Window_EagleMessage.new
+  end
+end
 end
