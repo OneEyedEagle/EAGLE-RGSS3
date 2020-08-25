@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.8.22.17 完全独立于默认Window_Message，大幅提升兼容性
+# - 2020.8.25.20 完全独立于默认Window_Message，大幅提升兼容性
 #=============================================================================
 # 【兼容模式】
 #
@@ -1572,6 +1572,7 @@ class Window_EagleMessage < Window_Base
     @flag_open_close = false # 当正在进行打开/关闭时，置为 true
     @flag_temp_params = false # 当前对话框的转义符不会保存到game_message中？
     @flag_need_open = true # 当为 true 时，需要执行open_and_wait
+    @flag_need_change_wh = false # 当为 true 时，需要动态变更大小
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
     @eagle_evals = [] # 存储当前对话框的动态脚本 [eval_str, eval_str...]
     @eagle_chara_sets = {} # 存储文字的分组
@@ -2389,6 +2390,8 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_after_check_continue
     eagle_message_reset_continue
+    # 需要动态变更大小
+    @flag_need_change_wh = true
   end
 
   #--------------------------------------------------------------------------
@@ -2646,6 +2649,13 @@ class Window_EagleMessage < Window_Base
   def eagle_process_draw_update
     # 第一个文字绘制后打开窗口
     return eagle_open_and_wait if @flag_need_open
+    # 如果需要动态更新大小
+    if @flag_need_change_wh
+      @eagle_chara_sprites.each { |c| c.visible = false }
+      eagle_set_wh(nil, nil)
+      @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
+      @flag_need_change_wh = false
+    end
     eagle_set_wh(nil, nil, true) # 重设对话框宽高，并更新对话框位置
     # 对齐需要用到对话框的宽高，因此在更新后执行
     eagle_charas_reset_alignment(win_params[:ali])
@@ -2732,7 +2742,7 @@ class Window_EagleMessage < Window_Base
   # ● 换行文字的处理（删去翻页）
   #  由于自动对齐的存在，无需预先计算当前行高，text参数无效
   #--------------------------------------------------------------------------
-  def process_new_line(text = '', pos)
+  def process_new_line(text, pos)
     pos[:height] += win_params[:ld] # 当前行增加一个行间距
     @line_show_fast = false
     pos[:x] = pos[:new_x]

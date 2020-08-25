@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-AStar"] = true
 #==============================================================================
-# - 2020.7.11.18 优化
+# - 2020.8.25.15 新增报错拦截
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -224,7 +224,7 @@ class Game_Character
   # ● 寻路前进一步
   #--------------------------------------------------------------------------
   def astar_one_step(x, y)
-    list = Eagle_AStar.do(self, x, y)
+    list = Eagle_AStar.do(self, x, y) rescue nil
     return true if list == true
     return false if list.nil? || list.empty?
     move_straight(list[0])
