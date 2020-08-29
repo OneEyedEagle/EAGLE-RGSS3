@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.8.25.20 完全独立于默认Window_Message，大幅提升兼容性
+# - 2020.8.29.10 优化game_message中存储的变量
 #=============================================================================
 # 【兼容模式】
 #
@@ -246,6 +246,8 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #  \temp → 【结尾】当前对话框对转义符参数的变更不会被保留
 #          （在当前显示文本指令结束前，转义符参数的修改仍然生效）
 #
+#  \close → 【结尾】当前对话框不再受 settings_changed? 影响，必定处理关闭
+#
 #----------------------------------------------------------------------------
 # - 文字特效类
 #     以下 param 传入 任意非0非空字符（如 1） 代表以预设值开启特效
@@ -390,15 +392,6 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #----------------------------------------------------------------------------
 # ● 高级功能
 #----------------------------------------------------------------------------
-# - 对话框跨指令继续
-#
-#   利用该脚本设置对话框不关闭继续显示的开启状态（默认 true）
-#
-#         $game_message.no_close = true 或者 false
-#
-# · 若开启且 settings_changed? 方法返回 false，对话框将不关闭，继续显示下一条指令的文本
-# · 在当前版本中，如果对话框背景与对话框位置均未更改，则 settings_changed? 返回 false
-#----------------------------------------------------------------------------
 # - 自动换行
 #
 #   利用该脚本设置对话框自动换行的开启状态（默认 true）
@@ -429,15 +422,13 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #
 #   利用该脚本设置对话框与下一条指令的 选择框/数字输入框/物品选择框 并行处理
 #
-#         $game_message.para = true
+#         $game_message.para = true 或 false
 #
-# · 当赋值为 true 后，若当前对话框的下一条指令为 选择支/数字输入/物品选择，
-#      则会在对话框打开、开始绘制文字时，同步打开并激活选择框
+# · 当赋值为 true 时，若对话框的下一条指令为 选择支/数字输入/物品选择，
+#      则会在对话框打开、开始绘制文字时，同步打开并激活选择框/数字输入框/物品选择
 #
-# · 当选择框的按键处理结束并关闭时，对话框将同步强制关闭
-#    【注意】未被绘制的转义符可能不会生效！
-#
-# · 该并行设置不会被存储，因此请在每个需要并行处理子窗口的对话框前执行一次该脚本
+# · 当子窗口的按键处理结束并关闭时，对话框将同步强制关闭
+#    【注意】对话框中未被绘制的转义符可能不会生效！
 #----------------------------------------------------------------------------
 # - 预定绘制文本
 #
@@ -1258,16 +1249,14 @@ end
 #=============================================================================
 class Game_Message
   attr_reader   :params_need_apply # 存储需要被预定应用的符号（调用对应处理方法）
+  attr_accessor :escape_strings # 存储预定要添加的字符串
   attr_accessor :chara_params # 存储文字特效预设 code_symbol => param_string
   attr_accessor :font_params, :win_params, :pop_params
-  attr_accessor :face_params, :name_params, :pause_params
-  attr_accessor :ex_params
-  attr_accessor :eagle_message # 兼容模式
+  attr_accessor :face_params, :name_params, :pause_params, :ex_params
+  attr_accessor :event_id, :child_window_w_des, :child_window_h_des
+  attr_accessor :para, :default_open_type, :auto_wrap
   attr_accessor :eagle_text # 存储实际绘制的文本（去除了预处理的转义符）
-  attr_accessor :escape_strings # 存储预定要添加的字符串
-  attr_accessor :hold, :instant, :draw, :para, :event_id
-  attr_accessor :child_window_w_des, :child_window_h_des
-  attr_accessor :default_open_type, :auto_wrap, :no_close
+  attr_accessor :eagle_message # 兼容模式
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -1314,15 +1303,11 @@ class Game_Message
   #--------------------------------------------------------------------------
   alias eagle_message_ex_clear clear
   def clear
-    eagle_message_ex_clear
-    @eagle_text = ""
     @default_open_type ||= false # 使用默认的窗口打开方式？
     @auto_wrap ||= true # 开启自动换行？
-    @no_close ||= true # 当为 true 时，开启对话框跨指令显示
-    @draw = true # 开启绘制？
-    @hold = false # 当前对话框要保留显示？
-    @instant = false # 当前对话框立即显示？
-    @para = false # 并行显示选择框？
+    @para ||= false # 并行显示选择框？
+    eagle_message_ex_clear
+    @eagle_text = ""
     @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
     @child_window_w_des = 0 # 因子窗口嵌入而额外增加的宽高
     @child_window_h_des = 0
@@ -1440,7 +1425,6 @@ class Game_Message
     end
     t.default_open_type = @default_open_type
     t.auto_wrap = @auto_wrap
-    t.no_close = @no_close
     t
   end
   #--------------------------------------------------------------------------
@@ -1517,6 +1501,12 @@ class Window_EagleMessage < Window_Base
     MESSAGE_EX.reset_xy_dorigin(obj, obj2, o)
   end
   #--------------------------------------------------------------------------
+  # ● 解析字符串参数
+  #--------------------------------------------------------------------------
+  def parse_param(param_hash, param_text, default_type = "default")
+    MESSAGE_EX.parse_param(param_hash, param_text, default_type)
+  end
+  #--------------------------------------------------------------------------
   # ● 获取文字颜色
   #     n : 文字颜色编号（0..31）
   #--------------------------------------------------------------------------
@@ -1569,10 +1559,14 @@ class Window_EagleMessage < Window_Base
     @in_map = SceneManager.scene_is?(Scene_Map) # 地图场景中？
     @in_battle = SceneManager.scene_is?(Scene_Battle) # 战斗场景中？
     self.arrows_visible = false # 内容位图未完全显示时出现的箭头
+    @flag_draw = true # 当为 true 时，代表需要进行绘制
     @flag_open_close = false # 当正在进行打开/关闭时，置为 true
     @flag_temp_params = false # 当前对话框的转义符不会保存到game_message中？
     @flag_need_open = true # 当为 true 时，需要执行open_and_wait
     @flag_need_change_wh = false # 当为 true 时，需要动态变更大小
+    @flag_need_close = false # 当为 true 时，当前对话框必定处理关闭
+    @flag_hold = false # 当为 true 时，当前对话框会被拷贝保留，并同步更新
+    @flag_instant = false # 当为 true 时，当前对话框不再处理文字显示的等待
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
     @eagle_evals = [] # 存储当前对话框的动态脚本 [eval_str, eval_str...]
     @eagle_chara_sets = {} # 存储文字的分组
@@ -1678,9 +1672,8 @@ class Window_EagleMessage < Window_Base
     # 重置文字区域的宽度高度
     @eagle_charas_w = @eagle_charas_h = 0
     @eagle_charas_w_final = @eagle_charas_h_final = 0
-    # 重置pop参数
+    # 重置pop对象，防止报错
     @eagle_pop_obj = nil
-    pop_params[:type] = nil # pop绑定对象的类型
     # 重置脸图宽度
     face_params[:width] = 0
     # 重置集体的z值
@@ -2374,7 +2367,8 @@ class Window_EagleMessage < Window_Base
   # ● 判定文字是否继续显示（覆盖）
   #--------------------------------------------------------------------------
   def text_continue?
-    game_message.no_close && game_message.has_text? && !settings_changed?
+    return false if @flag_need_close
+    game_message.has_text? && !settings_changed?
   end
   #--------------------------------------------------------------------------
   # ● 判定对话框设置是否被更改（覆盖）
@@ -2382,8 +2376,8 @@ class Window_EagleMessage < Window_Base
   #  若返回 false，则会保留当前对话框不关闭，继续显示下一个指令的文本
   #--------------------------------------------------------------------------
   def settings_changed?
-    @background != $game_message.background ||
-    @position != $game_message.position
+    @background != game_message.background ||
+    @position != game_message.position
   end
   #--------------------------------------------------------------------------
   # ● 继续显示后的处理
@@ -2392,6 +2386,15 @@ class Window_EagleMessage < Window_Base
     eagle_message_reset_continue
     # 需要动态变更大小
     @flag_need_change_wh = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 继续显示时的宽高处理（在第一个文字绘制后）
+  #--------------------------------------------------------------------------
+  def eagle_change_wh_when_continue
+    @eagle_chara_sprites.each { |c| c.visible = false }
+    eagle_set_wh(nil, nil)
+    @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
+    @flag_need_change_wh = false
   end
 
   #--------------------------------------------------------------------------
@@ -2450,6 +2453,13 @@ class Window_EagleMessage < Window_Base
     eagle_process_draw_update if !@eagle_chara_sprites.empty?
   end
   #--------------------------------------------------------------------------
+  # ● 强制中断绘制全部文本
+  #--------------------------------------------------------------------------
+  def force_close
+    @eagle_force_close = true  # 若还在绘制，则直接结束绘制并跳过最后的等待按键
+    @eagle_auto_continue_c = 0 # 若进入了按键等待，则将计数置0，并依靠auto跳过按键
+  end
+  #--------------------------------------------------------------------------
   # ● （覆盖）翻页处理
   #--------------------------------------------------------------------------
   def new_page(text, pos)
@@ -2461,7 +2471,6 @@ class Window_EagleMessage < Window_Base
     pos[:height] = line_height
     reset_font_settings
     clear_flags
-
     eagle_apply_params_changes
     eagle_check_pre_settings(text)
     eagle_draw_face(game_message.face_name, game_message.face_index)
@@ -2473,12 +2482,23 @@ class Window_EagleMessage < Window_Base
     pre_calc_charas_wh(text, pos)
   end
   #--------------------------------------------------------------------------
-  # ● 清除标志
+  # ● 清除标志（此处放置每次绘制前需要清空的数据）
   #--------------------------------------------------------------------------
   def clear_flags
     @show_fast = false          # 快进的标志
     @line_show_fast = false     # 行单位快进的标志
     @pause_skip = false         # “不等待输入”的标志
+    pop_params[:type] = nil     # pop绑定对象的类型
+  end
+  #--------------------------------------------------------------------------
+  # ● 应用预定的转义符修改
+  #--------------------------------------------------------------------------
+  def eagle_apply_params_changes
+    game_message.params_need_apply.each do |sym|
+      m_c = ("eagle_text_control_#{sym}").to_sym
+      method(m_c).call("") if respond_to?(m_c)
+    end
+    game_message.clear_applys
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）获取换行位置
@@ -2491,7 +2511,7 @@ class Window_EagleMessage < Window_Base
   def pre_calc_charas_wh(text, pos)
     text_ = text.clone; pos_ = pos.clone
     game_message.save_params
-    game_message.draw = false
+    @flag_draw = false
     # 初始化
     @eagle_charas_w = @eagle_charas_h = 0
     # 执行预绘制
@@ -2503,14 +2523,8 @@ class Window_EagleMessage < Window_Base
     # 复原
     @eagle_charas_w = @eagle_charas_h = 0
     game_message.load_params(nil)
-    game_message.draw = true
-  end
-  #--------------------------------------------------------------------------
-  # ● 强制中断绘制全部文本
-  #--------------------------------------------------------------------------
-  def force_close
-    @eagle_force_close = true  # 若还在绘制，则直接结束绘制并跳过最后的等待按键
-    @eagle_auto_continue_c = 0 # 若进入了按键等待，则将计数置0，并依靠auto跳过按键
+    game_message.clear_applys
+    @flag_draw = true
   end
 
   #--------------------------------------------------------------------------
@@ -2562,7 +2576,7 @@ class Window_EagleMessage < Window_Base
   def process_normal_character(c, pos)
     c_rect = text_size(c); c_w = c_rect.width; c_h = c_rect.height
     eagle_auto_new_line(c_w, pos)
-    if game_message.draw
+    if @flag_draw
       s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
       s.eagle_font.draw(s.bitmap, 0, 0, c_w, c_h, c, 0)
     end
@@ -2573,7 +2587,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def process_draw_icon(icon_index, pos)
     eagle_auto_new_line(24, pos)
-    if game_message.draw
+    if @flag_draw
       s = eagle_new_chara_sprite(pos[:x], pos[:y], 24, 24)
       s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index)
     end
@@ -2593,7 +2607,7 @@ class Window_EagleMessage < Window_Base
     h[:opa] ||= 255
 
     eagle_auto_new_line(h[:w], pos)
-    if game_message.draw
+    if @flag_draw
       s = eagle_new_chara_sprite(pos[:x], pos[:y], h[:w], h[:h])
       s.eagle_font.draw_pic(s.bitmap, _bitmap, h)
     end
@@ -2619,7 +2633,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_auto_new_line(c_w, pos)
     return if game_message.auto_wrap == false
-    return if game_message.draw == false
+    return if @flag_draw == false
     return if !eagle_fix_w? && eagle_dynamic_w?
     max_w = eagle_charas_max_w
     return if max_w <= 0
@@ -2638,7 +2652,7 @@ class Window_EagleMessage < Window_Base
     # 处理文字区域大小更改
     @eagle_charas_w = pos[:x] if @eagle_charas_w < pos[:x]
     @eagle_charas_h = pos[:y] + pos[:height] if @eagle_charas_h < pos[:y] + pos[:height]
-    return if !game_message.draw
+    return if !@flag_draw
     return if show_fast? # 如果是立即显示，则不更新
     eagle_process_draw_update
     wait_for_one_character
@@ -2649,13 +2663,8 @@ class Window_EagleMessage < Window_Base
   def eagle_process_draw_update
     # 第一个文字绘制后打开窗口
     return eagle_open_and_wait if @flag_need_open
-    # 如果需要动态更新大小
-    if @flag_need_change_wh
-      @eagle_chara_sprites.each { |c| c.visible = false }
-      eagle_set_wh(nil, nil)
-      @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
-      @flag_need_change_wh = false
-    end
+    # 如果是继续显示，需要动态更新大小
+    eagle_change_wh_when_continue if @flag_need_change_wh
     eagle_set_wh(nil, nil, true) # 重设对话框宽高，并更新对话框位置
     # 对齐需要用到对话框的宽高，因此在更新后执行
     eagle_charas_reset_alignment(win_params[:ali])
@@ -2719,7 +2728,7 @@ class Window_EagleMessage < Window_Base
   # ● 处于快进显示？
   #--------------------------------------------------------------------------
   def show_fast?
-    game_message.instant || @show_fast || @line_show_fast
+    @flag_instant || @show_fast || @line_show_fast
   end
   #--------------------------------------------------------------------------
   # ● 输出一个字符后的等待
@@ -2751,172 +2760,13 @@ class Window_EagleMessage < Window_Base
   end
 
   #--------------------------------------------------------------------------
-  # ● 输入处理（此处为全部绘制完成后，判定接下来的输入类型）
-  #--------------------------------------------------------------------------
-  def process_input
-    if game_message.choice?
-      input_choice
-    elsif game_message.num_input?
-      input_number
-    elsif game_message.item_choice?
-      input_item
-    else
-      input_pause unless @pause_skip
-    end
-    eagle_process_hold
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理输入等待
-  #--------------------------------------------------------------------------
-  def input_pause
-    return if !game_message.draw
-    before_input_pause
-    eagle_process_draw_update # 统一更新一次
-    @eagle_sprite_pause.bind_last_chara(@eagle_chara_sprites[-1])
-    @eagle_sprite_pause.show
-    self.pause = true unless MESSAGE_EX::NO_DEFAULT_PAUSE
-    process_input_pause
-    self.pause = false
-    @eagle_sprite_pause.hide
-  end
-  #--------------------------------------------------------------------------
-  # ● 输入等待前的操作
-  #--------------------------------------------------------------------------
-  def before_input_pause
-    # 当pause精灵位于句末且紧靠边界时
-    #  增加对话框宽度保证它在对话框内部（不可占用padding）
-    if pause_params[:v] != 0 && pause_params[:do] <= 0 &&
-       game_message.input_pause? && eagle_add_w_by_child_window?
-      # 最大可用于文字绘制的宽度 eagle_charas_max_w
-      # 全部文字实际绘制的宽度 @eagle_charas_w_final + win_params[:cdw]
-      # 最后一行所需的绘制宽度 @eagle_next_chara_x
-      if @eagle_next_chara_x >= @eagle_charas_w_final
-        @eagle_sprite_pause_width_add = @eagle_sprite_pause.width
-      else
-        d = @eagle_charas_w_final + win_params[:cdw] - @eagle_next_chara_x
-        d -= @eagle_sprite_pause.width
-        @eagle_sprite_pause_width_add = -d if d <= 0
-      end
-    else
-      @eagle_sprite_pause_width_add = 0
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 执行输入等待
-  #--------------------------------------------------------------------------
-  def process_input_pause
-    recreate_contents_for_charas
-    @eagle_auto_continue_c = win_params[:auto_t]
-    ox_max = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
-    oy_max = self.oy
-    d_oxy = 1; last_input = nil; last_input_c = 0
-    self.arrows_visible = true
-    while true
-      Fiber.yield
-      # 处理自动继续
-      if @eagle_auto_continue_c
-        break if @eagle_auto_continue_c <= 0
-        process_while_auto_wait_input_pause(@eagle_auto_continue_c)
-        @eagle_auto_continue_c -= 1
-      end
-      break if check_input_pause?
-      # 处理内容滚动
-      if Input.press?(:UP)
-        self.oy -= d_oxy
-        self.oy = 0 if self.oy < 0
-      elsif Input.press?(:DOWN)
-        self.oy += d_oxy
-        self.oy = oy_max if self.oy > oy_max
-      elsif Input.press?(:LEFT)
-        self.ox -= d_oxy
-        self.ox = 0 if self.ox < 0
-      elsif Input.press?(:RIGHT)
-        self.ox += d_oxy
-        self.ox = ox_max if self.ox > ox_max
-      end
-      if last_input == Input.dir4
-        last_input_c += 1
-        d_oxy += 1 if last_input_c % 10 == 0
-      else
-        d_oxy = 1
-        last_input_c = 0
-      end
-      last_input = Input.dir4
-    end
-    self.arrows_visible = false
-    Input.update
-  end
-  #--------------------------------------------------------------------------
-  # ● 等待按键时，启用auto时的额外处理
-  #  c 为自动继续的剩余帧数，从 win_params[:auto_t] 获取总等待帧数
-  #--------------------------------------------------------------------------
-  def process_while_auto_wait_input_pause(c)
-    @eagle_sprite_pause.redraw_auto_countdown(c)
-  end
-  #--------------------------------------------------------------------------
-  # ● 检查输入等待的按键
-  #--------------------------------------------------------------------------
-  def check_input_pause?
-    Input.trigger?(:B) || Input.trigger?(:C)
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理选项的输入（覆盖）
-  #--------------------------------------------------------------------------
-  def input_choice
-    input_wait_until_msg_wh(@choice_window)
-    input_wait_while_active(@choice_window)
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理数值的输入（覆盖）
-  #--------------------------------------------------------------------------
-  def input_number
-    input_wait_until_msg_wh(@number_window)
-    input_wait_while_active(@number_window)
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理物品的选择（覆盖）
-  #--------------------------------------------------------------------------
-  def input_item
-    input_wait_until_msg_wh(@item_window)
-    input_wait_while_active(@item_window)
-  end
-  #--------------------------------------------------------------------------
-  # ● 等待对话框宽高处理结束
-  #--------------------------------------------------------------------------
-  def input_wait_until_msg_wh(child_window)
-    child_window.hide.start
-    eagle_set_wh # 执行因子窗口嵌入而变更的窗口大小
-    child_window.show.open.activate
-  end
-  #--------------------------------------------------------------------------
-  # ● 并行等待子窗口处理结束
-  #--------------------------------------------------------------------------
-  def input_wait_while_active(child_window)
-    while child_window.active
-      break child_window.deactivate.close if @eagle_force_close
-      @fiber_para.resume if @fiber_para
-      Fiber.yield
-    end
-    @fiber_para = nil
-  end
-
-  #--------------------------------------------------------------------------
-  # ● 应用预定的转义符修改
-  #--------------------------------------------------------------------------
-  def eagle_apply_params_changes
-    game_message.params_need_apply.each do |sym|
-      m_c = ("eagle_text_control_#{sym}").to_sym
-      method(m_c).call("") if respond_to?(m_c)
-    end
-    game_message.clear_applys
-  end
-  #--------------------------------------------------------------------------
   # ● 设置【预先】指令的参数
   #--------------------------------------------------------------------------
   def eagle_check_pre_settings(text)
     eagle_check_temp(text)
     eagle_check_hold(text)
     eagle_check_instant(text)
+    eagle_check_close(text)
     eagle_check_eval(text)
     eagle_check_popt(text)
     eagle_check_facep(text)
@@ -2941,10 +2791,10 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_check_hold(text)
     text.gsub!(/\e(hold)/i) { "" }
-    game_message.hold = $1 ? true : false
+    @flag_hold = $1 ? true : false
   end
   def eagle_process_hold
-    if game_message.hold
+    if @flag_hold
       t = self.clone
       # 重置之前存储的窗口的z值（确保最近的显示在最上面）
       @eagle_dup_windows.each_with_index do |w, i|
@@ -2964,7 +2814,15 @@ class Window_EagleMessage < Window_Base
   # ● 设置instant指令
   #--------------------------------------------------------------------------
   def eagle_check_instant(text)
-    text.gsub!(/\e(ins|instant)/i) { game_message.instant = true if $1; "" }
+    text.gsub!(/\e(ins|instant)/i) { "" }
+    @flag_instant = $1 ? true : false
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置close指令
+  #--------------------------------------------------------------------------
+  def eagle_check_close(text)
+    text.gsub!(/\e(close)/i) { "" }
+    @flag_need_close = $1 ? true : false
   end
   #--------------------------------------------------------------------------
   # ● 设置eval指令
@@ -2976,7 +2834,6 @@ class Window_EagleMessage < Window_Base
       "\eeval[#{@eagle_evals.size}]"
     }
   end
-
   #--------------------------------------------------------------------------
   # ● 分析【预先】转义符的全部参数（按出现顺序处理）
   #--------------------------------------------------------------------------
@@ -3115,12 +2972,6 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def obtain_escape_param_string(text)
     text.slice!(/^\[[\|\$\-\d\w]+\]/)[1..-2] rescue ""
-  end
-  #--------------------------------------------------------------------------
-  # ● 解析字符串参数
-  #--------------------------------------------------------------------------
-  def parse_param(param_hash, param_text, default_type = "default")
-    MESSAGE_EX.parse_param(param_hash, param_text, default_type)
   end
   #--------------------------------------------------------------------------
   # ● 清除暂存的指定文字特效
@@ -3309,7 +3160,7 @@ class Window_EagleMessage < Window_Base
   # ● 执行facem
   #--------------------------------------------------------------------------
   def eagle_text_control_facem(param = "")
-    return if !game_message.draw
+    return if !@flag_draw
     return if @eagle_sprite_face == nil
     params = param.split('|')
     @eagle_sprite_face.motion(params[0], params[1] || "")
@@ -3369,7 +3220,6 @@ class Window_EagleMessage < Window_Base
     parse_param(pause_params, param, :pause)
     @eagle_sprite_pause.reset
   end
-
   #--------------------------------------------------------------------------
   # ● 设置wait参数
   #--------------------------------------------------------------------------
@@ -3383,10 +3233,9 @@ class Window_EagleMessage < Window_Base
   # ● （覆盖）等待
   #--------------------------------------------------------------------------
   def wait(duration)
-    return if !game_message.draw
+    return if !@flag_draw
     duration.times { break if @eagle_force_close; Fiber.yield }
   end
-
   #--------------------------------------------------------------------------
   # ● 设置auto参数
   #--------------------------------------------------------------------------
@@ -3398,12 +3247,11 @@ class Window_EagleMessage < Window_Base
     win_params[:auto_t] = h[:t]
     win_params[:auto_r] = MESSAGE_EX.check_bool(h[:r])
   end
-
   #--------------------------------------------------------------------------
   # ● 执行shake
   #--------------------------------------------------------------------------
   def eagle_text_control_shake(param = '0')
-    return if !game_message.draw
+    return if !@flag_draw
     h = {}
     h[:p] = 5 # shake power
     h[:s] = 5 # shake speed
@@ -3431,19 +3279,35 @@ class Window_EagleMessage < Window_Base
       Fiber.yield
     end
   end
-
   #--------------------------------------------------------------------------
   # ● 执行eval指令
   #--------------------------------------------------------------------------
   def eagle_text_control_eval(param = '0')
-    return if !game_message.draw
+    return if !@flag_draw
     id_ = param.to_i
     if id_ > 0 && @eagle_evals[id_ - 1]
       s = $game_switches; v = $game_variables; msg = self
       eval( @eagle_evals[id_ - 1] )
     end
   end
-
+  #--------------------------------------------------------------------------
+  # ● 设置set参数
+  #--------------------------------------------------------------------------
+  def eagle_text_control_set(param = '0')
+    return if !@flag_draw
+    return @eagle_current_set = nil if param == '0'
+    @eagle_current_set = param
+    @eagle_chara_sets[@eagle_current_set] ||= []
+  end
+  def eagle_text_control_setm(param = '0')
+    return if !@flag_draw
+    params = param.split('|') # [set_sym, effect_sym, param]
+    if params[2] == "0"
+      chara_set(params[0]) { |s| s.finish_effect(params[1].to_sym) }
+    else
+      chara_set(params[0]) { |s| s.start_effect(params[1].to_sym, params[2]) }
+    end
+  end
   #--------------------------------------------------------------------------
   # ● 对指定分组内的文字执行block
   #   传入空字符串或 0 时为全部文字
@@ -3457,25 +3321,6 @@ class Window_EagleMessage < Window_Base
     @eagle_chara_sets[set_sym].each { |s| yield(s) }
   end
   #--------------------------------------------------------------------------
-  # ● 设置set参数
-  #--------------------------------------------------------------------------
-  def eagle_text_control_set(param = '0')
-    return if !game_message.draw
-    return @eagle_current_set = nil if param == '0'
-    @eagle_current_set = param
-    @eagle_chara_sets[@eagle_current_set] ||= []
-  end
-  def eagle_text_control_setm(param = '0')
-    return if !game_message.draw
-    params = param.split('|') # [set_sym, effect_sym, param]
-    if params[2] == "0"
-      chara_set(params[0]) { |s| s.finish_effect(params[1].to_sym) }
-    else
-      chara_set(params[0]) { |s| s.start_effect(params[1].to_sym, params[2]) }
-    end
-  end
-
-  #--------------------------------------------------------------------------
   # ● 设置扩展参数
   #--------------------------------------------------------------------------
   def ex_params; game_message.ex_params; end
@@ -3488,7 +3333,157 @@ class Window_EagleMessage < Window_Base
     ex_params[:cg] = param if param != '' && param != '0'
   end
   end
-end # end of class Window_Message
+
+  #--------------------------------------------------------------------------
+  # ● 输入处理（此处为全部绘制完成后，判定接下来的输入类型）
+  #--------------------------------------------------------------------------
+  def process_input
+    if game_message.choice?
+      input_choice
+    elsif game_message.num_input?
+      input_number
+    elsif game_message.item_choice?
+      input_item
+    else
+      input_pause unless @pause_skip
+    end
+    eagle_process_hold
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理输入等待
+  #--------------------------------------------------------------------------
+  def input_pause
+    return if !@flag_draw
+    before_input_pause
+    eagle_process_draw_update # 统一更新一次
+    @eagle_sprite_pause.bind_last_chara(@eagle_chara_sprites[-1])
+    @eagle_sprite_pause.show
+    self.pause = true unless MESSAGE_EX::NO_DEFAULT_PAUSE
+    process_input_pause
+    self.pause = false
+    @eagle_sprite_pause.hide
+  end
+  #--------------------------------------------------------------------------
+  # ● 输入等待前的操作
+  #--------------------------------------------------------------------------
+  def before_input_pause
+    # 当pause精灵位于句末且紧靠边界时
+    #  增加对话框宽度保证它在对话框内部（不可占用padding）
+    if pause_params[:v] != 0 && pause_params[:do] <= 0 &&
+       game_message.input_pause? && eagle_add_w_by_child_window?
+      # 最大可用于文字绘制的宽度 eagle_charas_max_w
+      # 全部文字实际绘制的宽度 @eagle_charas_w_final + win_params[:cdw]
+      # 最后一行所需的绘制宽度 @eagle_next_chara_x
+      if @eagle_next_chara_x >= @eagle_charas_w_final
+        @eagle_sprite_pause_width_add = @eagle_sprite_pause.width
+      else
+        d = @eagle_charas_w_final + win_params[:cdw] - @eagle_next_chara_x
+        d -= @eagle_sprite_pause.width
+        @eagle_sprite_pause_width_add = -d if d <= 0
+      end
+    else
+      @eagle_sprite_pause_width_add = 0
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行输入等待
+  #--------------------------------------------------------------------------
+  def process_input_pause
+    recreate_contents_for_charas
+    @eagle_auto_continue_c = win_params[:auto_t]
+    ox_max = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
+    oy_max = self.oy
+    d_oxy = 1; last_input = nil; last_input_c = 0
+    self.arrows_visible = true
+    while true
+      Fiber.yield
+      # 处理自动继续
+      if @eagle_auto_continue_c
+        break if @eagle_auto_continue_c <= 0
+        process_while_auto_wait_input_pause(@eagle_auto_continue_c)
+        @eagle_auto_continue_c -= 1
+      end
+      break if check_input_pause?
+      # 处理内容滚动
+      if Input.press?(:UP)
+        self.oy -= d_oxy
+        self.oy = 0 if self.oy < 0
+      elsif Input.press?(:DOWN)
+        self.oy += d_oxy
+        self.oy = oy_max if self.oy > oy_max
+      elsif Input.press?(:LEFT)
+        self.ox -= d_oxy
+        self.ox = 0 if self.ox < 0
+      elsif Input.press?(:RIGHT)
+        self.ox += d_oxy
+        self.ox = ox_max if self.ox > ox_max
+      end
+      if last_input == Input.dir4
+        last_input_c += 1
+        d_oxy += 1 if last_input_c % 10 == 0
+      else
+        d_oxy = 1
+        last_input_c = 0
+      end
+      last_input = Input.dir4
+    end
+    self.arrows_visible = false
+    Input.update
+  end
+  #--------------------------------------------------------------------------
+  # ● 等待按键时，启用auto时的额外处理
+  #  c 为自动继续的剩余帧数，从 win_params[:auto_t] 获取总等待帧数
+  #--------------------------------------------------------------------------
+  def process_while_auto_wait_input_pause(c)
+    @eagle_sprite_pause.redraw_auto_countdown(c)
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查输入等待的按键
+  #--------------------------------------------------------------------------
+  def check_input_pause?
+    Input.trigger?(:B) || Input.trigger?(:C)
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理选项的输入（覆盖）
+  #--------------------------------------------------------------------------
+  def input_choice
+    input_wait_until_msg_wh(@choice_window)
+    input_wait_while_active(@choice_window)
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理数值的输入（覆盖）
+  #--------------------------------------------------------------------------
+  def input_number
+    input_wait_until_msg_wh(@number_window)
+    input_wait_while_active(@number_window)
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理物品的选择（覆盖）
+  #--------------------------------------------------------------------------
+  def input_item
+    input_wait_until_msg_wh(@item_window)
+    input_wait_while_active(@item_window)
+  end
+  #--------------------------------------------------------------------------
+  # ● 等待对话框宽高处理结束
+  #--------------------------------------------------------------------------
+  def input_wait_until_msg_wh(child_window)
+    child_window.hide.start
+    eagle_set_wh # 执行因子窗口嵌入而变更的窗口大小
+    child_window.show.open.activate
+  end
+  #--------------------------------------------------------------------------
+  # ● 并行等待子窗口处理结束
+  #--------------------------------------------------------------------------
+  def input_wait_while_active(child_window)
+    while child_window.active
+      break child_window.deactivate.close if @eagle_force_close
+      @fiber_para.resume if @fiber_para
+      Fiber.yield
+    end
+    @fiber_para = nil
+  end
+end # end of class Window_EagleMessage
 
 #=============================================================================
 # ○ 对话框拷贝
