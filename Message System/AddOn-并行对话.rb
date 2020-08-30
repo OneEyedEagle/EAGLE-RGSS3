@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.8.22.15 随对话框独立
+# - 2020.8.30.14 随对话框更新
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -644,7 +644,6 @@ class Window_EagleMessage_Para < Window_EagleMessage
   # ● 更新纤程
   #--------------------------------------------------------------------------
   def update_fiber
-    eagle_update_before_fiber
     if @fiber
       return if para_params[:halt]
       @fiber.resume
@@ -652,7 +651,6 @@ class Window_EagleMessage_Para < Window_EagleMessage
       @fiber = Fiber.new { fiber_main }
       @fiber.resume
     end
-    eagle_update_after_fiber
   end
   #--------------------------------------------------------------------------
   # ● 强制结束当前对话框

@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageSeq"] = true
 #==============================================================================
-# - 2020.8.22.15 随对话框独立
+# - 2020.8.30.14 随对话框更新
 #==============================================================================
 # - 本插件为对话框新增了自动向上/下移动的序列对话模式
 #----------------------------------------------------------------------------
@@ -82,8 +82,8 @@ class Window_EagleMessage
   #--------------------------------------------------------------------------
   # ● 打开直至完成（当有文字绘制完成时执行）
   #--------------------------------------------------------------------------
-  alias eagle_seq_open_and_wait eagle_open_and_wait
-  def eagle_open_and_wait
+  alias eagle_seq_open_and_wait open_and_wait
+  def open_and_wait
     if @eagle_seq_windows.size > 0
       des_h  = eagle_window_height
       des_h += eagle_window_height_add(des_h)
@@ -138,7 +138,7 @@ class Window_EagleMessage
     seq_params[:act] = MESSAGE_EX.check_bool(seq_params[:act])
     seq_params[:tc] = 0
     # 若变更为了序列对话，则阻止hold
-    game_message.hold = false if seq_params[:act]
+    @flag_hold = false if seq_params[:act]
   end
   #--------------------------------------------------------------------------
   # ● 执行seq转义符（在 process_input 之后）
@@ -228,7 +228,7 @@ class Window_EagleMessage_Seq_Clone < Window_EagleMessage_Clone
   # ● 处理纤程的主逻辑
   #--------------------------------------------------------------------------
   def fiber_main
-    eagle_set_wh(nil, nil, true) # 由于pause精灵需要去除，增加更新宽高
+    eagle_set_wh({:ins => true}) # 由于pause精灵需要去除，增加更新宽高
     loop do
       reset_seq_window_xy
       Fiber.yield

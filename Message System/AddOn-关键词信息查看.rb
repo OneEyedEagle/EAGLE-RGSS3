@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MsgKeywordInfo"] = true
 #==============================================================================
-# - 2020.8.22.15 随对话框独立
+# - 2020.8.30.14 随对话框更新
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细信息
 #------------------------------------------------------------------------------
@@ -84,12 +84,12 @@ module MESSAGE_EX
   # ● 【设置】定义关键词信息窗口的TAG皮肤的INDEX
   # （见 对话框扩展 中的 INDEX_TO_WINDOWTAG ）
   #--------------------------------------------------------------------------
-  KEYWORD_WINDOWTAG_INDEX = 2
+  KEYWORD_WINDOWTAG_INDEX = 1
   #--------------------------------------------------------------------------
   # ● 【设置】定义关键词信息窗口的TAG的远离文字的像素值
   # （同 对话框扩展 中的 \pop 的 td 变量）
   #--------------------------------------------------------------------------
-  KEYWORD_WINDOWTAG_D = 3
+  KEYWORD_WINDOWTAG_D = 4
   #--------------------------------------------------------------------------
   # ● 设置提示文本精灵
   #--------------------------------------------------------------------------
@@ -236,11 +236,12 @@ class Window_Keyword_Info < Window_Base
     @keywords = [] # [text, sprite_chara]
     @bitmaps = {} # id => bitmap
 
-    @sprite_tag_bitmap = MESSAGE_EX.windowtag(MESSAGE_EX::KEYWORD_WINDOWTAG_INDEX)
-    w = @sprite_tag_bitmap.width
-    h = @sprite_tag_bitmap.height
     @sprite_tag = Sprite.new
-    @sprite_tag.bitmap = Bitmap.new(w/3, h/3)
+    @sprite_tag.bitmap = MESSAGE_EX.windowtag(MESSAGE_EX::KEYWORD_WINDOWTAG_INDEX)
+    w = @sprite_tag.bitmap.width
+    h = @sprite_tag.bitmap.height
+    @sprite_tag.src_rect.set(0,0, w/3, h/3)
+    @sprite_tag.visible = false
 
     @sprite_hint = Sprite.new
     MESSAGE_EX.set_keyword_hint(@sprite_hint)
@@ -321,23 +322,21 @@ class Window_Keyword_Info < Window_Base
     s_c = @keywords[@index][1]
     self.x = @message_window.eagle_charas_x0 - @message_window.eagle_charas_ox
     self.x = self.x + s_c.origin_x - self.width/2
-    @sprite_tag.x = self.x + (self.width - @sprite_tag.width) / 2
 
     up =  @message_window.y > Graphics.height / 2
     if up # 窗口显示到文字上方
       self.y = @message_window.eagle_charas_y0 - @message_window.eagle_charas_oy
       self.y = self.y + s_c.origin_y - self.height
-      @sprite_tag.y = self.y + self.height
       self.y -= MESSAGE_EX::KEYWORD_WINDOW_D
     else # 窗口显示到文字下方
       self.y = @message_window.eagle_charas_y0 - @message_window.eagle_charas_oy
       self.y = self.y + s_c.origin_y + s_c.height
-      @sprite_tag.y = self.y
       self.y += MESSAGE_EX::KEYWORD_WINDOW_D
     end
     self.z = @message_window.z + 100
 
-    MESSAGE_EX.windowtag_o(self, @sprite_tag, @sprite_tag_bitmap, up ? 2 : 8)
+    o = up ? 2 : 8
+    MESSAGE_EX.set_windowtag(self, @sprite_tag, o, 10 - o, o)
     if up
       @sprite_tag.y -= MESSAGE_EX::KEYWORD_WINDOWTAG_D
     else
@@ -359,7 +358,7 @@ class Window_Keyword_Info < Window_Base
   #--------------------------------------------------------------------------
   def update
     super
-    @sprite_tag.visible = true if self.open?
+    @sprite_tag.visible = true if self.openness == 255
   end
   #--------------------------------------------------------------------------
   # ● 更新按键
@@ -387,8 +386,6 @@ class Window_Keyword_Info < Window_Base
     @bitmaps.each { |i, b| b.dispose }
     @sprite_hint.bitmap.dispose
     @sprite_hint.dispose
-    @sprite_tag_bitmap.dispose
-    @sprite_tag.bitmap.dispose
     @sprite_tag.dispose
     super
   end

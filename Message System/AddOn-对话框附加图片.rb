@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePics"] = true
 #==============================================================================
-# - 2020.8.22.15 随对话框独立
+# - 2020.8.30.14 随对话框更新
 #==============================================================================
 # - 本插件为对话框新增了绑定图片
 #----------------------------------------------------------------------------
@@ -229,7 +229,7 @@ class Window_EagleMessage
   # ● 设置pic2参数
   #--------------------------------------------------------------------------
   def eagle_text_control_pic2(param = '0')
-    return if !game_message.draw
+    return if !@flag_draw
     params = param.split('|') # [id, filename, param_str]
     MESSAGE_EX.pic2_add(params[0], params[1], params[2] || "", self)
   end
@@ -237,7 +237,7 @@ class Window_EagleMessage
   # ● 执行pic2m
   #--------------------------------------------------------------------------
   def eagle_text_control_pic2m(param = '0')
-    return if !game_message.draw
+    return if !@flag_draw
     params = param.split('|') # [id, motion, param]
     MESSAGE_EX.pic2_motion(params[0], params[1], params[2] || "")
   end

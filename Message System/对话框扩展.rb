@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.8.29.10 优化game_message中存储的变量
+# - 2020.8.30.16 扩展对话框打开关闭方式
 #=============================================================================
 # 【兼容模式】
 #
@@ -154,7 +154,8 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #           （当未设置id时，才会应用该变量）
 #    do → 对话框相对于绑定对象的位置类型（默认8，即对话框位于目标顶部中间）
 #         （基于绑定对象的九宫格小键盘位置，5代表目标中心）
-#         （对话框的显示原点固定为 10-do，即当do为8时，对话框显示原点为底部中点2）
+#    o → 对话框显示原点类型
+#         （若为nil，则为 10-do，即当do为8时，对话框显示原点为底部中点2）
 #    d → 对话框显示原点远离绑定对象的中心点的像素值（依据do自动选择增减x或y）（默认0）
 #    dx/dy → x、y方向上的补足偏移量（默认0）
 #    fix → 是否进行位置修正（保证pop对话框完整显示在屏幕内）
@@ -408,15 +409,17 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #
 # · 当进入 等待按键 状态时，按住 方向键 即可朝对应方向滚动浏览对话框全部内容
 #----------------------------------------------------------------------------
-# - 对话框Open/Close特效优化
+# - 对话框Open/Close方式扩展
 #
-#   对话框的开启关闭特效已被优化为 动态展开收缩，而非默认的 上下打开关闭
-#   利用该脚本设置对话框开启关闭特效类型（默认 true）
+#   对话框的开启关闭方式已经得到了扩展：
+#   利用该脚本设置对话框开启方式类型和关闭方式类型
 #
-#          $game_message.default_open_type = true 或 false
+#          $game_message.open_type = :zoom 或 :fade 或 :default
+#          $game_message.close_type = :zoom 或 :fade 或 :default
 #
-# · 若为 true，则使用默认的 上下打开关闭
-#    若为 false，则使用 动态展开收缩
+# · 若赋值为 :default，则使用默认的上下打开关闭
+#   若赋值为 :zoom，则使用 动态缩放展开
+#   若赋值为 :fade，则使用淡入淡出
 #----------------------------------------------------------------------------
 # - 并行处理子窗口
 #
@@ -585,6 +588,7 @@ module MESSAGE_EX
   # \pop[]
     :skin => nil, # pop模式下所用skin类型
     :do => 8, # 对话框相对于绑定对象的位置（九宫格小键盘）
+    :o => nil, # 对话框显示原点，若为nil，则取 10 - :do
     :d => 0, # 指定原点距离事件格子中心的偏移量
     :dx => 0,  # 指定x、y方向上的偏移量
     :dy => 0,
@@ -974,17 +978,17 @@ module MESSAGE_EX
     end
   end
   #--------------------------------------------------------------------------
-  # ● 重绘tag，并定位
+  # ● 重设tag
+  #  i => 具体在tag位图上的帧序号，九宫格顺序排列
+  #  o => tag位图的显示原点，理论上为pop对话框的do
+  #  _do => tag位图的显示位置原点，理论上为pop对话框的o
   #--------------------------------------------------------------------------
-  def self.windowtag_o(window, sprite, tag_bitmap, o, redraw = true)
-    if redraw
-      sprite.bitmap.clear
-      w = sprite.width; h = sprite.height # 单个tag的宽度和高度
-      rect = Rect.new( w*(2-(9-o)%3), h*((9-o)/3), w, h)
-      sprite.bitmap.blt(0, 0, tag_bitmap, rect)
-    end
-    self.reset_xy_dorigin(sprite, window, o)
-    self.reset_xy_origin(sprite, 10 - o)
+  def self.set_windowtag(window, sprite, i, o, _do)
+    w = sprite.src_rect.width; h = sprite.src_rect.height # 单个tag的宽度和高度
+    sprite.src_rect.x = w * (2 - (9 - i) % 3)
+    sprite.src_rect.y = h * ((9 - i) / 3)
+    self.reset_xy_dorigin(sprite, window, _do)
+    self.reset_xy_origin(sprite, o)
   end
   #--------------------------------------------------------------------------
   # ● 读取 pause 按键等待精灵的信息组
@@ -1254,7 +1258,7 @@ class Game_Message
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params, :ex_params
   attr_accessor :event_id, :child_window_w_des, :child_window_h_des
-  attr_accessor :para, :default_open_type, :auto_wrap
+  attr_accessor :open_type, :close_type, :auto_wrap, :para
   attr_accessor :eagle_text # 存储实际绘制的文本（去除了预处理的转义符）
   attr_accessor :eagle_message # 兼容模式
   #--------------------------------------------------------------------------
@@ -1303,7 +1307,8 @@ class Game_Message
   #--------------------------------------------------------------------------
   alias eagle_message_ex_clear clear
   def clear
-    @default_open_type ||= false # 使用默认的窗口打开方式？
+    @open_type ||= :zoom # 对话框的打开模式
+    @close_type ||= :zoom # 对话框的关闭模式
     @auto_wrap ||= true # 开启自动换行？
     @para ||= false # 并行显示选择框？
     eagle_message_ex_clear
@@ -1323,6 +1328,9 @@ class Game_Message
   #--------------------------------------------------------------------------
   def pop?
     @pop_params[:type] != nil
+  end
+  def pop_tag?
+    @pop_params[:tag] > 0
   end
   #--------------------------------------------------------------------------
   # ● 使用脸图？
@@ -1423,9 +1431,16 @@ class Game_Message
       m = "#{sym}_params"
       t.send("#{m}=".to_sym, method(m.to_sym).call.clone)
     end
-    t.default_open_type = @default_open_type
-    t.auto_wrap = @auto_wrap
+    clone_ex(t)
     t
+  end
+  #--------------------------------------------------------------------------
+  # ● 参数拷贝（方便扩展）
+  #--------------------------------------------------------------------------
+  def clone_ex(t)
+    t.open_type = @open_type
+    t.close_type = @close_type
+    t.auto_wrap = @auto_wrap
   end
   #--------------------------------------------------------------------------
   # ● 下一次对话时要解析的转义符
@@ -1543,7 +1558,6 @@ class Window_EagleMessage < Window_Base
     @eagle_chara_viewport = Viewport.new # 文字精灵的显示区域
     @eagle_chara_sprites = [] # 存储全部的文字精灵
     @eagle_sprite_pop_tag = Sprite.new # 初始化pop状态下的tag精灵
-    eagle_reset_pop_tag_bitmap # 初始化tag的位图
     @eagle_sprite_face = nil # 初始化脸图精灵
     @eagle_window_name = Window_EagleMsgName.new(self) # 初始化姓名框窗口
     @eagle_sprite_pause = Sprite_EaglePauseTag.new(self) # 初始化等待按键的精灵
@@ -1596,7 +1610,6 @@ class Window_EagleMessage < Window_Base
     # 拷贝pop对象
     t.eagle_pop_obj = @eagle_pop_obj
     # 拷贝pop的tag
-    t.eagle_pop_tag_bitmap = @eagle_pop_tag_bitmap
     t.eagle_sprite_pop_tag = @eagle_sprite_pop_tag
     # 拷贝脸图
     if @eagle_sprite_face
@@ -1636,7 +1649,6 @@ class Window_EagleMessage < Window_Base
     @eagle_chara_sprites.each { |s| s.dispose }
     @eagle_window_name.dispose
     @eagle_sprite_face.dispose if @eagle_sprite_face
-    @eagle_sprite_pop_tag.bitmap.dispose if @eagle_sprite_pop_tag.bitmap
     @eagle_sprite_pop_tag.dispose
     @eagle_sprite_pause.dispose
     @eagle_dup_windows.each { |w| w.dispose if !w.disposed? }
@@ -1721,6 +1733,15 @@ class Window_EagleMessage < Window_Base
     @eagle_window_name.openness -= 15
   end
   #--------------------------------------------------------------------------
+  # ● 更新全部组件的不透明度
+  #--------------------------------------------------------------------------
+  def update_assets_opacity(opa)
+    @eagle_sprite_pop_tag.opacity = opa
+    @eagle_sprite_face.opa = opa if @eagle_sprite_face
+    @eagle_window_name.opacity = opa
+    update_back_sprite_opa(opa)
+  end
+  #--------------------------------------------------------------------------
   # ● 重设z值
   #--------------------------------------------------------------------------
   def eagle_reset_z
@@ -1730,6 +1751,30 @@ class Window_EagleMessage < Window_Base
     @eagle_sprite_pop_tag.z = self.z + 1
     @eagle_window_name.z = self.z + 2
     @eagle_sprite_pause.z = self.z + 2
+  end
+  #--------------------------------------------------------------------------
+  # ● 显示窗口
+  #--------------------------------------------------------------------------
+  def show
+    self.visible = true
+    @eagle_chara_sprites.each { |s| s.move_in }
+    @eagle_sprite_pop_tag.visible = true
+    @eagle_sprite_face.visible = true if @eagle_sprite_face
+    @eagle_window_name.show
+    @eagle_sprite_pause.visible = true if game_message.input_pause?
+    self
+  end
+  #--------------------------------------------------------------------------
+  # ● 隐藏窗口
+  #--------------------------------------------------------------------------
+  def hide
+    self.visible = false
+    @eagle_chara_sprites.each { |s| s.move_out_temp }
+    @eagle_sprite_pop_tag.visible = false
+    @eagle_sprite_face.visible = false if @eagle_sprite_face
+    @eagle_window_name.hide
+    @eagle_sprite_pause.visible = false
+    self
   end
 
   #--------------------------------------------------------------------------
@@ -1803,55 +1848,123 @@ class Window_EagleMessage < Window_Base
   end
 
   #--------------------------------------------------------------------------
-  # ● 显示窗口
-  #--------------------------------------------------------------------------
-  def show
-    self.visible = true
-    @eagle_chara_sprites.each { |s| s.move_in }
-    @eagle_sprite_pop_tag.visible = true
-    @eagle_sprite_face.visible = true if @eagle_sprite_face
-    @eagle_window_name.show
-    @eagle_sprite_pause.visible = true if game_message.input_pause?
-    self
-  end
-  #--------------------------------------------------------------------------
-  # ● 隐藏窗口
-  #--------------------------------------------------------------------------
-  def hide
-    self.visible = false
-    @eagle_chara_sprites.each { |s| s.move_out_temp }
-    @eagle_sprite_pop_tag.visible = false
-    @eagle_sprite_face.visible = false if @eagle_sprite_face
-    @eagle_window_name.hide
-    @eagle_sprite_pause.visible = false
-    self
-  end
-
-  #--------------------------------------------------------------------------
   # ● 打开直至完成（当有文字绘制完成时执行）
   #--------------------------------------------------------------------------
-  def eagle_open_and_wait
+  def open_and_wait
     @eagle_chara_sprites.each { |c| c.visible = false }
     @eagle_window_name.open if game_message.name?
     @flag_open_close = true
-    if game_message.default_open_type # using default open
-      eagle_set_wh(nil, nil, true, true)
-      open_and_wait
-    else
-      eagle_set_wh(1, 1, true, true) if self.openness == 0
-      self.openness = 255
-      eagle_set_wh(nil, nil, false, true)
-    end
+    eagle_process_open_and_wait
     @flag_need_open = false
     @flag_open_close = false
     @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）更新打开处理
+  # ● 处理打开方式（打开直至完成）
   #--------------------------------------------------------------------------
-  def update_open
-    self.openness += 36
-    @opening = false if open?
+  def eagle_process_open_and_wait
+    case game_message.open_type
+    when :zoom
+      eagle_open_type_zoom
+    when :fade
+      eagle_open_type_fade
+    else # :default
+      eagle_open_type_default
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 打开-动态展开
+  #--------------------------------------------------------------------------
+  def eagle_open_type_zoom
+    eagle_set_wh({:w => 1, :h => 1, :ins => true, :open => true}) if self.openness == 0
+    self.openness = 255
+    eagle_set_wh({:open => true})
+  end
+  #--------------------------------------------------------------------------
+  # ● 打开-淡入
+  #--------------------------------------------------------------------------
+  def eagle_open_type_fade
+    _opa = 0
+    eagle_set_wh({:ins => true, :open => true})
+    update_back_sprite_zoom(nil, nil) # 将背景精灵的缩放重置为 1
+    self.openness = 255
+    while ( _opa < 255 )
+      break if @background == 2
+      self.opacity = _opa if @background == 0
+      update_assets_opacity(_opa)
+      Fiber.yield
+      _opa += 26
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 打开-默认openness
+  #--------------------------------------------------------------------------
+  def eagle_open_type_default
+    eagle_set_wh({:ins => true, :open => true})
+    update_back_sprite_zoom(nil, nil) # 将背景精灵的缩放重置为 1
+    open
+    until open?
+      update_back_sprite_opa(self.openness)
+      Fiber.yield
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 关闭直至完成
+  #--------------------------------------------------------------------------
+  def close_and_wait
+    @flag_open_close = true
+    show if !self.visible
+    eagle_message_sprites_move_out
+    eagle_process_close_and_wait
+    @flag_need_open = true
+    @flag_open_close = false
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理关闭方式（关闭直至完成）
+  #--------------------------------------------------------------------------
+  def eagle_process_close_and_wait
+    case game_message.close_type
+    when :zoom
+      eagle_close_type_zoom
+    when :fade
+      eagle_close_type_fade
+    else # :default
+      eagle_close_type_default
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 关闭-动态缩小
+  #--------------------------------------------------------------------------
+  def eagle_close_type_zoom
+    eagle_move_out_assets
+    eagle_set_wh({:w => 1, :h => 1}) if self.openness > 0
+    self.openness = 0
+    close
+  end
+  #--------------------------------------------------------------------------
+  # ● 关闭-淡出
+  #--------------------------------------------------------------------------
+  def eagle_close_type_fade
+    _opa = 255
+    while ( _opa > 0 )
+      break if @background == 2
+      self.opacity = _opa if @background == 0
+      update_assets_opacity(_opa)
+      Fiber.yield
+      _opa -= 30
+    end
+    self.openness = 0
+    close
+  end
+  #--------------------------------------------------------------------------
+  # ● 关闭-默认openness
+  #--------------------------------------------------------------------------
+  def eagle_close_type_default
+    close
+    until all_close?
+      update_back_sprite_opa(self.openness)
+      Fiber.yield
+    end
   end
   #--------------------------------------------------------------------------
   # ● 关闭
@@ -1861,23 +1974,11 @@ class Window_EagleMessage < Window_Base
     eagle_message_reset
   end
   #--------------------------------------------------------------------------
-  # ● 关闭直至完成
+  # ● 判定是否所有窗口已全部关闭
   #--------------------------------------------------------------------------
-  def close_and_wait
-    @flag_open_close = true
-    show if !self.visible
-    eagle_message_sprites_move_out
-    if game_message.default_open_type # using default open
-      close
-      Fiber.yield until all_close?
-    else
-      eagle_move_out_assets
-      eagle_set_wh(1, 1) if self.openness > 0
-      close
-      self.openness = 0
-    end
-    @flag_need_open = true
-    @flag_open_close = false
+  def all_close?
+    close? && @choice_window.close? &&
+    @number_window.close? && @item_window.close?
   end
   #--------------------------------------------------------------------------
   # ● 移出全部文字精灵
@@ -1905,41 +2006,46 @@ class Window_EagleMessage < Window_Base
   end
 
   #--------------------------------------------------------------------------
-  # ● 设置对话框的宽高
+  # ● 设置对话框的宽高，并等待至更新结束
   #--------------------------------------------------------------------------
-  def eagle_set_wh(des_w = nil, des_h = nil, _instant = false, _open = false)
-    # 若为透明背景，则直接完成
-    _instant = true if self.opacity == 0 && !@back_sprite.visible
-    if des_w.nil?
-      des_w  = eagle_window_width
-      des_w += eagle_window_width_add(des_w)
+  def eagle_set_wh(_p = {})
+    _p[:w] ||= nil  # 更新结束时的宽度高度，如果为 nil，就自动适配计算
+    _p[:h] ||= nil
+    _p[:ins] ||= false  # 如果需要立刻更新完成，就置为 true
+    _p[:open] ||= false # 如果目标是打开窗口，就置为 true
+    _p[:t] ||= 20 # 更新所需时间（帧）
+    _p[:ins] = true if @background == 2 # 透明背景时直接更新完成
+
+    if _p[:w].nil?
+      _p[:w]  = eagle_window_width
+      _p[:w] += eagle_window_width_add(_p[:w])
     end
-    if des_h.nil?
-      des_h  = eagle_window_height
-      des_h += eagle_window_height_add(des_h)
+    if _p[:h].nil?
+      _p[:h]  = eagle_window_height
+      _p[:h] += eagle_window_height_add(_p[:h])
     end
-    if _instant
-      self.width = des_w
-      self.height = des_h
+    if _p[:ins]
+      self.width = _p[:w]
+      self.height = _p[:h]
     end
-    if _open # 如果为打开，则记录下最终稳定的宽高
-      win_params[:des_w] = des_w
-      win_params[:des_h] = des_h
+    if _p[:open] # 如果为打开，则记录下最终稳定的宽高，且生成新的背景位图
+      win_params[:des_w] = _p[:w]
+      win_params[:des_h] = _p[:h]
+      eagle_recreate_back_bitmap(_p[:w], _p[:h])
     end
-    eagle_recreate_back_bitmap(des_w, des_h)
-    wait_until_des_wh(des_w, des_h) if !_instant
+    wait_until_des_wh(_p[:w], _p[:h], _p[:t]) if !_p[:ins]
     eagle_win_update
   end
   #--------------------------------------------------------------------------
   # ● 更新对话框宽高直至完成
   #--------------------------------------------------------------------------
-  def wait_until_des_wh(des_w, des_h)
+  def wait_until_des_wh(des_w, des_h, t = 20)
     init_w = self.width;  d_w = des_w - init_w
     init_h = self.height; d_h = des_h - init_h
     return if d_w == 0 && d_h == 0
     max_w = des_w > self.width ? des_w : self.width
     max_h = des_h > self.height ? des_h : self.height
-    _i = 0; _t = 20
+    _i = 0; _t = t
     while(true)
       break if _i > _t
       break if self.openness == 0
@@ -2120,7 +2226,9 @@ class Window_EagleMessage < Window_Base
   def eagle_pop_update
     eagle_change_windowskin(pop_params[:skin])
     eagle_pop_init_xy
-    eagle_reset_xy_origin(self, 10 - pop_params[:do]) # 显示原点恰好相反
+    o = pop_params[:o] # 设置对话框的显示原点
+    o ||= 10 - pop_params[:do]
+    eagle_reset_xy_origin(self, o) # 显示原点恰好相反
     # 将对话框移动到绑定对象的对应方向上，并加上偏移量
     case pop_params[:do]
     when 1,4,7; self.x -= (pop_params[:chara_w] / 2 + pop_params[:d])
@@ -2130,13 +2238,13 @@ class Window_EagleMessage < Window_Base
     when 1,2,3; self.y += (pop_params[:chara_h] / 2 + pop_params[:d])
     when 7,8,9; self.y -= (pop_params[:chara_h] + pop_params[:d])
     end
+    eagle_pop_tag_update
     # 坐标的补足偏移量
     self.x += pop_params[:dx]
     self.y += pop_params[:dy]
-    eagle_pop_tag_update if pop_params[:tag] > 0
     if pop_params[:fix]
       eagle_fix_position
-      eagle_pop_tag_fix_position if pop_params[:tag] > 0
+      eagle_pop_tag_fix_position
     end
     eagle_after_update_xy
   end
@@ -2164,17 +2272,21 @@ class Window_EagleMessage < Window_Base
   # ● 更新pop的tag
   #--------------------------------------------------------------------------
   def eagle_pop_tag_update
-    o = 10 - pop_params[:do] # tag的o值恰好与pop对话框的do值相对
-    return @eagle_sprite_pop_tag.visible = false if @flag_open_close || o < 1 || o > 9
-    @eagle_sprite_pop_tag.visible = true
-    redraw = @pop_tag_o_draw != o ? true : false
-    MESSAGE_EX.windowtag_o(self, @eagle_sprite_pop_tag, @eagle_pop_tag_bitmap, o, redraw)
-    @pop_tag_o_draw = o
-    case o # 坐标距离事件格子中心的偏移量
+    return if !@eagle_sprite_pop_tag.visible
+    i = 10 - pop_params[:do] # tag的显示帧恰好与pop对话框的do值相对
+    # tag的显示原点，是pop对话框的do，即目标物体的九宫格位置
+    o = pop_params[:do]
+    #  但注意，需要调整到 2468 的位置
+    o = 2 if o == 1 || o == 3
+    o = 8 if o == 7 || o == 9
+    _do = pop_params[:o] # 对话框的显示原点是tag的显示位置
+    _do ||= 10 - pop_params[:do]
+    MESSAGE_EX.set_windowtag(self, @eagle_sprite_pop_tag, i, o, _do)
+    case i # 坐标距离事件格子中心的偏移量
     when 1,4,7; @eagle_sprite_pop_tag.x -= pop_params[:td]
     when 3,6,9; @eagle_sprite_pop_tag.x += pop_params[:td]
     end
-    case o
+    case i
     when 1,2,3; @eagle_sprite_pop_tag.y -= pop_params[:td]
     when 7,8,9; @eagle_sprite_pop_tag.y += pop_params[:td]
     end
@@ -2185,6 +2297,7 @@ class Window_EagleMessage < Window_Base
   def eagle_pop_tag_fix_position
     # 若tag因为对话框的fix position而位于对话框内，则隐藏
     s = @eagle_sprite_pop_tag
+    return if !s.visible
     return if s.x + pop_params[:td] >= self.x + self.width
     return if s.x + s.width - pop_params[:td] <= self.x
     return if s.y + pop_params[:td] >= self.y + self.height
@@ -2234,7 +2347,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_set_pop_tag_by_windowskin(index = nil)
     tag_id = MESSAGE_EX::WINDOWSKIN_TO_WINDOWTAG[index]
-    return if tag_id.nil? || @pop_tag_draw == tag_id
+    return if tag_id.nil?
     eagle_reset_pop_tag_bitmap(tag_id)
   end
 
@@ -2242,7 +2355,7 @@ class Window_EagleMessage < Window_Base
   # ● 重新生成背景位图
   #--------------------------------------------------------------------------
   def eagle_recreate_back_bitmap(w = self.width, h = self.height)
-    case game_message.background
+    case @background
     when 1 # 暗色背景
       if @back_bitmap && @back_bitmap.width == w && @back_bitmap.height == h
       else # 重绘
@@ -2301,7 +2414,6 @@ class Window_EagleMessage < Window_Base
   def update_back_sprite
     eagle_reset_xy_dorigin(@back_sprite, self, win_params[:bgo])
     MESSAGE_EX.reset_sprite_oxy(@back_sprite, win_params[:bgo])
-    @back_sprite.opacity = openness
     @back_sprite.update
   end
   #--------------------------------------------------------------------------
@@ -2318,6 +2430,12 @@ class Window_EagleMessage < Window_Base
     else
       @back_sprite.zoom_y = self.height * 1.0 / max_h
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新背景精灵的不透明度
+  #--------------------------------------------------------------------------
+  def update_back_sprite_opa(opa)
+    @back_sprite.opacity = opa
   end
 
   #--------------------------------------------------------------------------
@@ -2384,15 +2502,15 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_after_check_continue
     eagle_message_reset_continue
-    # 需要动态变更大小
+    # 需要进行动态的变更大小
     @flag_need_change_wh = true
   end
   #--------------------------------------------------------------------------
-  # ● 继续显示时的宽高处理（在第一个文字绘制后）
+  # ● 继续显示时的宽高处理（在第一个文字绘制后被调用）
   #--------------------------------------------------------------------------
   def eagle_change_wh_when_continue
     @eagle_chara_sprites.each { |c| c.visible = false }
-    eagle_set_wh(nil, nil)
+    eagle_set_wh
     @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
     @flag_need_change_wh = false
   end
@@ -2662,10 +2780,10 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_draw_update
     # 第一个文字绘制后打开窗口
-    return eagle_open_and_wait if @flag_need_open
+    return open_and_wait if @flag_need_open
     # 如果是继续显示，需要动态更新大小
     eagle_change_wh_when_continue if @flag_need_change_wh
-    eagle_set_wh(nil, nil, true) # 重设对话框宽高，并更新对话框位置
+    eagle_set_wh({:ins => true}) # 重设对话框宽高，并更新对话框位置
     # 对齐需要用到对话框的宽高，因此在更新后执行
     eagle_charas_reset_alignment(win_params[:ali])
     # 确保最后绘制的文字在视图区域内
@@ -2847,23 +2965,17 @@ class Window_EagleMessage < Window_Base
   # ● 设置popt指令的参数
   #--------------------------------------------------------------------------
   def eagle_check_popt(text)
-    old_tag = pop_params[:tag]
     parse_pre_params(text, 'popt', pop_params, :tag)
-    new_tag = pop_params[:tag]
-    return if new_tag <= 0 || old_tag == new_tag || @pop_tag_draw == new_tag
-    eagle_reset_pop_tag_bitmap(new_tag)
+    eagle_reset_pop_tag_bitmap(pop_params[:tag])
   end
   #--------------------------------------------------------------------------
   # ● 重置tag的位图
   #--------------------------------------------------------------------------
   def eagle_reset_pop_tag_bitmap(tag_id = pop_params[:tag])
-    @pop_tag_draw = tag_id
-    @pop_tag_o_draw = 0 # 确保将重绘
-    @eagle_pop_tag_bitmap = MESSAGE_EX.windowtag(tag_id)
-    w = @eagle_pop_tag_bitmap.width
-    h = @eagle_pop_tag_bitmap.height
-    @eagle_sprite_pop_tag.bitmap.dispose if @eagle_sprite_pop_tag.bitmap
-    @eagle_sprite_pop_tag.bitmap = Bitmap.new(w/3, h/3)
+    @eagle_sprite_pop_tag.bitmap = MESSAGE_EX.windowtag(tag_id)
+    w = @eagle_sprite_pop_tag.bitmap.width
+    h = @eagle_sprite_pop_tag.bitmap.height
+    @eagle_sprite_pop_tag.src_rect.set(0,0, w/3, h/3)
   end
   #--------------------------------------------------------------------------
   # ● 设置facep指令的参数
@@ -3058,6 +3170,11 @@ class Window_EagleMessage < Window_Base
     pop_params[:dh] = MESSAGE_EX.check_bool(pop_params[:dh])
     pop_params[:fh] = MESSAGE_EX.check_bool(pop_params[:fh])
     pop_params[:fix] = MESSAGE_EX.check_bool(pop_params[:fix])
+    # 设置pop的tag
+    if game_message.pop_tag? && @background == 0 &&
+       pop_params[:do] > 0 && pop_params[:do] < 10
+      @eagle_sprite_pop_tag.visible = true
+    end
     eagle_pop_update
   end
   #--------------------------------------------------------------------------
@@ -3174,9 +3291,9 @@ class Window_EagleMessage < Window_Base
     return eagle_move_out_face if face_name == ""
     if @eagle_sprite_face
       return if @eagle_sprite_face.no_change?
-    else
-      @eagle_sprite_face = MESSAGE_EX.facepool_new
+      eagle_move_out_face
     end
+    @eagle_sprite_face = MESSAGE_EX.facepool_new
     @eagle_sprite_face.reset(self)
     @eagle_sprite_face.motion(:fade_in)
   end
@@ -3491,7 +3608,7 @@ end # end of class Window_EagleMessage
 class Window_EagleMessage_Clone < Window_EagleMessage
   attr_accessor :back_bitmap, :back_sprite
   attr_accessor :eagle_chara_viewport
-  attr_accessor :eagle_chara_sprites, :eagle_sprite_pop_tag, :eagle_pop_tag_bitmap
+  attr_accessor :eagle_chara_sprites, :eagle_sprite_pop_tag
   attr_accessor :eagle_sprite_face, :eagle_window_name, :eagle_sprite_pause
   attr_accessor :eagle_pop_obj
   #--------------------------------------------------------------------------
@@ -4038,6 +4155,7 @@ end
 # ○ 脸图精灵
 #=============================================================================
 class Sprite_EagleFace < Sprite
+  attr_accessor :opa
   #--------------------------------------------------------------------------
   # ● 绑定
   #--------------------------------------------------------------------------
@@ -4211,11 +4329,11 @@ class Sprite_EagleFace < Sprite
   #--------------------------------------------------------------------------
   def fiber_fade_in(param_str = "")
     v = 255.0 / @params[:it]
-    @params[:it].times {
+    while(@opa < 255)
       @opa += v
       yield self if block_given?
       Fiber.yield
-    }
+    end
   end
   #--------------------------------------------------------------------------
   # ● 动作：淡出
@@ -4223,11 +4341,11 @@ class Sprite_EagleFace < Sprite
   def fiber_fade_out(param_str = "")
     bind_window(nil)
     v = 255.0 / @params[:ot]
-    @params[:ot].times {
+    while(@opa > 0)
       @opa -= v
       yield self if block_given?
       Fiber.yield
-    }
+    end
     @flag_fin = true
   end
   #--------------------------------------------------------------------------

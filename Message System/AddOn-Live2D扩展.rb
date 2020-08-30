@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageLive2D"] = true
 #==============================================================================
-# - 2020.8.22.15 随对话框独立
+# - 2020.8.30.14 随对话框更新
 #==============================================================================
 # - 本插件为对话框新增了 Live2D 的显示
 #----------------------------------------------------------------------------
@@ -282,7 +282,7 @@ class Window_EagleMessage
   # ● 设置 l2d 参数
   #--------------------------------------------------------------------------
   def eagle_text_control_l2d(param = '0')
-    return if !game_message.draw
+    return if !@flag_draw
     name = ""; id = nil; pst = ""
     ps = param.split('|') # [id, file, param] or [file, param] or [file]
     name = ps[0] if ps.size == 1
@@ -295,7 +295,7 @@ class Window_EagleMessage
   # ● 执行 l2dm
   #--------------------------------------------------------------------------
   def eagle_text_control_l2dm(param = '0')
-    return if !game_message.draw
+    return if !@flag_draw
     params = param.split('|') # [id, motion, index]
     MESSAGE_EX.live2d_motion(params[0], params[1], params[2])
   end
@@ -303,7 +303,7 @@ class Window_EagleMessage
   # ● 执行 l2de
   #--------------------------------------------------------------------------
   def eagle_text_control_l2de(param = '0')
-    return if !game_message.draw
+    return if !@flag_draw
     params = param.split('|') # [id, expression]
     MESSAGE_EX.live2d_expression(params[0], params[1])
   end
@@ -311,7 +311,7 @@ class Window_EagleMessage
   # ● 执行 l2dm2
   #--------------------------------------------------------------------------
   def eagle_text_control_l2dm2(param = '0')
-    return if !game_message.draw
+    return if !@flag_draw
     params = param.split('|') # [id, motion, param]
     MESSAGE_EX.live2d_eagle_motion(params[0], params[1], params[2] || "")
   end
@@ -319,7 +319,7 @@ class Window_EagleMessage
   # ● 执行 l2dat
   #--------------------------------------------------------------------------
   def eagle_text_control_l2dat(param = '0')
-    return if !game_message.draw
+    return if !@flag_draw
     params = param.split('|') # [id, param]
     MESSAGE_EX.live2d_lookat(params[0], params[1] || "")
   end
