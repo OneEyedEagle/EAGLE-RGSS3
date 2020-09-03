@@ -1,17 +1,18 @@
 #==============================================================================
 # ■ 组件-位图绘制窗口皮肤 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2019.11.11.21
+# - 2020.8.30.21 新增设置更多参数
 #==============================================================================
 # - 本插件提供了在位图上绘制窗口皮肤的方法
 #-----------------------------------------------------------------------------
 # - 在位图上指定区域绘制指定的窗口皮肤
 #
-#      EAGLE.draw_windowskin(windowskin, bitmap[, rect_b])
+#      EAGLE.draw_windowskin(windowskin, bitmap[, rect_b, params])
 #
 #   其中 windowskin 为 Graphics/System 目录下的窗口皮肤文件名称（字符串）
 #       bitmap 为需要将窗口皮肤绘制在其上的位图对象
 #       rect_b 【可省略】为位图对象被绘制的区域（默认取整个位图区域）
+#       params 【可省略】设置更多细节参数，具体见方法注释
 #==============================================================================
 
 module EAGLE
@@ -20,29 +21,35 @@ module EAGLE
   #  windowskin → 在 Graphics/System 目录下的窗口皮肤文件名称，字符串
   #  bitmap → 需要将窗口皮肤绘制在其上的位图对象
   #  rect_b → 位图对象被绘制的区域（当w、h为0时，取整个位图）
+  #  params → :cx 设置内容在x方向上的偏移量， :cy 设置在y方向上的偏移量
   #--------------------------------------------------------------------------
-  def self.draw_windowskin(windowskin, bitmap, rect_b = Rect.new(0,0,0,0))
+  def self.draw_windowskin(windowskin, bitmap, rect_b = nil, params = {})
+    rect_b ||= Rect.new(0,0,0,0)
     rect_b.width = bitmap.width if rect_b.width <= 0 # 绘制宽度
     rect_b.height = bitmap.height if rect_b.height <= 0 # 绘制高度
     return if rect_b.width < 32 || rect_b.height < 32
+    params[:cx] ||= 2
+    params[:cy] ||= 2
     skin = Cache.system(windowskin) rescue return
-    draw_windowskin_bg(bitmap, skin, rect_b)
-    draw_windowskin_bg2(bitmap, skin, rect_b)
+    draw_windowskin_bg(bitmap, skin, rect_b, params)
+    draw_windowskin_bg2(bitmap, skin, rect_b, params)
     draw_windowskin_border(bitmap, skin, rect_b)
   end
   #--------------------------------------------------------------------------
   # ● 拉伸绘制背景层
   #--------------------------------------------------------------------------
-  def self.draw_windowskin_bg(bitmap, skin, rect_b)
-    rect = Rect.new(rect_b.x + 2, rect_b.y + 2, rect_b.width - 4, rect_b.height - 4)
+  def self.draw_windowskin_bg(bitmap, skin, rect_b, params)
+    rect = Rect.new(rect_b.x + params[:cx], rect_b.y + params[:cy],
+      rect_b.width - params[:cx] * 2, rect_b.height - params[:cy] * 2)
     src_rect = Rect.new(0, 0, 64, 64)
     bitmap.stretch_blt(rect, skin, src_rect)
   end
   #--------------------------------------------------------------------------
   # ● 平铺绘制背景花纹
   #--------------------------------------------------------------------------
-  def self.draw_windowskin_bg2(bitmap, skin, rect_b)
-    rect = Rect.new(rect_b.x + 2, rect_b.y + 2, rect_b.width - 4, rect_b.height - 4)
+  def self.draw_windowskin_bg2(bitmap, skin, rect_b, params)
+    rect = Rect.new(rect_b.x + params[:cx], rect_b.y + params[:cy],
+      rect_b.width - params[:cx] * 2, rect_b.height - params[:cy] * 2)
     _x = rect.x
     _y = rect.y
     while(_y < rect.y + rect.height)
