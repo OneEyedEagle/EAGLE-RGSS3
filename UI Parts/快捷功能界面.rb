@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 快捷功能界面 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.8.5.22 兼容对话框扩展，新增对话自动播放的设置
+# - 2020.9.7.16 兼容缓动函数
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-EventToolbar"] = true
@@ -343,7 +343,7 @@ class << self
     while(true)
       break if _i > _t
       per = _i * 1.0 / _t
-      per = (_i == _t ? 1 : (1 - 2**(-10 * per)))
+      per = (_i == _t ? 1 : ease_value(per))
       _i += 1
       params.each do |s, v|
         case v[:type]
@@ -356,6 +356,15 @@ class << self
       yield
       update_basic
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-缓动函数
+  #--------------------------------------------------------------------------
+  def ease_value(x)
+    if $imported["EAGLE-EasingFunction"]
+      return EasingFuction.call("easeOutExpo", x)
+    end
+    1 - 2**(-10 * x)
   end
 end
 end # end of module

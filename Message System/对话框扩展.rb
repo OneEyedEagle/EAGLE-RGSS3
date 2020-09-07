@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.9.3.11 新增对话框动态位置变化；扩展姓名框
+# - 2020.9.7.15 新增对缓动函数的扩展
 #=============================================================================
 # 【兼容模式】
 #
@@ -415,11 +415,11 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #   对话框的开启关闭方式已经得到了扩展：
 #   利用该脚本设置对话框开启方式类型和关闭方式类型
 #
-#          $game_message.open_type = :zoom 或 :fade 或 :default
-#          $game_message.close_type = :zoom 或 :fade 或 :default
+#          $game_message.open_type = :ease 或 :fade 或 :default
+#          $game_message.close_type = :ease 或 :fade 或 :default
 #
 # · 若赋值为 :default，则使用默认的上下打开关闭
-#   若赋值为 :zoom，则使用 动态缩放展开
+#   若赋值为 :ease，则使用 动态缩放展开
 #   若赋值为 :fade，则使用淡入淡出
 #----------------------------------------------------------------------------
 # - 并行处理子窗口
@@ -906,6 +906,25 @@ module MESSAGE_EX
   def self.toggle_visible?
     false #Input.trigger?(:A)
   end
+  #--------------------------------------------------------------------------
+  # ● 【计算】获取缓动函数的返回值
+  #  type 为该函数被调用的场景
+  #  x 为缓动函数的 当前时间/总时间 的比值（0~1之间小数）
+  #  若使用了【组件-缓动函数 by老鹰】，则可以调用其中的缓动函数
+  #--------------------------------------------------------------------------
+  def self.ease_value(type, x)
+    if $imported["EAGLE-EasingFunction"]
+      case type
+      when :msg_xywh
+        return EasingFuction.call("easeOutBack", x)
+      when :face_xy
+        return EasingFuction.call("easeOutElastic", x)
+      when :chara_xy
+        return EasingFuction.call("easeOutExpo", x)
+      end
+    end
+    return 1 - 2**(-10 * x)
+  end
 end
 
 #=============================================================================
@@ -1309,8 +1328,8 @@ class Game_Message
   #--------------------------------------------------------------------------
   alias eagle_message_ex_clear clear
   def clear
-    @open_type ||= :zoom # 对话框的打开模式
-    @close_type ||= :zoom # 对话框的关闭模式
+    @open_type ||= :ease # 对话框的打开模式
+    @close_type ||= :ease # 对话框的关闭模式
     @auto_wrap ||= true # 开启自动换行？
     @para ||= false # 并行显示选择框？
     @no_input_pause ||= false # 不进入按键等待（扩展用）
@@ -1843,6 +1862,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_update_assets_after_open
     eagle_pop_update if game_message.pop?
+    @eagle_window_name.update
     @eagle_sprite_face.update if @eagle_sprite_face
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
     force_close if MESSAGE_EX.skip?
@@ -1883,8 +1903,8 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_open_and_wait
     case game_message.open_type
-    when :zoom
-      eagle_open_type_zoom
+    when :ease
+      eagle_open_type_ease
     when :fade
       eagle_open_type_fade
     else # :default
@@ -1894,7 +1914,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   # ● 打开-动态展开
   #--------------------------------------------------------------------------
-  def eagle_open_type_zoom
+  def eagle_open_type_ease
     @eagle_chara_sprites.each { |c| c.visible = false }
     eagle_set_wh({:w => 1, :h => 1, :ins => true, :open => true}) if self.openness == 0
     self.openness = 255
@@ -1948,8 +1968,8 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_close_and_wait
     case game_message.close_type
-    when :zoom
-      eagle_close_type_zoom
+    when :ease
+      eagle_close_type_ease
     when :fade
       eagle_close_type_fade
     else # :default
@@ -1959,7 +1979,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   # ● 关闭-动态缩小
   #--------------------------------------------------------------------------
-  def eagle_close_type_zoom
+  def eagle_close_type_ease
     eagle_move_out_assets
     eagle_set_wh({:w => 1, :h => 1}) if self.openness > 0
     self.openness = 0
@@ -2123,7 +2143,7 @@ class Window_EagleMessage < Window_Base
       break if self.openness == 0
       break if _i > _t
       per = _i * 1.0 / _t
-      per = (_i == _t ? 1 : (1 - 2**(-10 * per)))
+      per = (_i == _t ? 1 : MESSAGE_EX.ease_value(:msg_xywh, per))
       _p[:update].each do |sym|
         case sym
         when :x
@@ -2411,7 +2431,7 @@ class Window_EagleMessage < Window_Base
 
     @eagle_window_name.x += name_params[:dx]
     @eagle_window_name.y += name_params[:dy]
-    @eagle_window_name.update
+    @eagle_window_name.update_with_msg
   end
 
   #--------------------------------------------------------------------------
@@ -3992,16 +4012,15 @@ class Window_EagleMsgName < Window_Base
     @back_sprite.opacity = opa
   end
   #--------------------------------------------------------------------------
-  # ● 更新
+  # ● 更新（在 eagle_win_update 中调用）
   #--------------------------------------------------------------------------
-  def update
-    super
+  def update_with_msg
     update_position
     update_back_sprite
   end
   #--------------------------------------------------------------------------
   # ● 更新位置
-  #  尽管在调用 update 之前已经更新了姓名框位置，但保留此处用于扩展
+  #  尽管已经更新了姓名框位置，但保留此处用于扩展
   #--------------------------------------------------------------------------
   def update_position
   end
@@ -4533,7 +4552,7 @@ class Sprite_EagleFace < Sprite
     while(true)
       break if _i > _t
       per = _i * 1.0 / _t
-      per = (_i == _t ? 1 : (1 - 2**(-10 * per)))
+      per = (_i == _t ? 1 : MESSAGE_EX.ease_value(:face_xy, per))
       @x1 = init_x1 + d_x * per
       @y1 = init_y1 + d_y * per
       yield self if block_given?
@@ -4920,7 +4939,7 @@ class Sprite_EagleCharacter < Sprite
     params[:tc] += 1
 
     per = params[:tc] * 1.0 / params[:t]
-    per = (params[:tc] == params[:t] ? 1 : (1 - 2**(-10 * per)))
+    per = (params[:tc] == params[:t] ? 1 : MESSAGE_EX.ease_value(:chara_xy, per))
     @dx = params[:dx_init] + params[:dx_d] * per
     @dy = params[:dy_init] + params[:dy_d] * per
 
