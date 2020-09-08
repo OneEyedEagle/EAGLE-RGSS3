@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MsgKeywordInfo"] = true
 #==============================================================================
-# - 2020.8.30.14 随对话框更新
+# - 2020.9.8.11 现在按键提示精灵能够正常隐藏了
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细信息
 #------------------------------------------------------------------------------
@@ -168,6 +168,7 @@ class Window_EagleMessage
   alias eagle_keyword_info_close close
   def close
     eagle_keyword_info_close
+    @eagle_keywords.clear
     @eagle_window_keyword_info.close
   end
   #--------------------------------------------------------------------------
@@ -280,6 +281,7 @@ class Window_Keyword_Info < Window_Base
     @bitmaps.each { |i, b| b.dispose }
     @bitmaps.clear
     create_contents_no_dispose
+    close
   end
   #--------------------------------------------------------------------------
   # ● 生成窗口内容（不释放原本位图）

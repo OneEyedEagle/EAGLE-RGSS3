@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.9.7.15 新增对缓动函数的扩展
+# - 2020.9.8.10 新增对缓动函数的扩展
 #=============================================================================
 # 【兼容模式】
 #
@@ -1610,6 +1610,10 @@ class Window_EagleMessage < Window_Base
     @eagle_evals = [] # 存储当前对话框的动态脚本 [eval_str, eval_str...]
     @eagle_chara_sets = {} # 存储文字的分组
     @eagle_current_set = nil # 指定当前的分组
+    # 对话框动态移动偏移量（此处新增定义，防止子类覆盖 eagle_message_reset）
+    @eagle_move_x = @eagle_move_y = 0
+    # 存储对话框在上一帧的位置（此处新增定义，防止子类覆盖 eagle_message_reset）
+    @eagle_last_x = @eagle_last_y = 0
   end
   #--------------------------------------------------------------------------
   # ● 拷贝自身
@@ -3791,7 +3795,7 @@ class Window_EagleMessage_Clone < Window_EagleMessage
   # ● 处理纤程的主逻辑
   #--------------------------------------------------------------------------
   def fiber_main
-    eagle_set_wh # 由于pause精灵需要去除，增加更新宽高
+    eagle_set_wh( {:open => true} ) # 由于pause精灵需要去除，增加更新宽高
     loop do
       Fiber.yield
       break if @fin
