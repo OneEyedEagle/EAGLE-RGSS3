@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 快捷功能界面 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.9.7.16 兼容缓动函数
+# - 2020.9.23.15 兼容事件记录日志
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-EventToolbar"] = true
@@ -17,6 +17,7 @@ $imported["EAGLE-EventToolbar"] = true
 #    若使用了【事件指令跳过 by老鹰】，将加入 跳过剧情 的指令。
 #    若使用了【对话框扩展 by老鹰】，将加入 自动剧情 的指令。
 #    若使用了【对话日志 by老鹰】，将加入 对话日志 的指令。
+#    若使用了【事件记录日志 by老鹰】，将加入 事件日志 的指令。
 #    若使用了【快速存读档 by老鹰】，将加入 快速存档 与 快速读档 的指令。
 #
 #    注意：由于可用按键较少，可酌情关闭上述插件中的按键开启，只保留本插件中的调用。
@@ -76,6 +77,16 @@ module TOOLBAR
         "开启对话日志界面，查看对话记录"
       )
       @window_toolbar.set_handler(:msg_log, MSG_LOG.method(:call))
+    end
+
+    if $imported["EAGLE-EventLog"]
+      @window_toolbar.add_command(
+        ">> 事件日志",
+        :event_log,
+        true,
+        "开启事件日志界面，查看已发生的大事件"
+      )
+      @window_toolbar.set_handler(:event_log, EVENT_LOG.method(:call))
     end
 
     if $imported["EAGLE-FastSL"]

@@ -2,7 +2,7 @@
 # ■ 对话日志 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
-# - 2020.8.22.15 优化对话框扩展的兼容性
+# - 2020.9.23.15 优化上下方向，新增不存入日志的开关控制
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-MessageLog"] = true
@@ -15,10 +15,12 @@ $imported["EAGLE-MessageLog"] = true
 #
 #    在对话日志界面，再次按下 Q 键即可关闭，并继续之前的地图事件
 #
+#----------------------------------------------------------------------------
 # 【注意】
 #
 #    对话日志将被存储到存档文件中，因此请不要将 LOG_MAX_NUM 设置过大
 #
+#----------------------------------------------------------------------------
 # 【扩展】
 #
 #   ·已经兼容【对话框扩展 by老鹰】及其AddOn
@@ -40,9 +42,9 @@ module MSG_LOG
   end
 
   #--------------------------------------------------------------------------
-  # ○【常量】对于独立的取消分支，显示的日志文本
+  # ○【常量】当该序号开关开启时，不记录对话日志
   #--------------------------------------------------------------------------
-  LOG_CHOICE_CANCEL = "（取消）"
+  S_ID_NO_LOG = 0
   #--------------------------------------------------------------------------
   # ○【常量】最大存储的日志条数
   #--------------------------------------------------------------------------
@@ -56,6 +58,10 @@ module MSG_LOG
   #--------------------------------------------------------------------------
   OFFSET_X = 60
   #--------------------------------------------------------------------------
+  # ○【常量】显示名称区域的宽度
+  #--------------------------------------------------------------------------
+  NAME_WIDTH = 90
+  #--------------------------------------------------------------------------
   # ○【常量】显示于底部的最新的对话日志，所能到达的最顶端的y值
   #--------------------------------------------------------------------------
   UP_LIMIT_Y = 4
@@ -63,6 +69,10 @@ module MSG_LOG
   # ○【常量】显示于顶部的最旧的对话日志，所能到达的最底端的y值
   #--------------------------------------------------------------------------
   DOWN_LIMIT_Y = 26
+  #--------------------------------------------------------------------------
+  # ○【常量】对于独立的取消分支，显示的日志文本
+  #--------------------------------------------------------------------------
+  LOG_CHOICE_CANCEL = "（取消）"
 
   #--------------------------------------------------------------------------
   # ● 设置背景精灵
@@ -108,7 +118,7 @@ module MSG_LOG
     sprite.bitmap.font.size = 14
 
     sprite.bitmap.draw_text(0, 0, sprite.width, sprite.height,
-      "- 再次按下 下方向键 读取更多日志 -", 1)
+      "- 再次按下 上方向键 读取更多日志 -", 1)
     sprite.bitmap.fill_rect(0, sprite.height-4, sprite.width, 1,
       Color.new(255,255,255,120))
 
@@ -154,7 +164,7 @@ class Data
   #--------------------------------------------------------------------------
   def draw(s) # sprite
     # 绘制主体文本（位于中心偏右位置）
-    params = { :font_size => 16, :x0 => 90, :lhd => 2 }
+    params = { :font_size => 16, :x0 => NAME_WIDTH, :lhd => 2 }
     params[:w] = Graphics.width - OFFSET_X * 2
     height_add = 12 # 额外增加的高度
     d = MSG_LOG_DrawTextEX.new(@text, params)
@@ -165,23 +175,23 @@ class Data
     # 绘制额外文本（放置于左侧头部）
     if @ex[:name]
       s.bitmap.font.color = text_color(17)
-      s.bitmap.draw_text(0,0,params[:x0],params[:font_size], @ex[:name], 1)
+      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], @ex[:name], 1)
     end
     if @ex[:choice]
       s.bitmap.font.color = text_color(16)
-      s.bitmap.draw_text(0,0,params[:x0],params[:font_size], "选择 >> ", 2)
+      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], "选择 >> ", 2)
     end
     if @ex[:num_input]
       s.bitmap.font.color = text_color(16)
-      s.bitmap.draw_text(0,0,params[:x0],params[:font_size], "输入 >> ", 2)
+      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], "输入 >> ", 2)
     end
     if @ex[:item_choice]
       s.bitmap.font.color = text_color(16)
-      s.bitmap.draw_text(0,0,params[:x0],params[:font_size], "物品 >> ", 2)
+      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], "物品 >> ", 2)
     end
 
     # 绘制底部分割线
-    w = d.width + params[:x0]
+    w = d.width + NAME_WIDTH
     s.bitmap.fill_rect(0, s.height - height_add + 4,
       Graphics.width - OFFSET_X * 2, 1, Color.new(255,255,255,80))
   end
@@ -334,7 +344,7 @@ class << self
       ui_update_speed
       ui_update_pos
       ui_update_hint_more
-      ui_update_new if @sprite_more.opacity == 255 && Input.trigger?(:DOWN)
+      ui_update_new if @sprite_more.opacity == 255 && Input.trigger?(:UP)
       break if close_scene?
     end
   end
@@ -356,9 +366,9 @@ class << self
   # ● UI-更新移动速度
   #--------------------------------------------------------------------------
   def ui_update_speed
-    if Input.trigger?(:UP)
+    if Input.trigger?(:DOWN)
       @speed = -1
-    elsif Input.trigger?(:DOWN)
+    elsif Input.trigger?(:UP)
       @speed = +1
     end
     if @sprites[0].y - @sprites[0].oy + @speed < UP_LIMIT_Y
@@ -377,8 +387,8 @@ class << self
   # ● UI-更新移动速度的变更
   #--------------------------------------------------------------------------
   def ui_update_speed_change
-    if Input.press?(:UP)
-      if @last_key == :UP
+    if Input.press?(:DOWN)
+      if @last_key == :DOWN
         @ad_speed_count -= 1
         if @ad_speed_count <= 0
           @ad_speed_count = @ad_speed
@@ -387,9 +397,9 @@ class << self
       else
         @ad_speed_count = @ad_speed
       end
-      @last_key = :UP
-    elsif Input.press?(:DOWN)
-      if @last_key == :DOWN
+      @last_key = :DOWN
+    elsif Input.press?(:UP)
+      if @last_key == :UP
         @ad_speed_count -= 1
         if @ad_speed_count <= 0
           @ad_speed_count = @ad_speed
@@ -398,7 +408,7 @@ class << self
       else
         @ad_speed_count = @ad_speed
       end
-      @last_key = :DOWN
+      @last_key = :UP
     else
       return if (@d_speed_count -= 1) > 0
       @d_speed_count = @d_speed
@@ -545,7 +555,7 @@ class Game_Message
   #--------------------------------------------------------------------------
   alias eagle_text_review_clear clear
   def clear
-    MSG_LOG.add(self) if @texts
+    MSG_LOG.add(self) if @texts && !$game_switches[MSG_LOG::S_ID_NO_LOG]
     eagle_text_review_clear
     @choice_result_text = ""
     @keyitem_result_text = ""

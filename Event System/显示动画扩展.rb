@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-AnimEX"] = true
 #==============================================================================
-# - 2020.2.12.21
+# - 2020.9.19.17
 #==============================================================================
 # - 本插件扩展了显示动画的脚本指令
 #--------------------------------------------------------------------------
@@ -128,7 +128,7 @@ class Sprite_Base < Sprite
         frame_index = @animation.frame_max
         frame_index -= (@ani_duration + @ani_rate - 1) / @ani_rate
         animation_set_sprites(@animation.frames[frame_index])
-        apply_frame_evals(frame_index)
+        apply_frame_ex(frame_index)
         @animation.timings.each do |timing|
           animation_process_timing(timing) if timing.frame == frame_index
         end
@@ -138,9 +138,9 @@ class Sprite_Base < Sprite
     end
   end
   #--------------------------------------------------------------------------
-  # ○ 执行第 frame_index 帧时的额外脚本
+  # ○ 执行第 frame_index 帧时的额外处理
   #--------------------------------------------------------------------------
-  def apply_frame_evals(frame_index)
+  def apply_frame_ex(frame_index)
     if @eagle_binds[frame_index]
       s = $game_switches; v = $game_variables
       e = $game_map.events
