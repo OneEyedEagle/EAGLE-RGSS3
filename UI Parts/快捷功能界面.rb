@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 快捷功能界面 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.9.23.15 兼容事件记录日志
+# - 2020.9.24.14 新增常量设置
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-EventToolbar"] = true
@@ -36,6 +36,19 @@ module TOOLBAR
   def self.update
     call if Input.trigger?(:X)
   end
+  #--------------------------------------------------------------------------
+  # ○【常量】指令框宽度
+  #--------------------------------------------------------------------------
+  WIN_COMMAND_WIDTH = 120
+  #--------------------------------------------------------------------------
+  # ○【常量】指令框文字大小
+  #--------------------------------------------------------------------------
+  WIN_COMMAND_FONTSIZE = 18
+  #--------------------------------------------------------------------------
+  # ○【常量】帮助文本文字大小
+  #--------------------------------------------------------------------------
+  WIN_HELP_FONTSIZE = 14
+
   #--------------------------------------------------------------------------
   # ● 初始化指令
   #--------------------------------------------------------------------------
@@ -228,7 +241,8 @@ class << self
     @sprite_bg = Sprite.new
     set_sprite_bg(@sprite_bg)
     @sprite_bg.opacity = 0
-    @sprite_bg.z = 300 if $game_message.visible
+    @sprite_bg.z = 300
+    @sprite_bg.z = 500 if $game_message.visible
 
     @sprite_bg_info = Sprite.new
     @sprite_bg_info.z = @sprite_bg.z + 1
@@ -282,11 +296,10 @@ class << self
   #--------------------------------------------------------------------------
   def ui_update
     ui_move_in
-    update_basic
     while true
-      @window_toolbar.update
-      @window_help.update
+      p 1 if $RGD
       update_basic
+      @window_toolbar.update
       break if Input.trigger?(:B)
       break if @window_toolbar.close?
     end
@@ -414,7 +427,7 @@ class Window_Toolbar < Window_Command
   # ● 获取项目的宽度
   #--------------------------------------------------------------------------
   def item_width
-    140
+    TOOLBAR::WIN_COMMAND_WIDTH
   end
   #--------------------------------------------------------------------------
   # ● “确定”和“取消”的处理
@@ -427,6 +440,9 @@ class Window_Toolbar < Window_Command
   #--------------------------------------------------------------------------
   # ● 调用“确定”的处理方法
   #--------------------------------------------------------------------------
+  def call_ok_handler
+    super
+  end
   alias eagle_toolbar_call_ok_handler call_ok_handler
   def call_ok_handler
     if TOOLBAR::COMMANDS_NO_CLOSE.include?(current_symbol)
@@ -437,7 +453,6 @@ class Window_Toolbar < Window_Command
       activate
       return
     end
-    #eagle_toolbar_call_ok_handler
     @flag_ok = true
     close
   end
@@ -449,6 +464,13 @@ class Window_Toolbar < Window_Command
     change_color(normal_color, @draw_item_enable)
     r = item_rect_for_text(index)
     draw_text_ex(r.x, r.y, command_name(index))
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置字体
+  #--------------------------------------------------------------------------
+  def reset_font_settings
+    super
+    contents.font.size = TOOLBAR::WIN_COMMAND_FONTSIZE
   end
   #--------------------------------------------------------------------------
   # ● 更改内容绘制颜色
@@ -474,23 +496,18 @@ end
 #===============================================================================
 class Window_ToolbarHelp < Window_Help
   #--------------------------------------------------------------------------
+  # ● 重置字体
+  #--------------------------------------------------------------------------
+  def reset_font_settings
+    super
+    contents.font.size = TOOLBAR::WIN_HELP_FONTSIZE
+  end
+  #--------------------------------------------------------------------------
   # ● 刷新
   #--------------------------------------------------------------------------
   def refresh
     contents.clear
-    draw_text_ex(0, 0, "\\}" + @text) if @text
-  end
-  #--------------------------------------------------------------------------
-  # ● 放大字体尺寸
-  #--------------------------------------------------------------------------
-  def make_font_bigger
-    contents.font.size += 4 if contents.font.size <= 64
-  end
-  #--------------------------------------------------------------------------
-  # ● 缩小字体尺寸
-  #--------------------------------------------------------------------------
-  def make_font_smaller
-    contents.font.size -= 4 if contents.font.size >= 16
+    draw_text_ex(0, 0, @text) if @text
   end
 end
 
