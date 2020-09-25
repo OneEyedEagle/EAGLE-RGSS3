@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 快捷功能界面 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.9.24.14 新增常量设置
+# - 2020.9.25.12 
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-EventToolbar"] = true
@@ -297,7 +297,7 @@ class << self
   def ui_update
     ui_move_in
     while true
-      p 1 if $RGD
+      #p 1 if $RGD
       update_basic
       @window_toolbar.update
       break if Input.trigger?(:B)
