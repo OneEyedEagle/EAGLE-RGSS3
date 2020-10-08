@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.8.30.14 随对话框更新
+# - 2020.10.8.13 切换地图时，强制关闭不保留的并行对话
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -744,7 +744,8 @@ class Game_Player
   def reserve_transfer(map_id, x, y, d = 2)
     MESSAGE_PARA.lock(:player)
     eagle_message_para_reserve_transfer(map_id, x, y, d)
-    MESSAGE_PARA.all_finish_sys(false)
+    flag = map_id == $game_map.map_id ? false : true
+    MESSAGE_PARA.all_finish_sys(flag)
   end
   #--------------------------------------------------------------------------
   # ● 执行场所移动
