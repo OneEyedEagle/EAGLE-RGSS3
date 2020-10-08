@@ -4,9 +4,10 @@
 $imported ||= {}
 $imported["EAGLE-UtilsDrawing"] = true
 #=============================================================================
-# - 2020.2.22.18 修复BUG
+# - 2020.9.29.19 兼容VX
 #=============================================================================
 # - 本插件提供了一部分全局通用的关于形状绘制的脚本工具
+# - 本插件已经兼容RPG Maker VX
 #----------------------------------------------------------------------------
 # 【通用参数】
 #   bitmap → 绘制在该位图上
@@ -150,10 +151,10 @@ module EAGLE
     scopes[area1][0] = tan(a1)
     scopes[area2][1] = tan(a2)
     while true
-      scopes[area2][0] = (area2.even? ? nil : 0) if area2 > area1
+      scopes[area2][0] = (area2%2==0 ? nil : 0) if area2 > area1
       break if area2 == area1
       area2 -= 1
-      scopes[area2][1] = (area2.even? ? 0 : nil) # 用nil代表无穷
+      scopes[area2][1] = (area2%2==0 ? 0 : nil) # 用nil代表无穷
     end
     arc_circle(bitmap, cx, cy, r, scopes, color, fill)
   end
@@ -359,11 +360,11 @@ module EAGLE
     1.0000000
   ]
   def self.sin(angle)
-    angle += (angle < 0 ? 360 : 0)
+    angle = (angle + 360) % 360
     return SinTable[angle]
   end
   def self.cos(angle)
-    angle += (angle < 0 ? 360 : 0)
+    angle = (angle + 360) % 360
     return SinTable[450 - angle]
   end
   def self.tan(angle)
