@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.10.8.19 新增显示隐藏的扩展方法
+# - 2020.10.8.20 拦截部分无关紧要的报错
 #=============================================================================
 # 【兼容模式】
 #
@@ -3366,8 +3366,11 @@ class Window_EagleMessage < Window_Base
   def eagle_get_pop_sprite
     # 地图场景中，所存储的并非精灵，需要再次检索
     if pop_params[:type] == :map_chara
-      SceneManager.scene.spriteset.character_sprites.each do |s|
-        return s if s.character == @eagle_pop_obj
+      begin
+        SceneManager.scene.spriteset.character_sprites.each do |s|
+          return s if s.character == @eagle_pop_obj
+        end
+      rescue
       end
       return nil
     end
