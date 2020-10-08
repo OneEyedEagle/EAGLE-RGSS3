@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.9.8.10 新增对缓动函数的扩展
+# - 2020.10.8.19 新增显示隐藏的扩展方法
 #=============================================================================
 # 【兼容模式】
 #
@@ -1806,7 +1806,14 @@ class Window_EagleMessage < Window_Base
     @eagle_sprite_face.visible = true if @eagle_sprite_face
     @eagle_window_name.show if game_message.name?
     @eagle_sprite_pause.visible = true if @flag_input_pause
+    show_ex
     self
+  end
+  #--------------------------------------------------------------------------
+  # ● 显示（扩展用）
+  #--------------------------------------------------------------------------
+  def show_ex
+    @eagle_dup_windows.each { |w| w.show }
   end
   #--------------------------------------------------------------------------
   # ● 隐藏窗口
@@ -1819,7 +1826,14 @@ class Window_EagleMessage < Window_Base
     @eagle_sprite_face.visible = false if @eagle_sprite_face
     @eagle_window_name.hide
     @eagle_sprite_pause.visible = false
+    hide_ex
     self
+  end
+  #--------------------------------------------------------------------------
+  # ● 隐藏（扩展用）
+  #--------------------------------------------------------------------------
+  def hide_ex
+    @eagle_dup_windows.each { |w| w.hide }
   end
 
   #--------------------------------------------------------------------------
