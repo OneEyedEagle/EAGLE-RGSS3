@@ -567,7 +567,13 @@ class Game_Interpreter
   #--------------------------------------------------------------------------
   alias eagle_event_log_command_105 command_105
   def command_105
-    return eagle_event_log_command_105 if !$game_switches[EVENT_LOG::S_ID]
+    return call_event_log if $game_switches[EVENT_LOG::S_ID]
+    eagle_event_log_command_105
+  end
+  #--------------------------------------------------------------------------
+  # ● 写入事件日志
+  #--------------------------------------------------------------------------
+  def call_event_log
     # 约定：第一行固定为名称
     n = ""
     if next_event_code == 405
