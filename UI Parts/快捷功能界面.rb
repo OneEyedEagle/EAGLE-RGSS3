@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventToolbar"] = true
 #==============================================================================
-# - 2020.10.8.18
+# - 2020.10.10.15 新增对字体大小的常量设置
 #==============================================================================
 # - 本插件新增了剧情演出时可供开启的快捷功能场景
 #------------------------------------------------------------------------------
@@ -48,6 +48,10 @@ module TOOLBAR
   # ○【常量】帮助文本文字大小
   #--------------------------------------------------------------------------
   WIN_HELP_FONTSIZE = 14
+  #--------------------------------------------------------------------------
+  # ○【常量】提示文本的字体大小
+  #--------------------------------------------------------------------------
+  HINT_FONT_SIZE = 14
 
   #--------------------------------------------------------------------------
   # ● 初始化指令
@@ -66,20 +70,6 @@ module TOOLBAR
         "跳过当前阶段的剧情，并显示关键要点"
       )
       @window_toolbar.set_handler(:msg_skip, COMMAND_SKIP.method(:call))
-    end
-
-    if $imported["EAGLE-MessageEX"]
-      t = "已\\c[17]关闭\\c[0]自动对话"
-      if v = $game_message.win_params[:auto_t]
-        t = sprintf("在 \\c[17]%0.1f\\c[0]s 后自动继续对话", v * 1.0 / 60)
-      end
-      @window_toolbar.add_command(
-        ">> 自动对话",
-        :msg_auto,
-        true,
-        t
-      )
-      @window_toolbar.set_handler(:msg_auto, TOOLBAR.method(:toggle_msg_auto))
     end
 
     if $imported["EAGLE-MessageLog"]
@@ -130,6 +120,20 @@ module TOOLBAR
         "切换对话框的显示/隐藏"
       )
       @window_toolbar.set_handler(:msg_vi, TOOLBAR.method(:toggle_msg_visible))
+    end
+
+    if $imported["EAGLE-MessageEX"]
+      t = "已\\c[17]关闭\\c[0]自动对话"
+      if v = $game_message.win_params[:auto_t]
+        t = sprintf("在 \\c[17]%0.1f\\c[0]s 后自动继续对话", v * 1.0 / 60)
+      end
+      @window_toolbar.add_command(
+        ">> 自动对话",
+        :msg_auto,
+        true,
+        t
+      )
+      @window_toolbar.set_handler(:msg_auto, TOOLBAR.method(:toggle_msg_auto))
     end
 
     if $imported["EAGLE-CallScene"]
@@ -206,7 +210,7 @@ module TOOLBAR
   #--------------------------------------------------------------------------
   def self.set_sprite_up(sprite)
     sprite.bitmap = Bitmap.new(Graphics.width, 24)
-    sprite.bitmap.font.size = 14
+    sprite.bitmap.font.size = HINT_FONT_SIZE
     sprite.bitmap.fill_rect(0, 20, sprite.width, 1,
       Color.new(255,255,255,120))
   end
@@ -215,7 +219,7 @@ module TOOLBAR
   #--------------------------------------------------------------------------
   def self.set_sprite_down(sprite)
     sprite.bitmap = Bitmap.new(Graphics.width, 24)
-    sprite.bitmap.font.size = 14
+    sprite.bitmap.font.size = HINT_FONT_SIZE
     sprite.bitmap.draw_text(0, 2, sprite.width, sprite.height,
       "上/下方向键 - 选择 | 确定键 - 执行 | 取消键 - 退出", 1)
     sprite.bitmap.fill_rect(0, 0, sprite.width, 1,
@@ -230,167 +234,170 @@ module TOOLBAR
     ui_update
     ui_dispose
   end
-#===============================================================================
-# ○ UI
-#===============================================================================
-class << self
-  #--------------------------------------------------------------------------
-  # ● UI-初始化
-  #--------------------------------------------------------------------------
-  def ui_init
-    @sprite_bg = Sprite.new
-    set_sprite_bg(@sprite_bg)
-    @sprite_bg.opacity = 0
-    @sprite_bg.z = 300
-    @sprite_bg.z = 500 if $game_message.visible
+  #===============================================================================
+  # ○ UI
+  #===============================================================================
+  class << self
+    #--------------------------------------------------------------------------
+    # ● UI-初始化
+    #--------------------------------------------------------------------------
+    def ui_init
+      @sprite_bg = Sprite.new
+      set_sprite_bg(@sprite_bg)
+      @sprite_bg.opacity = 0
+      @sprite_bg.z = 300
+      @sprite_bg.z = 500 if $game_message.visible
 
-    @sprite_bg_info = Sprite.new
-    @sprite_bg_info.z = @sprite_bg.z + 1
-    set_sprite_info(@sprite_bg_info)
+      @sprite_bg_info = Sprite.new
+      @sprite_bg_info.z = @sprite_bg.z + 1
+      set_sprite_info(@sprite_bg_info)
+      @sprite_bg_info.opacity = 0
 
-    @window_toolbar = Window_Toolbar.new(0, 0)
-    init_window_command
-    @window_toolbar.move(0, 0,
-      @window_toolbar.window_width, @window_toolbar.window_height)
-    @window_toolbar.refresh
-    @window_toolbar.select(0)
-    @window_toolbar.opacity = 0
-    @window_toolbar.back_opacity = 0
-    @window_toolbar.contents_opacity = 255
-    @window_toolbar.z = @sprite_bg.z + 1
-    set_window_toolbar
+      @window_toolbar = Window_Toolbar.new(0, 0)
+      init_window_command
+      @window_toolbar.move(0, 0,
+        @window_toolbar.window_width, @window_toolbar.window_height)
+      @window_toolbar.refresh
+      @window_toolbar.select(0)
+      @window_toolbar.opacity = 0
+      @window_toolbar.back_opacity = 0
+      @window_toolbar.contents_opacity = 255
+      @window_toolbar.z = @sprite_bg.z + 1
+      set_window_toolbar
 
-    @window_help = Window_ToolbarHelp.new(1)
-    @window_help.z = @sprite_bg.z + 1
-    @window_help.opacity = 0
-    @window_help.back_opacity = 0
-    @window_help.contents_opacity = 255
-    @window_help.openness = 0
+      @window_help = Window_ToolbarHelp.new(1)
+      @window_help.z = @sprite_bg.z + 1
+      @window_help.opacity = 0
+      @window_help.back_opacity = 0
+      @window_help.contents_opacity = 255
+      @window_help.openness = 0
 
-    @window_toolbar.help_window = @window_help
+      @window_toolbar.help_window = @window_help
 
-    @sprite_hint_up = Sprite.new
-    @sprite_hint_up.z = @sprite_bg.z + 1
-    set_sprite_up(@sprite_hint_up)
+      @sprite_hint_up = Sprite.new
+      @sprite_hint_up.z = @sprite_bg.z + 1
+      set_sprite_up(@sprite_hint_up)
 
-    @sprite_hint_down = Sprite.new
-    @sprite_hint_down.z = @sprite_bg.z + 1
-    set_sprite_down(@sprite_hint_down)
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-释放
-  #--------------------------------------------------------------------------
-  def ui_dispose
-    @window_help.dispose
-    @window_toolbar.dispose
-    instance_variables.each do |varname|
-      ivar = instance_variable_get(varname)
-      if ivar.is_a?(Sprite)
-        ivar.bitmap.dispose
-        ivar.dispose
+      @sprite_hint_down = Sprite.new
+      @sprite_hint_down.z = @sprite_bg.z + 1
+      set_sprite_down(@sprite_hint_down)
+    end
+    #--------------------------------------------------------------------------
+    # ● UI-释放
+    #--------------------------------------------------------------------------
+    def ui_dispose
+      @window_help.dispose
+      @window_toolbar.dispose
+      instance_variables.each do |varname|
+        ivar = instance_variable_get(varname)
+        if ivar.is_a?(Sprite)
+          ivar.bitmap.dispose
+          ivar.dispose
+        end
       end
     end
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-更新至完成
-  #--------------------------------------------------------------------------
-  def ui_update
-    ui_move_in
-    while true
-      #p 1 if $RGD
-      update_basic
-      @window_toolbar.update
-      break if Input.trigger?(:B)
-      break if @window_toolbar.close?
-    end
-    ui_move_out
-    @window_toolbar.eagle_toolbar_call_ok_handler if @window_toolbar.flag_ok
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-基础更新
-  #--------------------------------------------------------------------------
-  def update_basic
-    Graphics.update
-    Input.update
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-移入
-  #--------------------------------------------------------------------------
-  def ui_move_in
-    @window_toolbar.open
-    @window_help.open
-    params = {}
-    params[@sprite_hint_down] = { :type => :y,
-      :des => @window_toolbar.y + @window_toolbar.height }
-    params[@sprite_hint_up] = { :type => :y,
-      :des => @window_toolbar.y - 4 - @sprite_hint_up.height }
-    ui_move(params) {
-      @window_toolbar.update
-      @window_help.update
-      @sprite_bg.opacity += 15
-    }
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-移出
-  #--------------------------------------------------------------------------
-  def ui_move_out
-    @window_toolbar.close
-    @window_help.close
-    params = {}
-    params[@sprite_hint_down] = { :type => :y,
-      :des => Graphics.height + @sprite_hint_down.height }
-    params[@sprite_hint_up] = { :type => :y,
-      :des => 0 - @sprite_hint_up.height }
-    ui_move(params) {
-      @window_toolbar.update
-      @window_help.update
-      @sprite_bg.opacity -= 15
-    }
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-控制三次立方移动
-  #--------------------------------------------------------------------------
-  def ui_move(params, t = 20)
-    # params = { sprite => {:type =>, :des => } }
-    params.each do |s, v|
-      case v[:type]
-      when :x
-        v[:init] = s.x
-        v[:dis] = v[:des] - s.x
-      when :y
-        v[:init] = s.y
-        v[:dis] = v[:des] - s.y
+    #--------------------------------------------------------------------------
+    # ● UI-更新至完成
+    #--------------------------------------------------------------------------
+    def ui_update
+      ui_move_in
+      while true
+        #p 1 if $RGD
+        update_basic
+        @window_toolbar.update
+        break if Input.trigger?(:B)
+        break if @window_toolbar.close?
       end
+      ui_move_out
+      @window_toolbar.eagle_toolbar_call_ok_handler if @window_toolbar.flag_ok
     end
-
-    _i = 0; _t = t
-    while(true)
-      break if _i > _t
-      per = _i * 1.0 / _t
-      per = (_i == _t ? 1 : ease_value(per))
-      _i += 1
+    #--------------------------------------------------------------------------
+    # ● UI-基础更新
+    #--------------------------------------------------------------------------
+    def update_basic
+      Graphics.update
+      Input.update
+    end
+    #--------------------------------------------------------------------------
+    # ● UI-移入
+    #--------------------------------------------------------------------------
+    def ui_move_in
+      @window_toolbar.open
+      @window_help.open
+      params = {}
+      params[@sprite_hint_down] = { :type => :y,
+        :des => @window_toolbar.y + @window_toolbar.height }
+      params[@sprite_hint_up] = { :type => :y,
+        :des => @window_toolbar.y - 4 - @sprite_hint_up.height }
+      ui_move(params) {
+        @window_toolbar.update
+        @window_help.update
+        @sprite_bg.opacity += 15
+        @sprite_bg_info.opacity += 15
+      }
+    end
+    #--------------------------------------------------------------------------
+    # ● UI-移出
+    #--------------------------------------------------------------------------
+    def ui_move_out
+      @window_toolbar.close
+      @window_help.close
+      params = {}
+      params[@sprite_hint_down] = { :type => :y,
+        :des => Graphics.height + @sprite_hint_down.height }
+      params[@sprite_hint_up] = { :type => :y,
+        :des => 0 - @sprite_hint_up.height }
+      ui_move(params) {
+        @window_toolbar.update
+        @window_help.update
+        @sprite_bg.opacity -= 15
+        @sprite_bg_info.opacity -= 15
+      }
+    end
+    #--------------------------------------------------------------------------
+    # ● UI-控制三次立方移动
+    #--------------------------------------------------------------------------
+    def ui_move(params, t = 20)
+      # params = { sprite => {:type =>, :des => } }
       params.each do |s, v|
         case v[:type]
         when :x
-          s.x = v[:init] + v[:dis] * per
+          v[:init] = s.x
+          v[:dis] = v[:des] - s.x
         when :y
-          s.y = v[:init] + v[:dis] * per
+          v[:init] = s.y
+          v[:dis] = v[:des] - s.y
         end
       end
-      yield
-      update_basic
+
+      _i = 0; _t = t
+      while(true)
+        break if _i > _t
+        per = _i * 1.0 / _t
+        per = (_i == _t ? 1 : ease_value(per))
+        _i += 1
+        params.each do |s, v|
+          case v[:type]
+          when :x
+            s.x = v[:init] + v[:dis] * per
+          when :y
+            s.y = v[:init] + v[:dis] * per
+          end
+        end
+        yield
+        update_basic
+      end
+    end
+    #--------------------------------------------------------------------------
+    # ● UI-缓动函数
+    #--------------------------------------------------------------------------
+    def ease_value(x)
+      if $imported["EAGLE-EasingFunction"]
+        return EasingFuction.call("easeOutExpo", x)
+      end
+      1 - 2**(-10 * x)
     end
   end
-  #--------------------------------------------------------------------------
-  # ● UI-缓动函数
-  #--------------------------------------------------------------------------
-  def ease_value(x)
-    if $imported["EAGLE-EasingFunction"]
-      return EasingFuction.call("easeOutExpo", x)
-    end
-    1 - 2**(-10 * x)
-  end
-end
 end # end of module
 #===============================================================================
 # ○ Window_Toolbar

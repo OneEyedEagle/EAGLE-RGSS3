@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.10.8.20 拦截部分无关紧要的报错
+# - 2020.10.10.22 修复game_message中部分flag设置会被重置的bug
 #=============================================================================
 # 【兼容模式】
 #
@@ -219,6 +219,9 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #    dx/dy → x、y坐标的补足偏移量
 #    opa → 姓名框背景的不透明度（默认255）（文字的不透明度锁定为255）
 #
+#    特别的，利用 $game_message.no_name_overlap_face = true/false
+#      来设置姓名框是否需要自动调整位置，确保不遮挡脸图
+#
 #  \pause[param] → 等待按键时的帧动画的设置
 #    pause → 【默认】等待按键帧动画的类型（按常量设置进行 index → pause参数组 映射）
 #    o → 帧动画的显示原点位置类型（九宫格小键盘）（默认左上角7）
@@ -424,7 +427,7 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #----------------------------------------------------------------------------
 # - 并行处理子窗口
 #
-#   利用该脚本设置对话框与下一条指令的 选择框/数字输入框/物品选择框 并行处理
+#   利用该脚本设置对话框与 选择框/数字输入框/物品选择框 并行处理
 #
 #         $game_message.para = true 或 false
 #
@@ -1280,6 +1283,7 @@ class Game_Message
   attr_accessor :face_params, :name_params, :pause_params, :ex_params
   attr_accessor :event_id, :child_window_w_des, :child_window_h_des
   attr_accessor :open_type, :close_type, :auto_wrap, :para, :no_input_pause
+  attr_accessor :no_name_overlap_face
   attr_accessor :eagle_text # 存储实际绘制的文本（去除了预处理的转义符）
   attr_accessor :eagle_message # 兼容模式
   #--------------------------------------------------------------------------
@@ -1288,8 +1292,20 @@ class Game_Message
   alias eagle_message_ex_init initialize
   def initialize
     eagle_message_ex_init
+    check_flags
     @temp_game_messages = {} # sym => game_message
     set_default_params
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查flags
+  #--------------------------------------------------------------------------
+  def check_flags
+    @open_type = :ease if @open_type.nil? # 对话框的打开模式
+    @close_type = :ease if @close_type.nil? # 对话框的关闭模式
+    @auto_wrap = true if @auto_wrap.nil? # 开启自动换行？
+    @no_name_overlap_face = true if @no_name_overlap_face.nil? # 姓名框不遮挡脸图
+    @no_input_pause = false if @no_input_pause.nil? # 不进入按键等待（扩展用）
+    @para = false if @para.nil? # 并行显示选择框？
   end
   #--------------------------------------------------------------------------
   # ● 获取全部可保存params的符号的数组
@@ -1311,6 +1327,7 @@ class Game_Message
   # ● 检查params是否都存在（读档后调用，确保新增变量写入旧存档中）
   #--------------------------------------------------------------------------
   def check_params
+    check_flags
     eagle_params.each do |sym|
       params = self.send("#{sym}_params".to_sym)
       def_params = MESSAGE_EX.get_default_params(sym).dup
@@ -1324,15 +1341,10 @@ class Game_Message
     end
   end
   #--------------------------------------------------------------------------
-  # ● 清除（每次对话框开启时被调用）
+  # ● 清除（每次对话框关闭前被调用）
   #--------------------------------------------------------------------------
   alias eagle_message_ex_clear clear
   def clear
-    @open_type ||= :ease # 对话框的打开模式
-    @close_type ||= :ease # 对话框的关闭模式
-    @auto_wrap ||= true # 开启自动换行？
-    @para ||= false # 并行显示选择框？
-    @no_input_pause ||= false # 不进入按键等待（扩展用）
     eagle_message_ex_clear
     @eagle_text = ""
     @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
@@ -1464,6 +1476,7 @@ class Game_Message
     t.open_type = @open_type
     t.close_type = @close_type
     t.auto_wrap = @auto_wrap
+    t.no_name_overlap_face = @no_name_overlap_face
   end
   #--------------------------------------------------------------------------
   # ● 下一次对话时要解析的转义符
@@ -2441,11 +2454,13 @@ class Window_EagleMessage < Window_Base
     eagle_reset_xy_origin(@eagle_window_name, name_params[:o])
 
     # 若姓名框遮挡了脸图，则移动到不遮挡的地方
-    lx = self.x + eagle_face_left_width
-    rx = self.x + self.width - eagle_face_right_width
-    w = @eagle_window_name.width
-    @eagle_window_name.x = lx if @eagle_window_name.x < lx
-    @eagle_window_name.x = rx-w if @eagle_window_name.x+w > rx
+    if game_message.no_name_overlap_face && eagle_face_width > 0
+      lx = self.x + eagle_face_left_width
+      rx = self.x + self.width - eagle_face_right_width
+      w = @eagle_window_name.width
+      @eagle_window_name.x = lx if @eagle_window_name.x < lx
+      @eagle_window_name.x = rx-w if @eagle_window_name.x+w > rx
+    end
 
     @eagle_window_name.x += name_params[:dx]
     @eagle_window_name.y += name_params[:dy]
@@ -3122,7 +3137,8 @@ class Window_EagleMessage < Window_Base
     text.gsub!(/\ename\[(.*?)\]/i) {
       t = $1.dup
       if t.include?('|')
-        str_name = t.slice!(/.*?\|/).chop
+        s = t.slice!(/.*?\|/).chop
+        str_name = s if !s.empty?
         "\ename[#{t}]"
       else
         str_name = t
@@ -3453,14 +3469,16 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_face_left_width
     return 0 if face_params[:dir] # 显示在右侧时
-    eagle_face_width
+    v = eagle_face_width + face_params[:dx]
+    [v, 0].max
   end
   #--------------------------------------------------------------------------
   # ● 脸图在右侧占用的宽度
   #--------------------------------------------------------------------------
   def eagle_face_right_width
     return 0 if !face_params[:dir] # 显示在左侧时
-    eagle_face_width
+    v = eagle_face_width - face_params[:dx]
+    [v, 0].max
   end
 
   #--------------------------------------------------------------------------
