@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.8.22.15 随对话框独立
+# - 2020.10.12.23 新增列数设置、行间距、列间距
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -19,9 +19,14 @@ $imported["EAGLE-ChoiceEX"] = true
 #          （0嵌入；1~9对话框外边界的九宫格位置；-1~-9屏幕外框的九宫格位置）
 #          （当对话框关闭时，0~9的设置均无效）
 #     dx/dy → x/y坐标的偏移增量（默认0）
-#     w → 选择框的宽度（默认0不设置）（嵌入时该设置无效）
+#     fdw → 计算宽度时，每个字符的宽度增量（默认0）
+#            由于字体宽度计算时可能存在误差，因此增加了这个手工调整
+#     col → 设置选择框的列数（默认1）
+#     lhd → 每行之间的间距增量（默认2）
+#     cwd → 每列之间的间距增量（默认2）
+#     w → 选择框内容的宽度（默认0不设置）（嵌入时该设置无效）
 #         （不小于全部选项完整显示的最小宽度）
-#     h → 选择框的高度（默认0不设置）（若小于行高，则识别为行数）
+#     h → 选择框内容的高度（默认0不设置）（若小于行高，则识别为行数）
 #     opa → 选择框的背景不透明度（默认255）（文字内容不透明度固定为255）
 #         （嵌入时不显示窗口背景）
 #     skin → 选择框皮肤类型（默认取对话框皮肤）（见index → 窗口皮肤文件名 的映射）
@@ -110,12 +115,17 @@ module MESSAGE_EX
   # \choice[]
     :i => 0, # 初始光标位置
     # 窗口属性
-    :o => 5, # 原点类型
+    :o => 7, # 原点类型
     :x => nil,
     :y => nil,
     :do => 0, # 显示位置类型
     :dx => 0,
     :dy => 0,
+    :fdw => 0, # 自适应宽度时，每个字符的宽度增量
+               #（增加这个手工调整，以消除字体宽度计算时可能的误差）
+    :col => 2, # 显示列数
+    :cwd => 2, # 列间距的增量
+    :lhd => 2, # 行间距的增量
     :w => 0,
     :h => 0,
     :opa => 255, # 背景不透明度
@@ -169,6 +179,7 @@ end
 #==============================================================================
 class Window_ChoiceList < Window_Command
   attr_reader :message_window, :skin
+  def choice_params; $game_message.choice_params; end
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -190,8 +201,35 @@ class Window_ChoiceList < Window_Command
   def eagle_reset
     @choices_info.clear
     # 重置默认光标位置
-    $game_message.choice_params[:i] = MESSAGE_EX.get_default_params(:choice)[:i]
+    choice_params[:i] = MESSAGE_EX.get_default_params(:choice)[:i]
   end
+  #--------------------------------------------------------------------------
+  # ● 计算窗口内容的高度
+  #--------------------------------------------------------------------------
+  def contents_height
+    height - standard_padding * 2
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取列数
+  #--------------------------------------------------------------------------
+  def col_max
+    v = choice_params[:col] || 1
+    return v if v > 0
+    return 1
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取列之间的间距宽度
+  #--------------------------------------------------------------------------
+  def spacing
+    choice_params[:cwd] || 4
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取行之间的间距宽度
+  #--------------------------------------------------------------------------
+  def spacing_line
+    choice_params[:lhd] || 4
+  end
+
   #--------------------------------------------------------------------------
   # ● 开始输入的处理（覆盖）
   #--------------------------------------------------------------------------
@@ -250,39 +288,36 @@ class Window_ChoiceList < Window_Command
     # 存储绘制的原始文本（去除全部判定文本）
     @choices_info[i_w][:text] = text
     # 计算原始文本占用的绘制宽度
-    @choices_info[i_w][:width] = cal_width_line(text)
+    w, h = MESSAGE_EX.calculate_text_wh(contents, text, choice_params[:fdw])
+    @choices_info[i_w][:width] = w + choice_params[:fdw]
     return true # 成功设置一个需要显示的选项的信息
   end
-  #--------------------------------------------------------------------------
-  # ● 计算文本块的最大宽度（不计算\{\}转义符造成的影响）
-  #--------------------------------------------------------------------------
-  def cal_width_line(text)
-    text_clone, array_width = text.dup, []
-    text_clone.each_line do |line|
-      line = @message_window.convert_escape_characters(line)
-      line.gsub!(/\n/){ "" }; line.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i){ "" }
-      icon_length = 0; line.gsub!(/\ei\[\d+\]/i){ icon_length += 24; "" }
-      line.gsub!(/\e\w+\[.*?\]/i){ "" } # 清除掉全部的\w[wd]格式转义符
-      array_width.push(text_size(line).width + icon_length)
-    end
-    array_width.max || 0
-  end
+
   #--------------------------------------------------------------------------
   # ● 设置窗口大小
   #--------------------------------------------------------------------------
   def reset_size
     # 窗口高度
-    self.height = fitting_height(@choices_num)
-    h = @message_window.eagle_check_param_h($game_message.choice_params[:h])
-    self.height = h + standard_padding * 2 if h > 0
+    line_n = @choices_num / col_max + (@choices_num % col_max > 0 ? 1 : 0)
+    self.height = line_n * item_height + (line_n - 1) * spacing_line
+    h = @message_window.eagle_check_param_h(choice_params[:h])
+    self.height = h if h > 0
+    self.height += standard_padding * 2
     # 窗口宽度
-    width_min = @choices_info.values.collect {|v| v[:width]}.max + 8
-    self.width = width_min + standard_padding * 2
-    w_limit = $game_message.choice_params[:w]
-    self.width = w_limit if w_limit > self.width
+    ws = [0] * line_n
+    line_n.times do |i|
+      ws[i] = 0
+      col_max.times do |j|
+        k = i * col_max + j
+        break if k >= @choices_info.size
+        ws[i] += @choices_info[k][:width]
+      end
+      ws[i] += (col_max - 1) * spacing
+    end
+    self.width = [choice_params[:w], ws.max].max + standard_padding * 2
 
     # 处理嵌入的特殊情况
-    @flag_in_msg_window = @message_window.open? && $game_message.choice_params[:do] == 0
+    @flag_in_msg_window = @message_window.open? && choice_params[:do] == 0
     new_w = self.width
     if @flag_in_msg_window
       # 嵌入时对话框所需宽度最小值（不含边界）
@@ -316,16 +351,22 @@ class Window_ChoiceList < Window_Command
     self.ox = self.oy = 0
   end
   #--------------------------------------------------------------------------
+  # ● 更新下端边距
+  #--------------------------------------------------------------------------
+  def update_padding_bottom
+    self.padding_bottom = padding
+  end
+  #--------------------------------------------------------------------------
   # ● 更新窗口的位置（覆盖）
   #--------------------------------------------------------------------------
   def update_placement
     self.x = (Graphics.width - width) / 2 # 默认位置
     self.y = Graphics.height - 100 - height
 
-    self.x = $game_message.choice_params[:x] if $game_message.choice_params[:x]
-    self.y = $game_message.choice_params[:y] if $game_message.choice_params[:y]
-    o = $game_message.choice_params[:o]
-    if (d_o = $game_message.choice_params[:do]) < 0 # 相对于屏幕
+    self.x = choice_params[:x] if choice_params[:x]
+    self.y = choice_params[:y] if choice_params[:y]
+    o = choice_params[:o]
+    if (d_o = choice_params[:do]) < 0 # 相对于屏幕
       MESSAGE_EX.reset_xy_dorigin(self, nil, d_o)
     elsif @message_window.open?
       if d_o == 0 # 嵌入对话框
@@ -340,16 +381,16 @@ class Window_ChoiceList < Window_Command
       end
     end
     MESSAGE_EX.reset_xy_origin(self, o)
-    self.x += $game_message.choice_params[:dx]
-    self.y += $game_message.choice_params[:dy]
+    self.x += choice_params[:dx]
+    self.y += choice_params[:dy]
   end
   #--------------------------------------------------------------------------
   # ● 设置其他属性
   #--------------------------------------------------------------------------
   def reset_params_ex
-    @skin = @message_window.get_cur_windowskin_index($game_message.choice_params[:skin])
+    @skin = @message_window.get_cur_windowskin_index(choice_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(@skin)
-    self.opacity = $game_message.choice_params[:opa]
+    self.opacity = choice_params[:opa]
     self.contents_opacity = 255
 
     if @flag_in_msg_window # 如果嵌入，则不执行打开
@@ -357,8 +398,8 @@ class Window_ChoiceList < Window_Command
       self.openness = 255
     end
 
-    if cancel_enabled? && $game_message.choice_params[:cd] > 0
-      count = $game_message.choice_params[:cd] * 60
+    if cancel_enabled? && choice_params[:cd] > 0
+      count = choice_params[:cd] * 60
       if $imported["EAGLE-TimerEX"]
         p1 = { :text => "选择倒计时...", :icon => 280 }
         $game_timer[:choice_cd].start(count, p1)
@@ -366,14 +407,14 @@ class Window_ChoiceList < Window_Command
         $game_timer.start(count)
       end
     else
-      $game_message.choice_params[:cd] = 0
+      choice_params[:cd] = 0
     end
   end
   #--------------------------------------------------------------------------
   # ● 设置初始选项位置
   #--------------------------------------------------------------------------
   def set_init_select
-    i = $game_message.choice_params[:i]
+    i = choice_params[:i]
     return unselect if i < 0
     select(i)
   end
@@ -398,6 +439,17 @@ class Window_ChoiceList < Window_Command
   end
 
   #--------------------------------------------------------------------------
+  # ● 获取项目的绘制矩形
+  #--------------------------------------------------------------------------
+  def item_rect(index)
+    rect = Rect.new
+    rect.width = item_width
+    rect.height = item_height
+    rect.x = index % col_max * (item_width + spacing)
+    rect.y = index / col_max * (item_height + spacing_line)
+    rect
+  end
+  #--------------------------------------------------------------------------
   # ● 获取行高
   #--------------------------------------------------------------------------
   def line_height
@@ -413,7 +465,7 @@ class Window_ChoiceList < Window_Command
     s.set_enabled(command_enabled?(index))
     # 绘制选择支文本
     dw = self.contents_width - @choices_info[index][:width]
-    case @choices_info[index][:extra][:ali] || $game_message.choice_params[:ali]
+    case @choices_info[index][:extra][:ali] || choice_params[:ali]
     when 0; x_ = 0
     when 1; x_ = dw / 2
     when 2; x_ = dw
@@ -469,10 +521,10 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   def update
     super
-    update_placement if @message_window.open? && $game_message.choice_params[:do] == 0
+    update_placement if @message_window.open? && choice_params[:do] == 0
     @choices.each { |i, s| s.update }
     return if !self.active
-    check_cd_auto if $game_message.choice_params[:cd] > 0
+    check_cd_auto if choice_params[:cd] > 0
   end
   #--------------------------------------------------------------------------
   # ● 检查倒计时后自动选择
