@@ -4,10 +4,12 @@
 $imported ||= {}
 $imported["EAGLE-EventCopy"] = true
 #=============================================================================
-# - 2020.5.28.21 优化
+# - 2020.10.21.10 兼容VX；修复VX中切换地图导致事件消失的bug
 #=============================================================================
 # - 原始创意：Yanfly Engine Ace - Spawn Event
 # - 本插件新增了拷贝事件的方法
+#-----------------------------------------------------------------------------
+MODE_VX = false # 如果要在VX上使用，请修改为 true
 #-----------------------------------------------------------------------------
 # - 从指定地图将指定事件拷贝到当前地图
 #
@@ -48,6 +50,9 @@ $imported["EAGLE-EventCopy"] = true
 #     event.copy_finish
 #
 #   若拷贝事件已经不再需要，调用该方法将其回收，以用于下一次同事件的复制
+#   同时将调用 暂时消除事件
+#=============================================================================
+# - 特别感谢：葱兔
 #=============================================================================
 
 #=============================================================================
@@ -141,6 +146,7 @@ class Game_Map
     s.spriteset.add_characters_tmp
     @events.merge!(@events_tmp)
     @events_tmp.clear
+    $game_map.need_refresh = true
   end
   #--------------------------------------------------------------------------
   # ● 获取地图数据
@@ -166,6 +172,9 @@ class Game_Event < Game_Character
   #--------------------------------------------------------------------------
   # ● 初始化公有成员变量
   #--------------------------------------------------------------------------
+  if !defined?(init_public_members)
+    def init_public_members; end
+  end
   alias eagle_copy_event_init_public_members init_public_members
   def init_public_members
     eagle_copy_event_init_public_members
@@ -176,7 +185,8 @@ class Game_Event < Game_Character
   # ● 回收拷贝事件
   #--------------------------------------------------------------------------
   def copy_finish
-    return if @flag_copy.nil?
+    erase
+    return if !@flag_copy
     @flag_copy_restore = true
   end
   #--------------------------------------------------------------------------
@@ -200,7 +210,8 @@ class Spriteset_Map
   #--------------------------------------------------------------------------
   def add_characters_tmp
     $game_map.events_tmp.values.each do |event|
-      @character_sprites.push(Sprite_Character.new(@viewport1, event))
+      s = Sprite_Character.new(@viewport1, event)
+      @character_sprites.push(s)
     end
   end
 end
@@ -208,3 +219,49 @@ end
 # ○ Scene_Map
 #=============================================================================
 class Scene_Map; attr_reader :spriteset; end
+
+#=============================================================================
+# ○ 兼容VX
+#=============================================================================
+if MODE_VX
+class Game_Map
+  #--------------------------------------------------------------------------
+  # ● 获取地图数据
+  #--------------------------------------------------------------------------
+  def get_map_data(map_id)
+    load_data(sprintf("Data/Map%03d.rvdata", map_id))
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取当前场景
+  #--------------------------------------------------------------------------
+  def get_cur_scene
+    $scene
+  end
+end
+class Game_Event
+  attr_accessor :opacity
+  #--------------------------------------------------------------------------
+  # ● 初始化对像
+  #     map_id : 地图 ID
+  #     event  : 事件 (RPG::Event)
+  #--------------------------------------------------------------------------
+  alias eagle_event_copy_init initialize
+  def initialize(map_id, event)
+    eagle_event_copy_init(map_id, event)
+    init_public_members
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化变量
+  #--------------------------------------------------------------------------
+  def init_public_members
+    @opacity = 255
+    @blend_type = 0
+    @transparent = false
+    @erased = false
+    @starting = false
+  end
+  def init_private_members
+    setup(nil)
+  end
+end
+end
