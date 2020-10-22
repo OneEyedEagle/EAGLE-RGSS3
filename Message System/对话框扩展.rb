@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.10.22.16 优化姓名框更新；删去popt转义符；优化注释
+# - 2020.10.23.0 优化对话框不关闭时的缓动移动特效
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -2671,24 +2671,23 @@ class Window_EagleMessage < Window_Base
   # ● 设置对话框大小位置，并等待更新结束
   #--------------------------------------------------------------------------
   def eagle_set_wh(_p = {})
+    eagle_win_update # 应用新对话框的xy，旧xy已经在关闭前处理时存储
     eagle_set_params_xywh(_p)
     eagle_apply_params_xywh(_p)
     wait_until_des_wh(_p)
-    eagle_win_update
+    eagle_win_update # 确保新的xy能被应用（可能因为ins而导致跳过了更新）
   end
   #--------------------------------------------------------------------------
   # ● 设置对话框xywh的参数Hash
   #--------------------------------------------------------------------------
   def eagle_set_params_xywh(_p = {})
     _p[:update] = [] # 将会进行更新的属性
-    _p[:ins] ||= false  # 如果需要立刻更新完成，就置为 true
-    _p[:open] ||= false # 如果目标是打开窗口，就置为 true
+    _p[:ins] = false if _p[:ins].nil? # 如果需要立刻更新完成，就置为 true
+    _p[:open] = false if _p[:open].nil? # 如果目标是打开窗口，就置为 true
     _p[:t] ||= 20 # 更新所需时间（帧）
 
-    _p[:x] ||= nil # 更新结束时的位置，如果为 nil，且对话框未关闭，就适配计算
-    _p[:y] ||= nil
-    _p[:w] ||= nil  # 更新结束时的宽度高度，如果为 nil，就自动适配计算
-    _p[:h] ||= nil
+    #_p[:x] 与 _p[:y] 为更新结束时的位置，如果为 nil，且对话框未关闭，就适配计算
+    #_p[:w] 与 _p[:h] 为更新结束时的宽高，如果为 nil，就适配计算
 
     if _p[:open] # 如果为打开，则直接移动到目的地
       _p[:x] = nil
@@ -2905,8 +2904,6 @@ class Window_EagleMessage < Window_Base
   # ● 更新win参数组（初始化/一页绘制完成时调用）
   #--------------------------------------------------------------------------
   def eagle_win_update
-    @eagle_last_x = self.x
-    @eagle_last_y = self.y
     return eagle_pop_update if game_message.pop? && @eagle_pop_obj
     eagle_change_windowskin
     self.x = win_params[:x] || 0
@@ -3209,6 +3206,8 @@ class Window_EagleMessage < Window_Base
   def eagle_process_before_close
     game_message.clear
     @gold_window.close if @gold_window
+    @eagle_last_x = self.x # 存储当前对话框的位置，用于作为移动的初始值
+    @eagle_last_y = self.y
   end
   #--------------------------------------------------------------------------
   # ● 判定文字是否继续显示（覆盖）
@@ -3506,15 +3505,21 @@ class Window_EagleMessage < Window_Base
   # ● 绘制完成时的更新
   #--------------------------------------------------------------------------
   def eagle_process_draw_update
+    eagle_process_window_xywh
+    # 对齐需要用到对话框的宽高，因此在更新xywh后执行
+    eagle_charas_reset_alignment(win_params[:ali])
+    # 确保最后绘制的文字在视图区域内
+    ensure_character_visible(@eagle_chara_sprites[-1])
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制完成时进行窗口更新
+  #--------------------------------------------------------------------------
+  def eagle_process_window_xywh
     # 第一个文字绘制后打开窗口
     return open_and_wait if @flag_need_open
     # 如果是继续显示，需要动态更新大小
     return eagle_change_wh_when_continue if @flag_need_change_wh
     eagle_set_wh({:ins => true}) # 重设对话框宽高，并更新对话框位置
-    # 对齐需要用到对话框的宽高，因此在更新后执行
-    eagle_charas_reset_alignment(win_params[:ali])
-    # 确保最后绘制的文字在视图区域内
-    ensure_character_visible(@eagle_chara_sprites[-1])
   end
   #--------------------------------------------------------------------------
   # ● 重排列全部文字精灵
