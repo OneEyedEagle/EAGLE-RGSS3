@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.10.23.0 优化对话框不关闭时的缓动移动特效
+# - 2020.10.25.12 细化set的注释；调整xywh动态变化时的处理
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -1286,15 +1286,21 @@ CMC_CHARAS = {
 #
 # 【注意】
 #   - 单个文字可以被存入多个分组中
-#   - 请不要使用 0 分组，该分组固定为获取全部文字
+#   - 约定 0 分组为全部文字所在分组，因此可以传入 0 参数来回到无分组状态
 #
 # 【参数】
 #    sym → 分组的唯一标识符（字符串）
 #
 # 【高级】
-#    Window_Message类新增方法 chara_set(sym) { |s| do_something }
-#   该方法能够用于对 sym 分组中的文字精灵进行逐个操作，
-#   若 不传入sym 或 传入 0 或 传入 '0' 或传入 ""，则转为对全部文字精灵进行操作
+#    Window_EagleMessage 类新增方法 chara_set(sym) { |s| do_something }
+#     该方法能够用于对 sym 分组中的文字精灵进行逐个操作，
+#     若 不传入sym 或 传入 0 或 传入 '0' 或传入 ""，则转为对全部文字精灵进行操作
+#
+# 【示例】
+#   - 对话编写
+#       \ctog[1]这是测试用\ctog[0]对话。
+#   - 实际对话
+#      （“这是测试用”被存入标识符为 "1" 的分组，全部文字被存入标识符为 "0" 的分组）
 #
 #----------------------------------------------------------------------------
 #  \setm[sym|effect|param]
@@ -2206,7 +2212,7 @@ class Window_EagleMessage < Window_Base
     # 对话框动态移动偏移量（此处新增定义，防止子类覆盖 eagle_message_reset）
     @eagle_move_x = @eagle_move_y = 0
     # 存储对话框在上一帧的位置（此处新增定义，防止子类覆盖 eagle_message_reset）
-    @eagle_last_x = @eagle_last_y = 0
+    @eagle_last_x = @eagle_last_y = nil
   end
   #--------------------------------------------------------------------------
   # ● 拷贝自身
@@ -2214,7 +2220,7 @@ class Window_EagleMessage < Window_Base
   def clone(window = Window_EagleMessage_Clone)
     t = window.new(game_message.clone)
     t.game_message.win_params[:z] = 0
-    t.x = self.x; t.y = self.y; t.width = self.width; t.height = self.height
+    t.move(self.x, self.y, self.width, self.height)
     t.z = self.z - 5
     t.windowskin = self.windowskin
     # 拷贝背景精灵
@@ -2301,7 +2307,7 @@ class Window_EagleMessage < Window_Base
     # 移出全部组件
     eagle_move_out_assets
     # 重置存储的上一个对话框的位置
-    @eagle_last_x = @eagle_last_y = 0
+    @eagle_last_x = @eagle_last_y = nil
     # 重置对话框动态移动位置
     @eagle_move_x = @eagle_move_y = 0
     # 重置对话框宽高
@@ -2577,6 +2583,7 @@ class Window_EagleMessage < Window_Base
   def close_and_wait
     @flag_open_close = true
     show if !self.visible
+    Fiber.yield # 关闭前等待1帧，用于截图等
     eagle_message_sprites_move_out
     eagle_process_close_and_wait
     @flag_open_close = false
@@ -2671,11 +2678,17 @@ class Window_EagleMessage < Window_Base
   # ● 设置对话框大小位置，并等待更新结束
   #--------------------------------------------------------------------------
   def eagle_set_wh(_p = {})
-    eagle_win_update # 应用新对话框的xy，旧xy已经在关闭前处理时存储
+    eagle_before_set_xywh(_p)
     eagle_set_params_xywh(_p)
     eagle_apply_params_xywh(_p)
     wait_until_des_wh(_p)
-    eagle_win_update # 确保新的xy能被应用（可能因为ins而导致跳过了更新）
+    eagle_after_set_xywh(_p)
+  end
+  #--------------------------------------------------------------------------
+  # ● 进行对话框进行位置大小更新前的处理
+  #--------------------------------------------------------------------------
+  def eagle_before_set_xywh(_p)
+    eagle_win_update # 确保对话框的xy为移动的目的地
   end
   #--------------------------------------------------------------------------
   # ● 设置对话框xywh的参数Hash
@@ -2689,7 +2702,8 @@ class Window_EagleMessage < Window_Base
     #_p[:x] 与 _p[:y] 为更新结束时的位置，如果为 nil，且对话框未关闭，就适配计算
     #_p[:w] 与 _p[:h] 为更新结束时的宽高，如果为 nil，就适配计算
 
-    if _p[:open] # 如果为打开，则直接移动到目的地
+    if _p[:open] || @eagle_last_x.nil? || @eagle_last_y.nil?
+      # 如果为打开，则直接移动到目的地
       _p[:x] = nil
       _p[:y] = nil
     elsif self.openness == 255
@@ -2753,10 +2767,11 @@ class Window_EagleMessage < Window_Base
   # ● 更新对话框宽高直至完成
   #--------------------------------------------------------------------------
   def wait_until_des_wh(_p = {})
-    return if _p[:update].empty?
+    return eagle_win_update if _p[:update].empty?
     max_w = [_p[:w], _p[:w_init]].max
     max_h = [_p[:h], _p[:h_init]].max
     _i = 0; _t = _p[:t]
+    _t = 0 if _t < 0
     while(true)
       break if self.openness == 0
       break if _i > _t
@@ -2781,6 +2796,13 @@ class Window_EagleMessage < Window_Base
       Fiber.yield
       _i += 1
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 进行对话框进行位置大小更新后的处理
+  #--------------------------------------------------------------------------
+  def eagle_after_set_xywh(_p)
+    @eagle_last_x = self.x # 存储当前对话框的新位置，用于之后作为移动的初始值
+    @eagle_last_y = self.y
   end
   #--------------------------------------------------------------------------
   # ● 获取窗口的初始宽度高度
@@ -3206,8 +3228,6 @@ class Window_EagleMessage < Window_Base
   def eagle_process_before_close
     game_message.clear
     @gold_window.close if @gold_window
-    @eagle_last_x = self.x # 存储当前对话框的位置，用于作为移动的初始值
-    @eagle_last_y = self.y
   end
   #--------------------------------------------------------------------------
   # ● 判定文字是否继续显示（覆盖）
@@ -4358,6 +4378,14 @@ class Window_EagleMessage_Clone < Window_EagleMessage
     @fin = false # 结束显示？
   end
   #--------------------------------------------------------------------------
+  # ● 设置xywh
+  #--------------------------------------------------------------------------
+  def move(x, y, w, h)
+    super
+    @eagle_last_x = x # 同时设置上次更新的位置，确保 eagle_set_wh 能用
+    @eagle_last_y = y
+  end
+  #--------------------------------------------------------------------------
   # ● 初始化组件（覆盖，不再初始化，防止在赋值前还要dispose）
   #--------------------------------------------------------------------------
   def eagle_message_init_assets
@@ -4418,6 +4446,7 @@ class Window_EagleMessage_Clone < Window_EagleMessage
       Fiber.yield
       break if @fin
     end
+    eagle_process_before_close
     close_and_wait
     @fiber = nil
   end
@@ -4996,6 +5025,7 @@ class Sprite_EagleFace < Sprite
     @params[:name] =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
     @params[:num_line] = $1 ? $1.to_i : face_default_line
     @params[:num_col] = $2 ? $2.to_i : face_default_col
+    @params[:num] = @params[:num_line] * @params[:num_col]
     @params[:sole_w] = self.bitmap.width / @params[:num_col]
     @params[:sole_h] = self.bitmap.height / @params[:num_line]
     # 传出脸图宽度，用于对话框中文字位移
@@ -5034,6 +5064,7 @@ class Sprite_EagleFace < Sprite
   #--------------------------------------------------------------------------
   def apply_index
     return if @params[:i] == nil
+    @params[:i] = 0 if @params[:i] >= @params[:num]
     w = @params[:sole_w]
     h = @params[:sole_h]
     x = @params[:i] % @params[:num_col] * w

@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.10.11.22 修复 msgp 无效的bug
+# - 2020.10.25.0 修复中途强制关闭时，无法重新生成新的bug
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -392,7 +392,7 @@ end
 # ○ 并行对话列表
 #==============================================================================
 class MessagePara_List # 该list中每一时刻只显示一个对话框
-  attr_reader   :game_message, :params
+  attr_reader    :game_message, :params
   attr_accessor  :f_ensure_fin
   #--------------------------------------------------------------------------
   # ● 初始化对象
@@ -439,13 +439,14 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   # ● 更新
   #--------------------------------------------------------------------------
   def update
-    @fiber.resume if @fiber
     @window.update if @window
+    @fiber.resume if @fiber
   end
   #--------------------------------------------------------------------------
   # ● 线程
   #--------------------------------------------------------------------------
   def fiber_main
+    Fiber.yield
     parse_list while !@list_str.empty?
     dispose
     @fiber = nil
@@ -484,7 +485,6 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @list_str.slice!(/^(.*?)<\/msg>/m)
     set_new_window($1)
     Fiber.yield while @game_message.visible
-    @game_message.clear
   end
   #--------------------------------------------------------------------------
   # ● 标签：预设脸图参数
@@ -600,7 +600,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    @window.hide.dispose if @window
+    @window.dispose if @window
     @window = nil
   end
   #--------------------------------------------------------------------------
@@ -615,7 +615,11 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   def finish(force = false)
     @finish = true
     if @window
-      force ? @window.finish_force : @window.finish
+      if force
+        @window.finish_force
+      else
+        @window.finish
+      end
     end
     self
   end
@@ -665,30 +669,7 @@ class Window_EagleMessage_Para < Window_EagleMessage
       @fiber.resume
     elsif game_message.busy?
       @fiber = Fiber.new { fiber_main }
-      @fiber.resume
     end
-  end
-  #--------------------------------------------------------------------------
-  # ● 强制结束当前对话框
-  #--------------------------------------------------------------------------
-  def finish_force
-    self.openness = 0
-    self.opacity = 0
-    hide
-    @eagle_force_close = true
-    @input_wait_c = 0
-    eagle_message_sprites_move_out
-    eagle_move_out_assets
-    @back_sprite.opacity = 0
-    @fiber = nil
-  end
-  #--------------------------------------------------------------------------
-  # ● 结束当前对话框（保留移出）
-  #--------------------------------------------------------------------------
-  def finish
-    @eagle_force_close = true
-    @input_wait_c = 0
-    update
   end
   #--------------------------------------------------------------------------
   # ● 处理纤程的主逻辑
@@ -698,6 +679,7 @@ class Window_EagleMessage_Para < Window_EagleMessage
     eagle_process_before_start
     process_all_text
     process_input
+    eagle_process_before_close
     close_and_wait
     game_message.visible = false
     @fiber = nil
@@ -718,14 +700,32 @@ class Window_EagleMessage_Para < Window_EagleMessage
     eagle_process_hold
   end
   #--------------------------------------------------------------------------
-  # ● 处理输入等待
-  #--------------------------------------------------------------------------
-  def input_pause
-  end
-  #--------------------------------------------------------------------------
   # ● 监听“确定”键的按下，更新快进的标志
   #--------------------------------------------------------------------------
   def update_show_fast
+  end
+  #--------------------------------------------------------------------------
+  # ● 强制结束当前对话框
+  #--------------------------------------------------------------------------
+  def finish_force
+    self.openness = 0
+    self.opacity = 0
+    hide
+    @eagle_force_close = true
+    @input_wait_c = 0
+    eagle_message_sprites_move_out
+    eagle_move_out_assets
+    @back_sprite.opacity = 0
+    game_message.visible = false
+    @fiber = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束当前对话框（保留移出）
+  #--------------------------------------------------------------------------
+  def finish
+    @eagle_force_close = true
+    @input_wait_c = 0
+    update
   end
   #--------------------------------------------------------------------------
   # ● 获取pop的弹出对象（需要有x、y方法）

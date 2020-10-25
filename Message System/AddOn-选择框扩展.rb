@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.10.12.23 新增列数设置、行间距、列间距
+# - 2020.10.25.12 修复多列时居中绘制错误的bug
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -121,10 +121,10 @@ module MESSAGE_EX
     :do => 0, # 显示位置类型
     :dx => 0,
     :dy => 0,
-    :fdw => 0, # 自适应宽度时，每个字符的宽度增量
+    :fdw => 1, # 自适应宽度时，每个字符的宽度增量
                #（增加这个手工调整，以消除字体宽度计算时可能的误差）
     :col => 2, # 显示列数
-    :cwd => 2, # 列间距的增量
+    :cwd => 4, # 列间距的增量
     :lhd => 2, # 行间距的增量
     :w => 0,
     :h => 0,
@@ -303,18 +303,10 @@ class Window_ChoiceList < Window_Command
     h = @message_window.eagle_check_param_h(choice_params[:h])
     self.height = h if h > 0
     self.height += standard_padding * 2
-    # 窗口宽度
-    ws = [0] * line_n
-    line_n.times do |i|
-      ws[i] = 0
-      col_max.times do |j|
-        k = i * col_max + j
-        break if k >= @choices_info.size
-        ws[i] += @choices_info[k][:width]
-      end
-      ws[i] += (col_max - 1) * spacing
-    end
-    self.width = [choice_params[:w], ws.max].max + standard_padding * 2
+    # 窗口宽度（先找到最大宽度的项，再依据列数计算）
+    w_col = @choices_info.collect { |k, v| v[:width] }.max
+    w = w_col * col_max + spacing * (col_max - 1)
+    self.width = [choice_params[:w], w].max + standard_padding * 2
 
     # 处理嵌入的特殊情况
     @flag_in_msg_window = @message_window.open? && choice_params[:do] == 0
@@ -464,7 +456,7 @@ class Window_ChoiceList < Window_Command
     s.set_rect(rect)
     s.set_enabled(command_enabled?(index))
     # 绘制选择支文本
-    dw = self.contents_width - @choices_info[index][:width]
+    dw = rect.width - @choices_info[index][:width]
     case @choices_info[index][:extra][:ali] || choice_params[:ali]
     when 0; x_ = 0
     when 1; x_ = dw / 2
@@ -509,7 +501,7 @@ class Window_ChoiceList < Window_Command
     else
       process_choice($game_message.choices[i_e_new].dup, i_e_new, i_w, false)
       redraw_item(i_w)
-      reset_size; update_placement
+      reset_size; redraw_item(i_w); update_placement
     end
     @choices[i_w].set_active(true)
     @choices[i_w].set_visible(true)

@@ -1,14 +1,15 @@
 #==============================================================================
 # ■ 角色头顶显示图标 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.4.14.10 优化
+# - 2020.10.23.0 新增移动类型自定义
 #==============================================================================
 # - 本插件新增了在地图上角色头顶显示指定图标的功能（仿气泡）
 #--------------------------------------------------------------------------
 # - 在 RGSS3 中，可以给 Game_CharacterBase类的 @balloon_id 变量赋值，
 #   用于在地图角色的头顶显示动态气泡
 # - 类似的，本插件为 Game_Character类新增了 @pop_icon 变量，
-#   为其赋值能在一段时间内，在角色头顶显示图标
+#     为其赋值能在一段时间内，在角色头顶显示图标
+#   同时，也新增了 @pop_icon_type 变量，用来指定不同的运动类型
 # - 示例：
 #    $game_player.pop_icon = 1
 #      → 在玩家头顶显示 1 号图标，持续 MAX_POP_FRAME 帧
@@ -32,7 +33,7 @@ module POP_ICON
   # ● 按照当前循环的帧序号进行重绘
   #  frame 的取值为 0 ~ MAX_LOOP_FRAME-1
   #--------------------------------------------------------------------------
-  def self.draw_pop_icon(sprite_chara, sprite_icon, icon_id, frame)
+  def self.draw_pop_icon(sprite_chara, sprite_icon, icon_id, frame, move_type)
     # 设置基础位置
     sprite_icon.x = sprite_chara.x
     sprite_icon.y = sprite_chara.y - sprite_chara.height
@@ -49,6 +50,11 @@ module POP_ICON
       sprite_icon.opacity = 255
     end
 
+    if move_type == 0
+    elsif move_type == 1
+      sprite_icon.y = sprite_chara.y - sprite_chara.height / 2
+    end
+
     case frame
     when 1..29
       sprite_icon.opacity -= 6
@@ -57,6 +63,7 @@ module POP_ICON
       sprite_icon.opacity += 6
       sprite_icon.y += ((29-(frame-29))/4)
     end
+
   end
   #--------------------------------------------------------------------------
   # ● 绘制图标
@@ -72,13 +79,14 @@ end
 # ○ Game_Character
 #=============================================================================
 class Game_Character
-  attr_accessor :pop_icon
+  attr_accessor :pop_icon, :pop_icon_type
   #--------------------------------------------------------------------------
   # ● 初始化公有成员变量
   #--------------------------------------------------------------------------
   alias eagle_popicon_init initialize
   def initialize
     @pop_icon = 0
+    @pop_icon_type = 0
     eagle_popicon_init
   end
 end
@@ -131,7 +139,8 @@ class Sprite_Character < Sprite_Base
         return end_popicon
       end
       c = @popicon_count % POP_ICON::MAX_LOOP_FRAME
-      POP_ICON.draw_pop_icon(self, @popicon_sprite, @pop_icon, c)
+      POP_ICON.draw_pop_icon(self, @popicon_sprite, @pop_icon, c,
+        @character.pop_icon_type)
       @popicon_sprite.update
       @popicon_count += 1
     end

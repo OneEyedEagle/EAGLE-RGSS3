@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageSeq"] = true
 #==============================================================================
-# - 2020.10.8.18 新增显示隐藏的处理
+# - 2020.10.25.12 更新移动方式，现在将在新对话框打开时同步移动
 #==============================================================================
 # - 本插件为对话框新增了自动向上/下移动的序列对话模式
 #----------------------------------------------------------------------------
@@ -24,7 +24,7 @@ $imported["EAGLE-MessageSeq"] = true
 #     t → 每 t 帧自动关闭一个旧对话框（若为nil，则不自动关闭）
 #     n → 同时最多存在的序列对话框数目（超出时，旧的将关闭）
 #   dir → 自动偏移的方向（1向下偏移，-1向上偏移，0不偏移）
-#    dy → 额外的偏移增量
+#    dy → 额外的全局偏移增量
 #
 # 【示例】
 #
@@ -42,7 +42,7 @@ module MESSAGE_EX
     :t => nil, # 每隔 t 帧关闭一个序列对话框（若为nil，则不会随时间关闭）
     :n => 5, # 同时最多存在的序列对话框数目（超出时，旧的将关闭）
     :dir => -1, # 自动偏移的方向（1向下偏移，-1向上偏移，0不偏移）
-    :dy => 0, # 额外的偏移增量
+    :dy => 0, # 额外的全局偏移增量
   }
 end
 #==============================================================================
@@ -69,6 +69,8 @@ class Window_EagleMessage
   alias eagle_seq_message_init_params eagle_message_init_params
   def eagle_message_init_params
     eagle_seq_message_init_params
+    @flag_seq = false # 当为 true 时，当前对话框会被拷贝保留，并同步更新
+    @eagle_count_seq = 0
     @eagle_seq_windows ||= [] # 时间正序存储
   end
   #--------------------------------------------------------------------------
@@ -96,24 +98,45 @@ class Window_EagleMessage
     @eagle_seq_windows.each { |w| w.hide }
   end
   #--------------------------------------------------------------------------
-  # ● 打开直至完成（当有文字绘制完成时执行）
+  # ● 设置对话框大小位置，并等待更新结束
   #--------------------------------------------------------------------------
-  alias eagle_seq_open_and_wait open_and_wait
-  def open_and_wait
-    if @eagle_seq_windows.size > 0
-      des_h  = eagle_window_height
-      des_h += eagle_window_height_add(des_h)
-      @eagle_seq_windows.each { |w| w.add_new_window_h(des_h); w.update }
-    end
-    eagle_seq_open_and_wait
+  alias eagle_seq_eagle_set_wh eagle_set_wh
+  def eagle_set_wh(_p = {})
+    eagle_seq_eagle_set_wh(_p)
   end
   #--------------------------------------------------------------------------
-  # ● 更新背景精灵的缩放
+  # ● 应用对话框xywh的参数Hash的预修改
   #--------------------------------------------------------------------------
-  alias eagle_seq_update_back_sprite_zoom update_back_sprite_zoom
-  def update_back_sprite_zoom(max_w = nil, max_h = nil)
-    eagle_seq_update_back_sprite_zoom(max_w, max_h)
-    eagle_update_seq_windows # 补充更新，在对话框打开时，也要更新序列对话框
+  alias eagle_seq_apply_params_xywh eagle_apply_params_xywh
+  def eagle_apply_params_xywh(_p = {})
+    eagle_seq_apply_params_xywh(_p)
+    if _p[:open] && _p[:h] > 1 && @eagle_seq_windows.size > 0
+      # 已知对话框的初始xywh和最终wh，依据o计算出它的最终xy
+      r = Rect.new(self.x, self.y, self.width, self.height)
+      r2 = Rect.new(0, 0, _p[:w], _p[:h])
+      o = win_params[:o]
+      if game_message.pop?
+        o = pop_params[:o]
+        o ||= 10 - pop_params[:do]
+      end
+      case o
+      when 1,4,7
+        r2.x = r.x
+      when 2,5,8
+        r2.x = r.x - (r2.width - r.width) / 2
+      when 3,6,9
+        r2.x = r.x - (r2.width - r.width)
+      end
+      case o
+      when 7,8,9
+        r2.y = r.y
+      when 4,5,6
+        r2.y = r.y - (r2.height - r.height) / 2
+      when 1,2,3
+        r2.y = r.y - (r2.height - r.height)
+      end
+      @eagle_seq_windows[-1].set_seq_y(r2.y, _p[:h])
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新复制对话框
@@ -129,9 +152,9 @@ class Window_EagleMessage
   def eagle_update_seq_windows
     if @eagle_seq_windows.size > 0
       @eagle_seq_windows.each { |w| w.update }
-      seq_params[:tc] += 1
+      @eagle_count_seq += 1
       eagle_pop_seq_window if @eagle_seq_windows.size > seq_params[:n]
-      eagle_pop_seq_window if seq_params[:t] && seq_params[:tc] > seq_params[:t]
+      eagle_pop_seq_window if seq_params[:t] && @eagle_count_seq > seq_params[:t]
       if @eagle_seq_windows[0].openness <= 0
         t = @eagle_seq_windows.shift
         t.dispose
@@ -151,10 +174,12 @@ class Window_EagleMessage
   #--------------------------------------------------------------------------
   def eagle_check_seq(text)
     parse_pre_params(text, 'seq', seq_params, :act)
-    seq_params[:act] = MESSAGE_EX.check_bool(seq_params[:act])
-    seq_params[:tc] = 0
-    # 若变更为了序列对话，则阻止hold
-    @flag_hold = false if seq_params[:act]
+    if seq_params[:act]
+      @flag_seq = MESSAGE_EX.check_bool(seq_params[:act])
+      @eagle_count_seq = 0
+      # 若变更为序列对话，则阻止hold
+      @flag_hold = false if @flag_seq
+    end
   end
   #--------------------------------------------------------------------------
   # ● 执行seq转义符（在 process_input 之后）
@@ -162,7 +187,7 @@ class Window_EagleMessage
   alias eagle_seq_process_hold eagle_process_hold
   def eagle_process_hold
     eagle_seq_process_hold
-    seq_params[:act] ? eagle_push_seq_window : eagle_clear_seq_window
+    @flag_seq ? eagle_push_seq_window : eagle_clear_seq_window
   end
   #--------------------------------------------------------------------------
   # ● 新增一个序列对话框
@@ -173,15 +198,20 @@ class Window_EagleMessage
     @eagle_seq_windows.each_with_index do |w, i|
       w.z = t.z - (@eagle_seq_windows.size-i) * 5; w.eagle_reset_z
     end
+    if w = @eagle_seq_windows[-1]
+      t.last_window = w
+      w.next_window = t
+    end
+    t.next_window = self
     @eagle_seq_windows.push(t)
-    self.opacity = 0
     self.openness = 0
+    @flag_need_open = true
   end
   #--------------------------------------------------------------------------
   # ● 移出一个序列对话框
   #--------------------------------------------------------------------------
   def eagle_pop_seq_window
-    seq_params[:tc] = 0
+    @eagle_count_seq = 0
     @eagle_seq_windows[0].close_clone if @eagle_seq_windows[0]
   end
   #--------------------------------------------------------------------------
@@ -195,58 +225,58 @@ end
 # ○ 对话框拷贝
 #=============================================================================
 class Window_EagleMessage_Seq_Clone < Window_EagleMessage_Clone
+  attr_accessor :last_window, :next_window
   #--------------------------------------------------------------------------
   # ● 初始化参数（只需要最初执行一次）
   #--------------------------------------------------------------------------
   def eagle_message_init_params
     super
-    @seq_des_dy = 0 # y的最终偏移值
-    @seq_dy = 0     # y的实际偏移值
+    @seq_y = 0     # y的实际偏移值
+    @flag_seq_need_update = false
+    @last_window = nil # 存储上一个对话框
+    @next_window = nil # 存储下一个对话框
   end
   #--------------------------------------------------------------------------
-  # ● 增加偏移量
+  # ● 设置xywh
   #--------------------------------------------------------------------------
-  def add_new_window_h(h)
-    @seq_des_dy += h
+  def move(x, y, w, h)
+    super
+    @seq_y = y
   end
   #--------------------------------------------------------------------------
-  # ● 更新xy后的处理
+  # ● 设置目的y值
+  #--------------------------------------------------------------------------
+  def set_seq_y(next_window_y, next_window_h)
+    if seq_params[:dir] > 0
+      @seq_y = next_window_y + next_window_h
+    elsif seq_params[:dir] < 0
+      @seq_y = next_window_y - self.height
+    end
+    @flag_seq_need_update = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 应用对话框xywh的参数Hash的预修改
+  #--------------------------------------------------------------------------
+  def eagle_apply_params_xywh(_p = {})
+    super(_p)
+    @last_window.set_seq_y(self.y, self.height) if @last_window
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新xy后的操作
   #--------------------------------------------------------------------------
   def eagle_after_update_xy
-    if seq_params[:dir] > 0
-      self.y += @seq_dy
-    elsif seq_params[:dir] < 0
-      self.y -= @seq_dy
-    end
-    self.y += seq_params[:dy]
+    self.y = @seq_y + seq_params[:dy] + @eagle_move_y
     super
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新自身作为序列窗口的位置
-  #--------------------------------------------------------------------------
-  def reset_seq_window_xy
-    d_y = @seq_des_dy - @seq_dy
-    return if d_y == 0
-    seq_dy_init = @seq_dy # 记录开始偏移时的y已有的偏移值
-    _i = 0; _t = 20
-    while(true)
-      break if _i >= _t
-      break if @fin
-      per = _i * 1.0 / _t
-      per = (_i == _t ? 1 : (1 - 2**(-10 * per)))
-      @seq_dy = (seq_dy_init + d_y * per)
-      _i += 1
-      eagle_win_update
-      Fiber.yield
-    end
   end
   #--------------------------------------------------------------------------
   # ● 处理纤程的主逻辑
   #--------------------------------------------------------------------------
   def fiber_main
-    eagle_set_wh({:ins => true}) # 由于pause精灵需要去除，增加更新宽高
     loop do
-      reset_seq_window_xy
+      if @flag_seq_need_update
+        @flag_seq_need_update = false
+        eagle_set_wh
+      end
       Fiber.yield
       break if @fin
     end
