@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.10.25.12 细化set的注释；调整xywh动态变化时的处理
+# - 2020.10.26.13 修复图标未被计算宽度的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -1772,10 +1772,13 @@ module MESSAGE_EX
     text_clone.gsub!(/\\/)      { "\e" }
     text_clone.gsub!(/\e\e/)    { "\\" }
     text_clone.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i) { "" }
-    text_clone.gsub!(/\e\w+\[(\d|\w)+\]/i) { "" } # 清除掉全部的\w[wd]格式转义符
     # 每一行计算宽度高度
     text_clone.each_line do |line|
-      icon_count = 0; line.gsub!(/\ei\[\d+\]/i){ icon_count += 1; "" }
+      icon_count = 0
+      # 获取 \i[] 数目
+      line.gsub!(/\ei\[\d+\]/i){ icon_count += 1; "" }
+      # 清除掉全部的\w[wd]格式转义符
+      line.gsub!(/\e\w+\[(\d|\w)+\]/i) { "" }
       r = bitmap.text_size(line)
       w = r.width + icon_count * 24 + (line.length - 1 + icon_count) * k
       array_width.push(w)
@@ -4343,17 +4346,23 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def input_wait_until_msg_wh(child_window)
     child_window.hide.start
-    eagle_set_wh # 执行因子窗口嵌入而变更的窗口大小
     child_window.show.open.activate
   end
   #--------------------------------------------------------------------------
   # ● 并行等待子窗口处理结束
   #--------------------------------------------------------------------------
   def input_wait_while_active(child_window)
+    add_w = add_h = 0
     while child_window.active
       break child_window.deactivate.close if @eagle_force_close
       @fiber_para.resume if @fiber_para
       Fiber.yield
+      if add_w != game_message.child_window_w_des ||
+         add_h != game_message.child_window_h_des
+        eagle_set_wh # 执行因子窗口嵌入而变更的窗口大小
+        add_w = game_message.child_window_w_des
+        add_h = game_message.child_window_h_des
+      end
     end
     @fiber_para = nil
   end

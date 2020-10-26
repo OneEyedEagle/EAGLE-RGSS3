@@ -5,28 +5,33 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.10.25.12 修复多列时居中绘制错误的bug
+# - 2020.10.26.14 修复图标宽度未被计算的bug；调整为动态适应的宽高
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
 #     i → 【默认】【重置】设置选择框光标初始所在的选择支
 #         （从0开始计数，-1代表不选择）（按实际显示顺序）
 #
-#   （窗口属性）
+#   （窗口位置）
 #     o → 选择框的显示原点类型（九宫格小键盘）（默认7）（嵌入时固定为7）
 #     x/y → 直接指定选择框的坐标（默认nil）
 #     do → 选择框的显示位置类型（覆盖x/y）（默认-10无效）
 #          （0嵌入；1~9对话框外边界的九宫格位置；-1~-9屏幕外框的九宫格位置）
 #          （当对话框关闭时，0~9的设置均无效）
 #     dx/dy → x/y坐标的偏移增量（默认0）
-#     fdw → 计算宽度时，每个字符的宽度增量（默认0）
-#            由于字体宽度计算时可能存在误差，因此增加了这个手工调整
+#   （选项列数）
 #     col → 设置选择框的列数（默认1）
 #     lhd → 每行之间的间距增量（默认2）
 #     cwd → 每列之间的间距增量（默认2）
+#   （固定宽高）
 #     w → 选择框内容的宽度（默认0不设置）（嵌入时该设置无效）
 #         （不小于全部选项完整显示的最小宽度）
 #     h → 选择框内容的高度（默认0不设置）（若小于行高，则识别为行数）
+#   （动态宽高）
+#     fdw → 计算宽度时，每个字符的宽度增量（默认0）
+#            由于字体计算宽高时可能存在误差，因此增加了这个手工调整
+#     fdh → 计算高度时，每个字符的高度增量（默认0）
+#   （窗口属性）
 #     opa → 选择框的背景不透明度（默认255）（文字内容不透明度固定为255）
 #         （嵌入时不显示窗口背景）
 #     skin → 选择框皮肤类型（默认取对话框皮肤）（见index → 窗口皮肤文件名 的映射）
@@ -115,21 +120,28 @@ module MESSAGE_EX
   # \choice[]
     :i => 0, # 初始光标位置
     # 窗口属性
+    :opa => 255, # 背景不透明度
+    :skin => nil, # 皮肤类型（nil时代表跟随对话框）
+    # 窗口位置
     :o => 7, # 原点类型
     :x => nil,
     :y => nil,
     :do => 0, # 显示位置类型
-    :dx => 0,
+    :dx => 0, # 设置选择框的坐标偏移增量
     :dy => 0,
-    :fdw => 1, # 自适应宽度时，每个字符的宽度增量
-               #（增加这个手工调整，以消除字体宽度计算时可能的误差）
+    # 选项行列
     :col => 2, # 显示列数
     :cwd => 4, # 列间距的增量
-    :lhd => 2, # 行间距的增量
-    :w => 0,
+    :lhd => 4, # 行间距的增量
+    # 窗口宽高
+    :w => 0, # 直接指定宽高（若为0，则动态计算）
     :h => 0,
-    :opa => 255, # 背景不透明度
-    :skin => nil, # 皮肤类型（nil时代表跟随对话框）
+    # 动态宽高
+    #   如果发现文字超出了光标范围，可以试试调整这两个数值
+    #   fdw会增大光标计算时的宽度，fdh会增大高度
+    :fdw => 1, # 自适应宽度时，每个字符的占位宽度增量
+               #（增加这个手工调整，以消除字体宽度计算时可能的误差）
+    :fdh => 4, # 自适应高度时，每个字符的高度增量
     # 选项属性
     :cd => 0, # 倒计时结束后选择取消项（秒数）
     :ali => 0, # 选项对齐方式
@@ -188,6 +200,7 @@ class Window_ChoiceList < Window_Command
     @choices = {} # 选择支的窗口序号 => 选择支精灵组
     @choices_info = {} # 选择支的窗口序号 => 信息组
     @choices_num = 0 # 存储总共显示出的选项数目
+    @win_info = { :line_h => [], :col_w => [] } # 行号 => 高  列号 => 宽
 
     @func_key_freeze = false # 冻结功能按键
     @skin = 0 # 当前所用窗口皮肤的index
@@ -239,6 +252,7 @@ class Window_ChoiceList < Window_Command
     refresh
     update_placement
     reset_params_ex
+    reset_choice_positions
     set_init_select
     self.cursor_rect.empty
     #open
@@ -252,7 +266,7 @@ class Window_ChoiceList < Window_Command
     $game_message.choices.each_with_index do |text, index|
       i += 1 if process_choice(text.dup, index, i, true)
     end
-    @choices_num = i
+    @choices_num = i # 存储总共的选项数目
     # 查找取消分支的窗口序号
     #（若取消分支为独立分支，则不改变i_w的值，仍然为 -1）
     choice = @choices_info.find{|i, e| e[:i_e] == $game_message.choice_cancel_i_e}
@@ -288,8 +302,10 @@ class Window_ChoiceList < Window_Command
     # 存储绘制的原始文本（去除全部判定文本）
     @choices_info[i_w][:text] = text
     # 计算原始文本占用的绘制宽度
-    w, h = MESSAGE_EX.calculate_text_wh(contents, text, choice_params[:fdw])
+    w, h = MESSAGE_EX.calculate_text_wh(contents, text,
+      choice_params[:fdw], choice_params[:fdh])
     @choices_info[i_w][:width] = w + choice_params[:fdw]
+    @choices_info[i_w][:height] = h + choice_params[:fdh]
     return true # 成功设置一个需要显示的选项的信息
   end
 
@@ -297,15 +313,38 @@ class Window_ChoiceList < Window_Command
   # ● 设置窗口大小
   #--------------------------------------------------------------------------
   def reset_size
+    # 获取各行各列的宽高
+    n      = @choices_num # 选项数目
+    n_col  = col_max # 列数
+    n_line = n / n_col + (n % n_col > 0 ? 1 : 0) # 行数
+    n_line.times do |i|
+      v = 0
+      n_col.times do |j|
+        ci = i * n_col + j
+        break if ci >= n
+        h_ = @choices_info[ci][:height]
+        v = h_ if h_ > v
+      end
+      @win_info[:line_h][i] = v # 每一行的高度
+    end
+    n_col.times do |j|
+      v = 0
+      n_line.times do |i|
+        ci = i * n_col + j
+        break if ci >= n
+        w_ = @choices_info[ci][:width]
+        v = w_ if w_ > v
+      end
+      @win_info[:col_w][j] = v # 每一列的宽度
+    end
+
     # 窗口高度
-    line_n = @choices_num / col_max + (@choices_num % col_max > 0 ? 1 : 0)
-    self.height = line_n * item_height + (line_n - 1) * spacing_line
+    self.height = @win_info[:line_h].inject { |s, v| s = s+v+spacing_line }
     h = @message_window.eagle_check_param_h(choice_params[:h])
     self.height = h if h > 0
     self.height += standard_padding * 2
-    # 窗口宽度（先找到最大宽度的项，再依据列数计算）
-    w_col = @choices_info.collect { |k, v| v[:width] }.max
-    w = w_col * col_max + spacing * (col_max - 1)
+    # 窗口宽度
+    w = @win_info[:col_w].inject { |s, v| s = s+v+spacing }
     self.width = [choice_params[:w], w].max + standard_padding * 2
 
     # 处理嵌入的特殊情况
@@ -435,10 +474,17 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   def item_rect(index)
     rect = Rect.new
-    rect.width = item_width
-    rect.height = item_height
-    rect.x = index % col_max * (item_width + spacing)
-    rect.y = index / col_max * (item_height + spacing_line)
+    begin
+      i_line = index / col_max # 行号
+      i_col = index % col_max # 列号
+      rect.width = @win_info[:col_w][i_col]
+      rect.x = @win_info[:col_w][0...i_col].inject { |s, v| s = s+v+spacing } || 0
+      rect.x += spacing if rect.x > 0
+      rect.height = @win_info[:line_h][i_line]
+      rect.y = @win_info[:line_h][0...i_line].inject { |s, v| s = s+v+spacing_line } || 0
+      rect.y += spacing_line if rect.y > 0
+    rescue
+    end
     rect
   end
   #--------------------------------------------------------------------------
@@ -451,6 +497,7 @@ class Window_ChoiceList < Window_Command
   # ● 绘制项目（覆盖）
   #--------------------------------------------------------------------------
   def draw_item(index)
+    @choices[index].dispose if @choices[index]
     rect = item_rect(index)
     s = Spriteset_Choice.new(self, index)
     s.set_rect(rect)
@@ -470,6 +517,12 @@ class Window_ChoiceList < Window_Command
     end
     s.update
     @choices[index] = s
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置全部选项的位置
+  #--------------------------------------------------------------------------
+  def reset_choice_positions
+    item_max.times {|i| @choices[i].set_rect(item_rect(i)) }
   end
   #--------------------------------------------------------------------------
   # ● 更新光标
@@ -501,7 +554,7 @@ class Window_ChoiceList < Window_Command
     else
       process_choice($game_message.choices[i_e_new].dup, i_e_new, i_w, false)
       redraw_item(i_w)
-      reset_size; redraw_item(i_w); update_placement
+      reset_size; reset_choice_positions; update_placement
     end
     @choices[i_w].set_active(true)
     @choices[i_w].set_visible(true)
@@ -612,7 +665,7 @@ class Spriteset_Choice
     @choice_window = choice_window
     @i_w = i_w # 在选项窗口中的index
     @charas = []
-    @chara_effect_params = $game_message.choice_params[:charas].dup
+    @chara_effect_params = choice_params[:charas].dup
     @chara_dwin_rect = nil
     @font = @choice_window.contents.font.dup # 每个选项存储独立的font对象
     @font_params = $game_message.font_params.dup # font转义符参数
@@ -626,6 +679,9 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   def message_window
     @choice_window.message_window
+  end
+  def choice_params
+    $game_message.choice_params
   end
   def z
     @choice_window.z + 10
@@ -763,7 +819,7 @@ class Spriteset_Choice
       change_color(message_window.normal_color)
       @font_params[:c] = 0
       text = message_window.convert_escape_characters(text)
-      pos = {:x => x, :y => y, :height => 24}
+      pos = {:x => x, :y => y, :height => 0, :x_new => x}
       process_character(text.slice!(0, 1), text, pos) until text.empty?
       @fiber = nil
     }
@@ -786,24 +842,47 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   def process_character(c, text, pos)
     case c
-    when "\r", "\n", "\f"   # 回车 # 换行 # 翻页
+    when "\r", "\f"   # 回车 # 翻页
       return
+    when "\n" # 换行
+      process_new_line(text, pos)
     when "\e"   # 控制符
       process_escape_character(message_window.obtain_escape_code(text), text, pos)
     else        # 普通文字
       process_normal_character(c, pos)
-      process_draw_success
+      process_draw_success(pos)
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理换行文字
+  #--------------------------------------------------------------------------
+  def process_new_line(text, pos)
+    pos[:x] = pos[:new_x]
+    pos[:y] += pos[:height]
   end
   #--------------------------------------------------------------------------
   # ● 处理普通文字
   #--------------------------------------------------------------------------
   def process_normal_character(c, pos)
     c_rect = message_window.text_size(c)
-    c_w = c_rect.width; c_h = c_rect.height
-    s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
+    c_w = c_rect.width
+    c_h = c_rect.height
+    pos[:height] = c_h if c_h > pos[:height]
+    c_y = pos[:y] + (pos[:height] - c_h) / 2
+    s = eagle_new_chara_sprite(pos[:x], c_y, c_w, c_h)
     s.eagle_font.draw(s.bitmap, 0, 0, c_w*2, c_h, c, 0)
     pos[:x] += c_w
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理控制符指定的图标绘制
+  #--------------------------------------------------------------------------
+  def process_draw_icon(icon_index, pos)
+    c_w = c_h = 24
+    pos[:height] = c_h if c_h > pos[:height]
+    c_y = pos[:y] + (pos[:height] - c_h) / 2
+    s = eagle_new_chara_sprite(pos[:x], c_y, c_w, c_h)
+    s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index)
+    pos[:x] += 24
   end
   #--------------------------------------------------------------------------
   # ● （封装）生成一个新的文字精灵
@@ -846,22 +925,14 @@ class Spriteset_Choice
       change_color( @choice_window.text_color(@font_params[:c]) )
     when 'I'
       process_draw_icon(message_window.obtain_escape_param(text), pos)
-      process_draw_success
+      process_draw_success(pos)
     end
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理控制符指定的图标绘制
-  #--------------------------------------------------------------------------
-  def process_draw_icon(icon_index, pos)
-    s = eagle_new_chara_sprite(pos[:x], pos[:y], 24, 24)
-    s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index)
-    pos[:x] += 24
   end
   #--------------------------------------------------------------------------
   # ● 成功绘制后的处理
   #--------------------------------------------------------------------------
-  def process_draw_success
-    $game_message.choice_params[:cit].times { Fiber.yield }
+  def process_draw_success(pos)
+    choice_params[:cit].times { Fiber.yield }
   end
 end
 
