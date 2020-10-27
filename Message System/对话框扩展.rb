@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.10.26.13 修复图标未被计算宽度的bug
+# - 2020.10.26.23 子对话框在对话框变更wh后再打开
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -2801,7 +2801,7 @@ class Window_EagleMessage < Window_Base
     end
   end
   #--------------------------------------------------------------------------
-  # ● 进行对话框进行位置大小更新后的处理
+  # ● 对话框进行位置大小更新后的处理
   #--------------------------------------------------------------------------
   def eagle_after_set_xywh(_p)
     @eagle_last_x = self.x # 存储当前对话框的新位置，用于之后作为移动的初始值
@@ -4346,23 +4346,25 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def input_wait_until_msg_wh(child_window)
     child_window.hide.start
+    eagle_set_wh # 执行因子窗口嵌入而变更的窗口大小
     child_window.show.open.activate
   end
   #--------------------------------------------------------------------------
   # ● 并行等待子窗口处理结束
   #--------------------------------------------------------------------------
   def input_wait_while_active(child_window)
-    add_w = add_h = 0
+    add_w = game_message.child_window_w_des
+    add_h = game_message.child_window_h_des
     while child_window.active
       break child_window.deactivate.close if @eagle_force_close
       @fiber_para.resume if @fiber_para
-      Fiber.yield
       if add_w != game_message.child_window_w_des ||
          add_h != game_message.child_window_h_des
         eagle_set_wh # 执行因子窗口嵌入而变更的窗口大小
         add_w = game_message.child_window_w_des
         add_h = game_message.child_window_h_des
       end
+      Fiber.yield
     end
     @fiber_para = nil
   end
