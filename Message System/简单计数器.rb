@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-Counter"] = true
 #=============================================================================
-# - 2020.3.25.22 优化：当变量值未变化时，任意赋值也不会再重绘
+# - 2020.10.30.17 初始z值变更为300
 #=============================================================================
 # - 本插件提供了一组绑定于默认变量 $game_variables 的计数器
 # - 在地图上时，指定的文本将显示于屏幕指定位置，当变量值变更时将自动重绘
@@ -188,7 +188,7 @@ class Sprite_Counter < Sprite
     $game_system.counters[@v_id][:refresh] = false
     self.x  = params[:x] || 0
     self.y  = params[:y] || 0
-    self.z  = params[:z] || 0
+    self.z  = params[:z] || 100
     self.ox = params[:ox] || 0
     self.oy = params[:oy] || 0
     redraw_bg

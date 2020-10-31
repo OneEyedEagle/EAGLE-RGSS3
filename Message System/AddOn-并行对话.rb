@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.10.25.0 修复中途强制关闭时，无法重新生成新的bug
+# - 2020.10.31.22 修复中途强制关闭时，会残留hold或seq对话框背景的bug
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -697,6 +697,7 @@ class Window_EagleMessage_Para < Window_EagleMessage
         @input_wait_c -= 1
       end
     end
+    return if @eagle_force_close
     eagle_process_hold
   end
   #--------------------------------------------------------------------------
@@ -711,8 +712,7 @@ class Window_EagleMessage_Para < Window_EagleMessage
     self.openness = 0
     self.opacity = 0
     hide
-    @eagle_force_close = true
-    @input_wait_c = 0
+    finish
     eagle_message_sprites_move_out
     eagle_move_out_assets
     @back_sprite.opacity = 0
@@ -725,7 +725,9 @@ class Window_EagleMessage_Para < Window_EagleMessage
   def finish
     @eagle_force_close = true
     @input_wait_c = 0
-    update
+    # 移出hold和seq的拷贝对话框
+    eagle_release_hold
+    eagle_clear_seq_window if $imported["EAGLE-MessageSeq"]
   end
   #--------------------------------------------------------------------------
   # ● 获取pop的弹出对象（需要有x、y方法）
