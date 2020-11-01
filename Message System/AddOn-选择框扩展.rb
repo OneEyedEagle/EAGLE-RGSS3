@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.10.26.14 修复图标宽度未被计算的bug；调整为动态适应的宽高
+# - 2020.11.1.14 修复当行列变化时，宽度无法自动调整的bug
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -200,7 +200,6 @@ class Window_ChoiceList < Window_Command
     @choices = {} # 选择支的窗口序号 => 选择支精灵组
     @choices_info = {} # 选择支的窗口序号 => 信息组
     @choices_num = 0 # 存储总共显示出的选项数目
-    @win_info = { :line_h => [], :col_w => [] } # 行号 => 高  列号 => 宽
 
     @func_key_freeze = false # 冻结功能按键
     @skin = 0 # 当前所用窗口皮肤的index
@@ -213,6 +212,8 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   def eagle_reset
     @choices_info.clear
+    # 存储各行列的宽高
+    @win_info = { :line_h => [], :col_w => [] } # 行号 => 高  列号 => 宽
     # 重置默认光标位置
     choice_params[:i] = MESSAGE_EX.get_default_params(:choice)[:i]
   end
