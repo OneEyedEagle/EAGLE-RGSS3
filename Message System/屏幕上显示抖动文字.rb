@@ -2,7 +2,7 @@
 #==============================================================================
 # ■ 显示抖动文字VX by 老鹰
 #==============================================================================
-# - 2020.6.26.21
+# - 2020.11.6.18
 #------------------------------------------------------------------------------
 # - 在固定的位置显示一组抖动文字
 #------------------------------------------------------------------------------
@@ -167,6 +167,7 @@ module EAGLE::MapChara
   # ● 清除标志
   #--------------------------------------------------------------------------
   def self.clear_all
+    @text.clear
     @clear = true
   end
   #--------------------------------------------------------------------------
@@ -231,7 +232,7 @@ class Spriteset_MapCharacters
   def update
     clear_first if !@characters.empty?
     @characters.each { |c| c.update }
-    clear if EAGLE::MapChara.clear
+    return clear if EAGLE::MapChara.clear
     draw  if !EAGLE::MapChara.text.empty?
     move_out if EAGLE::MapChara.move_out >= 0
     move_out_id if EAGLE::MapChara.out_id
