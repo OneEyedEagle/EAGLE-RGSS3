@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.11.07.19 修复对话快速显示中途等待，无法居中的bug；新增文字跳跃
+# - 2020.11.12.0 TODO env转义符，进行环境的便捷设置
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -1918,6 +1918,7 @@ class Game_Message
   # ● 检查flags
   #--------------------------------------------------------------------------
   def check_flags
+    @env = '0' if @env.nil?  # 当前环境（默认 '0'）
     @open_type = :ease if @open_type.nil? # 对话框的打开模式
     @close_type = :ease if @close_type.nil? # 对话框的关闭模式
     @auto_wrap = true if @auto_wrap.nil? # 开启自动换行？
@@ -1968,6 +1969,13 @@ class Game_Message
     @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
     @child_window_w_des = 0 # 因子窗口嵌入而额外增加的宽高
     @child_window_h_des = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 下一次对话时要解析的转义符
+  # 【由于解析问题，字符串中请将 "\" 替换成 "\e" 】
+  #--------------------------------------------------------------------------
+  def add_escape(string)
+    @escape_strings.push(string)
   end
   #--------------------------------------------------------------------------
   # ● 判定是否需要进入等待按键状态
@@ -2060,13 +2068,13 @@ class Game_Message
   #--------------------------------------------------------------------------
   # ● 保存当前状态
   #--------------------------------------------------------------------------
-  def save_params(sym = :default)
+  def save_params(sym = '0')
     @temp_game_messages[sym] = clone
   end
   #--------------------------------------------------------------------------
   # ● 读取保存状态
   #--------------------------------------------------------------------------
-  def load_params(param_sym, sym = :default)
+  def load_params(param_sym, sym = '0')
     return false if @temp_game_messages[sym].nil?
     return eagle_params.each{|psym| load_params(psym, sym)} if param_sym.nil?
     m = param_sym.to_s + "_params"
@@ -2099,11 +2107,19 @@ class Game_Message
     t.no_name_overlap_face = @no_name_overlap_face
   end
   #--------------------------------------------------------------------------
-  # ● 下一次对话时要解析的转义符
-  # 【由于解析问题，字符串中请将 "\" 替换成 "\e" 】
+  # ● 将拷贝应用到当前对象
   #--------------------------------------------------------------------------
-  def add_escape(string)
-    @escape_strings.push(string)
+  def clone_apply(sym = '0')
+    t = @temp_game_messages[sym]
+    # 应用params
+    eagle_params.each do |sym|
+      m = "#{sym}_params"
+      self.send("#{m}=".to_sym, t.method(m.to_sym).call.clone)
+    end
+    # 新增转义符的应用预定
+    @params_need_apply = eagle_params
+    # 应用扩展数据
+    t.clone_ex(self)
   end
 end
 
