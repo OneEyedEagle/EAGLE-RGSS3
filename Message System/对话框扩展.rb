@@ -114,7 +114,7 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #
 # （变量环境）
 #    \env    保存、读取应用指定的变量环境，方便进行不同对话框设置之间的切换
-#    \temp   对话框关闭时，将对话框重置为开启前的设置环境
+#    \temp   对话框关闭时，将对话框重置为开启前的环境
 #
 # （高级）
 #    \eval   在对话中途，执行Ruby脚本
@@ -3748,7 +3748,7 @@ class Window_EagleMessage < Window_Base
   # ● 设置env指令
   #--------------------------------------------------------------------------
   def eagle_check_env(text)
-    text.gsub!(/\eenv\{(.*?)\}/m) {
+    text.gsub!(/\eenv\[(.*?)\]/m) {
       t = $1; sym = t
       if t.include?('|')
         sym = t.slice!(/.*?\|/).chop
@@ -3767,7 +3767,7 @@ class Window_EagleMessage < Window_Base
       game_message.env = sym
       game_message.save_env(sym) if !game_message.load_env(sym)
     else
-      p "对话框的 env 转义符参数错误！对于环境 #{sym}，未定义的 #{m} 动作。"
+      p "对话框的 env 转义符参数错误！环境 #{sym} 与未定义的 #{m} 动作。"
     end
   end
   def eagle_process_env
