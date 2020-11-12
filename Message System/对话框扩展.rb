@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.11.12.0 TODO env转义符，进行环境的便捷设置
+# - 2020.11.12.15 新增env转义符，方便进行环境的设置
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -93,7 +93,6 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #    \wait   直接等待
 #    \ins    对话框立即完全显示
 #    \hold   保留当前对话框
-#    \temp   当前对话框的转义符参数修改不会被存储
 #    \close  当前对话框必定处理关闭
 #
 # （文字特效类）
@@ -112,6 +111,10 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #    \cneon  文字霓虹灯切换
 #    \cmc    文字叠加
 #    \cjump  文字跳跃
+#
+# （变量环境）
+#    \env    保存、读取应用指定的变量环境，方便进行不同对话框设置之间的切换
+#    \temp   对话框关闭时，将对话框重置为开启前的设置环境
 #
 # （高级）
 #    \eval   在对话中途，执行Ruby脚本
@@ -812,16 +815,6 @@ NO_DEFAULT_PAUSE = true
 #    保留当前对话框，直至没有该指令的对话框关闭，关闭所有保留的对话框
 #
 #----------------------------------------------------------------------------
-#  \temp 【结尾】
-#----------------------------------------------------------------------------
-# 【功能】
-#    当前对话框对转义符参数的变更不会被保留
-#
-# 【注意】
-#    在当前对话框结束前，转义符参数的修改仍然生效
-#    因此可能导致中途生成的 并行对话 等，继承了当前修改后的参数
-#
-#----------------------------------------------------------------------------
 #  \close 【结尾】
 #----------------------------------------------------------------------------
 # 【功能】
@@ -1280,6 +1273,70 @@ CJUMP_PARAMS_INIT = {
 #----------------------------------------------------------------------------
 
 #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+# ○ 变量环境
+#    此处放置环境处理，效仿python的conda模式，将对话框的设置状态进行打包存储与读取
+#=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+#【关于环境】
+#    由于对话框可设置的变量众多，
+#    当需要不同情况使用不同样子的对话框时，不得不编写一大串的转义符进行设置；
+#    而转义符的设置在默认情况下是跨对话框的，想要设置回之前的状态又要写一大串，非常不便。
+#    因此引入了该类别的转义符，以简化设置间切换的操作。
+#
+#    环境本质上是 Game_Message 类的不同拷贝。
+#
+#----------------------------------------------------------------------------
+#  \env[sym] 【预先】
+#----------------------------------------------------------------------------
+# 【功能】
+#    读取名称为 sym 的环境，并立即应用于当前与之后的对话框
+#    当前环境被设置为 sym
+#
+# 【注意】
+#    - 默认激活的环境为 0，因此可以用 \env[0] 切回最原始的环境
+#    - 环境的命名没有限制，但最好为字母和数字的组合
+#    - 当不存在 sym 环境时，将会把之前的环境存储为 sym，并设置当前环境为 sym
+#
+# 【示例】
+#   - 对话编写
+#       \env[测试]这是测试用对话。
+#   - 实际对话
+#      （进入 "测试" 对应的环境，之后的转义符修改都将只修改 "测试" 环境中的设置）
+#      （若不存在 "测试" 环境，则将之前的环境存储为 "测试"）
+#
+#----------------------------------------------------------------------------
+#  \env[sym|save] 【结尾】
+#----------------------------------------------------------------------------
+# 【功能】
+#    将当前对话框绘制完成时的环境，保存为 sym 名称
+#    当前环境被设置为 sym
+#
+# 【注意】
+#    - 在每一次对话框开启前，env生效并切换环境后，都将更新存储一次当前环境
+#
+# 【示例】
+#   - 对话编写
+#       \env[底部对话|save]\win[o2do-2dy-30]这是测试用对话。
+#   - 实际对话
+#      （将当前对话框的环境存为 "底部对话" ，若已经存在则覆盖，并且进入 "底部对话" 的环境）
+#
+#----------------------------------------------------------------------------
+#  \temp 【结尾】
+#----------------------------------------------------------------------------
+# 【功能】
+#    当前对话框结束时，将应用对话框开启前的环境
+#
+# 【注意】
+#   - 在当前对话框结束前，转义符参数的修改仍然生效
+#     因此可能导致中途生成的 并行对话 等，继承了当前修改后的参数
+#   - 当同时存在 \temp、\env[sym2]、\env[sym3|save] 时，执行顺序如下（当前环境为 sym1）：
+#     1、在绘制开始前，存储了一次 sym1 环境
+#     2、执行预先转义符：temp记录下最初环境为 sym1；env将当前激活环境修改为sym2并应用
+#     3、对话框关闭后：当前对话框修改后的环境存入 sym3；
+#                   temp生效，将环境重置为 sym1，继续下一个对话
+#
+#----------------------------------------------------------------------------
+
+#=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # ○ 高级
 #    此处放置高级处理，需要结合一定的脚本知识才能灵活运用
 #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -1492,30 +1549,6 @@ end
 #     $game_message.reset_params(:chara, "cin")
 #       → cin转义符的参数重置为 CHARA_PARAMS_INIT 中的:cin键值，
 #         若常量中无该键，则取消cin特效
-#----------------------------------------------------------------------------
-# ○ 参数保存与读取
-#
-# - 利用该脚本保存当前全部 param_sym 参数组的状态值
-#   （当不传入 sym 时默认取 :default 类别）
-#   （由于涉及内部对话框临时参数的实现方式，请不要用 :temp 类别）
-#
-#         $game_message.save_params(sym)
-#
-# - 利用该脚本使 param_sym 所对应的变量组恢复到上一次的保存状态
-#   （当不传入 sym 时默认取 :default 类别）
-#
-#         $game_message.load_params(param_sym, sym)
-#
-#   param_sym 解析：【Symbol】型常量
-#      具体见 参数重置 中的解析
-#
-# - 示例：
-#     $game_message.save_params
-#     $game_message.load_params(:font)
-#       → 按 :default 存储的状态，来恢复字体的全部参数
-#     $game_message.save_params("测试")
-#     $game_message.load_params(:pause, "测试")
-#       → 按 "测试" 存储的状态，来恢复pause精灵的全部参数
 #----------------------------------------------------------------------------
 end
 #=============================================================================
@@ -1900,8 +1933,8 @@ class Game_Message
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params, :ex_params
   attr_accessor :event_id, :child_window_w_des, :child_window_h_des
-  attr_accessor :open_type, :close_type, :auto_wrap, :para, :no_input_pause
-  attr_accessor :no_name_overlap_face
+  attr_accessor :env, :open_type, :close_type, :auto_wrap, :para
+  attr_accessor :no_name_overlap_face, :no_input_pause
   attr_accessor :eagle_text # 存储实际绘制的文本（去除了预处理的转义符）
   attr_accessor :eagle_message # 兼容模式
   #--------------------------------------------------------------------------
@@ -1911,7 +1944,7 @@ class Game_Message
   def initialize
     eagle_message_ex_init
     check_flags
-    @temp_game_messages = {} # sym => game_message
+    @envs = {} # sym => game_message
     set_default_params
   end
   #--------------------------------------------------------------------------
@@ -2066,23 +2099,6 @@ class Game_Message
     }
   end
   #--------------------------------------------------------------------------
-  # ● 保存当前状态
-  #--------------------------------------------------------------------------
-  def save_params(sym = '0')
-    @temp_game_messages[sym] = clone
-  end
-  #--------------------------------------------------------------------------
-  # ● 读取保存状态
-  #--------------------------------------------------------------------------
-  def load_params(param_sym, sym = '0')
-    return false if @temp_game_messages[sym].nil?
-    return eagle_params.each{|psym| load_params(psym, sym)} if param_sym.nil?
-    m = param_sym.to_s + "_params"
-    self.send( (m+"=").to_sym, @temp_game_messages[sym].send(m.to_sym).clone )
-    add_apply(param_sym) # 添加修改预定
-    return true
-  end
-  #--------------------------------------------------------------------------
   # ● 参数拷贝
   #--------------------------------------------------------------------------
   def clone
@@ -2120,6 +2136,21 @@ class Game_Message
     @params_need_apply = eagle_params
     # 应用扩展数据
     t.clone_ex(self)
+  end
+  #--------------------------------------------------------------------------
+  # ● 保存当前环境
+  #--------------------------------------------------------------------------
+  def save_env(sym = '0')
+    @envs[sym] = self.clone
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取指定环境
+  #--------------------------------------------------------------------------
+  def load_env(sym = '0')
+    return false if @envs[sym].nil?
+    t = @envs[sym]
+    clone_apply(t)
+    return true
   end
 end
 
@@ -2252,9 +2283,10 @@ class Window_EagleMessage < Window_Base
     @flag_need_open = true # 当为 true 时，需要执行open_and_wait
     @flag_need_change_wh = false # 当为 true 时，需要动态变更大小
     @flag_need_close = false # 当为 true 时，当前对话框必定处理关闭
-    @flag_temp_params = false # 当前对话框的转义符不会保存到game_message中？
     @flag_hold = false # 当为 true 时，当前对话框会被拷贝保留，并同步更新
     @flag_instant = false # 当为 true 时，当前对话框不再处理文字显示的等待
+    @flag_temp_env = false # 当前对话框的转义符不会保存到game_message中？
+    @flag_save_env = nil # 当不为 nil 时，当前对话框状态保存到对应环境中
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
     @eagle_evals = [] # 存储当前对话框的动态脚本 [eval_str, eval_str...]
     @eagle_chara_sets = {} # 存储文字的分组
@@ -2379,6 +2411,8 @@ class Window_EagleMessage < Window_Base
   # ● 重置对话框（对话框不关闭，并继续显示）
   #--------------------------------------------------------------------------
   def eagle_message_reset_continue
+    # 环境存储
+    eagle_process_env
     # 复原参数
     eagle_process_temp
     # 重置文字分组
@@ -3379,21 +3413,28 @@ class Window_EagleMessage < Window_Base
   # ● （覆盖）翻页处理
   #--------------------------------------------------------------------------
   def new_page(text, pos)
-    eagle_apply_params_changes
+    # 移出
     eagle_message_sprites_move_out
+    # 重置
     eagle_reset_charas_oxy
     reset_font_settings
     clear_flags
-    # 处理预先设置（含脸图、姓名框）
-    eagle_check_pre_settings(text)
-    # 存储实际绘制的内容，预先转义符已经处理并存储
-    game_message.eagle_text = text.clone
-    # 当预先转义符全部处理完成，进行一次预绘制
     pos[:x] = new_line_x
     pos[:y] = 0
     pos[:new_x] = new_line_x
     pos[:height] = line_height
+    # 处理预先设置（含脸图、姓名框）
+    eagle_check_pre_settings(text)
+    # 存储实际绘制的内容，预先转义符已经处理并存储
+    game_message.eagle_text = text.clone
+    # 执行预定转义符修改
+    eagle_apply_params_changes
+    # 当前对话框环境保存（将用于temp重置）
+    game_message.save_env(game_message.env)
+    # 当预先转义符全部处理完成，进行一次预绘制
     pre_calc_charas_wh(text, pos)
+    # 二次重置
+    clear_flags
   end
   #--------------------------------------------------------------------------
   # ● 清除标志（此处放置每次绘制前需要清空的数据）
@@ -3424,7 +3465,6 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def pre_calc_charas_wh(text, pos)
     text_ = text.clone; pos_ = pos.clone
-    game_message.save_params
     @flag_draw = false
     # 初始化
     @eagle_charas_w = @eagle_charas_h = 0
@@ -3436,7 +3476,7 @@ class Window_EagleMessage < Window_Base
     before_input_pause unless @pause_skip # 此处追加对pause精灵占用宽度的处理
     # 复原
     @eagle_charas_w = @eagle_charas_h = 0
-    game_message.load_params(nil)
+    game_message.load_env(game_message.env)
     game_message.clear_applys
     @flag_draw = true
   end
@@ -3684,6 +3724,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_check_pre_settings(text)
     eagle_check_temp(text)
+    eagle_check_env(text)
     eagle_check_hold(text)
     eagle_check_instant(text)
     eagle_check_close(text)
@@ -3696,15 +3737,44 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_check_temp(text)
     text.gsub!(/\e(temp)/i) { "" }
-    if $1
-      game_message.save_params(:temp)
-      @flag_temp_params = true
-    end
+    @flag_temp_env = game_message.env if $1
   end
   def eagle_process_temp
-    return if @flag_temp_params == false
-    @flag_temp_params = false
-    game_message.load_params(nil, :temp)
+    return if @flag_temp_env == nil
+    game_message.env = @flag_temp_env if game_message.load_env(@flag_temp_env)
+    @flag_temp_env = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置env指令
+  #--------------------------------------------------------------------------
+  def eagle_check_env(text)
+    text.gsub!(/\eenv\{(.*?)\}/m) {
+      t = $1; sym = t
+      if t.include?('|')
+        sym = t.slice!(/.*?\|/).chop
+      else
+        t = "load"
+      end
+      eagle_check_env_method(sym, t)
+      ""
+    }
+  end
+  def eagle_check_env_method(sym, m = "load")
+    case m
+    when "save"
+      @flag_save_env = sym
+    when "load"
+      game_message.env = sym
+      game_message.save_env(sym) if !game_message.load_env(sym)
+    else
+      p "对话框的 env 转义符参数错误！对于环境 #{sym}，未定义的 #{m} 动作。"
+    end
+  end
+  def eagle_process_env
+    return if @flag_save_env == nil
+    game_message.save_env(@flag_save_env)
+    game_message.env = @flag_save_env
+    @flag_save_env = nil
   end
   #--------------------------------------------------------------------------
   # ● 设置/执行hold指令
