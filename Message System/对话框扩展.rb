@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.11.14.14 新增env转义符的预设
+# - 2020.12.28.15 修复pop的do在456时，y值错位的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -536,7 +536,7 @@ POP_PARAMS_INIT = {
   :skin => nil, # pop模式下所用skin类型
   :do => 8, # 对话框相对于绑定对象的位置（九宫格小键盘）
   :o => nil, # 对话框显示原点，若为nil，则取 10 - :do
-  :d => 0, # 指定原点距离事件格子中心的偏移量
+  :d => 0, # 指定原点远离事件格子中心的偏移量
   :dx => 0,  # 指定x、y方向上的偏移量
   :dy => 0,
   :fix => 0, # 是否进行位置修正
@@ -1089,14 +1089,14 @@ CZOOM_PARAMS_INIT = {
 # 【常量设置：参数预设值】
 CSHAKE_PARAMS_INIT = {
 # \cshake[]
-  :l => 3,  # 距离所在原点的最大偏移量（左右上下）
-  :r => 3,
-  :u => 3,
-  :d => 3,
+  :l => 2,  # 距离所在原点的最大偏移量（左右上下）
+  :r => 1,
+  :u => 2,
+  :d => 1,
   :vx  => 0,  # x的初始移动方向（0为随机方向）
-  :vxt => 3,  # x方向移动一像素所耗帧数
+  :vxt => 1,  # x方向移动一像素所耗帧数
   :vy  => 0,  # y的初始移动方向（0为随机方向）
-  :vyt => 3,  # y方向移动一像素所耗帧数
+  :vyt => 1,  # y方向移动一像素所耗帧数
 }
 #
 #----------------------------------------------------------------------------
@@ -1184,7 +1184,7 @@ CTOG_PARAMS_INIT = {
 # \ctog[]
   :i => 0,  # 选取i号文字组
   :n => 0,  # 从文字组中选取n个字符
-  :t => 5,  # 文字切换的等待帧数
+  :t => 10,  # 文字切换的等待帧数
   :r => 1,  # 是否随机选择下一个文字？
 }
 #
@@ -3070,10 +3070,11 @@ class Window_EagleMessage < Window_Base
     # 将对话框移动到绑定对象的对应方向上，并加上偏移量
     case pop_params[:do]
     when 1,4,7; self.x -= (pop_params[:chara_w] / 2 + pop_params[:d])
-    when 3,6,9; self.x += (pop_params[:chara_w] + pop_params[:d])
+    when 3,6,9; self.x += (pop_params[:chara_w] / 2 + pop_params[:d])
     end
     case pop_params[:do]
-    when 1,2,3; self.y += (pop_params[:chara_h] / 2 + pop_params[:d])
+    when 1,2,3; self.y += (pop_params[:d])
+    when 4,5,6; self.y -= (pop_params[:chara_h] / 2)
     when 7,8,9; self.y -= (pop_params[:chara_h] + pop_params[:d])
     end
     # 坐标的运动偏移量
@@ -3105,9 +3106,9 @@ class Window_EagleMessage < Window_Base
       self.x = @eagle_pop_obj.x
       self.y = @eagle_pop_obj.y
     when :map_grid
-      # 如果为地图格子，则格子中心为显示原点
+      # 如果为地图格子，则格子底部中心为显示原点
       self.x = $game_map.adjust_x(@eagle_pop_obj[0]) * 32 + 16
-      self.y = $game_map.adjust_y(@eagle_pop_obj[1]) * 32 + 16
+      self.y = $game_map.adjust_y(@eagle_pop_obj[1]) * 32 + 32
     end
   end
   #--------------------------------------------------------------------------
