@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-AStar"] = true
 #==============================================================================
-# - 2020.8.25.15 新增报错拦截
+# - 2020.12.31.14 修复事件自主移动中使用寻路时可能的bug
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -34,11 +34,13 @@ $imported["EAGLE-AStar"] = true
 # - 若使用了【像素级移动 by老鹰】，将依然按照原始网格进行搜索寻路
 #-----------------------------------------------------------------------------
 # 【高级】
-# - 为 Game_Character类新增了方法：
-#     .astar_one_step(x, y)  → 朝(x,y)寻路前进一步
-#     .astar_toward(chara_id)→ 朝 chara_id 的事件寻路前进一步
-#     .astar_until(x, y)     → 朝(x,y)寻路直至到达
-#     .astar_moving          → 若在寻路中，则返回 true
+# - 为 Game_Character类新增了方法，这些方法可以直接用于 移动路线 - 脚本 中
+#     astar_one_step(x, y)  → 朝(x,y)寻路前进一步
+#     astar_toward(chara_id)→ 朝 chara_id 的事件寻路前进一步
+#     astar_until(x, y)     → 朝(x,y)寻路直至到达（不考虑事件移动频率）
+#     astar_until_self(x, y)→ 朝(x,y)寻路直至到达
+#                            （事件-自主移动-自定义中使用，以契合事件移动频率）
+#     astar_moving          → 若在寻路中，则返回 true
 #=============================================================================
 
 module Eagle_AStar
@@ -219,7 +221,7 @@ end
 end
 
 class Game_Character
-  attr_reader :astar_moving
+  attr_reader :astar_moving, :astar_moving_self
   #--------------------------------------------------------------------------
   # ● 寻路前进一步
   #--------------------------------------------------------------------------
@@ -263,6 +265,15 @@ class Game_Character
     @astar_des_x = x
     @astar_des_y = y
     @astar_wait = 1
+    update_astar_move
+  end
+  #--------------------------------------------------------------------------
+  # ● 强制移动路径（自主移动）
+  #--------------------------------------------------------------------------
+  def astar_until_self(x, y)
+    astar_until(x, y)
+    @astar_moving = false
+    @astar_moving_self = true
   end
   #--------------------------------------------------------------------------
   # ● 更新停止
@@ -274,13 +285,18 @@ class Game_Character
   end
   #--------------------------------------------------------------------------
   # ● 更新寻路
+  # 返回 true 代表寻路结束
   #--------------------------------------------------------------------------
   def update_astar_move
-    return if (@astar_wait -= 1) > 0
-    return @astar_moving = false if astar_reach?
+    return false if (@astar_wait -= 1) > 0
+    if astar_reach?
+      process_astar_reach
+      return true
+    end
     f = astar_one_step(@astar_des_x, @astar_des_y)
-    return @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR if f == false
+    @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR if f == false
     set_direction(f)
+    return false
   end
   #--------------------------------------------------------------------------
   # ● 到达目的地？
@@ -290,6 +306,13 @@ class Game_Character
       return @astar_des_x == self.rgss_x && @astar_des_y == self.rgss_y
     end
     @astar_des_x == self.x && @astar_des_y == self.y
+  end
+  #--------------------------------------------------------------------------
+  # ● 到达目的地时的处理
+  #--------------------------------------------------------------------------
+  def process_astar_reach
+    @astar_moving = false
+    @astar_moving_self = false
   end
   #--------------------------------------------------------------------------
   # ● 接近玩家
@@ -322,6 +345,13 @@ class Game_Event
       return if move_toward_player_astar
     end
     eagle_astar_move_type_toward_player
+  end
+  #--------------------------------------------------------------------------
+  # ● 移动类型 : 自定义
+  #--------------------------------------------------------------------------
+  def move_type_custom
+    return if @astar_moving_self && !update_astar_move
+    update_routine_move
   end
 end
 
