@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2020.12.28.15 修复pop的do在456时，y值错位的bug
+# - 2021.1.20.19 新增 move 转义符；优化快进方式，现在长按空格即可自动快进
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -82,6 +82,7 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 # （控制类）
 #    \font   文字绘制的基本设置，包括文字大小、加粗、阴影、边框、发光、底纹等
 #    \win    对话框的基本设置，包括对话框皮肤背景、位置、大小、文字显示等
+#    \move   对话框的动态移动
 #    \auto   自动对话的设置，包括自动继续的等待时间、是否新对话框重置等
 #    \pop    气泡对话框的基本设置，包括显示位置、大小、指示箭头等
 #    \face   脸图的动态设置，包括脸图当前显示索引、循环等
@@ -357,7 +358,7 @@ INDEX_TO_FONT = {
 #
 #  （窗口位置相关）
 #    o → 【默认】对话框的显示原点的位置类型（对应九宫格小键盘）（默认左上角7）
-#    x/y → 对话框显示原点的屏幕坐标（默认nil，取va设置）
+#    x/y → 对话框显示原点的屏幕坐标（默认nil，取va设置）（直接定位）
 #    do → 基于屏幕的九宫格划分，对话框显示原点的屏幕坐标类型（覆盖x/y）
 #        （参考九宫格小键盘，有效值为-1~-9）
 #    dx/dy → x、y坐标的补足偏移量（默认0）
@@ -465,6 +466,32 @@ INDEX_TO_SE = {
 #       \win[o2do-2dy-20fw1fh1]这是测试对话，看看到底怎么样。
 #   - 实际对话
 #      （对话框显示在屏幕底部，且固定为文字占用空间的大小）
+#
+#----------------------------------------------------------------------------
+#  \move[param]
+#----------------------------------------------------------------------------
+# 【功能】
+#    动态移动对话框位置，并等待移动结束
+#
+# 【注意】
+#    若设置了 win 转义符的 do 参数，则该移动无效
+#    若设置了 pop 转义符，则该移动无效
+#
+# 【参数】
+#    param → 变量参数字符串
+# （变量一览）
+#    t → 移动所需的总共帧数（默认20帧）
+#    x → 直接指定移动的目的地x（若为0，则重置为最初显示位置）
+#    y → 直接指定移动的目的地y（若为0，则重置为最初显示位置）
+#    dx → 在当前位置基础上，水平移动 dx 的距离（正数为向右，负数为向左）
+#    dy → 在当前位置基础上，竖直移动 dy 的距离（正数为向下，负数为向上）
+#
+# 【示例】
+#   - 对话编写
+#       这是测试对话，\move[dx40dy30]看看到底怎么样。
+#   - 实际对话
+#      （在显示完“这是测试对话，”后，对话框将向右下移动+40,+30的距离，
+#        然后继续显示剩余的文字）
 #
 #----------------------------------------------------------------------------
 #  \auto[param]
@@ -1499,12 +1526,10 @@ EX_PARAMS_INIT = {
 ESCAPE_STRING_INIT = ""
 #--------------------------------------------------------------------------
 # ○ 跳过对话？
-# （每帧判定，返回 true 时，会跳过当前对话（中断绘制并强行关闭））
+# （当按住空格键达到一定时间后，将开启对话跳过（中断绘制并强行关闭））
 # （请注意，该跳过会直接忽略掉还未被绘制的转义符，可能存在奇怪问题）
 #----------------------------------------------------------------------------
-def self.skip?
-  false #Input.trigger?(:CTRL)
-end
+SKIP_COUNT_MAX = 90 # 在按键持续该帧数后，启用快进
 #--------------------------------------------------------------------------
 # ○ 切换显示/隐藏
 # （每帧判定，返回 true 时，会切换对话框的显示/隐藏）
@@ -2304,6 +2329,7 @@ class Window_EagleMessage < Window_Base
     @eagle_move_x = @eagle_move_y = 0
     # 存储对话框在上一帧的位置（此处新增定义，防止子类覆盖 eagle_message_reset）
     @eagle_last_x = @eagle_last_y = nil
+    @eagle_skip_count = 0 # 快进计数
   end
   #--------------------------------------------------------------------------
   # ● 拷贝自身
@@ -2415,6 +2441,8 @@ class Window_EagleMessage < Window_Base
     eagle_reset_z
     # 清除显示标志
     clear_flags
+    # 重置快进计数
+    @eagle_skip_count = 0
   end
   #--------------------------------------------------------------------------
   # ● 重置对话框（对话框不关闭，并继续显示）
@@ -2583,8 +2611,20 @@ class Window_EagleMessage < Window_Base
   # ● 对话框打开后进行扩展功能更新
   #--------------------------------------------------------------------------
   def eagle_update_func_after_open
-    force_close if MESSAGE_EX.skip?
+    force_close if auto_skip?
     (self.visible ? hide : show) if MESSAGE_EX.toggle_visible?
+  end
+  #--------------------------------------------------------------------------
+  # ● 对话跳过？
+  #--------------------------------------------------------------------------
+  def auto_skip?
+    if Input.press?(:C)
+      @eagle_skip_count += 1
+      return true if @eagle_skip_count > MESSAGE_EX::SKIP_COUNT_MAX
+    else
+      @eagle_skip_count = 0
+    end
+    return false
   end
   #--------------------------------------------------------------------------
   # ● 更新（在 @fiber 更新之后）
@@ -3025,6 +3065,7 @@ class Window_EagleMessage < Window_Base
     self.y = win_params[:y] || default_init_y
     eagle_reset_xy_dorigin(self, nil, win_params[:do]) if win_params[:do] < 0
     eagle_reset_xy_origin(self, win_params[:o])
+    eagle_set_xy_ex
     self.x = self.x + win_params[:dx] + @eagle_move_x
     self.y = self.y + win_params[:dy] + @eagle_move_y
     eagle_fix_position if win_params[:fix]
@@ -3035,6 +3076,11 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def default_init_y
     (@position * (Graphics.height - @eagle_win_des_h) / 2)
+  end
+  #--------------------------------------------------------------------------
+  # ● 重定义对话框的位置（此时已经处理完了xy或do的初始指定位置）（扩展用）
+  #--------------------------------------------------------------------------
+  def eagle_set_xy_ex
   end
   #--------------------------------------------------------------------------
   # ● 修正位置（确保对话框完整显示）
@@ -4286,6 +4332,41 @@ class Window_EagleMessage < Window_Base
     end
   end
   #--------------------------------------------------------------------------
+  # ● 执行move指令
+  #--------------------------------------------------------------------------
+  def eagle_text_control_move(param = '0')
+    return if !@flag_draw
+    return if win_params[:do] < 0 || game_message.pop?
+    win_params[:move_init_x] ||= win_params[:x]
+    win_params[:move_init_y] ||= win_params[:y]
+
+    h = { :x => nil, :y => nil, :dx => nil, :dy => nil, :t => 20 }
+    parse_param(h, param, :t)
+
+    _x = nil; _y = nil
+    if h[:x]
+      _x = (h[:x] == 0 ? win_params[:move_init_x] : h[:x])
+    else
+      _x = self.x + h[:dx] if h[:dx]
+    end
+    if h[:y]
+      _y = (h[:y] == 0 ? win_params[:move_init_y] : h[:y])
+    else
+      _y = self.y + h[:dy] if h[:dy]
+    end
+
+    # 直接重设目的地xy
+    win_params[:x] = _x if _x
+    win_params[:y] = _y if _y
+
+    # 执行移动
+    h2 = {}
+    h2[:x] = _x if _x
+    h2[:y] = _y if _y
+    h2[:t] = h[:t]
+    eagle_set_wh(h2)
+  end
+  #--------------------------------------------------------------------------
   # ● 执行eval指令
   #--------------------------------------------------------------------------
   def eagle_text_control_eval(param = '0')
@@ -5045,7 +5126,6 @@ class Sprite_EaglePauseTag < Sprite
   # ● 初始化自动倒计时
   #--------------------------------------------------------------------------
   def init_auto_countdown
-    @auto_countdown_max = 0
     @sprite_auto_countdown = Sprite.new
     @sprite_auto_countdown.bitmap = Bitmap.new(13, 13)
   end
