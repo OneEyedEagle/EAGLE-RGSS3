@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2020.11.1.14 修复当行列变化时，宽度无法自动调整的bug
+# - 2021.2.9.23 修复设置h为行数时显示错位的bug
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -130,7 +130,7 @@ module MESSAGE_EX
     :dx => 0, # 设置选择框的坐标偏移增量
     :dy => 0,
     # 选项行列
-    :col => 2, # 显示列数
+    :col => 1, # 显示列数
     :cwd => 4, # 列间距的增量
     :lhd => 4, # 行间距的增量
     # 窗口宽高
@@ -200,6 +200,10 @@ class Window_ChoiceList < Window_Command
     @choices = {} # 选择支的窗口序号 => 选择支精灵组
     @choices_info = {} # 选择支的窗口序号 => 信息组
     @choices_num = 0 # 存储总共显示出的选项数目
+    @max_col_w = 1 # 最大的列宽
+    @max_line_h = 1 # 最大的行高
+    @final_w = 0  # 计算出的内容宽高
+    @final_h = 0
 
     @func_key_freeze = false # 冻结功能按键
     @skin = 0 # 当前所用窗口皮肤的index
@@ -218,10 +222,16 @@ class Window_ChoiceList < Window_Command
     choice_params[:i] = MESSAGE_EX.get_default_params(:choice)[:i]
   end
   #--------------------------------------------------------------------------
+  # ● 计算窗口内容的宽度
+  #--------------------------------------------------------------------------
+  def contents_width
+    @final_w
+  end
+  #--------------------------------------------------------------------------
   # ● 计算窗口内容的高度
   #--------------------------------------------------------------------------
   def contents_height
-    height - standard_padding * 2
+    @final_h
   end
   #--------------------------------------------------------------------------
   # ● 获取列数
@@ -340,13 +350,19 @@ class Window_ChoiceList < Window_Command
     end
 
     # 窗口高度
-    self.height = @win_info[:line_h].inject { |s, v| s = s+v+spacing_line }
-    h = @message_window.eagle_check_param_h(choice_params[:h])
+    @final_h = @win_info[:line_h].inject { |s, v| s = s+v+spacing_line }
+    self.height = @final_h
+    @max_line_h = @win_info[:line_h].max
+    h = choice_params[:h]
+    if h < @max_line_h
+      h = h * @max_line_h + (h - 1) * spacing_line
+    end
     self.height = h if h > 0
     self.height += standard_padding * 2
     # 窗口宽度
-    w = @win_info[:col_w].inject { |s, v| s = s+v+spacing }
-    self.width = [choice_params[:w], w].max + standard_padding * 2
+    @max_col_w = @win_info[:col_w].max
+    @final_w = @win_info[:col_w].inject { |s, v| s = s+v+spacing }
+    self.width = [choice_params[:w], @final_w].max + standard_padding * 2
 
     # 处理嵌入的特殊情况
     @flag_in_msg_window = @message_window.open? && choice_params[:do] == 0
@@ -478,12 +494,19 @@ class Window_ChoiceList < Window_Command
     begin
       i_line = index / col_max # 行号
       i_col = index % col_max # 列号
-      rect.width = @win_info[:col_w][i_col]
-      rect.x = @win_info[:col_w][0...i_col].inject { |s, v| s = s+v+spacing } || 0
-      rect.x += spacing if rect.x > 0
-      rect.height = @win_info[:line_h][i_line]
+      rect.width = @win_info[:col_w][i_col]  # 计算出的所需宽度
+      real_w = (self.width-standard_padding * 2)/col_max-spacing # 实际可用宽度
+      if real_w > @max_col_w
+        # 选项可用宽度大于最大的文本宽度，则每一列的宽度都一致
+        rect.width = real_w
+        rect.x = real_w * i_col
+      else
+        rect.x = @win_info[:col_w][0...i_col].inject { |s, v| s = s+v+spacing } || 0
+        rect.x += spacing if rect.x > 0
+      end
       rect.y = @win_info[:line_h][0...i_line].inject { |s, v| s = s+v+spacing_line } || 0
       rect.y += spacing_line if rect.y > 0
+      rect.height = @win_info[:line_h][i_line]
     rescue
     end
     rect
@@ -492,7 +515,7 @@ class Window_ChoiceList < Window_Command
   # ● 获取行高
   #--------------------------------------------------------------------------
   def line_height
-    $game_message.font_params[:size] + 4
+    @max_line_h # $game_message.font_params[:size] + 4
   end
   #--------------------------------------------------------------------------
   # ● 绘制项目（覆盖）
@@ -531,13 +554,21 @@ class Window_ChoiceList < Window_Command
   alias eagle_choice_ex_update_cursor update_cursor
   def update_cursor
     eagle_choice_ex_update_cursor
-    return if !@active
+    return if !self.active
     @choices.each do |i, s|
       r = item_rect(i)
       y_ = r.y - self.oy
-      s.set_visible( y_ >= 0 && y_ < (self.height-line_height) )
+      s.set_visible(y_ >= 0 && y_ + @choices_info[i][:height] < self.height)
       s.set_xywh( nil, y_ )
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置顶行位置
+  #--------------------------------------------------------------------------
+  def top_row=(row)
+    row = 0 if row < 0
+    row = row_max - 1 if row > row_max - 1
+    self.oy = row * item_height + row * spacing_line
   end
 
   #--------------------------------------------------------------------------
@@ -858,7 +889,7 @@ class Spriteset_Choice
   # ● 处理换行文字
   #--------------------------------------------------------------------------
   def process_new_line(text, pos)
-    pos[:x] = pos[:new_x]
+    pos[:x] = pos[:x_new]
     pos[:y] += pos[:height]
   end
   #--------------------------------------------------------------------------
