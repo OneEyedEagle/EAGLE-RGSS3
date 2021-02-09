@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.7.17 修改部分注释
+# - 2021.2.9.19 修复对话框隐藏再显示时，文字无法正常显示的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -5961,8 +5961,12 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def move_in
     params = @params[:cin]
-    return self.opacity = 255 if params.nil?
-    unbind_viewport
+    if params.nil? # 如果没有定义移入特效
+      rebind_viewport # 重新绑定视图
+      self.opacity = 255 # 直接指定不透明度
+      return
+    end
+    unbind_viewport # 为了移入，先取消视图
     @dx = @dy = 0
     update_position # 用于获取实际的最终显示位置（屏幕坐标）
 

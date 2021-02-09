@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara"] = true
 #==============================================================================
-# - 2020.10.31.22 修复中途强制关闭时，会残留hold或seq对话框背景的bug
+# - 2021.2.8.20 修改注释
 #==============================================================================
 # - 本插件利用 对话框扩展 中的工具生成新的并行显示对话
 #--------------------------------------------------------------------------
@@ -28,11 +28,11 @@ $imported["EAGLE-MessagePara"] = true
 #    <face>  → 重置脸图参数，变更为无脸图
 #
 #    <msgp param_str>  → 预设之后对话框的参数
-#         其中 param_str 替换成 变量名+参数值 的字符串（同 对话框扩展 中）
+#         其中 param_str 替换成 变量名+参数值 的字符串（同【对话框扩展】中）
 #         可设置变量一览：
 #           bg → 对话框的背景类型id（0普通，1暗色，2透明）（同VA默认）
 #           pos → 设置对话框的显示位置类型id（0居上，1居中，2居下）（同VA默认）
-#           w → 设置对话框绘制完成后、关闭前的等待帧数（nil为不自动关闭）
+#           w → 设置对话框绘制完成后、关闭前的等待帧数（$为不自动关闭）
 #           t → 设置对话框关闭后、下一次对话开启前的等待帧数
 #           z → 设置对话框的z值（默认100）
 #         示例： <msgp w10> → 之后的对话框在绘制完成后，均额外等待10帧才关闭
@@ -43,7 +43,9 @@ $imported["EAGLE-MessagePara"] = true
 #             0 代表当前并行对话绑定的事件（仅地图上事件页注释所激活的并行对话有效）
 #            负数 代表玩家队伍中 数据库ID 为该负数绝对值的角色，若不存在则取队首
 #          其中 animation_id 为数据库中指定动画的ID号（从1开始）
-#          其中[ wait] 为可选项，若有数值传入，则代表需要等待至显示结束
+#          其中[ wait] 为可选项，若不写，则不等待，直接执行之后的指令
+#                      若有数值传入，则代表需要等待该帧数，再继续之后的指令
+#                      若传入 0，则代表需要等待动画播放结束，才继续之后的指令
 #
 #    <balloon chara_index balloon_id[ wait]>  → 显示心情气泡（仅在地图上有效）
 #          其中 balloon_id 为心情气泡的ID号（从1开始）
@@ -70,10 +72,10 @@ $imported["EAGLE-MessagePara"] = true
 #
 #        MESSAGE_PARA.add(name, list_str[, ensure_fin])
 #
-#    其中 name 为任意的唯一标识符（若有重名，则先前存在的会被强制结束）
+#    其中 name 为任意的唯一标识符（若有重名，则先前的会被强制结束）
 #       推荐使用 Symbol 或 String 类型
 #    其中 list_str 为“标签序列”字符串（注意！转义符需要用 \\ 代替 \）
-#    其中 ensure_fin 传入 true 时，将保证当前对话序列完全显示【可选】
+#    其中 ensure_fin 传入 true 时，将保证当前对话序列完全执行完成【可选】
 #      （场景切换时只暂停，之后将继续）
 #
 #   示例：MESSAGE_PARA.add(:test, "<call test1><msg>...</msg>")
@@ -94,7 +96,7 @@ $imported["EAGLE-MessagePara"] = true
 #--------------------------------------------------------------------------
 # ○ 预设“标签序列”
 #--------------------------------------------------------------------------
-# - 利用脚本将指定的“标签序列”字符串以指定名称存入预设
+# - 利用脚本将指定的“标签序列”字符串以指定名称存入预设（不会存入存档）
 #
 #        MESSAGE_PARA.reserve(name, list_str)
 #
@@ -141,7 +143,7 @@ $imported["EAGLE-MessagePara"] = true
 #      可设置变量一览：
 #       f → 当cond条件不满足时，是否立即结束显示？
 #       w → 显示结束后需再等待w帧，才能再次触发
-#          （若为nil，则与事件暂时消除效果一致，直至下次回到地图前不再触发）
+#          （若为$，则与事件暂时消除效果一致，直至下次回到该地图前不再触发）
 #
 #   示例（无参数）：
 #      <list><msg>第一句台词</msg><msg>第二句台词</msg></list>
@@ -171,19 +173,19 @@ $imported["EAGLE-MessagePara"] = true
 #--------------------------------------------------------------------------
 # ○ 高级
 #--------------------------------------------------------------------------
-# - 利用脚本进行锁定与解锁，当存在任一锁时，将不会显示任何新的“标签序列”
+# - 利用脚本进行锁定与解锁，当存在任一锁时，将不会生成任何新的并行对话
 #
 #     MESSAGE_PARA.lock(type) → 添加以 type 为名称的锁
 #     MESSAGE_PARA.unlock(type) → 解除以 type 为名称的锁
 #
-# - 利用脚本移出指定名称的“标签序列”
+# - 利用脚本移出指定名称的并行对话
 #
 #     MESSAGE_PARA.list_finish(name[, force])
 #       → 结束名称为 name 的并行对话序列，
 #          若传入 force 为 true，则不会进行移出，而是直接隐藏，
 #          默认 force 为 false，即保留对话框移出特效
 #
-# - 利用脚本移出全部“标签序列”
+# - 利用脚本移出全部并行对话
 #
 #     MESSAGE_PARA.all_finish(force = false)
 #
@@ -290,7 +292,7 @@ module MESSAGE_PARA
   #--------------------------------------------------------------------------
   # ● 呼叫“标签序列”
   #--------------------------------------------------------------------------
-  # list_str - "<msg params>foo</msg><msg params>foo</msg>"
+  # list_str - "<msg>foo</msg><msg>foo</msg>"
   def self.add(id, list_str, ensure_fin = false)
     return false if lock?
     @lists[id].finish(true).dispose if @lists[id]
@@ -515,7 +517,14 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     character = get_character(ps[0].to_i)
     return if character.nil?
     character.animation_id = ps[1].to_i
-    Fiber.yield while character.animation_id > 0 if ps[2]
+    if ps[2] != nil
+      c = ps[2].to_i
+      while character.animation_id > 0
+        Fiber.yield
+        c -= 1
+        break if c == 0
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● 标签：显示心情
@@ -525,7 +534,14 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     character = get_character(ps[0].to_i)
     return if character.nil?
     character.balloon_id = ps[1].to_i
-    Fiber.yield while character.balloon_id > 0 if ps[2]
+    if ps[2] != nil
+      c = ps[2].to_i
+      while character.balloon_id > 0
+        Fiber.yield
+        c -= 1
+        break if c == 0
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● 标签：等待
