@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.9.19 修复对话框隐藏再显示时，文字无法正常显示的bug
+# - 2021.2.11.17 修复对话框可能无法强制被dispose的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -2398,6 +2398,7 @@ class Window_EagleMessage < Window_Base
     @eagle_sprite_pause.dispose
     @eagle_dup_windows.each { |w| w.dispose if !w.disposed? }
     @eagle_chara_viewport.dispose
+    eagle_message_ex_dispose
   end
   #--------------------------------------------------------------------------
   # ● 释放所有窗口
