@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.11.17 修复对话框可能无法强制被dispose的bug
+# - 2021.2.14.10 子窗口全部独立
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -2282,9 +2282,9 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def create_all_windows
     @gold_window = Window_EagleMsgGold.new(self)
-    @choice_window = Window_ChoiceList.new(self)
-    @number_window = Window_NumberInput.new(self)
-    @item_window = Window_KeyItem.new(self)
+    @choice_window = Window_EagleChoiceList.new(self)
+    @number_window = Window_EagleNumberInput.new(self)
+    @item_window = Window_EagleKeyItem.new(self)
   end
   #--------------------------------------------------------------------------
   # ● 初始化组件

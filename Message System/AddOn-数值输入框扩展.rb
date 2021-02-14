@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-NumberInputEX"] = true
 #=============================================================================
-# - 2020.8.22.15 随对话框独立
+# - 2021.2.14.10 独立于默认输入框
 #==============================================================================
 # - 在对话框中利用 \numinput[param] 对数值输入框进行部分参数设置：
 #     o → 数值输入框的显示原点类型（九宫格小键盘）（默认7）（嵌入时固定为7）
@@ -127,17 +127,22 @@ class Window_EagleMessage
   end
 end
 #==============================================================================
-# ○ Window_NumberInput
+# ○ Window_EagleNumberInput
 #==============================================================================
-class Window_NumberInput < Window_Base
+class Window_EagleNumberInput < Window_Base
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
-  alias eagle_numinput_ex_init initialize
   def initialize(message_window)
+    @message_window = message_window
     @numbers = []
     @numbers_rect = {} # number_index => Rect 从左到右，从上到下
-    eagle_numinput_ex_init(message_window)
+    super(0, 0, 0, 0)
+    @number = 0
+    @digits_max = 1
+    @index = 0
+    self.openness = 0
+    deactivate
   end
   #--------------------------------------------------------------------------
   # ● 开始输入的处理
@@ -359,10 +364,49 @@ class Window_NumberInput < Window_Base
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
-  alias eagle_numinput_ex_update update
   def update
-    eagle_numinput_ex_update
+    super
+    process_cursor_move
+    process_digit_change
+    process_handling
+    update_cursor
     update_placement if @message_window.open? && $game_message.numinput_params[:do] == 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理光标的移动
+  #--------------------------------------------------------------------------
+  def process_cursor_move
+    return unless active
+    last_index = @index
+    cursor_right(Input.trigger?(:RIGHT)) if Input.repeat?(:RIGHT)
+    cursor_left (Input.trigger?(:LEFT))  if Input.repeat?(:LEFT)
+    Sound.play_cursor if @index != last_index
+  end
+  #--------------------------------------------------------------------------
+  # ● 光标向右移动
+  #     wrap : 允许循环
+  #--------------------------------------------------------------------------
+  def cursor_right(wrap)
+    if @index < @digits_max - 1 || wrap
+      @index = (@index + 1) % @digits_max
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 光标向左移动
+  #     wrap : 允许循环
+  #--------------------------------------------------------------------------
+  def cursor_left(wrap)
+    if @index > 0 || wrap
+      @index = (@index + @digits_max - 1) % @digits_max
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● “确定”和“取消”的处理
+  #--------------------------------------------------------------------------
+  def process_handling
+    return unless active
+    return process_ok     if Input.trigger?(:C)
+    return process_cancel if Input.trigger?(:B)
   end
   #--------------------------------------------------------------------------
   # ● 按下确定键时的处理
@@ -373,5 +417,10 @@ class Window_NumberInput < Window_Base
     $game_variables[$game_message.num_input_variable_id] = v
     deactivate
     close
+  end
+  #--------------------------------------------------------------------------
+  # ● 按下取消键时的处理
+  #--------------------------------------------------------------------------
+  def process_cancel
   end
 end

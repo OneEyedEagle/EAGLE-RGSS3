@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2021.2.9.23 修复设置h为行数时显示错位的bug
+# - 2021.2.14.12 独立于默认选择框
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -19,23 +19,25 @@ $imported["EAGLE-ChoiceEX"] = true
 #          （0嵌入；1~9对话框外边界的九宫格位置；-1~-9屏幕外框的九宫格位置）
 #          （当对话框关闭时，0~9的设置均无效）
 #     dx/dy → x/y坐标的偏移增量（默认0）
-#   （选项列数）
-#     col → 设置选择框的列数（默认1）
-#     lhd → 每行之间的间距增量（默认2）
-#     cwd → 每列之间的间距增量（默认2）
-#   （固定宽高）
-#     w → 选择框内容的宽度（默认0不设置）（嵌入时该设置无效）
-#         （不小于全部选项完整显示的最小宽度）
-#     h → 选择框内容的高度（默认0不设置）（若小于行高，则识别为行数）
-#   （动态宽高）
-#     fdw → 计算宽度时，每个字符的宽度增量（默认0）
-#            由于字体计算宽高时可能存在误差，因此增加了这个手工调整
-#     fdh → 计算高度时，每个字符的高度增量（默认0）
 #   （窗口属性）
 #     opa → 选择框的背景不透明度（默认255）（文字内容不透明度固定为255）
 #         （嵌入时不显示窗口背景）
 #     skin → 选择框皮肤类型（默认取对话框皮肤）（见index → 窗口皮肤文件名 的映射）
-#
+#   （固定宽度）
+#     w → 选择框内容的宽度（默认0自动适配）（嵌入时该设置无效）
+#         （不会小于全部选项完整显示的最小宽度）
+#   （选项行列）
+#     h → 设置选择框的行数（默认0自动适配）
+#     col → 设置选择框的列数（默认1）
+#     lhd → 每行之间的间距增量（默认2）
+#     cwd → 每列之间的间距增量（默认2）
+#   （调整字体宽高）
+#     fdw → 计算宽度时，每个字符的宽度增量（默认0）
+#            由于字体计算宽高时可能存在误差，因此增加了这个手工调整
+#     fdh → 计算高度时，每个字符的高度增量（默认0）
+#   （调整选项偏移）
+#     cdx → 选项绘制时，整体的x方向偏移增量
+#     cdy → 选项绘制时，整体的y方向偏移增量
 #   （选项属性）
 #     cd  → 设置倒计时的秒数，倒计时结束时，自动选择取消选项
 #          （必须有被设置为 取消 情况的分支；同时该分支的可选条件en{}需要为true）
@@ -130,18 +132,21 @@ module MESSAGE_EX
     :dx => 0, # 设置选择框的坐标偏移增量
     :dy => 0,
     # 选项行列
+    :h => 0,   # 显示行数
     :col => 1, # 显示列数
     :cwd => 4, # 列间距的增量
     :lhd => 4, # 行间距的增量
-    # 窗口宽高
-    :w => 0, # 直接指定宽高（若为0，则动态计算）
-    :h => 0,
-    # 动态宽高
+    # 窗口宽度
+    :w => 0, # 直接指定宽度（若为0，则动态计算）
+    # 调整宽高
     #   如果发现文字超出了光标范围，可以试试调整这两个数值
     #   fdw会增大光标计算时的宽度，fdh会增大高度
     :fdw => 1, # 自适应宽度时，每个字符的占位宽度增量
                #（增加这个手工调整，以消除字体宽度计算时可能的误差）
     :fdh => 4, # 自适应高度时，每个字符的高度增量
+    # 调整选项偏移
+    :cdx => 4,
+    :cdy => 1,
     # 选项属性
     :cd => 0, # 倒计时结束后选择取消项（秒数）
     :ali => 0, # 选项对齐方式
@@ -150,6 +155,10 @@ module MESSAGE_EX
     # （例如填入 :cin => "" 则启用默认的文字移入效果 ）
     :charas => { },
   }
+  #--------------------------------------------------------------------------
+  # ● 【常量】选择框的最大显示行数
+  #--------------------------------------------------------------------------
+  CHOICE_LINE_MAX = 12
 end
 #==============================================================================
 # ○ Game_Message
@@ -187,29 +196,32 @@ class Window_EagleMessage
   end
 end
 #==============================================================================
-# ○ Window_ChoiceList
+# ○ Window_EagleChoiceList
 #==============================================================================
-class Window_ChoiceList < Window_Command
+class Window_EagleChoiceList < Window_Command
   attr_reader :message_window, :skin
   def choice_params; $game_message.choice_params; end
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
-  alias eagle_choicelist_ex_init initialize
   def initialize(message_window)
+    @message_window = message_window
     @choices = {} # 选择支的窗口序号 => 选择支精灵组
     @choices_info = {} # 选择支的窗口序号 => 信息组
+
     @choices_num = 0 # 存储总共显示出的选项数目
     @max_col_w = 1 # 最大的列宽
     @max_line_h = 1 # 最大的行高
+    @max_line_show_num = 0 # 显示的行数
     @final_w = 0  # 计算出的内容宽高
     @final_h = 0
-
     @func_key_freeze = false # 冻结功能按键
     @skin = 0 # 当前所用窗口皮肤的index
-
-    eagle_choicelist_ex_init(message_window)
     eagle_reset
+
+    super(0, 0)
+    self.openness = 0
+    deactivate
   end
   #--------------------------------------------------------------------------
   # ● 重置
@@ -277,7 +289,7 @@ class Window_ChoiceList < Window_Command
     $game_message.choices.each_with_index do |text, index|
       i += 1 if process_choice(text.dup, index, i, true)
     end
-    @choices_num = i # 存储总共的选项数目
+    @choices_num = i # 存储总共显示的选项数目
     # 查找取消分支的窗口序号
     #（若取消分支为独立分支，则不改变i_w的值，仍然为 -1）
     choice = @choices_info.find{|i, e| e[:i_e] == $game_message.choice_cancel_i_e}
@@ -350,14 +362,15 @@ class Window_ChoiceList < Window_Command
     end
 
     # 窗口高度
-    @final_h = @win_info[:line_h].inject { |s, v| s = s+v+spacing_line }
-    self.height = @final_h
     @max_line_h = @win_info[:line_h].max
-    h = choice_params[:h]
-    if h < @max_line_h
-      h = h * @max_line_h + (h - 1) * spacing_line
+    @final_h = @win_info[:line_h].inject { |s, v| s = s+v+spacing_line }
+    @max_line_show_num = @choices_num
+    self.height = @final_h
+    h = [choice_params[:h], MESSAGE_EX::CHOICE_LINE_MAX].min
+    if h > 0
+      @max_line_show_num = h
+      self.height = h * @max_line_h + (h - 1) * spacing_line
     end
-    self.height = h if h > 0
     self.height += standard_padding * 2
     # 窗口宽度
     @max_col_w = @win_info[:col_w].max
@@ -405,7 +418,7 @@ class Window_ChoiceList < Window_Command
     self.padding_bottom = padding
   end
   #--------------------------------------------------------------------------
-  # ● 更新窗口的位置（覆盖）
+  # ● 更新窗口的位置
   #--------------------------------------------------------------------------
   def update_placement
     self.x = (Graphics.width - width) / 2 # 默认位置
@@ -468,24 +481,30 @@ class Window_ChoiceList < Window_Command
   end
 
   #--------------------------------------------------------------------------
-  # ● 生成指令列表（覆盖）
+  # ● 生成指令列表
   #--------------------------------------------------------------------------
   def make_command_list
     @choices_info.each { |i, v| add_command(v[:text], :choice, v[:enable]) }
   end
   #--------------------------------------------------------------------------
-  # ● 获取指令名称（覆盖）
+  # ● 获取指令名称
   #--------------------------------------------------------------------------
   def command_name(index)
     @choices_info[index][:text]
   end
   #--------------------------------------------------------------------------
-  # ● 获取指令的有效状态（覆盖）
+  # ● 获取指令的有效状态
   #--------------------------------------------------------------------------
   def command_enabled?(index)
     @choices_info[index][:enable]
   end
 
+  #--------------------------------------------------------------------------
+  # ● 获取行高
+  #--------------------------------------------------------------------------
+  def line_height
+    @max_line_h # $game_message.font_params[:size] + 4
+  end
   #--------------------------------------------------------------------------
   # ● 获取项目的绘制矩形
   #--------------------------------------------------------------------------
@@ -504,21 +523,20 @@ class Window_ChoiceList < Window_Command
         rect.x = @win_info[:col_w][0...i_col].inject { |s, v| s = s+v+spacing } || 0
         rect.x += spacing if rect.x > 0
       end
-      rect.y = @win_info[:line_h][0...i_line].inject { |s, v| s = s+v+spacing_line } || 0
-      rect.y += spacing_line if rect.y > 0
-      rect.height = @win_info[:line_h][i_line]
+      if @max_line_show_num == @choices_num # 如果行数与显示的一致
+        rect.y = @win_info[:line_h][0...i_line].inject { |s, v| s = s+v+spacing_line } || 0
+        rect.y += spacing_line if rect.y > 0
+        rect.height = @win_info[:line_h][i_line]
+      else # 此时，每个选项都是最大的行高
+        rect.y = index * @max_line_h + index * spacing_line
+        rect.height = @max_line_h
+      end
     rescue
     end
     rect
   end
   #--------------------------------------------------------------------------
-  # ● 获取行高
-  #--------------------------------------------------------------------------
-  def line_height
-    @max_line_h # $game_message.font_params[:size] + 4
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制项目（覆盖）
+  # ● 绘制项目
   #--------------------------------------------------------------------------
   def draw_item(index)
     @choices[index].dispose if @choices[index]
@@ -533,7 +551,8 @@ class Window_ChoiceList < Window_Command
     when 1; x_ = dw / 2
     when 2; x_ = dw
     end
-    s.draw_text_ex(x_ + 4, 2, command_name(index))
+    s.draw_text_ex(x_ + choice_params[:cdx], choice_params[:cdy],
+      rect.height, command_name(index))
     # 设置计时器
     if @choices_info[index][:extra][:ri]
       t = @choices_info[index][:extra][:rt] || 5
@@ -551,9 +570,8 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   # ● 更新光标
   #--------------------------------------------------------------------------
-  alias eagle_choice_ex_update_cursor update_cursor
   def update_cursor
-    eagle_choice_ex_update_cursor
+    super
     return if !self.active
     @choices.each do |i, s|
       r = item_rect(i)
@@ -566,9 +584,22 @@ class Window_ChoiceList < Window_Command
   # ● 设置顶行位置
   #--------------------------------------------------------------------------
   def top_row=(row)
+    return if @max_line_show_num == @choices_num # 如果行数一致，则不用变动
     row = 0 if row < 0
     row = row_max - 1 if row > row_max - 1
     self.oy = row * item_height + row * spacing_line
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取顶行位置
+  #--------------------------------------------------------------------------
+  def top_row
+    oy / item_height
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取一页內显示的行数
+  #--------------------------------------------------------------------------
+  def page_row_max
+    (height - padding - padding_bottom) / item_height
   end
 
   #--------------------------------------------------------------------------
@@ -594,7 +625,7 @@ class Window_ChoiceList < Window_Command
   end
 
   #--------------------------------------------------------------------------
-  # ● 更新（覆盖）
+  # ● 更新
   #--------------------------------------------------------------------------
   def update
     super
@@ -619,13 +650,12 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   # ● “确定”和“取消”的处理
   #--------------------------------------------------------------------------
-  alias eagle_choicelist_ex_process_handling process_handling
   def process_handling
     return if @func_key_freeze
-    eagle_choicelist_ex_process_handling
+    super
   end
   #--------------------------------------------------------------------------
-  # ● 获取“取消处理”的有效状态（覆盖）
+  # ● 获取“取消处理”的有效状态
   #--------------------------------------------------------------------------
   def cancel_enabled?
     $game_message.choice_cancel_i_e >= 0 &&  # 设置了取消分支
@@ -633,14 +663,14 @@ class Window_ChoiceList < Window_Command
     @choices_info[$game_message.choice_cancel_i_w][:enable]) # 取消分支可选
   end
   #--------------------------------------------------------------------------
-  # ● 调用“确定”的处理方法（覆盖）
+  # ● 调用“确定”的处理方法
   #--------------------------------------------------------------------------
   def call_ok_handler
     $game_message.choice_result = @choices_info[index][:i_e]
     close
   end
   #--------------------------------------------------------------------------
-  # ● 调用“取消”的处理方法（覆盖）
+  # ● 调用“取消”的处理方法
   #--------------------------------------------------------------------------
   def call_cancel_handler
     $game_message.choice_result = $game_message.choice_cancel_i_e
@@ -649,23 +679,20 @@ class Window_ChoiceList < Window_Command
   #--------------------------------------------------------------------------
   # ● 激活
   #--------------------------------------------------------------------------
-  alias eagle_choicelist_ex_activate activate
   def activate
     @choices.each { |i, s| s.set_active(true) }
-    eagle_choicelist_ex_activate
+    super
   end
   #--------------------------------------------------------------------------
   # ● 打开
   #--------------------------------------------------------------------------
-  alias eagle_choicelist_ex_open open
   def open
     @choices.each { |i, s| s.set_visible(true) }
-    eagle_choicelist_ex_open
+    super
   end
   #--------------------------------------------------------------------------
   # ● 关闭
   #--------------------------------------------------------------------------
-  alias eagle_choicelist_ex_close close
   def close
     @choices.each { |i, s| s.move_out }
     eagle_reset
@@ -674,7 +701,7 @@ class Window_ChoiceList < Window_Command
     else
       $game_timer.stop
     end
-    eagle_choicelist_ex_close
+    super
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -846,12 +873,12 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   # ● 绘制
   #--------------------------------------------------------------------------
-  def draw_text_ex(x, y, text)
+  def draw_text_ex(x, y, h, text)
     @fiber = Fiber.new {
       change_color(message_window.normal_color)
       @font_params[:c] = 0
       text = message_window.convert_escape_characters(text)
-      pos = {:x => x, :y => y, :height => 0, :x_new => x}
+      pos = {:x => x, :y => y, :height => h, :x_new => x}
       process_character(text.slice!(0, 1), text, pos) until text.empty?
       @fiber = nil
     }
@@ -900,7 +927,7 @@ class Spriteset_Choice
     c_w = c_rect.width
     c_h = c_rect.height
     pos[:height] = c_h if c_h > pos[:height]
-    c_y = pos[:y] + (pos[:height] - c_h) / 2
+    c_y = pos[:y] + (pos[:height] - c_h - 1) / 2
     s = eagle_new_chara_sprite(pos[:x], c_y, c_w, c_h)
     s.eagle_font.draw(s.bitmap, 0, 0, c_w*2, c_h, c, 0)
     pos[:x] += c_w

@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ItemChoiceEX"] = true
 #=============================================================================
-# - 2020.8.22.15 随对话框独立
+# - 2021.2.14.10 独立于默认选择框
 #==============================================================================
 # - 在对话框中利用 \keyitem[param] 对物品选择框进行部分参数设置：
 #     type → 【默认】物品选择范围的类型index（见 index → 物品种类的符号数组 的映射）
@@ -110,7 +110,18 @@ end
 #==============================================================================
 # ○ Window_KeyItem
 #==============================================================================
-class Window_KeyItem < Window_ItemList
+class Window_EagleKeyItem < Window_ItemList
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  def initialize(message_window)
+    @message_window = message_window
+    super(0, 0, Graphics.width, fitting_height(4))
+    self.openness = 0
+    deactivate
+    set_handler(:ok,     method(:on_ok))
+    set_handler(:cancel, method(:on_cancel))
+  end
   #--------------------------------------------------------------------------
   # ● 获取列数
   #--------------------------------------------------------------------------
@@ -265,5 +276,20 @@ class Window_KeyItem < Window_ItemList
   def update
     super
     update_placement if @message_window.open? && $game_message.keyitem_params[:do] == 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 确定时的处理
+  #--------------------------------------------------------------------------
+  def on_ok
+    result = item ? item.id : 0
+    $game_variables[$game_message.item_choice_variable_id] = result
+    close
+  end
+  #--------------------------------------------------------------------------
+  # ● 取消时的处理
+  #--------------------------------------------------------------------------
+  def on_cancel
+    $game_variables[$game_message.item_choice_variable_id] = 0
+    close
   end
 end
