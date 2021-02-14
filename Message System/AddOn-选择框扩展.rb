@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2021.2.14.12 独立于默认选择框
+# - 2021.2.14.18 独立于默认选择框
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -996,13 +996,48 @@ class Spriteset_Choice
 end
 
 #==============================================================================
+# ○ Window_ChoiceList
+#==============================================================================
+class Window_ChoiceList < Window_Command
+  #--------------------------------------------------------------------------
+  # ● 调用“确定”的处理方法
+  #--------------------------------------------------------------------------
+  def call_ok_handler
+    $game_message.choice_result = index
+    close
+  end
+  #--------------------------------------------------------------------------
+  # ● 调用“取消”的处理方法
+  #--------------------------------------------------------------------------
+  def call_cancel_handler
+    $game_message.choice_result = $game_message.choice_cancel_type - 1
+    close
+  end
+end
+
+#==============================================================================
 # ○ Game_Interpreter
 #==============================================================================
 class Game_Interpreter
   #--------------------------------------------------------------------------
-  # ● 设置选项（覆盖）
+  # ● 设置选项（旧版）
   #--------------------------------------------------------------------------
+  def setup_choices_old(params)
+    params[0].each {|s| $game_message.choices.push(s) }
+    $game_message.choice_cancel_type = params[1]
+    # 修改 不再使用Proc类
+    wait_for_message
+    # 应用选项结果
+    eagle_choice_result($game_message.choice_result)
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置选项
+  #--------------------------------------------------------------------------
+  alias eagle_choicelist_ex_setup_choices setup_choices
   def setup_choices(params)
+    if $game_message.eagle_message == false # 默认对话框，使用旧版
+      return setup_choices_old(params)
+    end
     cancel_index = eagle_merge_choices
     params = @list[@index].parameters
     params[0].each {|s| $game_message.choices.push(s) }
@@ -1068,7 +1103,11 @@ class Game_Interpreter
   #--------------------------------------------------------------------------
   # ● 取消的时候（覆盖）
   #--------------------------------------------------------------------------
+  alias eagle_choicelist_ex_command_403 command_403
   def command_403
+    if $game_message.eagle_message == false # 默认对话框，使用旧版
+      return eagle_choicelist_ex_command_403
+    end
     command_skip if @branch[@indent] != $game_message.choice_cancel_i_e
   end
   def command_4031

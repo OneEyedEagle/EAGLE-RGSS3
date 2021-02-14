@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageLog"] = true
 #==============================================================================
-# - 2020.10.9.0 新增对字体大小的常量设置
+# - 2021.2.14.18 更新兼容性-选择框扩展
 #==============================================================================
 # - 本插件新增了对 $game_message 的对话文本的记录
 #------------------------------------------------------------------------------
@@ -221,7 +221,8 @@ end
   # ● 新增文本日志
   #--------------------------------------------------------------------------
   def self.add_text(msg)
-    if $imported["EAGLE-MessageEX"] && msg.eagle_text != ""
+    if $imported["EAGLE-MessageEX"] && $game_message.eagle_message == true
+      return if msg.eagle_text == ""
       params = {}
       t = msg.eagle_text
       if $imported["EAGLE-MsgKeywordInfo"]
@@ -246,7 +247,7 @@ end
   def self.add_num_input(msg)
     v = $game_variables[msg.num_input_variable_id]
     t = v.to_s
-    if $imported["EAGLE-NumberInputEX"]
+    if $imported["EAGLE-NumberInputEX"] && $game_message.eagle_message == true
       t = msg.numinput_pattern.clone
       num = sprintf("%0#{t.count("*")}d", v)
       index = 0; i = 0
@@ -582,7 +583,7 @@ class Window_ChoiceList
   alias eagle_msg_log_call_ok_handler call_ok_handler
   def call_ok_handler
     $game_message.choice_result_text = $game_message.choices[index]
-    if $imported["EAGLE-ChoiceEX"]
+    if $imported["EAGLE-ChoiceEX"] && $game_message.eagle_message == true
       $game_message.choice_result_text = @choices_info[index][:text]
     end
     eagle_msg_log_call_ok_handler
@@ -594,7 +595,7 @@ class Window_ChoiceList
   def call_cancel_handler
     i_ = $game_message.choice_cancel_type - 1
     $game_message.choice_result_text = $game_message.choices[i_]
-    if $imported["EAGLE-ChoiceEX"]
+    if $imported["EAGLE-ChoiceEX"] && $game_message.eagle_message == true
       t = ""
       if $game_message.choice_cancel_i_w < 0  # 取消分支为独立分支
         t = MSG_LOG::LOG_CHOICE_CANCEL

@@ -4,13 +4,14 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.14.10 子窗口全部独立
+# - 2021.2.14.18 子窗口全部独立
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
 #     若此常量被设为 true，则本对话框不再默认生效
 #        此时只有当 $game_message.eagle_message 被赋值为 true 时，
 #          本对话框才代替默认对话框生效，而重新赋值为 false 即可切回默认对话框
+#          默认赋值为 false
 #     若此常量被设为 false，则本对话框将完全替代默认对话框
 # - 该兼容模式是为了确保在不影响对话框的基础上，使用 Add-On 并行对话 等功能
 #----------------------------------------------------------------------------
@@ -1980,6 +1981,10 @@ class Game_Message
     @no_name_overlap_face = MESSAGE_EX::DEFAULT_NO_OVERLAP_FACE if @no_name_overlap_face.nil?
     # 不进入按键等待？（扩展用）
     @no_input_pause = false if @no_input_pause.nil?
+    # 如果处于兼容模式，且变量值为nil，确保变量值为false
+    if EAGLE_MSG_EX_COMPAT_MODE == true
+      @eagle_message = false if @eagle_message.nil?
+    end
   end
   #--------------------------------------------------------------------------
   # ● 获取全部可保存params的符号的数组
@@ -2024,6 +2029,9 @@ class Game_Message
     @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
     @child_window_w_des = 0 # 因子窗口嵌入而额外增加的宽高
     @child_window_h_des = 0
+    if EAGLE_MSG_EX_COMPAT_MODE == false # 如果不处于兼容模式，确保变量值恒为true
+      @eagle_message = true
+    end
   end
   #--------------------------------------------------------------------------
   # ● 下一次对话时要解析的转义符
