@@ -19,6 +19,13 @@ end
 run_text
 #p Dir.pwd
 
+# 是否有网络连接？
+def inet_connected?
+  Win32API.new('wininet', 'InternetGetConnectedState', 'ii', 'i').call(0, 0) == 1
+end
+p inet_connected?
+
+
 # 获取某个按键的状态
 #  返回：高位为1代表被按下，低位为1代表被激活（如大写）
 #@getKeyState = Win32API.new("user32", "GetKeyState", 'i', 'i')

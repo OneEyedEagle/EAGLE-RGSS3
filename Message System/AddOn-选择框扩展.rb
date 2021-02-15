@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2021.2.14.18 独立于默认选择框
+# - 2021.2.15.19 初始文字颜色与对话框保持一致
 #==============================================================================
 # - 在对话框中利用 \choice[param] 对选择框进行部分参数设置：
 #
@@ -201,6 +201,13 @@ end
 class Window_EagleChoiceList < Window_Command
   attr_reader :message_window, :skin
   def choice_params; $game_message.choice_params; end
+  #--------------------------------------------------------------------------
+  # ● 获取文字颜色
+  #     n : 文字颜色编号（0..31）
+  #--------------------------------------------------------------------------
+  def text_color(n)
+    MESSAGE_EX.text_color(n, self.windowskin)
+  end
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -875,13 +882,20 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   def draw_text_ex(x, y, h, text)
     @fiber = Fiber.new {
-      change_color(message_window.normal_color)
-      @font_params[:c] = 0
+      reset_font_settings
       text = message_window.convert_escape_characters(text)
       pos = {:x => x, :y => y, :height => h, :x_new => x}
       process_character(text.slice!(0, 1), text, pos) until text.empty?
       @fiber = nil
     }
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置字体设置
+  #--------------------------------------------------------------------------
+  def reset_font_settings
+    @font_params[:c] = MESSAGE_EX::DEFAULT_COLOR_INDEX
+    @font_params[:ca] = 255
+    change_color(@choice_window.text_color(@font_params[:c]))
   end
   #--------------------------------------------------------------------------
   # ● 更改内容绘制颜色

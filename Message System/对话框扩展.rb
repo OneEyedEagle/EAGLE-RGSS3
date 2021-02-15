@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.15.18 文字颜色重置修改；修复子窗口独立bug
+# - 2021.2.15.19 文字颜色重置修改；修复子窗口独立bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -261,6 +261,7 @@ CONVERT_ESCAPE["测试用"] = "这是一句测试语句。"
 #    id → 可传入 TEXT_COLORS 常量中所设置的字符串，将匹配其对应的颜色
 #            如 \c[pink] 将使用 "pink" 所对应的 Color 作为文字颜色
 #         若匹配失败，将执行 id.to_i 转为数字，使用默认的索引颜色
+#       （若传入 -1，则重置为 DEFAULT_COLOR_INDEX ，同时不透明度重置为 255）
 #
 # 【常量设置：标识符映射到Color】
 TEXT_COLORS = {
@@ -286,10 +287,12 @@ TEXT_COLORS["gold"] = Color.new(255,215,0)
 # （变量一览）
 #    name → 字体名称的索引（在INDEX_TO_FONT中设置）（若为nil，则与默认一致）
 #    size → 【默认】字体大小
+#    c → 文字颜色的索引号（与 \c 一致）
+#       （若传入 -1，则重置为 DEFAULT_COLOR_INDEX ，同时不透明度重置为 255）
+#    ca → 文字的不透明度（0~255）
 #    i → 是否斜体（font.italic）
 #    b → 是否加粗（font.bold）
 #    s → 是否添加阴影（font.shadow）
-#    ca → 文字的不透明度（0~255）
 #    o → 是否添加边框（font.outline）
 #    or/og/ob/oa → 设置边框颜色RGBA（0~255）
 #    p → 底部花纹的类型（0不绘制，1边框，2实心方框）
@@ -307,10 +310,10 @@ FONT_PARAMS_INIT = {
 # \font[]
   :name => nil,
   :size => Font.default_size, # 字体大小
+  :ca => 255, # 不透明度
   :i => Font.default_italic, # 斜体绘制
   :b => Font.default_bold, # 加粗绘制
   :s => Font.default_shadow, # 阴影
-  :ca => 255, # 不透明度
   :o => Font.default_outline, # 描边
   :or => Font.default_out_color.red,
   :og => Font.default_out_color.green,
@@ -1727,6 +1730,7 @@ module MESSAGE_EX
   def self.text_color(n, windowskin = Cache.system("Window"))
     return TEXT_COLORS[n] if TEXT_COLORS[n]
     n_ = n.to_i
+    n_ = DEFAULT_COLOR_INDEX if n_ < 0
     windowskin.get_pixel(64 + (n_ % 8) * 8, 96 + (n_ / 8) * 8)
   end
   #--------------------------------------------------------------------------
@@ -4039,7 +4043,11 @@ class Window_EagleMessage < Window_Base
   def font_params; game_message.font_params; end
   def eagle_text_control_font(param = "")
     parse_param(font_params, param, :size)
-    change_color(text_color(font_params[:c]))
+    if font_params[:c] < 0
+      reset_font_settings
+    else
+      change_color(text_color(font_params[:c]))
+    end
     MESSAGE_EX.apply_font_params(self.contents.font, font_params)
   end
   #--------------------------------------------------------------------------
