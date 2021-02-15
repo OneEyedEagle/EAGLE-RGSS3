@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.14.18 子窗口全部独立
+# - 2021.2.15.18 文字颜色重置修改；修复子窗口独立bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -332,6 +332,9 @@ INDEX_TO_FONT = {
 # 数字 => 字体名称字符串
   1 => "黑体",
 }
+#
+# 【常量设置：每次开启对话框时，文字颜色重置为该索引颜色】
+DEFAULT_COLOR_INDEX = 0
 #
 # 【示例】
 #   - 对话编写
@@ -2290,9 +2293,9 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def create_all_windows
     @gold_window = Window_EagleMsgGold.new(self)
-    @choice_window = Window_EagleChoiceList.new(self)
-    @number_window = Window_EagleNumberInput.new(self)
-    @item_window = Window_EagleKeyItem.new(self)
+    @choice_window = Window_EagleChoiceList.new(self) rescue Window_ChoiceList.new(self)
+    @number_window = Window_EagleNumberInput.new(self) rescue Window_NumberInput.new(self)
+    @item_window = Window_EagleKeyItem.new(self) rescue Window_KeyItem.new(self)
   end
   #--------------------------------------------------------------------------
   # ● 初始化组件
@@ -4043,9 +4046,9 @@ class Window_EagleMessage < Window_Base
   # ● （覆盖）重置字体设置
   #--------------------------------------------------------------------------
   def reset_font_settings
-    change_color(normal_color)
-    font_params[:c] = 0
+    font_params[:c] = MESSAGE_EX::DEFAULT_COLOR_INDEX
     font_params[:ca] = 255
+    change_color(text_color(font_params[:c]))
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）放大字体尺寸
