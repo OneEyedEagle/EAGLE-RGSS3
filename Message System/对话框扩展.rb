@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.15.19 文字颜色重置修改；修复子窗口独立bug
+# - 2021.2.16.19 修复\c转义符报错问题
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -4008,7 +4008,7 @@ class Window_EagleMessage < Window_Base
       @pause_skip = true; return true
     end
     if c == 'C'
-      font_params[:c] = obtain_escape_param_string(text)
+      font_params[:c] = obtain_escape_param_string(text).to_i
       change_color(text_color(font_params[:c]))
       return true
     end
