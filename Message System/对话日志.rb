@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageLog"] = true
 #==============================================================================
-# - 2021.2.14.18 更新兼容性-选择框扩展
+# - 2021.2.16.18 更新兼容性-选择框扩展
 #==============================================================================
 # - 本插件新增了对 $game_message 的对话文本的记录
 #------------------------------------------------------------------------------
@@ -20,7 +20,7 @@ $imported["EAGLE-MessageLog"] = true
 #----------------------------------------------------------------------------
 # 【扩展】
 #
-#   ·已经兼容【对话框扩展 by老鹰】及其AddOn
+#   ·已经兼容【对话框扩展 by老鹰】及其AddOn，请将本插件置于它们之下
 #   ·若想在地图以外的场景中调用，可在对应场景的update中增加 MSG_LOG.call_scene?
 #==============================================================================
 module MSG_LOG
@@ -583,9 +583,6 @@ class Window_ChoiceList
   alias eagle_msg_log_call_ok_handler call_ok_handler
   def call_ok_handler
     $game_message.choice_result_text = $game_message.choices[index]
-    if $imported["EAGLE-ChoiceEX"] && $game_message.eagle_message == true
-      $game_message.choice_result_text = @choices_info[index][:text]
-    end
     eagle_msg_log_call_ok_handler
   end
   #--------------------------------------------------------------------------
@@ -595,17 +592,34 @@ class Window_ChoiceList
   def call_cancel_handler
     i_ = $game_message.choice_cancel_type - 1
     $game_message.choice_result_text = $game_message.choices[i_]
-    if $imported["EAGLE-ChoiceEX"] && $game_message.eagle_message == true
-      t = ""
-      if $game_message.choice_cancel_i_w < 0  # 取消分支为独立分支
-        t = MSG_LOG::LOG_CHOICE_CANCEL
-      else
-        t = @choices_info[$game_message.choice_cancel_i_w][:text]
-      end
-      $game_message.choice_result_text = t
-    end
     eagle_msg_log_call_cancel_handler
   end
+end
+if $imported["EAGLE-ChoiceEX"]
+class Window_EagleChoiceList
+  #--------------------------------------------------------------------------
+  # ● 调用“确定”的处理方法
+  #--------------------------------------------------------------------------
+  alias eagle_msg_log_call_ok_handler call_ok_handler
+  def call_ok_handler
+    $game_message.choice_result_text = @choices_info[index][:text]
+    eagle_msg_log_call_ok_handler
+  end
+  #--------------------------------------------------------------------------
+  # ● 调用“取消”的处理方法
+  #--------------------------------------------------------------------------
+  alias eagle_msg_log_call_cancel_handler call_cancel_handler
+  def call_cancel_handler
+    t = ""
+    if $game_message.choice_cancel_i_w < 0  # 取消分支为独立分支
+      t = MSG_LOG::LOG_CHOICE_CANCEL
+    else
+      t = @choices_info[$game_message.choice_cancel_i_w][:text]
+    end
+    $game_message.choice_result_text = t
+    eagle_msg_log_call_cancel_handler
+  end
+end
 end
 #===============================================================================
 # ○ Window_KeyItem
@@ -622,7 +636,20 @@ class Window_KeyItem
     eagle_msg_log_on_ok
   end
 end
-
+if $imported["EAGLE-ItemChoiceEX"]
+class Window_EagleKeyItem
+  #--------------------------------------------------------------------------
+  # ● 确定时的处理
+  #--------------------------------------------------------------------------
+  alias eagle_msg_log_on_ok on_ok
+  def on_ok
+    if item
+      $game_message.keyitem_result_text = "\\i[#{item.icon_index}]#{item.name}"
+    end
+    eagle_msg_log_on_ok
+  end
+end
+end
 #===============================================================================
 # ○ Scene_Map
 #===============================================================================
