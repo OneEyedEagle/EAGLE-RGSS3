@@ -1,85 +1,120 @@
 #==============================================================================
-# ■ Add-On 滚动文本框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
-# ※ 本插件需要放置在【对话框扩展 by老鹰 2019.8.25.13】之下
+# ■ Add-On 大文本框 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ScrollTextEX"] = true
+$imported["EAGLE-MessageBox"] = true
 #=============================================================================
-# - 2020.4.8.14 修改并行称呼
+# - 2021.2.18.19
 #==============================================================================
-# - 完全覆盖默认的滚动文本指令，现在拥有与 对话框扩展 中的对话框相同的描绘方式
-# - 关于转义符：
-#     使用方式与 对话框扩展 中的保持一致
-# - 关于标签对：
-#     在标签对中的内容，将会被按照标签对的作用进行统一处理
-# - 由于效率问题，本插件暂不支持翻页
+# - 本插件新增的大文本框，有以下几个新特性：
+#
+# ·与【对话框扩展】中的对话框具有相同的文字描绘模式，即可以使用其中的全部文字特效
+#
+# ·删去文本自动对齐，新增 \pos 转义符用于直接定位文字绘制的位置
+#
+# ·新增分页符，支持在相邻页之间切换（确定键下一页，取消键上一页）
+#
+# ·新增标签对，用于处理更高级的内容
+#
+#------------------------------------------------------------------------------
+# ● 使用方式
+#------------------------------------------------------------------------------
+# - 当指定开关开启时，将用大文本框替换默认的滚动文本指令
+#
+#   当大文本框被关闭时，将同时关闭开关
+#   如果下一个滚动文本指令仍然想替换成大文本框，请再次手动打开开关
+#
+# - 关于转义符：使用方式与【对话框扩展】中的保持一致
+#
+# - 关于标签对：在标签对中的内容，将会按照标签对的作用进行统一处理
+#
 #------------------------------------------------------------------------------
 # ● 转义符及其变量列表
 #------------------------------------------------------------------------------
+# - 绘制类
+#
+#     此项同【对话框扩展】中的全部内容
+#
+#----------------------------------------------------------------------------
 # - 控制类
 #
-#  \font[param] → 单个文字绘制的属性（同 对话框扩展）
+#  \c[id] → 扩展了颜色更改（同【对话框扩展】）
+#
+#  \font[param] → 单个文字绘制的属性（同【对话框扩展】）
 #
 #  \win[param] → 背景窗口的相关设置
+#
 #  （窗口属性相关）
 #    opa → 窗口的不透明度
 #    o → 窗口打开时的显示原点所在位置的类型（九宫格）（默认7左上角）
 #    x/y/w/h → 窗口打开时的坐标与实际宽高
-#    skin → 窗口所用皮肤的index（同 对话框扩展）
+#    z → 窗口所处z值
+#    skin → 窗口所用皮肤的index（同【对话框扩展】）
+#
 #  （文字摆放相关）
 #    xo 与 yo → 第一个文字的绘制位置（窗口contents的左上角为原点）
-#    cdx → 下一个字的横轴偏移量（负数为往左，正数为往右）（默认1，朝右侧前进一个文字）
-#    cdy → 下一个字的纵轴偏移量（负数为往上，正数为往下）（默认0，与前一个字高度对齐）
+#    cdx → 下一个字的横轴偏移量（负数往左，正数往右）（默认1，朝右侧前进一个文字）
+#    cdy → 下一个字的纵轴偏移量（负数往上，正数往下）（默认0，与前一个字高度对齐）
 #    ck → 设置缩减的字符间距值（默认0）
-#    ldx → 下一行的横轴偏移量（负数为往左，正数为往右）（默认0，与上一行行首对齐）
-#    ldy → 下一行的纵轴偏移量（负数为往上，正数为往下）（默认1，朝下侧移动一行）
+#    ldx → 下一行的横轴偏移量（负数往左，正数往右）（默认0，与上一行行首对齐）
+#    ldy → 下一行的纵轴偏移量（负数往上，正数往下）（默认1，朝下侧移动一行）
 #    lh → 标准行高（默认24）
 #    lhd → 行间距（默认0）
+#
 #  （文字显示相关）
 #    cwi → 单个文字绘制完成后的等待帧数（最小值0）
 #    cwo → 单个文字开始移出后的等待帧数（最小值0）
 #    cfast → 是否允许快进显示
 #
-#  \pause[param] → 等待按键精灵的属性（同 对话框扩展）
+#  \pause[param] → 等待按键精灵的属性（同【对话框扩展】）
 #
 #  \pos[param] -【重置】直接指定下一个文字的绘制位置
+#
 #    x/y → 直接指定x/y像素坐标值（窗口内部绘制区域的左上角为(0, 0)）
 #    c/l → 直接指定行号/列号（从1开始）
 #         （行高为窗口的 line_height，列宽为窗口的 font.size）
 #    dx/dy → x/y方向增加一个像素偏移值
 #    dc/dl → c/l行列增加一个偏移值
 #
-#  \wait[param] → 设置等待（同 对话框扩展）
+#  \wait[param] → 设置等待（同【对话框扩展】）
 #
-# - 利用脚本为指定的控制类转义符设置变量的值
-#
-#        MESSAGE_EX.set_scroll_params(sym, str)
-#
-#   其中 sym 为转义符的名称，需要传入 Symbol类型，比如 \win 转义符对应为 :win
-#   其中 str 为变量参数字符串，同默认，为 String类型，如 "o5x320y100w300h200"
-#------------------------------------------------------------------------------
+#----------------------------------------------------------------------------
 # - 文本特效类
-#     此项同 对话框扩展 中的全部内容
+#
+#     此项同【对话框扩展】中的全部内容
+#
 #----------------------------------------------------------------------------
 # - 扩展类
-#     此项同 对话框扩展 中的全部内容
+#
+#     此项同【对话框扩展】中的全部内容
+#
 #------------------------------------------------------------------------------
 # ● 标签对列表
 #------------------------------------------------------------------------------
-# - 文本替换类
-#  <if {cond}>...</cond> → 如果eval(cond)返回true，则绘制标签对内部内容，否则跳过
-#                         可用 s 代替 $game_switches，用 v 代替 $game_variables
 #
+# 【注意】以下的标签对，若遇到允许脚本编写的，均可以做以下简写
+#
+#    用 s 代替 $game_switches
+#    用 v 代替 $game_variables
+#    用 cs 代替 已绘制的文字精灵数组（按绘制顺序排列）
+#    用 win 代替 当前文本框窗口
+#
+#----------------------------------------------------------------------------
+# - 文本替换类
+#
+#  <if {cond}>...</if> → 如果eval(cond)返回true，则绘制...内容，否则跳过
+#
+#----------------------------------------------------------------------------
 # - 控制类
+#
+#  <page> → 分页符（大小写不限）（前后的换行符将被忽略）
+#
 #  <para>...</para> → 需要并行绘制的文本
 #                     当主绘制进程绘制到 <para> 时，标签对中的文本将同步开始绘制，
 #                     同时主进程继续绘制 </para> 后面的内容
 #
 #  <rb>...</rb> → 需要执行的脚本，当文字绘制到该标签对时才会执行
-#                 可用 s 代替 $game_switches，用 v 代替 $game_variables
-#                 可用 cs 代替 已绘制的文字精灵数组（按绘制顺序排列）
-#                 （Sprite_EagleCharacter_ScrollText 的实例的数组）
-#                 可用 win 代替本窗口
 #
 #  <pic sym>...</pic> → 显示指定图片
 #                   其中 sym 替换成 当前图片的唯一标识符
@@ -97,6 +132,7 @@ $imported["EAGLE-ScrollTextEX"] = true
 #            x/y/w/h → 图片中需要显示的矩形区域范围（默认取整张图片）
 #
 #     示例： <pic 1>x10y10|foo</pic> → 在滚动文本框内的(10,10)处显示foo图片
+#
 #==============================================================================
 
 #==============================================================================
@@ -104,41 +140,14 @@ $imported["EAGLE-ScrollTextEX"] = true
 #==============================================================================
 module MESSAGE_EX
   #--------------------------------------------------------------------------
+  # ● 【设置】当该ID号开关打开时，事件指令-滚动文本 将被作为大文本框
+  #--------------------------------------------------------------------------
+  S_ID_SCROLL_TEXT_TO_BOX = 18
+  #--------------------------------------------------------------------------
   # ● 【设置】定义转义符各参数的预设值
   # （对于bool型变量，0与false等价，1与true等价）
   #--------------------------------------------------------------------------
-  SCROLL_PARAMS_INIT = {
-    # \win[]
-    :win => {
-      # 窗口自身相关
-      :opa => 255, # 窗口的不透明度
-      :o => 7, # 窗口位置的显示原点类型
-      :x => 0, # 窗口打开时所在位置
-      :y => 0,
-      :w => Graphics.width, # 窗口打开时大小
-      :h => Graphics.height,
-      :skin => 0, # 皮肤index
-      # 文字绘制属性
-      :xo => 0, # 第一个文字的绘制位置
-      :yo => 0,
-      :cdx => 1, # 默认下一个字的横轴偏移量（负数为往左侧移动相应单位，正数为往右）
-      :cdy => 0, # 默认下一个字的纵轴偏移量（负数为往上侧移动相应单位，正数为往下）
-      :ck => 0, # 缩减的字符间距值（默认0）
-      :ldx => 0, # 默认下一行的横轴偏移量（负数为往左，正数为往右）
-      :ldy => 1, # 默认下一行的纵轴偏移量（负数为往上，正数为往下）
-      :lh => 24, # 标准行高
-      :lhd => 0, # 行间距
-      :cwi => 7, # 绘制一个字完成后的等待帧数
-      :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
-      :cfast => 1, # 是否允许快进显示
-    }, # :win
-    # \pos[]
-    :pos => {
-      :x => nil, :dx => nil, # 下一个文字的x值 / 相对上一个文字的x偏移增值
-      :y => nil, :dy => nil, #
-      :l => nil, :dl => nil, # 下一个文字所在列号 / 相对上一个文字的列数偏移增值
-      :c => nil, :dc => nil, # 下一个文字所在行号 / 相对上一个文字的行数偏移增值
-    }, # :pos
+  BOX_PARAMS_INIT = {
     # \font[]
     :font => {
       :size => Font.default_size, # 字体大小
@@ -160,96 +169,116 @@ module MESSAGE_EX
       :u => 0, # 下划线
       :uc => 8, # 下划线颜色index
     }, # :font
+
+    # \win[]
+    :win => {
+      # 窗口自身相关
+      :opa => 255, # 窗口的不透明度
+      :o => 7, # 窗口位置的显示原点类型
+      :x => 0, # 窗口打开时所在位置
+      :y => 0,
+      :z => 500,
+      :w => Graphics.width, # 窗口打开时大小
+      :h => Graphics.height,
+      :skin => 0, # 皮肤index
+      # 文字绘制属性
+      :xo => 0, # 每页的第一个文字的绘制位置
+      :yo => 0,
+      :cdx => 1, # 默认下一个字的横轴偏移量（负数为往左侧移动相应单位，正数为往右）
+      :cdy => 0, # 默认下一个字的纵轴偏移量（负数为往上侧移动相应单位，正数为往下）
+      :ck => 0, # 缩减的字符间距值（默认0）
+      :ldx => 0, # 默认下一行的横轴偏移量（负数为往左，正数为往右）
+      :ldy => 1, # 默认下一行的纵轴偏移量（负数为往上，正数为往下）
+      :lh => 24, # 标准行高
+      :lhd => 0, # 行间距
+      :cwi => 2, # 绘制一个字完成后的等待帧数
+      :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
+      :cfast => 1, # 是否允许快进显示
+    }, # :win
+
     # \pause[]
     :pause => {
       :pause => 0,  # 源位图index
       :o => 4,  # 自身的显示原点类型
-      :do => 0,  # 相对于对话框的显示位置（九宫格小键盘）（0时为在文末）
+      :do => 0,  # 相对于对话框的显示位置（九宫格小键盘）（0时在文末）
       :dx => 0,  # xy偏移值
       :dy => 0,
       :t => 7, # 每两帧之间的等待帧数
       :v => 1,  # 是否显示
     }, # :pause
+
+    # \pos[]
+    :pos => {
+      :x => nil, :dx => nil, # 下一个文字的x值 / 相对上一个文字的x偏移增值
+      :y => nil, :dy => nil, #
+      :l => nil, :dl => nil, # 下一个文字所在列号 / 相对上一个文字的列数偏移增值
+      :c => nil, :dc => nil, # 下一个文字所在行号 / 相对上一个文字的行数偏移增值
+    }, # :pos
+
     # 设置默认启用的文字特效
-    :charas => { :cin => "", :cout => "" },
-    # 设置额外转义符
+    #  注意：特效的默认参数与 对话框扩展 中保持一致
+    :chara => { :cin => "", :cout => "" },
+
+    # 设置额外转义符的默认启用参数
     :ex => {
       # 渐变色绘制
       :cg => "",
     },
-  }
-  #--------------------------------------------------------------------------
-  # ● 【设置】定义文字特效类转义符各参数的初始值
-  #  默认与 对话框扩展 中的保持一致，但此处预设将覆盖对话框中预设
-  #--------------------------------------------------------------------------
-  ST_CIN_PARAMS_INIT = {
-  # \cin[]
-  }
-  ST_COUT_PARAMS_INIT = {
-  # \cout[]
-  }
-  ST_CSIN_PARAMS_INIT = {
-  }
-  ST_CWAVE_PARAMS_INIT = {
-  # \cwave[]
-  }
-  ST_CSWING_PARAMS_INIT = {
-  # \cswing[]
-  }
-  ST_CSHAKE_PARAMS_INIT = {
-  # \cshake[]
-  }
-  ST_CFLASH_PARAMS_INIT = {
-  # \cflash[]
-  }
-  ST_CMIRROR_PARAMS_INIT = {}
-  ST_CU_PARAMS_INIT = {
-  # \cu[]
-  }
-end
 
-#==============================================================================
-# ○ 读取设置
-#==============================================================================
-module MESSAGE_EX
-  #--------------------------------------------------------------------------
-  # ● 获取指定文字特效类转义符的基础设置
-  #--------------------------------------------------------------------------
-  def self.get_default_cparams_st(param_sym)
-    MESSAGE_EX.const_get("ST_#{param_sym.to_s.upcase}_PARAMS_INIT".to_sym) rescue {}
-  end
-  #--------------------------------------------------------------------------
-  # ● 设置参数
-  #--------------------------------------------------------------------------
-  def self.set_scroll_params(sym, str)
-    MESSAGE_EX.parse_param($game_message.scroll_params[sym], str)
-  end
+  } # end of BOX_PARAMS_INIT
 end
 
 #==============================================================================
 # ○ Game_Message
 #==============================================================================
 class Game_Message
-  attr_accessor :scroll_params
+  attr_accessor :box_params, :box_texts
   #--------------------------------------------------------------------------
   # ● 获取全部可保存params的符号的数组
   #--------------------------------------------------------------------------
-  alias eagle_scrolltext_ex_params eagle_params
+  alias eagle_message_box_params eagle_params
   def eagle_params
-    eagle_scrolltext_ex_params + [:scroll]
+    eagle_message_box_params + [:box]
+  end
+  #--------------------------------------------------------------------------
+  # ● 清除
+  #--------------------------------------------------------------------------
+  alias eagle_message_box_clear clear
+  def clear
+    eagle_message_box_clear
+    @box_texts = []
+  end
+  #--------------------------------------------------------------------------
+  # ● 新增文本
+  #--------------------------------------------------------------------------
+  def add_box_text(t)
+    @box_texts.push(t)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取包括换行符的所有内容
+  #--------------------------------------------------------------------------
+  def all_box_text
+    @box_texts.inject("") {|r, text| r += text + "\n" }
   end
 end
 
 #==============================================================================
-# ○ Window_ScrollText
+# ○ Window_EagleMessage_Box
 #==============================================================================
-class Window_ScrollText < Window_Base
+class Window_EagleMessage_Box < Window_Base
   include MESSAGE_EX::CHARA_EFFECTS
   attr_reader :eagle_chara_viewport
   #--------------------------------------------------------------------------
   # ● 参数组
   #--------------------------------------------------------------------------
-  def params; $game_message.scroll_params; end
+  def params; $game_message.box_params; end
+  #--------------------------------------------------------------------------
+  # ● 获取文字颜色
+  #     n : 文字颜色编号（0..31）
+  #--------------------------------------------------------------------------
+  def text_color(n)
+    MESSAGE_EX.text_color(n, self.windowskin)
+  end
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -259,25 +288,37 @@ class Window_ScrollText < Window_Base
     @eagle_chara_viewport.z = self.z + 1
     @eagle_sprite_pause = Sprite_EaglePauseTag.new(self) # 初始化等待按键的精灵
     @eagle_sprite_pause.z = self.z + 10
-    @eagle_chara_sprites = []
-    @last_chara_sprite = nil
+
     @eagle_fibers = {} # 存储并行绘制的线程 id => fiber
     @eagle_fibers_params = {} # 存储待处理的并行绘制 id => text
     @eagle_last_fiber_id = 0 # 并行线程id计数
     @eagle_rbs = {} # 存储需要执行的脚本 id => string
     @eagle_rb_count = 0 # 脚本记录计数
+
+    @page_index = 0
+    @flag_change_page = false # 是否允许切换页
+    @eagle_chara_sprites = {}
     @eagle_pics = {} # 存储显示的图片精灵 sym => Sprite
 
     self.arrows_visible = false
     self.openness = 0
+    eagle_reset_z
+  end
+  #--------------------------------------------------------------------------
+  # ● 重设z值
+  #--------------------------------------------------------------------------
+  def eagle_reset_z
+    self.z = win_params[:z] if win_params[:z] > 0
+    @eagle_chara_viewport.z = self.z + 1
+    @eagle_sprite_pause.z = self.z + 2
   end
   #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
-  alias eagle_scroll_ex_dispose dispose
   def dispose
-    eagle_scroll_ex_dispose
+    super
     @eagle_chara_viewport.dispose
+    @eagle_sprite_pause.dispose
   end
   #--------------------------------------------------------------------------
   # ● 重新生成适合全部文字的位图
@@ -307,9 +348,8 @@ class Window_ScrollText < Window_Base
   # ● 关闭窗口并等待关闭完成
   #--------------------------------------------------------------------------
   def close_and_wait
-    @eagle_last_fiber_id = 0
     chara_sprites_move_out
-    @eagle_pics.each { |sym, s| s.bitmap.dispose; s.dispose }
+    @eagle_pics.each { |i, ss| ss.each { |sym, s| s.bitmap.dispose; s.dispose }}
     @eagle_pics.clear
     close
     Fiber.yield until close?
@@ -318,12 +358,15 @@ class Window_ScrollText < Window_Base
   # ● 移出全部文字
   #--------------------------------------------------------------------------
   def chara_sprites_move_out
-    @eagle_chara_sprites.each do |c|
-      c.move_out
-      c.update if !c.disposed?
-      win_params[:cwo].times { Fiber.yield }
+    @eagle_chara_sprites.each do |i, cs|
+      cs.each do |c|
+        c.move_out
+        c.update if !c.disposed?
+        win_params[:cwo].times { Fiber.yield } if i == @page_index
+      end
+      cs.clear # 文字池接管更新
     end
-    @eagle_chara_sprites.clear # 文字池接管更新
+    @eagle_chara_sprites.clear
   end
 
   #--------------------------------------------------------------------------
@@ -333,19 +376,14 @@ class Window_ScrollText < Window_Base
     super
     update_eagle_sprites
     update_eagle_fibers
-    if @fiber
-      @fiber.resume
-    elsif $game_message.scroll_mode && $game_message.has_text?
-      @fiber = Fiber.new { fiber_main }
-      @fiber.resume
-    end
+    update_fiber_main
   end
   #--------------------------------------------------------------------------
   # ● 更新全部精灵
   #--------------------------------------------------------------------------
   def update_eagle_sprites
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
-    @eagle_chara_sprites.each { |c| c.update if !c.disposed? }
+    @eagle_chara_sprites.each { |i, cs| cs.each { |c| c.update if !c.disposed? } }
   end
   #--------------------------------------------------------------------------
   # ● 更新并行线程
@@ -353,44 +391,100 @@ class Window_ScrollText < Window_Base
   def update_eagle_fibers
     @eagle_fibers.each { |id, fiber| fiber.resume }
   end
-
+  #--------------------------------------------------------------------------
+  # ● 更新主线程
+  #--------------------------------------------------------------------------
+  def update_fiber_main
+    return @fiber.resume if @fiber
+    if $game_message.box_texts.size > 0
+      @fiber = Fiber.new { fiber_main }
+      @fiber.resume
+    end
+  end
   #--------------------------------------------------------------------------
   # ● 主绘制的逻辑
   #--------------------------------------------------------------------------
   def fiber_main
     open_and_wait
-    text, pos = pre_process_all_text
-    process_all_text(text, pos)
-    after_process_all_text
+    texts = pre_process_all_text($game_message.all_box_text)
+    @page_index = 0
+    @page_num = texts.size # 总页数
+
+    loop do
+      if !@eagle_chara_sprites.has_key?(@page_index)
+        pos = pre_process_params
+        process_all_text(texts[@page_index], pos)
+        Fiber.yield until !eagle_any_fiber?
+      end
+      @flag_change_page = true if @page_index > 0
+      input_pause
+      @flag_change_page = false
+      break if @page_index >= texts.size
+    end
+
     close_and_wait
+    $game_message.clear
+    $game_switches[MESSAGE_EX::S_ID_SCROLL_TEXT_TO_BOX] = false
     @fiber = nil
   end
   #--------------------------------------------------------------------------
-  # ● 等待
+  # ● 获取全部绘制文本
   #--------------------------------------------------------------------------
-  def wait(duration)
-    duration.times { Fiber.yield }
+  def pre_process_all_text(text)
+    text = convert_escape_characters(text)
+    text = pre_process_tags(text)
+    t = MESSAGE_EX::BOX_PARAMS_INIT.keys.inject("") { |s, k| s + "\e#{k}" }
+    text = t + text
+    texts = text.split(/<page>/im) # 数组每项代表一页的文本
+    texts.each do |t|  # 删去前后的换行
+      t.chomp!
+      t.sub!(/^\n/) { "" }
+    end
+    texts.delete_if { |t| t.empty? }  # 删去空页
+    return texts
   end
   #--------------------------------------------------------------------------
-  # ● 主绘制前的预处理
+  # ● 预处理标签对
   #--------------------------------------------------------------------------
-  def pre_process_all_text
-    # 重置
+  def pre_process_tags(text)
+    # 条件判断标签对
+    text.gsub!(/<if ?{(.*?)}>(.*?)<\/if>/m) { eagle_eval($1) == true ? $2 : "" }
+    # 图片标签对
+    text.gsub!(/<pic (.*?)>(.*?)<\/pic>/m) {
+      sym = $1
+      self.pics[$1] = $2
+      "\epic2[#{sym}]"
+    }
+    # 脚本标签对
+    text.gsub!(/<rb>(.*?)<\/rb>/m) {
+      @eagle_rb_count += 1
+      @eagle_rbs[@eagle_rb_count] = $1
+      "\erbl[#{@eagle_rb_count}]"
+    }
+    # 如果发现并行绘制标签对，则创建线程，并替换成转义符来启动并行绘制
+    text.gsub!(/<para>(.*?)<\/para>/m) {
+      @eagle_last_fiber_id += 1
+      @eagle_fibers_params[@eagle_last_fiber_id] = $1
+      "\epara[#{@eagle_last_fiber_id}]"
+    }
+    text
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取初始绘制参数
+  #--------------------------------------------------------------------------
+  def pre_process_params
+    # 重置绘制
     @eagle_charas_w = @eagle_charas_h = 0
     reset_font_settings
     clear_flags
-    # 获取最终绘制文本
-    text = convert_escape_characters($game_message.all_text)
-    text = pre_process_tags(text)
-    t = MESSAGE_EX::SCROLL_PARAMS_INIT.keys.inject("") { |s, k| s + "\e#{k}" }
+    # 重置文字、图片
+    self.charas = []
+    self.pics = {}
+
     # 获取初始绘制参数
     pos = { :x_line => win_params[:xo], :y_line => win_params[:yo] }
     pos[:x] = pos[:x_line]; pos[:y] = pos[:y_line]
-    return t + text, pos
-  end
-
-  def eagle_new_page # TODO
-    @eagle_pages = []
+    return pos
   end
   #--------------------------------------------------------------------------
   # ● 重置字体设置
@@ -400,33 +494,6 @@ class Window_ScrollText < Window_Base
     self.contents.font.color.alpha = font_params[:ca]
     font_params[:c] = 0
   end
-  #--------------------------------------------------------------------------
-  # ● 预处理标签对
-  #--------------------------------------------------------------------------
-  def pre_process_tags(text)
-    # 条件判断标签对
-    s = $game_switches; v = $game_variables
-    text.gsub!(/<if ?{(.*?)}>(.*?)<\/if>/) { eval($1) == true ? $2 : "" }
-    # 图片标签对
-    text.gsub!(/<pic (.*?)>(.*?)<\/pic>/) {
-      sym = $1
-      @eagle_pics[$1] = $2
-      "\epic[#{sym}]"
-    }
-    # 脚本标签对
-    text.gsub!(/<rb>(.*?)<\/rb>/) {
-      @eagle_rb_count += 1
-      @eagle_rbs[@eagle_rb_count] = $1
-      "\erbl[#{@eagle_rb_count}]"
-    }
-    # 如果发现并行绘制标签对，则创建线程，并替换成转义符来启动并行绘制
-    text.gsub!(/<para>(.*?)<\/para>/) {
-      @eagle_last_fiber_id += 1
-      @eagle_fibers_params[@eagle_last_fiber_id] = $1
-      "\epara[#{@eagle_last_fiber_id}]"
-    }
-    text
-  end
 
   #--------------------------------------------------------------------------
   # ● 处理指定内容的绘制
@@ -435,6 +502,13 @@ class Window_ScrollText < Window_Base
     return if text.nil?
     process_character(text.slice!(0, 1), text, pos) until text.empty?
   end
+  #--------------------------------------------------------------------------
+  # ● 获取当前页的全部文字精灵、图片精灵的数组
+  #--------------------------------------------------------------------------
+  def charas; @eagle_chara_sprites[@page_index]; end
+  def charas=(v); @eagle_chara_sprites[@page_index] = v; end
+  def pics; @eagle_pics[@page_index]; end
+  def pics=(v); @eagle_pics[@page_index] = v; end
   #--------------------------------------------------------------------------
   # ● 文字区域的左上角位置（屏幕坐标系）
   #--------------------------------------------------------------------------
@@ -508,6 +582,26 @@ class Window_ScrollText < Window_Base
     eagle_process_draw_end(24, 24, pos)
   end
   #--------------------------------------------------------------------------
+  # ● 处理控制符指定的图片绘制
+  #--------------------------------------------------------------------------
+  def process_draw_pic(text, pos)
+    param = text.slice!(/^\[.*?\]/)[1..-2]
+    params = param.split('|') # [filename, param_str]
+    _bitmap = Cache.picture(MESSAGE_EX.get_pic_file(params[0])) rescue return
+    h = {}
+    parse_param(h, params[1], :opa) if params[1]
+    h[:w] ||= _bitmap.width
+    h[:h] ||= _bitmap.height
+    h[:opa] ||= 255
+
+    eagle_auto_new_line(h[:w], pos)
+    if @flag_draw
+      s = eagle_new_chara_sprite(pos[:x], pos[:y], h[:w], h[:h])
+      s.eagle_font.draw_pic(s.bitmap, _bitmap, h)
+    end
+    eagle_process_draw_end(h[:w], h[:h], pos)
+  end
+  #--------------------------------------------------------------------------
   # ● （封装）生成一个新的文字精灵
   #--------------------------------------------------------------------------
   def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
@@ -515,19 +609,19 @@ class Window_ScrollText < Window_Base
     f.set_param(:skin, win_params[:skin])
     f.set_param(:cg, ex_params[:cg])
 
-    s = Sprite_EagleCharacter_ScrollText.new(self, f, c_x, c_y, c_w, c_h,
+    s = Sprite_EagleCharacter_MessageBox.new(self, f, c_x, c_y, c_w, c_h,
       @eagle_chara_viewport)
-    s.start_effects(params[:charas])
+    s.start_effects(params[:chara])
     s.update
-    @eagle_chara_sprites.push(s)
+    self.charas.push(s)
     s
   end
   #--------------------------------------------------------------------------
   # ● 绘制完成时的处理
   #--------------------------------------------------------------------------
   def eagle_process_draw_end(c_w, c_h, pos)
-    # 存储行首位置
-    pos[:first_chara_sprite] = @eagle_chara_sprites[-1] if pos[:first_chara_sprite].nil?
+    # 存储行首文字
+    pos[:first_chara_s] = self.charas[-1] if pos[:first_chara_s].nil?
     # 存储当前所占用宽高
     @eagle_charas_w = pos[:x] + c_w if pos[:x] + c_w > @eagle_charas_w
     @eagle_charas_h = pos[:y] + c_h if pos[:y] + c_h > @eagle_charas_h
@@ -552,7 +646,7 @@ class Window_ScrollText < Window_Base
   # ● 确保最后绘制完成的文字在视图内
   #--------------------------------------------------------------------------
   def ensure_character_visible
-    c = @eagle_chara_sprites[-1]
+    c = self.charas[-1]
     self.ox = 0 if c._x < self.ox
     d = c._x + c.width - @eagle_chara_viewport.rect.width
     self.ox = d if d > 0
@@ -565,9 +659,9 @@ class Window_ScrollText < Window_Base
   #--------------------------------------------------------------------------
   def process_new_line(text, pos)
     @line_show_fast = false
-    if pos[:first_chara_sprite] # 如果存储了行首文字，则以它为基准
-      x_ = pos[:first_chara_sprite]._x
-      y_ = pos[:first_chara_sprite]._y
+    if pos[:first_chara_s] # 如果存储了行首文字，则以它为基准
+      x_ = pos[:first_chara_s]._x
+      y_ = pos[:first_chara_s]._y
     else # 否则，以初始定下的行首位置为基准
       x_ = pos[:x_line]
       y_ = pos[:y_line]
@@ -576,7 +670,7 @@ class Window_ScrollText < Window_Base
     pos[:y] = y_ + eagle_standard_ch * win_params[:ldy]
     pos[:x_line] = pos[:x]
     pos[:y_line] = pos[:y]
-    pos[:first_chara_sprite] = nil
+    pos[:first_chara_s] = nil
   end
 
   #--------------------------------------------------------------------------
@@ -606,22 +700,15 @@ class Window_ScrollText < Window_Base
   # ● 监听“确定”键的按下，更新快进的标志
   #--------------------------------------------------------------------------
   def update_show_fast
-    @show_fast = true if Input.trigger?(:C)
+    @line_show_fast = true if Input.trigger?(:C)
   end
 
-  #--------------------------------------------------------------------------
-  # ● 全部绘制完成后的处理
-  #--------------------------------------------------------------------------
-  def after_process_all_text
-    input_pause
-    $game_message.clear
-  end
   #--------------------------------------------------------------------------
   # ● 处理输入等待
   #--------------------------------------------------------------------------
   def input_pause
     eagle_process_draw_update
-    @eagle_sprite_pause.bind_last_chara(@eagle_chara_sprites[-1])
+    @eagle_sprite_pause.bind_last_chara(self.charas[-1])
     @eagle_sprite_pause.show
     process_input_pause
     @eagle_sprite_pause.hide
@@ -637,7 +724,8 @@ class Window_ScrollText < Window_Base
     self.arrows_visible = true
     while true
       Fiber.yield
-      break if Input.trigger?(:B) || Input.trigger?(:C)
+      break next_page if Input.trigger?(:C)
+      break prev_page if @flag_change_page && Input.trigger?(:B)
       # 处理文本滚动
       if Input.press?(:UP)
         self.oy -= d_oxy
@@ -664,6 +752,28 @@ class Window_ScrollText < Window_Base
     self.arrows_visible = false
     Input.update
   end
+  #--------------------------------------------------------------------------
+  # ● 执行切页
+  #--------------------------------------------------------------------------
+  def next_page
+    page_move_out
+    @page_index += 1
+    page_move_in if @eagle_chara_sprites.has_key?(@page_index)
+  end
+  def prev_page
+    page_move_out
+    @page_index -= 1
+    page_move_in if @page_index >= 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 整页移入移出
+  #--------------------------------------------------------------------------
+  def page_move_in
+    self.charas.each { |c| c.move_in }
+  end
+  def page_move_out
+    self.charas.each { |c| c.move_out_temp }
+  end
 
   #--------------------------------------------------------------------------
   # ● 控制符的处理
@@ -678,8 +788,8 @@ class Window_ScrollText < Window_Base
     when '!'; input_pause
     when '>'; @line_show_fast = true
     when '<'; @line_show_fast = false
+    when "PIC"; process_draw_pic(text, pos)
     when 'PARA'; eagle_activate_fiber(obtain_escape_param(text), pos)
-    when 'PAGE'; eagle_new_page
     when 'C'
       font_params[:c] = obtain_escape_param(text)
       change_color(text_color(font_params[:c]))
@@ -694,7 +804,7 @@ class Window_ScrollText < Window_Base
         param = obtain_escape_param_string(text)
         # 当只传入 0 时，代表关闭该特效
         return eagle_chara_effect_clear(temp_code.to_sym) if param == '0'
-        params[:charas][temp_code.to_sym] = param
+        params[:chara][temp_code.to_sym] = param
         method(m_e).call(param)
       else
         super
@@ -717,9 +827,7 @@ class Window_ScrollText < Window_Base
   # ● 清除暂存的指定文字特效
   #--------------------------------------------------------------------------
   def eagle_chara_effect_clear(code_sym)
-    params[:charas].delete(code_sym)
-    default_params = MESSAGE_EX.get_default_params(:scroll)[:charas]
-    params[:charas] = default_params[code_sym] if default_params[code_sym]
+    params[:chara].delete(code_sym)
   end
 
   #--------------------------------------------------------------------------
@@ -736,6 +844,12 @@ class Window_ScrollText < Window_Base
   def eagle_fiber_main(id, pos)
     process_all_text(@eagle_fibers_params[id], pos)
     @eagle_fibers.delete(id)
+  end
+  #--------------------------------------------------------------------------
+  # ● 还存在并行绘制？
+  #--------------------------------------------------------------------------
+  def eagle_any_fiber?
+    !@eagle_fibers.empty?
   end
 
   #--------------------------------------------------------------------------
@@ -782,6 +896,7 @@ class Window_ScrollText < Window_Base
   def eagle_text_control_win(param = "")
     parse_param(params[:win], param, :default)
     eagle_change_windowskin(win_params[:skin])
+    eagle_reset_z
   end
   #--------------------------------------------------------------------------
   # ● 变更窗口皮肤
@@ -790,7 +905,7 @@ class Window_ScrollText < Window_Base
     return if @last_windowskin_index == index
     @last_windowskin_index = index
     self.windowskin = MESSAGE_EX.windowskin(index)
-    change_color(text_color(0))
+    change_color(text_color(font_params[:c]))
   end
   #--------------------------------------------------------------------------
   # ● 设置pos参数
@@ -818,14 +933,21 @@ class Window_ScrollText < Window_Base
     wait(h[:t])
   end
   #--------------------------------------------------------------------------
-  # ● 设置pic参数
+  # ● 等待
   #--------------------------------------------------------------------------
-  def eagle_text_control_pic(param = '0')
+  def wait(duration)
+    duration.times { Fiber.yield }
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置pic2参数
+  #--------------------------------------------------------------------------
+  def eagle_text_control_pic2(param = '0')
     sym = param
-    return if @eagle_pics[sym].nil?
-    params = @eagle_pics[sym].split('|')
-    @eagle_pics.delete(sym)
+    return if self.pics[sym].nil?
+    params = self.pics[sym].split('|') # 精灵参数字符串|图片名称|位图参数字符串
+
     pic_bitmap = Cache.picture(params[1]) rescue return
+
     h = { :o => 7, :x => 0, :y => 0, :z => -1, :m => 0, :a => 255 }
     parse_param(h, params[0], :o)
     h2 = { :x => 0, :y => 0, :w => pic_bitmap.width, :h => pic_bitmap.height }
@@ -836,17 +958,24 @@ class Window_ScrollText < Window_Base
     s.mirror = h[:m] != 0
     s.bitmap = Bitmap.new(h2[:w], h2[:h])
     s.bitmap.blt(0, 0, pic_bitmap, Rect.new(h2[:x], h2[:y], h2[:w], h2[:h]))
-    @eagle_pics[sym] = s
+    self.pics[sym] = s
   end
   #--------------------------------------------------------------------------
-  # ● 设置rbl脚本参数
+  # ● 应用rbl脚本
   #--------------------------------------------------------------------------
   def eagle_text_control_rbl(param = '0')
-    cs = @eagle_chara_sprites
-    pics = @eagle_pics
+    eagle_eval(@eagle_rbs[param.to_i])
+    @eagle_rbs.delete(param.to_i)
+  end
+  #--------------------------------------------------------------------------
+  # ● eval
+  #--------------------------------------------------------------------------
+  def eagle_eval(t)
+    cs = self.charas
+    pics = self.pics
     win = self
     s = $game_switches; v = $game_variables
-    eval(@eagle_rbs[param.to_i])
+    eval(t)
   end
   #--------------------------------------------------------------------------
   # ● 设置cg参数 / 渐变绘制预定
@@ -863,12 +992,67 @@ end
 #==============================================================================
 # ○ 单个文字的精灵
 #==============================================================================
-class Sprite_EagleCharacter_ScrollText < Sprite_EagleCharacter
+class Sprite_EagleCharacter_MessageBox < Sprite_EagleCharacter
   #--------------------------------------------------------------------------
   # ● 初始化特效的默认参数
   #--------------------------------------------------------------------------
   def init_effect_params(sym)
     @params[sym] = MESSAGE_EX.get_default_params(sym).dup
-    @params[sym].merge!(MESSAGE_EX.get_default_cparams_st(sym))
+  end
+end
+
+#===============================================================================
+# ○ 征用滚动文本
+#===============================================================================
+class Game_Interpreter
+  #--------------------------------------------------------------------------
+  # ● 显示滚动文字
+  #--------------------------------------------------------------------------
+  alias eagle_message_box_command_105 command_105
+  def command_105
+    return call_message_box if $game_switches[MESSAGE_EX::S_ID_SCROLL_TEXT_TO_BOX]
+    eagle_message_box_command_105
+  end
+  #--------------------------------------------------------------------------
+  # ● 写入大文本框
+  #--------------------------------------------------------------------------
+  def call_message_box
+    Fiber.yield while $game_message.visible
+    # $game_message.scroll_speed = @params[0]
+    # $game_message.scroll_no_fast = @params[1]
+    number_box = @params[0]
+    flag_box = @params[1]
+    while next_event_code == 405
+      @index += 1
+      $game_message.add_box_text(@list[@index].parameters[0])
+    end
+    Fiber.yield while $game_switches[MESSAGE_EX::S_ID_SCROLL_TEXT_TO_BOX]
+  end
+end
+
+#===============================================================================
+# ○ Scene_Map
+#===============================================================================
+class Scene_Map < Scene_Base
+  #--------------------------------------------------------------------------
+  # ● 生成滚动文字窗口
+  #--------------------------------------------------------------------------
+  alias eagle_message_box_scroll_window create_scroll_text_window
+  def create_scroll_text_window
+    eagle_message_box_scroll_window
+    @eagle_message_box_window = Window_EagleMessage_Box.new
+  end
+end
+#===============================================================================
+# ○ Scene_Battle
+#===============================================================================
+class Scene_Battle < Scene_Base
+  #--------------------------------------------------------------------------
+  # ● 生成滚动文字窗口
+  #--------------------------------------------------------------------------
+  alias eagle_message_box_scroll_window create_scroll_text_window
+  def create_scroll_text_window
+    eagle_message_box_scroll_window
+    @eagle_message_box_window = Window_EagleMessage_Box.new
   end
 end

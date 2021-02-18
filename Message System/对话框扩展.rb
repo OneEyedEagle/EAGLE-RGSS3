@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.16.19 修复\c转义符报错问题
+# - 2021.2.18.19 优化文字移出
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -4008,7 +4008,7 @@ class Window_EagleMessage < Window_Base
       @pause_skip = true; return true
     end
     if c == 'C'
-      font_params[:c] = obtain_escape_param_string(text).to_i
+      font_params[:c] = obtain_escape_param_string(text)
       change_color(text_color(font_params[:c]))
       return true
     end
@@ -4043,11 +4043,7 @@ class Window_EagleMessage < Window_Base
   def font_params; game_message.font_params; end
   def eagle_text_control_font(param = "")
     parse_param(font_params, param, :size)
-    if font_params[:c] < 0
-      reset_font_settings
-    else
-      change_color(text_color(font_params[:c]))
-    end
+    change_color(text_color(font_params[:c]))
     MESSAGE_EX.apply_font_params(self.contents.font, font_params)
   end
   #--------------------------------------------------------------------------
@@ -5941,9 +5937,9 @@ class Sprite_EagleCharacter < Sprite
     reset_oxy(7)
     if sym == :cin
       @dx = @dy = 0
+      update_position
       self.zoom_x = self.zoom_y = 1.0
       self.opacity = 255
-      update_position
     elsif sym == :cout
       finish
     end
@@ -5983,6 +5979,7 @@ class Sprite_EagleCharacter < Sprite
     params = @params[:cin]
     if params.nil? # 如果没有定义移入特效
       rebind_viewport # 重新绑定视图
+      update_position
       self.opacity = 255 # 直接指定不透明度
       return
     end
@@ -6003,8 +6000,8 @@ class Sprite_EagleCharacter < Sprite
     self.angle = -params[:t] * params[:va]
     self.src_rect.x = -(params[:t]/params[:rxt]) * params[:rx]
     self.src_rect.y = -(params[:t]/params[:ryt]) * params[:ry]
-    self.opacity = 0
     self.zoom_x = self.zoom_y = 1.0 + @_zoom/100.0
+    self.opacity = 0
     reset_oxy(5)
     params[:tc] = 0
     @flag_move = :cin
@@ -6024,8 +6021,8 @@ class Sprite_EagleCharacter < Sprite
     finish if !in_viewport? # 若精灵在视图外，则会直接结束
     bind_viewport(nil) # 取消视图，确保不会出现资源崩溃，且不再限制可见范围
     if !finish?
-      update_position # 更新一次位置
       process_move_out  # 处理移出模式
+      update_position # 更新一次位置
     end
     @window_bind = nil # 取消窗口的绑定
     MESSAGE_EX.charapool_push(self) # 由文字池接管
@@ -6037,6 +6034,7 @@ class Sprite_EagleCharacter < Sprite
   def move_out_temp
     unbind_viewport
     process_move_out
+    update_position
   end
   #--------------------------------------------------------------------------
   # ● 处理移出模式
