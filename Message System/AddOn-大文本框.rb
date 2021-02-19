@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageBox"] = true
 #=============================================================================
-# - 2021.2.18.19
+# - 2021.2.19.19 新增按键提示文本
 #==============================================================================
 # - 本插件新增的大文本框，有以下几个新特性：
 #
@@ -49,6 +49,7 @@ $imported["EAGLE-MessageBox"] = true
 #    opa → 窗口的不透明度
 #    o → 窗口打开时的显示原点所在位置的类型（九宫格）（默认7左上角）
 #    x/y/w/h → 窗口打开时的坐标与实际宽高
+#    do → 窗口显示位置类型（同【对话框扩展】）
 #    z → 窗口所处z值
 #    skin → 窗口所用皮肤的index（同【对话框扩展】）
 #
@@ -150,7 +151,7 @@ module MESSAGE_EX
   BOX_PARAMS_INIT = {
     # \font[]
     :font => {
-      :size => Font.default_size, # 字体大小
+      :size => 16, #Font.default_size, # 字体大小
       :i => Font.default_italic, # 斜体绘制
       :b => Font.default_bold, # 加粗绘制
       :s => Font.default_shadow, # 阴影
@@ -173,13 +174,14 @@ module MESSAGE_EX
     # \win[]
     :win => {
       # 窗口自身相关
-      :opa => 255, # 窗口的不透明度
-      :o => 7, # 窗口位置的显示原点类型
+      :opa => 0, # 窗口的不透明度
+      :w => Graphics.width - 60, # 窗口打开时大小
+      :h => Graphics.height - 40,
+      :o => 5, # 窗口位置的显示原点类型
       :x => 0, # 窗口打开时所在位置
       :y => 0,
+      :do => -5, # 相对于屏幕的显示位置原点类型（覆盖xy）
       :z => 500,
-      :w => Graphics.width, # 窗口打开时大小
-      :h => Graphics.height,
       :skin => 0, # 皮肤index
       # 文字绘制属性
       :xo => 0, # 每页的第一个文字的绘制位置
@@ -191,7 +193,7 @@ module MESSAGE_EX
       :ldy => 1, # 默认下一行的纵轴偏移量（负数为往上，正数为往下）
       :lh => 24, # 标准行高
       :lhd => 0, # 行间距
-      :cwi => 2, # 绘制一个字完成后的等待帧数
+      :cwi => 1, # 绘制一个字完成后的等待帧数
       :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
       :cfast => 1, # 是否允许快进显示
     }, # :win
@@ -226,6 +228,47 @@ module MESSAGE_EX
     },
 
   } # end of BOX_PARAMS_INIT
+  #--------------------------------------------------------------------------
+  # ●【常量】提示文本的字体大小
+  #--------------------------------------------------------------------------
+  HINT_FONT_SIZE = 14
+  #--------------------------------------------------------------------------
+  # ● 【设置】绘制提示精灵
+  #--------------------------------------------------------------------------
+  def self.draw_message_box_hints(s, fs = {})
+    s.bitmap ||= Bitmap.new(Graphics.width, 24)
+    s.bitmap.clear
+    s.bitmap.font.size = HINT_FONT_SIZE
+
+    # 绘制长横线
+    s.bitmap.fill_rect(0, 0, s.width, 1,
+      Color.new(255,255,255,120))
+
+    # 绘制 取消键-上一页
+    d = 20
+    if fs[:f_prev]
+      s.bitmap.draw_text(0+d, 2, s.width, s.height, "取消键 - 上一页", 0)
+    end
+
+    # 绘制 确定键-下一页
+    if fs[:f_next]
+      s.bitmap.draw_text(0, 2, s.width-d, s.height, "确定键 - 下一页", 2)
+    end
+
+    # 绘制 确定键-返回
+    if fs[:f_end]
+      s.bitmap.draw_text(0, 2, s.width-d, s.height, "确定键 - 结束浏览", 2)
+    end
+
+    # 绘制 方向键-移动
+    if fs[:f_move]
+      s.bitmap.draw_text(0, 2, s.width, s.height, "方向键 - 移动查看", 1)
+    end
+
+    # 设置摆放位置
+    s.oy = s.height
+    s.y = Graphics.height
+  end
 end
 
 #==============================================================================
@@ -300,9 +343,17 @@ class Window_EagleMessage_Box < Window_Base
     @eagle_chara_sprites = {}
     @eagle_pics = {} # 存储显示的图片精灵 sym => Sprite
 
+    init_sprite_hint
     self.arrows_visible = false
     self.openness = 0
     eagle_reset_z
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化提示精灵
+  #--------------------------------------------------------------------------
+  def init_sprite_hint
+    @sprite_hint = Sprite.new
+    @sprite_hint.visible = false
   end
   #--------------------------------------------------------------------------
   # ● 重设z值
@@ -311,6 +362,7 @@ class Window_EagleMessage_Box < Window_Base
     self.z = win_params[:z] if win_params[:z] > 0
     @eagle_chara_viewport.z = self.z + 1
     @eagle_sprite_pause.z = self.z + 2
+    @sprite_hint.z = self.z + 10
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -319,17 +371,18 @@ class Window_EagleMessage_Box < Window_Base
     super
     @eagle_chara_viewport.dispose
     @eagle_sprite_pause.dispose
+    @eagle_chara_sprites.each { |i, ss| ss.each { |sym, s| s.move_out }}
+    @eagle_chara_sprites.clear
+    @eagle_pics.each { |i, ss| ss.each { |sym, s| s.bitmap.dispose; s.dispose }}
+    @eagle_pics.clear
+    dispose_sprite_hint
   end
   #--------------------------------------------------------------------------
-  # ● 重新生成适合全部文字的位图
+  # ● 释放提示精灵
   #--------------------------------------------------------------------------
-  def recreate_contents_for_charas
-    w = @eagle_charas_w; h = @eagle_charas_h
-    return if w < eagle_charas_max_w && h < eagle_charas_max_h
-    f = self.contents.font.dup
-    self.contents.dispose
-    self.contents = Bitmap.new(w, h)
-    self.contents.font = f
+  def dispose_sprite_hint
+    @sprite_hint.bitmap.dispose
+    @sprite_hint.dispose
   end
 
   #--------------------------------------------------------------------------
@@ -337,8 +390,10 @@ class Window_EagleMessage_Box < Window_Base
   #--------------------------------------------------------------------------
   def open_and_wait
     eagle_change_windowskin(win_params[:skin])
-    self.move(win_params[:x], win_params[:y], win_params[:w], win_params[:h])
     self.opacity = win_params[:opa]
+    self.move(win_params[:x], win_params[:y], win_params[:w], win_params[:h])
+    eagle_set_charas_viewport
+    MESSAGE_EX.reset_xy_dorigin(self, nil, win_params[:do]) if win_params[:do] < 0
     MESSAGE_EX.reset_xy_origin(self, win_params[:o])
     return self.openness = 0 if self.opacity == 0
     open
@@ -375,6 +430,7 @@ class Window_EagleMessage_Box < Window_Base
   def update
     super
     update_eagle_sprites
+    update_sprite_hint
     update_eagle_fibers
     update_fiber_main
   end
@@ -384,6 +440,12 @@ class Window_EagleMessage_Box < Window_Base
   def update_eagle_sprites
     @eagle_sprite_pause.update if @eagle_sprite_pause.visible
     @eagle_chara_sprites.each { |i, cs| cs.each { |c| c.update if !c.disposed? } }
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新提示精灵
+  #--------------------------------------------------------------------------
+  def update_sprite_hint
+    @sprite_hint.update
   end
   #--------------------------------------------------------------------------
   # ● 更新并行线程
@@ -411,15 +473,24 @@ class Window_EagleMessage_Box < Window_Base
     @page_num = texts.size # 总页数
 
     loop do
+      @flags_hints = {}  # 存储当前页的提示精灵状态
       if !@eagle_chara_sprites.has_key?(@page_index)
         pos = pre_process_params
         process_all_text(texts[@page_index], pos)
         Fiber.yield until !eagle_any_fiber?
       end
-      @flag_change_page = true if @page_index > 0
+      if @page_index > 0 # 存在前一页
+        @flags_hints[:f_prev] = true
+      end
+      if @page_index == texts.size - 1 # 当前为最后一页
+        @flags_hints[:f_end] = true
+      else
+        @flags_hints[:f_next] = true
+      end
+      @flag_change_page = true # 允许切换页
       input_pause
       @flag_change_page = false
-      break if @page_index >= texts.size
+      break if @page_index >= texts.size # 结束
     end
 
     close_and_wait
@@ -490,9 +561,8 @@ class Window_EagleMessage_Box < Window_Base
   # ● 重置字体设置
   #--------------------------------------------------------------------------
   def reset_font_settings
-    change_color(normal_color)
+    change_color(text_color(font_params[:c]))
     self.contents.font.color.alpha = font_params[:ca]
-    font_params[:c] = 0
   end
 
   #--------------------------------------------------------------------------
@@ -533,6 +603,14 @@ class Window_EagleMessage_Box < Window_Base
   def eagle_charas_ox; self.ox; end
   def eagle_charas_oy; self.oy; end
   #--------------------------------------------------------------------------
+  # ● 更新正在移入移出文字的显示区域的显示原点
+  #--------------------------------------------------------------------------
+  def update_moving_charas_oxy
+    self.charas.each { |c|
+      c.reset_window_oxy(self.ox, self.oy) if c.move_updating?
+    }
+  end
+  #--------------------------------------------------------------------------
   # ● 文字的标准宽度高度
   #--------------------------------------------------------------------------
   def eagle_standard_cw
@@ -546,6 +624,24 @@ class Window_EagleMessage_Box < Window_Base
   #--------------------------------------------------------------------------
   def line_height
     win_params[:lh]
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置文字显示区域的矩形（屏幕坐标）
+  #--------------------------------------------------------------------------
+  def eagle_set_charas_viewport
+    @eagle_chara_viewport.rect.set(eagle_charas_x0, eagle_charas_y0,
+      eagle_charas_max_w, eagle_charas_max_h)
+  end
+  #--------------------------------------------------------------------------
+  # ● 重新生成适合全部文字的位图
+  #--------------------------------------------------------------------------
+  def recreate_contents_for_charas
+    w = @eagle_charas_w; h = @eagle_charas_h
+    return if w < eagle_charas_max_w && h < eagle_charas_max_h
+    f = self.contents.font.dup
+    self.contents.dispose
+    self.contents = Bitmap.new(w, h)
+    self.contents.font = f
   end
   #--------------------------------------------------------------------------
   # ● 重置绘制位置
@@ -636,30 +732,30 @@ class Window_EagleMessage_Box < Window_Base
   # ● 绘制完成时的更新
   #--------------------------------------------------------------------------
   def eagle_process_draw_update
-    # 设置文字显示区域的矩形（屏幕坐标）
-    @eagle_chara_viewport.rect.set(eagle_charas_x0, eagle_charas_y0,
-      eagle_charas_max_w, eagle_charas_max_h)
-    # 确保最后绘制的文字在视图区域内
-    ensure_character_visible
+    ensure_character_visible(self.charas[-1])
   end
   #--------------------------------------------------------------------------
   # ● 确保最后绘制完成的文字在视图内
   #--------------------------------------------------------------------------
-  def ensure_character_visible
-    c = self.charas[-1]
+  def ensure_character_visible(c)
+    return if c.nil?
+    _ox = self.ox
+    _oy = self.oy
     self.ox = 0 if c._x < self.ox
     d = c._x + c.width - @eagle_chara_viewport.rect.width
     self.ox = d if d > 0
     self.oy = 0 if c._y < self.oy
     d = c._y + c.height - @eagle_chara_viewport.rect.height
     self.oy = d if d > 0
+    # 移动全部（正在移入移出）文字所存储的窗口oxy，保证它们一起移动
+    update_moving_charas_oxy if _ox != self.ox || _oy != self.oy
   end
   #--------------------------------------------------------------------------
   # ● 换行文字的处理
   #--------------------------------------------------------------------------
   def process_new_line(text, pos)
     @line_show_fast = false
-    if pos[:first_chara_s] # 如果存储了行首文字，则以它为基准
+    if pos[:first_chara_s] # 如果存储了上一行的行首文字，则以它为基准
       x_ = pos[:first_chara_s]._x
       y_ = pos[:first_chara_s]._y
     else # 否则，以初始定下的行首位置为基准
@@ -672,7 +768,6 @@ class Window_EagleMessage_Box < Window_Base
     pos[:y_line] = pos[:y]
     pos[:first_chara_s] = nil
   end
-
   #--------------------------------------------------------------------------
   # ● 输出一个字符后的等待
   #--------------------------------------------------------------------------
@@ -717,40 +812,65 @@ class Window_EagleMessage_Box < Window_Base
   # ● 执行输入等待
   #--------------------------------------------------------------------------
   def process_input_pause
+    recreate_contents_for_charas
     ox_des = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
     oy_des = self.oy
-    recreate_contents_for_charas
+    if ox_des != 0 || oy_des != 0 # 允许移动
+      self.arrows_visible = true
+      @flags_hints[:f_move] = true
+    end
+    show_sprite_hint
     d_oxy = 1; last_input = nil; last_input_c = 0
-    self.arrows_visible = true
     while true
       Fiber.yield
-      break next_page if Input.trigger?(:C)
-      break prev_page if @flag_change_page && Input.trigger?(:B)
-      # 处理文本滚动
-      if Input.press?(:UP)
-        self.oy -= d_oxy
-        self.oy = 0 if self.oy < 0
-      elsif Input.press?(:DOWN)
-        self.oy += d_oxy
-        self.oy = oy_des if self.oy > oy_des
-      elsif Input.press?(:LEFT)
-        self.ox -= d_oxy
-        self.ox = 0 if self.ox < 0
-      elsif Input.press?(:RIGHT)
-        self.ox += d_oxy
-        self.ox = ox_des if self.ox > ox_des
+      break if check_input_pause?
+      if @flags_hints[:f_move]
+        _ox = self.ox; _oy = self.oy
+        if Input.press?(:UP) # 处理文本滚动
+          self.oy -= d_oxy
+          self.oy = 0 if self.oy < 0
+        elsif Input.press?(:DOWN)
+          self.oy += d_oxy
+          self.oy = oy_des if self.oy > oy_des
+        elsif Input.press?(:LEFT)
+          self.ox -= d_oxy
+          self.ox = 0 if self.ox < 0
+        elsif Input.press?(:RIGHT)
+          self.ox += d_oxy
+          self.ox = ox_des if self.ox > ox_des
+        end
+        if last_input == Input.dir4
+          last_input_c += 1
+          d_oxy += 1 if last_input_c % 10 == 0
+        else
+          d_oxy = 1
+          last_input_c = 0
+        end
+        last_input = Input.dir4
+        update_moving_charas_oxy if _ox != self.ox || _oy != self.oy
       end
-      if last_input == Input.dir4
-        last_input_c += 1
-        d_oxy += 1 if last_input_c % 10 == 0
-      else
-        d_oxy = 1
-        last_input_c = 0
-      end
-      last_input = Input.dir4
     end
     self.arrows_visible = false
     Input.update
+    hide_sprite_hint
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查输入等待的按键
+  #--------------------------------------------------------------------------
+  def check_input_pause?
+    if @flag_change_page
+      if Input.trigger?(:C)
+        next_page
+        return true
+      end
+      if @flags_hints[:f_prev] && Input.trigger?(:B)
+        prev_page
+        return true
+      end
+    else
+      return true if Input.trigger?(:C) || Input.trigger?(:B)
+    end
+    return false
   end
   #--------------------------------------------------------------------------
   # ● 执行切页
@@ -763,7 +883,7 @@ class Window_EagleMessage_Box < Window_Base
   def prev_page
     page_move_out
     @page_index -= 1
-    page_move_in if @page_index >= 0
+    page_move_in
   end
   #--------------------------------------------------------------------------
   # ● 整页移入移出
@@ -773,6 +893,19 @@ class Window_EagleMessage_Box < Window_Base
   end
   def page_move_out
     self.charas.each { |c| c.move_out_temp }
+  end
+  #--------------------------------------------------------------------------
+  # ● 显示提示精灵
+  #--------------------------------------------------------------------------
+  def show_sprite_hint
+    MESSAGE_EX.draw_message_box_hints(@sprite_hint, @flags_hints)
+    @sprite_hint.visible = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 隐藏提示精灵
+  #--------------------------------------------------------------------------
+  def hide_sprite_hint
+    @sprite_hint.visible = false
   end
 
   #--------------------------------------------------------------------------
@@ -895,6 +1028,7 @@ class Window_EagleMessage_Box < Window_Base
   def win_params; params[:win]; end
   def eagle_text_control_win(param = "")
     parse_param(params[:win], param, :default)
+    eagle_set_charas_viewport
     eagle_change_windowskin(win_params[:skin])
     eagle_reset_z
   end

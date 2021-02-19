@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.18.19 优化文字移出
+# - 2021.2.19.19 优化文字移出
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -3579,6 +3579,14 @@ class Window_EagleMessage < Window_Base
   def eagle_charas_ox; self.ox; end
   def eagle_charas_oy; self.oy; end
   #--------------------------------------------------------------------------
+  # ● 更新正在移入移出文字的显示区域的显示原点
+  #--------------------------------------------------------------------------
+  def update_moving_charas_oxy
+    @eagle_chara_sprites.each { |c|
+      c.reset_window_oxy(self.ox, self.oy) if c.move_updating?
+    }
+  end
+  #--------------------------------------------------------------------------
   # ● 重置文字显示区域
   #--------------------------------------------------------------------------
   def eagle_reset_charas_oxy
@@ -3751,12 +3759,16 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def ensure_character_visible(c)
     return if c.nil?
+    _ox = self.ox
+    _oy = self.oy
     self.ox = 0 if c._x < self.ox
     d = c._x + c.width - @eagle_chara_viewport.rect.width
     self.ox = d if d > 0
     self.oy = 0 if c._y < self.oy
     d = c._y + c.height - @eagle_chara_viewport.rect.height
     self.oy = d if d > 0
+    # 移动全部（正在移入移出）文字所存储的窗口oxy，保证它们一起移动
+    update_moving_charas_oxy if _ox != self.ox || _oy != self.oy
   end
   #--------------------------------------------------------------------------
   # ● 处于快进显示？
@@ -4505,12 +4517,13 @@ class Window_EagleMessage < Window_Base
   # ● 执行输入等待
   #--------------------------------------------------------------------------
   def process_input_pause
-    recreate_contents_for_charas
     @eagle_auto_continue_c = win_params[:auto_t]
+    recreate_contents_for_charas
     ox_max = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
     oy_max = self.oy
-    d_oxy = 1; last_input = nil; last_input_c = 0
+    flag_move = ox_max != 0 || oy_max != 0
     self.arrows_visible = true
+    d_oxy = 1; last_input = nil; last_input_c = 0
     while true
       Fiber.yield
       # 处理自动继续
@@ -4519,29 +4532,36 @@ class Window_EagleMessage < Window_Base
         process_while_auto_wait_input_pause(@eagle_auto_continue_c)
         @eagle_auto_continue_c -= 1
       end
+      # 处理按键继续
       break if check_input_pause?
       # 处理内容滚动
-      if Input.press?(:UP)
-        self.oy -= d_oxy
-        self.oy = 0 if self.oy < 0
-      elsif Input.press?(:DOWN)
-        self.oy += d_oxy
-        self.oy = oy_max if self.oy > oy_max
-      elsif Input.press?(:LEFT)
-        self.ox -= d_oxy
-        self.ox = 0 if self.ox < 0
-      elsif Input.press?(:RIGHT)
-        self.ox += d_oxy
-        self.ox = ox_max if self.ox > ox_max
-      end
-      if last_input == Input.dir4
-        last_input_c += 1
-        d_oxy += 1 if last_input_c % 10 == 0
+      if flag_move == true
+        _ox = self.ox; _oy = self.oy
+        if Input.press?(:UP)
+          self.oy -= d_oxy
+          self.oy = 0 if self.oy < 0
+        elsif Input.press?(:DOWN)
+          self.oy += d_oxy
+          self.oy = oy_max if self.oy > oy_max
+        elsif Input.press?(:LEFT)
+          self.ox -= d_oxy
+          self.ox = 0 if self.ox < 0
+        elsif Input.press?(:RIGHT)
+          self.ox += d_oxy
+          self.ox = ox_max if self.ox > ox_max
+        end
+        if last_input == Input.dir4
+          last_input_c += 1
+          d_oxy += 1 if last_input_c % 10 == 0
+        else
+          d_oxy = 1
+          last_input_c = 0
+        end
+        last_input = Input.dir4
+        update_moving_charas_oxy if _ox != self.ox || _oy != self.oy
       else
-        d_oxy = 1
-        last_input_c = 0
+        break if Input.dir4 > 0
       end
-      last_input = Input.dir4
     end
     self.arrows_visible = false
     Input.update
@@ -5701,10 +5721,10 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def in_viewport?
     return true if self.viewport.nil?
-    x_ = self.x - self.ox + self.width / 2
-    y_ = self.y - self.oy + self.height / 2
-    return false if x_ < 0 || x_ > self.viewport.rect.width
-    return false if y_ < 0 || y_ > self.viewport.rect.height
+    lux = self.x; luy = self.y
+    rdx = lux + self.width; rdy = luy + self.height
+    return false if lux < 0 || rdx > self.viewport.rect.width
+    return false if luy < 0 || rdy > self.viewport.rect.height
     return true
   end
   #--------------------------------------------------------------------------
@@ -5763,6 +5783,7 @@ class Sprite_EagleCharacter < Sprite
     reset_oxy(7)
     # 重置参数
     @dx = 0; @dy = 0 # 动态移动时的偏移值
+    @flag_first_move_in = true # 第一次移入？
     @flag_update_pos = true # 需要时刻更新位置？
     @flag_move = nil # 在移动中？
     @flag_in_charapool = false # 已经被放入文字池？
@@ -5795,6 +5816,14 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def reset_oxy(o)
     MESSAGE_EX.reset_sprite_oxy(self, o)
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置显示视图的原点位置
+  # （当在移入移出时，若所绑定窗口的内容原点变动，靠此方法强制移动）
+  #--------------------------------------------------------------------------
+  def reset_window_oxy(ox = nil, oy = nil)
+    @_ox = ox if ox
+    @_oy = oy if oy
   end
   #--------------------------------------------------------------------------
   # ● 结束
@@ -5940,10 +5969,17 @@ class Sprite_EagleCharacter < Sprite
       update_position
       self.zoom_x = self.zoom_y = 1.0
       self.opacity = 255
+      @flag_first_move_in = false
     elsif sym == :cout
       finish
     end
     @flag_move = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 正在进行移入移出？
+  #--------------------------------------------------------------------------
+  def move_updating?
+    @flag_move != nil
   end
 
   #--------------------------------------------------------------------------
@@ -5977,9 +6013,10 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def move_in
     params = @params[:cin]
-    if params.nil? # 如果没有定义移入特效
-      rebind_viewport # 重新绑定视图
-      update_position
+    rebind_viewport # 重新绑定视图
+    update_position # 记录包含视图位移的值
+     # 如果没有定义移入特效 或 不是首次移入且在视图外
+    if params.nil? || (!@flag_first_move_in && !in_viewport?)
       self.opacity = 255 # 直接指定不透明度
       return
     end
@@ -6032,9 +6069,12 @@ class Sprite_EagleCharacter < Sprite
   # ● 执行移出（外部调用的方法）（临时移出，之后可以再执行move_in）
   #--------------------------------------------------------------------------
   def move_out_temp
+    finish if !in_viewport? # 若精灵在视图外，则会直接结束
     unbind_viewport
-    process_move_out
-    update_position
+    if !finish?
+      process_move_out
+      update_position
+    end
   end
   #--------------------------------------------------------------------------
   # ● 处理移出模式
