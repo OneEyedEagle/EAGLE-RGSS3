@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 组件-位图绘制窗口皮肤 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.8.30.21 新增设置更多参数
+# - 2021.2.20.12 修复 rect_b 绘制错位的问题
 #==============================================================================
 # - 本插件提供了在位图上绘制窗口皮肤的方法
 #-----------------------------------------------------------------------------
@@ -74,11 +74,11 @@ module EAGLE
     # 左上
     draw_windowskin_corner(rect_b.x, rect_b.y, skin, Rect.new(64, 0, 16, 16), bitmap)
     # 右上
-    draw_windowskin_corner(rect_b.width - 16, rect_b.y, skin, Rect.new(112, 0, 16, 16), bitmap)
+    draw_windowskin_corner(rect_b.x + rect_b.width - 16, rect_b.y, skin, Rect.new(112, 0, 16, 16), bitmap)
     # 左下
     draw_windowskin_corner(rect_b.x, rect_b.y + rect_b.height - 16, skin, Rect.new(64, 48, 16, 16), bitmap)
     # 右下
-    draw_windowskin_corner(rect_b.width - 16, rect_b.y + rect_b.height - 16,
+    draw_windowskin_corner(rect_b.x + rect_b.width - 16, rect_b.y + rect_b.height - 16,
       skin, Rect.new(112, 48, 16, 16), bitmap)
     # 上边界
     draw_windowskin_h_border(rect_b.y, skin, Rect.new(80, 0, 32, 16), bitmap, rect_b)
@@ -87,7 +87,7 @@ module EAGLE
     # 左边界
     draw_windowskin_v_border(rect_b.x, skin, Rect.new(64, 16, 16, 32), bitmap, rect_b)
     # 右边界
-    draw_windowskin_v_border(rect_b.width - 16, skin, Rect.new(112, 16, 16, 32), bitmap, rect_b)
+    draw_windowskin_v_border(rect_b.x + rect_b.width - 16, skin, Rect.new(112, 16, 16, 32), bitmap, rect_b)
   end
   # 绘制四角
   def self.draw_windowskin_corner(x, y, skin, src_rect, bitmap)
@@ -98,8 +98,8 @@ module EAGLE
     _x = rect_b.x + 16
     _y = y
     _src_rect = src_rect
-    while(_x < rect_b.width - 16)
-      d = rect_b.width - 16 - _x
+    while(_x < rect_b.x + rect_b.width - 16)
+      d = rect_b.x + rect_b.width - 16 - _x
       src_rect.width = d if d < 32
       bitmap.blt(_x, _y, skin, _src_rect)
       _x += src_rect.width

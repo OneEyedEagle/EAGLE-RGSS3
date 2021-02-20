@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.2.19.19 优化文字移出
+# - 2021.2.20.9 性能优化
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -5829,6 +5829,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 结束
   #--------------------------------------------------------------------------
   def finish
+    @flag_move = :end
     self.opacity = 0
   end
   #--------------------------------------------------------------------------
@@ -5903,6 +5904,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 更新
   #--------------------------------------------------------------------------
   def update
+    return if @flag_move == :end
     update_position if @flag_update_pos
     return move_update(@flag_move) if @flag_move
     if update_effects?
@@ -5962,6 +5964,7 @@ class Sprite_EagleCharacter < Sprite
     move_end(sym) if params[:tc] == params[:t]
   end
   def move_end(sym = :cin)
+    @flag_move = nil
     rebind_viewport
     reset_oxy(7)
     if sym == :cin
@@ -5972,8 +5975,8 @@ class Sprite_EagleCharacter < Sprite
       @flag_first_move_in = false
     elsif sym == :cout
       finish
+      @flag_move = :end
     end
-    @flag_move = nil
   end
   #--------------------------------------------------------------------------
   # ● 正在进行移入移出？
@@ -6018,6 +6021,7 @@ class Sprite_EagleCharacter < Sprite
      # 如果没有定义移入特效 或 不是首次移入且在视图外
     if params.nil? || (!@flag_first_move_in && !in_viewport?)
       self.opacity = 255 # 直接指定不透明度
+      @flag_move = nil
       return
     end
     unbind_viewport # 为了移入，先取消视图
