@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.2.21.20 修复提示精灵位图释放错误的问题
+# - 2021.2.21.22 新增显示图片
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -34,6 +34,14 @@ $imported["EAGLE-MessageChat"] = true
 #     但由于排版限制，最终都会缩放至指定的 FACE_W * FACE_H 的大小进行显示
 #     因此请注意确保脸图大小为预设大小的整数倍，以不因缩放处理而显示模糊
 #
+#  4、在“文本框”中，编写 <pic: filename> 用于显示图片
+#     （图片放置于 Graphics/Pictures 目录下）
+#    如： 【小明】<pic: bird_happy>
+#    将显示姓名：小明；显示图片：bird_happy
+#
+#     但由于文字绘制方式问题，图片将被拆开且优先单独显示成一个对话
+#     图片若大于可显示的最大宽度，将自动缩小至最大宽度
+#
 #----------------------------------------------------------------------------
 # 【注意】
 #
@@ -50,6 +58,7 @@ $imported["EAGLE-MessageChat"] = true
 #
 # - 自定义窗口皮肤
 # - Tag图片
+# - 显示图片
 #
 #==============================================================================
 module MESSAGE_CHAT
@@ -120,10 +129,28 @@ module MESSAGE_CHAT
   # ● 从 显示文本 提取信息
   #--------------------------------------------------------------------------
   def self.extract_info(text, params)
+    result = false # 是否成功导入了对话框
     # 提取位于开头的姓名
     n = ""
-    text.sub!(/^【(.*?)】|\[(.*?)\]/) { n = $1 || $2; "" }
+    text.sub!(/^【(.*?)】|\[(.*?)\]/m) { n = $1 || $2; "" }
     params[:name] = n
+    # 提取可能存在的显示图片（将独立为新的对话框显示）
+    text.gsub!(/<pic: ?(.*?)>/im) {
+      _params = params.dup
+      _params[:pic] = $1
+      MESSAGE_CHAT.add(_params)
+      result = true
+      ""
+    }
+    # 提取文本 删去前后的换行
+    text.chomp!
+    text.sub!(/^\n/) { "" }
+    params[:text] = text
+    if text != ""
+      MESSAGE_CHAT.add(params)
+      result = true
+    end
+    return result
   end
 
   #--------------------------------------------------------------------------
@@ -403,7 +430,9 @@ class Sprite_EagleMessage_Chat < Sprite
   #--------------------------------------------------------------------------
   def init_params(_params)
     @params = _params
+    params[:text] ||= ""
     params[:name] ||= ""
+    params[:pic] ||= ""
     params[:face_name] ||= ""
     params[:position] ||= 0
   end
@@ -482,20 +511,29 @@ class Sprite_EagleMessage_Chat < Sprite
     # 上下空白
     spacing_ud = 2
 
-    # 文本宽高
-    text_w_max = self.viewport.rect.width - spacing_lr * 2 - face_w - tag_w
-    ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => 0, :y0 => 0,
-      :w => text_w_max }
-    d = Process_DrawTextEX.new(params[:text], ps)
-    d.run(false)
-    text_w = d.width
-    text_h = d.height
+    # 内容宽高
+    cont_w = 0
+    cont_h = 0
+    cont_w_max = self.viewport.rect.width - spacing_lr * 2 - face_w - tag_w - 2
+    #  若绘制文本
+    if params[:text] != ""
+      ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => 0, :y0 => 0,
+        :w => cont_w_max, :lhd => 2 }
+      d = Process_DrawTextEX.new(params[:text], ps)
+      d.run(false)
+      cont_w = d.width
+      cont_h = d.height
+    elsif params[:pic] != ""
+      bitmap_pic = Cache.picture(params[:pic]) rescue Cache.empty_bitmap
+      cont_w = [bitmap_pic.width, cont_w_max].min
+      cont_h = cont_w / bitmap_pic.width * bitmap_pic.height
+    end
 
     # 实际位图宽高
     w = spacing_lr + face_w + tag_w + spacing_lr +
-      [text_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
+      [cont_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
     h = spacing_ud + spacing_ud + 2 +
-      [name_h + text_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, face_h, 32].max
+      [name_h + cont_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, face_h, 32].max
     self.bitmap = Bitmap.new(w, h)
 
     face_x = face_y = bg_x = bg_y = 0
@@ -516,8 +554,8 @@ class Sprite_EagleMessage_Chat < Sprite
     end
     face_y = spacing_ud
     bg_y = spacing_ud + name_h
-    bg_w = [text_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
-    bg_h = [text_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
+    bg_w = [cont_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
+    bg_h = [cont_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
 
     # 绘制背景
     case params[:background]
@@ -550,13 +588,19 @@ class Sprite_EagleMessage_Chat < Sprite
         params[:name], name_ali)
     end
 
-    # 绘制文本
-    text_x = bg_x + MESSAGE_CHAT::TEXT_BORDER_WIDTH
-    text_y = bg_y + MESSAGE_CHAT::TEXT_BORDER_WIDTH
-    ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => text_x, :y0 => text_y,
-      :w => text_w_max }
-    d = Process_DrawTextEX.new(params[:text], ps, self.bitmap)
-    d.run(true)
+    # 绘制内容
+    cont_x = bg_x + MESSAGE_CHAT::TEXT_BORDER_WIDTH
+    cont_y = bg_y + MESSAGE_CHAT::TEXT_BORDER_WIDTH
+    if params[:text] != ""
+      ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => cont_x, :y0 => cont_y,
+        :w => cont_w_max, :lhd => 2 }
+      d = Process_DrawTextEX.new(params[:text], ps, self.bitmap)
+      d.run(true)
+    elsif params[:pic] != ""
+      rect = Rect.new(0, 0, bitmap_pic.width, bitmap_pic.height)
+      des_rect = Rect.new(cont_x, cont_y, cont_w, cont_h)
+      self.bitmap.stretch_blt(des_rect, bitmap_pic, rect)
+    end
   end
 end
 
@@ -592,9 +636,8 @@ class Game_Interpreter
       ts.push(@list[@index].parameters[0])
     end
     t = ts.inject("") {|r, text| r += text + "\n" }
-    MESSAGE_CHAT.extract_info(t, params)
-    params[:text] = t
-    MESSAGE_CHAT.add(params)
+    result = MESSAGE_CHAT.extract_info(t, params)
+    return if result == false
 
     if $imported["EAGLE-MessageLog"]
       ps = {}
