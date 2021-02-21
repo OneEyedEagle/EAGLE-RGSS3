@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.2.20.20
+# - 2021.2.21.14 更新
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -26,6 +26,14 @@ $imported["EAGLE-MessageChat"] = true
 #    如： 【小明】今天天气真好
 #    将显示姓名：小明；显示文本：今天天气真好
 #
+#  3、脸图规格扩展（同【对话框扩展 by老鹰】中的处理）
+#      当脸图文件名包含 _数字1x数字2 时（其中为字母x），
+#      将定义该脸图文件的规格为 行数（数字1）x列数（数字2）（默认2行x4列）
+#    如：ace_actor_1x1.png → 该脸图规格为 1×1，含有一张脸图，只有index为0时生效
+#
+#     但由于排版限制，最终都会缩放至指定的 FACE_W * FACE_H 的大小进行显示
+#     因此请注意确保脸图大小为预设大小的整数倍，以不因缩放处理而显示模糊
+#
 #----------------------------------------------------------------------------
 # 【注意】
 #
@@ -41,8 +49,7 @@ $imported["EAGLE-MessageChat"] = true
 # 【TODO】
 #
 # - 自定义窗口皮肤
-# - 脸图规格扩展
-# - 聊天式对话开启中途，允许暂时开启默认对话框
+# - Tag图片
 #
 #==============================================================================
 module MESSAGE_CHAT
@@ -50,6 +57,12 @@ module MESSAGE_CHAT
   # ○【常量】当该序号开关开启时，事件的 显示文章 将替换成 聊天式对话
   #--------------------------------------------------------------------------
   S_ID = 15
+  #--------------------------------------------------------------------------
+  # ○【常量】当S_ID序号开关开启时，该开关开启时，将重新使用默认对话框
+  #  即不关闭 聊天式对话 的同时使用默认对话框
+  #  【注意】需要手动关闭该开关，以确保聊天式对话能够正常继续使用！
+  #--------------------------------------------------------------------------
+  S_ID_MSG = 14
   #--------------------------------------------------------------------------
   # ○【常量】定义初始的视图矩形
   #--------------------------------------------------------------------------
@@ -63,13 +76,18 @@ module MESSAGE_CHAT
   #--------------------------------------------------------------------------
   FONT_SIZE = 16
   #--------------------------------------------------------------------------
+  # ○【常量】文本周围留出空白的宽度（用于绘制窗口的边框）
+  #--------------------------------------------------------------------------
+  TEXT_BORDER_WIDTH = 8
+  #--------------------------------------------------------------------------
   # ○【常量】定义姓名文字的大小
   #--------------------------------------------------------------------------
   NAME_FONT_SIZE = 12
   #--------------------------------------------------------------------------
-  # ○【常量】文本周围留出空白的宽度（用于绘制窗口的边框）
+  # ○【常量】定义脸图的绘制宽度和高度
   #--------------------------------------------------------------------------
-  TEXT_BORDER_WIDTH = 8
+  FACE_W = 48
+  FACE_H = 48
 
   #--------------------------------------------------------------------------
   # ●【常量】提示文本的字体大小
@@ -127,6 +145,22 @@ module MESSAGE_CHAT
   #--------------------------------------------------------------------------
   def self.empty?
     @data.empty?
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 绘制角色肖像图
+  #--------------------------------------------------------------------------
+  def self.draw_face(bitmap, face_name, face_index, x, y, w=96, h=96)
+    _bitmap = Cache.face(face_name)
+    face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
+    num_line = $1 ? $1.to_i : 2
+    num_col = $2 ? $2.to_i : 4
+    sole_w = _bitmap.width / num_col
+    sole_h = _bitmap.height / num_line
+
+    rect = Rect.new(face_index % 4 * sole_w, face_index / 4 * sole_h, sole_w, sole_h)
+    des_rect = Rect.new(x, y, w, h)
+    bitmap.stretch_blt(des_rect, _bitmap, rect)
   end
 end
 #===============================================================================
@@ -388,6 +422,18 @@ class Sprite_EagleMessage_Chat < Sprite
     @_y = y if y
   end
   #--------------------------------------------------------------------------
+  # ● 获取背景色 1
+  #--------------------------------------------------------------------------
+  def back_color1
+    Color.new(0, 0, 0, 160)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取背景色 2
+  #--------------------------------------------------------------------------
+  def back_color2
+    Color.new(0, 0, 0, 0)
+  end
+  #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
   def update
@@ -406,9 +452,7 @@ class Sprite_EagleMessage_Chat < Sprite
     when 2 # 左对齐
       self.x = @_x
     end
-    if @window
-      @y0 = @window.vp_oy
-    end
+    @y0 = @window.vp_oy if @window
     self.x = self.x - @x0
     self.y = @_y - @y0
   end
@@ -425,8 +469,8 @@ class Sprite_EagleMessage_Chat < Sprite
     face_w = 0
     face_h = 0
     if params[:face_name] != ""
-      face_w = 32
-      face_h = 32
+      face_w = MESSAGE_CHAT::FACE_W
+      face_h = MESSAGE_CHAT::FACE_H
     end
     # tag用的空白宽度
     tag_w = 8
@@ -492,8 +536,8 @@ class Sprite_EagleMessage_Chat < Sprite
 
     # 绘制脸图
     if params[:face_name] != ""
-      draw_face(self.bitmap, params[:face_name], params[:face_index],
-        face_x, face_y, face_w, face_h)
+      MESSAGE_CHAT.draw_face(self.bitmap, params[:face_name],
+        params[:face_index], face_x, face_y, face_w, face_h)
     end
 
     # 绘制姓名
@@ -502,8 +546,8 @@ class Sprite_EagleMessage_Chat < Sprite
       name_y = spacing_ud
       name_w = bg_w
       self.bitmap.font.size = MESSAGE_CHAT::NAME_FONT_SIZE
-      draw_name(self.bitmap, params[:name],
-        name_x, name_y, name_w, name_h, name_ali)
+      self.bitmap.draw_text(name_x, name_y, name_w, name_h,
+        params[:name], name_ali)
     end
 
     # 绘制文本
@@ -513,34 +557,6 @@ class Sprite_EagleMessage_Chat < Sprite
       :w => text_w_max }
     d = Process_DrawTextEX.new(params[:text], ps, self.bitmap)
     d.run(true)
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制角色肖像图
-  #     enabled : 有效的标志。false 的时候使用半透明效果绘制
-  #--------------------------------------------------------------------------
-  def draw_face(bitmap, face_name, face_index, x, y, w=96, h=96, enabled = true)
-    _bitmap = Cache.face(face_name)
-    rect = Rect.new(face_index % 4 * 96, face_index / 4 * 96, 96, 96)
-    des_rect = Rect.new(x, y, w, h)
-    bitmap.stretch_blt(des_rect, _bitmap, rect, enabled ? 255 : 120)
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制名字
-  #--------------------------------------------------------------------------
-  def draw_name(bitmap, name, x, y, w, h, align = 0)
-    bitmap.draw_text(x, y, w, h, name, align)
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取背景色 1
-  #--------------------------------------------------------------------------
-  def back_color1
-    Color.new(0, 0, 0, 160)
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取背景色 2
-  #--------------------------------------------------------------------------
-  def back_color2
-    Color.new(0, 0, 0, 0)
   end
 end
 
@@ -553,7 +569,11 @@ class Game_Interpreter
   #--------------------------------------------------------------------------
   alias eagle_message_chat_command_101 command_101
   def command_101
-    return call_message_chat if $game_switches[MESSAGE_CHAT::S_ID]
+    if $game_switches[MESSAGE_CHAT::S_ID]
+      if $game_switches[MESSAGE_CHAT::S_ID_MSG] == false
+        return call_message_chat
+      end
+    end
     eagle_message_chat_command_101
   end
   #--------------------------------------------------------------------------
@@ -565,6 +585,7 @@ class Game_Interpreter
     params[:face_index] = @params[1]
     params[:background] = @params[2]
     params[:position] = @params[3]
+
     ts = []
     while next_event_code == 401       # 文字数据
       @index += 1
@@ -582,10 +603,13 @@ class Game_Interpreter
     end
 
     Input.update
-    loop do
-      Fiber.yield
-      break if Input.trigger?(:C)
-    end
+    Fiber.yield until message_chat_next?
+  end
+  #--------------------------------------------------------------------------
+  # ● 聊天对话时 继续下一条指令？
+  #--------------------------------------------------------------------------
+  def message_chat_next?
+    Input.trigger?(:C)
   end
 end
 
