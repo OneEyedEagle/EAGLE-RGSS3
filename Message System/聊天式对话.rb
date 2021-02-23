@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.2.21.22 新增显示图片
+# - 2021.2.23.23 新增皮肤切换
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -42,6 +42,15 @@ $imported["EAGLE-MessageChat"] = true
 #     但由于文字绘制方式问题，图片将被拆开且优先单独显示成一个对话
 #     图片若大于可显示的最大宽度，将自动缩小至最大宽度
 #
+#  5、在“文本框”中，编写 <no wait> 用于不等待按键，将自动继续之后的事件指令
+#     （也可以写成 <nowait>，大小写任意）
+#
+#  6、在“文本框”中，编写 <skin: id> 用于为当前对话框切换窗口皮肤
+#     其中 id 首先将在ID_TO_SKIN中查找预设的名称映射
+#       若不存在，则认定其为窗口皮肤的名称（位于Graphics/System目录下）
+#     如：<skin:0> 将切换回默认皮肤
+#     如：<skin: Window_Blue> 将切换成 Window_Blue 名称的窗口皮肤文件
+#
 #----------------------------------------------------------------------------
 # 【注意】
 #
@@ -56,9 +65,7 @@ $imported["EAGLE-MessageChat"] = true
 #----------------------------------------------------------------------------
 # 【TODO】
 #
-# - 自定义窗口皮肤
 # - Tag图片
-# - 显示图片
 #
 #==============================================================================
 module MESSAGE_CHAT
@@ -79,7 +86,13 @@ module MESSAGE_CHAT
   #--------------------------------------------------------------------------
   # ○【常量】定义初始的屏幕Z值
   #--------------------------------------------------------------------------
-  INIT_Z = 100
+  INIT_Z = 10
+  #--------------------------------------------------------------------------
+  # ○【常量】定义文本块的初始Y位置（在视图中的位置）
+  # 其中 <vph> 将被替换为视图的高度，<th> 将被替换成文本块的高度
+  # 如 "<vph> - <th>" 代表最新的对话将位于视图的最底部
+  #--------------------------------------------------------------------------
+  INIT_TEXT_Y = "<vph> - <th>"
   #--------------------------------------------------------------------------
   # ○【常量】定义对话文字的大小
   #--------------------------------------------------------------------------
@@ -97,6 +110,20 @@ module MESSAGE_CHAT
   #--------------------------------------------------------------------------
   FACE_W = 48
   FACE_H = 48
+  #--------------------------------------------------------------------------
+  # ○【常量】定义两个对话之间的Y方向间隔
+  #--------------------------------------------------------------------------
+  OFFSET = 2
+
+  #--------------------------------------------------------------------------
+  # ○【常量】定义对话框皮肤
+  #--------------------------------------------------------------------------
+  ID_TO_SKIN = {}
+  ID_TO_SKIN[0] = "Window"  # 默认窗口皮肤
+  #--------------------------------------------------------------------------
+  # ○【常量】定义默认使用的对话框皮肤
+  #--------------------------------------------------------------------------
+  DEF_SKIN_ID = 0
 
   #--------------------------------------------------------------------------
   # ●【常量】提示文本的字体大小
@@ -142,6 +169,9 @@ module MESSAGE_CHAT
       result = true
       ""
     }
+    # 提取可能存在的flags
+    text.gsub!( /<no ?wait>/im ) { params[:flag_no_wait] = true; "" }
+    text.gsub!( /<skin: ?(.*?)>/im ) { params[:skin] = $1; "" }
     # 提取文本 删去前后的换行
     text.chomp!
     text.sub!(/^\n/) { "" }
@@ -189,19 +219,35 @@ module MESSAGE_CHAT
     des_rect = Rect.new(x, y, w, h)
     bitmap.stretch_blt(des_rect, _bitmap, rect)
   end
+  #--------------------------------------------------------------------------
+  # ● 获取窗口皮肤名称
+  #--------------------------------------------------------------------------
+  def self.get_skin_name(sym)
+    return ID_TO_SKIN[sym] if ID_TO_SKIN.has_key?(sym)
+    return ID_TO_SKIN[sym.to_i] if ID_TO_SKIN.has_key?(sym.to_i)
+    return sym
+  end
 end
 #===============================================================================
 # ○ Game_Message
 #===============================================================================
 class Game_Message
-  attr_accessor :eagle_chat_view
+  attr_accessor :eagle_chat_params
   #--------------------------------------------------------------------------
   # ● 清除
   #--------------------------------------------------------------------------
   alias eagle_message_chat_clear clear
   def clear
     eagle_message_chat_clear
-    @eagle_chat_view ||= MESSAGE_CHAT::INIT_VIEW
+    init_chat_params
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化
+  #--------------------------------------------------------------------------
+  def init_chat_params
+    @eagle_chat_params ||= {}
+    @eagle_chat_params[:view] ||= MESSAGE_CHAT::INIT_VIEW
+    @eagle_chat_params[:skin] ||= MESSAGE_CHAT::DEF_SKIN_ID
   end
 end
 #===============================================================================
@@ -303,7 +349,7 @@ class Window_EagleMessage_Chat < Window
   # ● 主线程
   #--------------------------------------------------------------------------
   def fiber_main
-    reset_viewport($game_message.eagle_chat_view)
+    reset_viewport($game_message.eagle_chat_params[:view])
     show_sprite_hint
     loop do
       Fiber.yield
@@ -357,7 +403,7 @@ class Window_EagleMessage_Chat < Window
   # ● 将视角移动到底部
   #--------------------------------------------------------------------------
   def reset_vp_to_bottom
-    des_vp_oy = @blocks[-1]._y + @blocks[-1].height + 1 - @viewport.rect.height
+    des_vp_oy = @blocks[-1]._y - get_text_init_y(@blocks[-1])
     init_oy = @vp_oy
     d_oy = des_vp_oy - init_oy
     _i = 0; _t = 30
@@ -400,11 +446,20 @@ class Window_EagleMessage_Chat < Window
   #--------------------------------------------------------------------------
   def reset_positions(new_block)
     if @blocks.empty?
-      y = @viewport.rect.height - new_block.height
+      y = get_text_init_y(new_block)
     else
-      y = @blocks[-1]._y + @blocks[-1].height
+      y = @blocks[-1]._y + @blocks[-1].height + MESSAGE_CHAT::OFFSET
     end
     new_block.reset_position(0, y)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取文本块的初始位置
+  #--------------------------------------------------------------------------
+  def get_text_init_y(block)
+    t = MESSAGE_CHAT::INIT_TEXT_Y.dup
+    t.gsub!( /<vph>/im ) { "#{@viewport.rect.height}" }
+    t.gsub!( /<th>/im ) { "#{block.height}" }
+    return eval(t).to_i
   end
 end
 #===============================================================================
@@ -430,11 +485,14 @@ class Sprite_EagleMessage_Chat < Sprite
   #--------------------------------------------------------------------------
   def init_params(_params)
     @params = _params
-    params[:text] ||= ""
-    params[:name] ||= ""
-    params[:pic] ||= ""
     params[:face_name] ||= ""
+    params[:face_index] ||= 0
+    params[:background] ||= 2
     params[:position] ||= 0
+    params[:text] ||= ""
+    params[:pic] ||= ""
+    params[:name] ||= ""
+    params[:skin] ||= $game_message.eagle_chat_params[:skin]
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -489,10 +547,16 @@ class Sprite_EagleMessage_Chat < Sprite
   # ● 重绘
   #--------------------------------------------------------------------------
   def redraw
-    # 姓名高度
+    # 姓名宽高
+    name_w = 0
     name_h = 0
     if params[:name] != ""
-      name_h = 16
+      _bitmap = Cache.empty_bitmap
+      _bitmap.font.size = MESSAGE_CHAT::NAME_FONT_SIZE
+      r = _bitmap.text_size(params[:name])
+      name_w = r.width + 2
+      name_h = r.height
+      _bitmap.dispose
     end
     # 脸图宽高
     face_w = 0
@@ -506,10 +570,12 @@ class Sprite_EagleMessage_Chat < Sprite
     if params[:background] == 1 # 暗色背景无tag
       tag_w = 0
     end
-    # 左右空白
+    # 对话框外围 左右空白
     spacing_lr = 4
-    # 上下空白
+    # 对话框外围 上下空白
     spacing_ud = 2
+    # 姓名与背景之间的空白
+    spacing_name = 2
 
     # 内容宽高
     cont_w = 0
@@ -531,8 +597,8 @@ class Sprite_EagleMessage_Chat < Sprite
 
     # 实际位图宽高
     w = spacing_lr + face_w + tag_w + spacing_lr +
-      [cont_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
-    h = spacing_ud + spacing_ud + 2 +
+      [cont_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, name_w, 32].max
+    h = spacing_ud + spacing_ud + spacing_name +
       [name_h + cont_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, face_h, 32].max
     self.bitmap = Bitmap.new(w, h)
 
@@ -542,6 +608,7 @@ class Sprite_EagleMessage_Chat < Sprite
     when 0 # 居右（居上）
       face_x = w - spacing_lr - face_w
       bg_x = spacing_lr
+      bg_x += [name_w - cont_w, 0].max if name_w > 0
       name_ali = 2
     when 1 # 居中
       face_x = spacing_lr
@@ -553,14 +620,15 @@ class Sprite_EagleMessage_Chat < Sprite
       name_ali = 0
     end
     face_y = spacing_ud
-    bg_y = spacing_ud + name_h
+    bg_y = spacing_ud + name_h + spacing_name
     bg_w = [cont_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
     bg_h = [cont_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
 
     # 绘制背景
     case params[:background]
     when 0 # 普通背景
-      EAGLE.draw_windowskin("Window", self.bitmap,
+      skin = MESSAGE_CHAT.get_skin_name(params[:skin])
+      EAGLE.draw_windowskin(skin, self.bitmap,
         Rect.new(bg_x, bg_y, bg_w, bg_h))
     when 1 # 暗色背景
       rect1 = Rect.new(0, 0, w, 12)
@@ -582,7 +650,7 @@ class Sprite_EagleMessage_Chat < Sprite
     if params[:name] != ""
       name_x = bg_x
       name_y = spacing_ud
-      name_w = bg_w
+      name_w = [name_w, bg_w].max
       self.bitmap.font.size = MESSAGE_CHAT::NAME_FONT_SIZE
       self.bitmap.draw_text(name_x, name_y, name_w, name_h,
         params[:name], name_ali)
@@ -646,6 +714,7 @@ class Game_Interpreter
     end
 
     Input.update
+    return if params[:flag_no_wait]
     Fiber.yield until message_chat_next?
   end
   #--------------------------------------------------------------------------
