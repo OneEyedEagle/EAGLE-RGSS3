@@ -594,6 +594,8 @@ class Sprite_EagleMessage_Chat < Sprite
       cont_w = [bitmap_pic.width, cont_w_max].min
       cont_h = cont_w / bitmap_pic.width * bitmap_pic.height
     end
+    bg_w = [cont_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
+    bg_h = [cont_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
 
     # 实际位图宽高
     w = spacing_lr + face_w + tag_w + spacing_lr +
@@ -608,7 +610,7 @@ class Sprite_EagleMessage_Chat < Sprite
     when 0 # 居右（居上）
       face_x = w - spacing_lr - face_w
       bg_x = spacing_lr
-      bg_x += [name_w - cont_w, 0].max if name_w > 0
+      bg_x = name_w - bg_w if name_w > bg_w
       name_ali = 2
     when 1 # 居中
       face_x = spacing_lr
@@ -621,8 +623,6 @@ class Sprite_EagleMessage_Chat < Sprite
     end
     face_y = spacing_ud
     bg_y = spacing_ud + name_h + spacing_name
-    bg_w = [cont_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
-    bg_h = [cont_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
 
     # 绘制背景
     case params[:background]
@@ -649,6 +649,7 @@ class Sprite_EagleMessage_Chat < Sprite
     # 绘制姓名
     if params[:name] != ""
       name_x = bg_x
+      name_x = spacing_lr if name_w > cont_w
       name_y = spacing_ud
       name_w = [name_w, bg_w].max
       self.bitmap.font.size = MESSAGE_CHAT::NAME_FONT_SIZE
