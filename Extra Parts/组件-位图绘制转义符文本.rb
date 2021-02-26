@@ -1,7 +1,7 @@
 #==============================================================================
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2021.2.21.21 换行宽度计算失误
+# - 2021.2.25.21 新增半透明绘制
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #-----------------------------------------------------------------------------
@@ -31,20 +31,24 @@ class Process_DrawTextEX
   # ● 初始化
   #  params
   #   :font_size → 绘制初始的文字大小
+  #   :font_color → 指定初始的绘制颜色 Color.new
   #   :x0 → 指定每行的向右偏移值
   #   :y0 → 指定首行的向下偏移值
   #   :w → 规定最大行宽，若超出则会进行自动换行
   #   :lhd → 在换行时，与下一行的间隔距离
+  #   :trans → 是否半透明
   #--------------------------------------------------------------------------
   def initialize(text, params = {}, bitmap = nil)
     @text = convert_escape_characters(text)
     @bitmap = bitmap || Cache.empty_bitmap
     @params = params
     @params[:font_size] ||= @bitmap.font.size
+    @params[:font_color] ||= text_color(0)
     @params[:x0] ||= 0
     @params[:y0] ||= 0
     @params[:w] ||= nil
     @params[:lhd] ||= 0
+    @params[:trans] ||= false
     @info = {}
     @info[:w] ||= [] # line_index => width
     @info[:h] ||= [] # line_index => height
@@ -111,6 +115,7 @@ class Process_DrawTextEX
       :y0 => @params[:y0], :y => 0,
       :w => 0, :h => 0, :flag_draw => flag_draw }
     @bitmap.font.size = @params[:font_size]
+    change_color(@params[:font_color], !@params[:trans])
     process_new_line(pos)
     process_character(text.slice!(0, 1), text, pos) until text.empty?
   end
@@ -216,7 +221,7 @@ class Process_DrawTextEX
   def process_escape_character(code, text, pos)
     case code.upcase
     when 'C'
-      change_color(text_color(obtain_escape_param(text)))
+      change_color(text_color(obtain_escape_param(text)), !@params[:trans])
     when 'I'
       process_draw_icon(obtain_escape_param(text), pos)
     when '{'
@@ -248,7 +253,7 @@ class Process_DrawTextEX
   def process_draw_icon(icon_index, pos)
     w = 24; h = 24
     process_draw_before(pos[:x], pos[:y], w, h, pos)
-    draw_icon(@bitmap, icon_index, pos[:x], pos[:y]) if pos[:flag_draw]
+    draw_icon(@bitmap, icon_index, pos[:x], pos[:y], !@params[:trans]) if pos[:flag_draw]
     process_draw_after(pos[:x], pos[:y], w, h, pos)
   end
   #--------------------------------------------------------------------------

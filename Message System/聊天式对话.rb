@@ -6,14 +6,16 @@
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.2.23.23 新增皮肤切换
+# - 2021.2.26.0 新增选项嵌入
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
 # 【使用】
 #
 # - 当 S_ID 号开关开启时，事件指令-显示文字 将被替换成聊天式对话
-#    此时默认的对话框不再打开，但选择框等其余事件指令依然生效
+#    同时 事件指令-显示选项 将被替换成聊天式选择
+#
+#    此时默认的对话框不再打开
 #
 # - 当 S_ID 号开关关闭时，将立即关闭全部聊天式对话
 #
@@ -114,6 +116,10 @@ module MESSAGE_CHAT
   # ○【常量】定义两个对话之间的Y方向间隔
   #--------------------------------------------------------------------------
   OFFSET = 2
+  #--------------------------------------------------------------------------
+  # ○【常量】定义取消分支的显示文本
+  #--------------------------------------------------------------------------
+  TEXT_CHOICE_CANCEL = "（不说话）"
 
   #--------------------------------------------------------------------------
   # ○【常量】定义对话框皮肤
@@ -132,7 +138,7 @@ module MESSAGE_CHAT
   #--------------------------------------------------------------------------
   # ● 【设置】绘制提示精灵
   #--------------------------------------------------------------------------
-  def self.draw_hints(s)
+  def self.draw_hints(s, fs = {})
     s.bitmap ||= Bitmap.new(Graphics.width, 24)
     s.bitmap.clear
     s.bitmap.font.size = HINT_FONT_SIZE
@@ -141,11 +147,38 @@ module MESSAGE_CHAT
     s.bitmap.fill_rect(0, 0, s.width, 1,
       Color.new(255,255,255,120))
 
-    # 绘制 取消键-上一页
-    d = 20
-    s.bitmap.draw_text(0+d, 2, s.width, s.height, "Shift键 - 回到底部", 0)
-    s.bitmap.draw_text(0, 2, s.width-d, s.height, "确定键 - 继续", 2)
-    s.bitmap.draw_text(0, 2, s.width, s.height, "上下键 - 滚动查看", 1)
+    # 绘制
+    t1 = ""
+    t2 = ""
+    t3 = ""
+
+    if fs[:shift]
+      t1 = "Shift键 - 回到底部"
+    end
+    if fs[:move]
+      t2 = "上下键 - 滚动"
+    end
+    if fs[:text]
+      t3 = "确定键 - 继续"
+    end
+    if fs[:choice]
+      t2 += " | 切换选项"
+      t3 = "确定键 - 选择"
+      if fs[:choice].is_a?(Integer) && fs[:choice] >= 0
+        t3 = "确定键、取消键 - 选择"
+      end
+    end
+
+    if fs[:choice_lock]
+      t1 = "确定键 - 选择"
+      t2 = fs[:choice_lock]
+      t3 = "取消键 - 撤销"
+    end
+
+    d = 10
+    s.bitmap.draw_text(0+d, 2, s.width, s.height, t1, 0)
+    s.bitmap.draw_text(0, 2, s.width-d, s.height, t3, 2)
+    s.bitmap.draw_text(0, 2, s.width, s.height, t2, 1)
 
     # 设置摆放位置
     s.oy = s.height
@@ -155,8 +188,10 @@ module MESSAGE_CHAT
   #--------------------------------------------------------------------------
   # ● 从 显示文本 提取信息
   #--------------------------------------------------------------------------
-  def self.extract_info(text, params)
-    result = false # 是否成功导入了对话框
+  def self.extract_text_info(text, params)
+    result = false # 是否成功导入了对话
+    # 定义类型
+    params[:type] = :text
     # 提取位于开头的姓名
     n = ""
     text.sub!(/^【(.*?)】|\[(.*?)\]/m) { n = $1 || $2; "" }
@@ -165,7 +200,7 @@ module MESSAGE_CHAT
     text.gsub!(/<pic: ?(.*?)>/im) {
       _params = params.dup
       _params[:pic] = $1
-      MESSAGE_CHAT.add(_params)
+      $game_message.add_chat(_params)
       result = true
       ""
     }
@@ -177,31 +212,10 @@ module MESSAGE_CHAT
     text.sub!(/^\n/) { "" }
     params[:text] = text
     if text != ""
-      MESSAGE_CHAT.add(params)
+      $game_message.add_chat(params)
       result = true
     end
     return result
-  end
-
-  #--------------------------------------------------------------------------
-  # ● 新增一个文本块
-  #--------------------------------------------------------------------------
-  @data = []
-  def self.add(params = {})
-    @data.push(params)
-  end
-  #--------------------------------------------------------------------------
-  # ● 移出一个文本块
-  #--------------------------------------------------------------------------
-  def self.get
-    return nil if empty?
-    @data.shift
-  end
-  #--------------------------------------------------------------------------
-  # ● 没有了文本块？
-  #--------------------------------------------------------------------------
-  def self.empty?
-    @data.empty?
   end
 
   #--------------------------------------------------------------------------
@@ -232,22 +246,56 @@ end
 # ○ Game_Message
 #===============================================================================
 class Game_Message
-  attr_accessor :eagle_chat_params
+  attr_accessor  :eagle_chat_params
   #--------------------------------------------------------------------------
   # ● 清除
   #--------------------------------------------------------------------------
   alias eagle_message_chat_clear clear
   def clear
     eagle_message_chat_clear
-    init_chat_params
+    clear_chat_params
   end
   #--------------------------------------------------------------------------
-  # ● 初始化
+  # ● 重置
   #--------------------------------------------------------------------------
-  def init_chat_params
+  def clear_chat_params
+    @eagle_chat_data = []
     @eagle_chat_params ||= {}
     @eagle_chat_params[:view] ||= MESSAGE_CHAT::INIT_VIEW
     @eagle_chat_params[:skin] ||= MESSAGE_CHAT::DEF_SKIN_ID
+    @eagle_chat_params[:type] = nil  # 最后导入的文本块的类型
+  end
+  #--------------------------------------------------------------------------
+  # ● 新增一个文本块
+  #--------------------------------------------------------------------------
+  def add_chat(data = {})
+    @eagle_chat_data.push(data)
+  end
+  #--------------------------------------------------------------------------
+  # ● 移出一个文本块
+  #--------------------------------------------------------------------------
+  def get_chat
+    return nil if chat_empty?
+    @eagle_chat_data.shift
+  end
+  #--------------------------------------------------------------------------
+  # ● 没有了文本块？
+  #--------------------------------------------------------------------------
+  def chat_empty?
+    @eagle_chat_data.empty?
+  end
+  #--------------------------------------------------------------------------
+  # ● 等待额外处理？
+  #--------------------------------------------------------------------------
+  def chat_busy?
+    @eagle_chat_params[:type] != nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 需要在事件解释器中等待？
+  #--------------------------------------------------------------------------
+  def chat_wait?
+    # 存在未处理的文本块 或 需要特别处理
+    !chat_empty? || chat_busy?
   end
 end
 #===============================================================================
@@ -283,6 +331,7 @@ class Window_EagleMessage_Chat < Window
     @move_c = 0 # 移速的更新等待计数
     @blocks.each { |b| b.dispose }
     @blocks.clear
+    $game_message.clear_chat_params
   end
   #--------------------------------------------------------------------------
   # ● 初始化提示精灵
@@ -290,6 +339,8 @@ class Window_EagleMessage_Chat < Window
   def init_sprite_hint
     @sprite_hint = Sprite.new
     @sprite_hint.visible = false
+    @flag_hints = {}
+    change_hints(:add, :move)
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -313,7 +364,6 @@ class Window_EagleMessage_Chat < Window
   # ● 显示提示精灵
   #--------------------------------------------------------------------------
   def show_sprite_hint
-    MESSAGE_CHAT.draw_hints(@sprite_hint)
     @sprite_hint.visible = true
   end
   #--------------------------------------------------------------------------
@@ -321,6 +371,19 @@ class Window_EagleMessage_Chat < Window
   #--------------------------------------------------------------------------
   def hide_sprite_hint
     @sprite_hint.visible = false
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新提示
+  #--------------------------------------------------------------------------
+  def change_hints(type, sym, v = true)
+    if type == :add
+      return if @flag_hints[sym] == v
+      @flag_hints[sym] = v
+    elsif type == :del
+      return if @flag_hints[sym] == nil
+      @flag_hints.delete(sym)
+    end
+    MESSAGE_CHAT.draw_hints(@sprite_hint, @flag_hints)
   end
 
   #--------------------------------------------------------------------------
@@ -345,6 +408,7 @@ class Window_EagleMessage_Chat < Window
   def update_blocks
     @blocks.each { |b| b.update }
   end
+
   #--------------------------------------------------------------------------
   # ● 主线程
   #--------------------------------------------------------------------------
@@ -353,15 +417,16 @@ class Window_EagleMessage_Chat < Window
     show_sprite_hint
     loop do
       Fiber.yield
-      update_reset_vp
       update_move if update_move?
+      update_new_blocks if update_new?
+      update_extra_process if update_extra?
       break if finish?
-      add_new_block
     end
     hide_sprite_hint
     reset
     @fiber = nil
   end
+
   #--------------------------------------------------------------------------
   # ● 能够更新移动？
   #--------------------------------------------------------------------------
@@ -377,6 +442,7 @@ class Window_EagleMessage_Chat < Window
     elsif Input.press?(:DOWN)
       @d_oxy += 0.3
     end
+    update_reset_vp
     return if @d_oxy.to_i == 0
     if @blocks[-1].y - @blocks[-1].oy < 0
       @vp_oy -= (@d_oxy * 3)
@@ -397,12 +463,19 @@ class Window_EagleMessage_Chat < Window
   # ● 更新视角重置
   #--------------------------------------------------------------------------
   def update_reset_vp
-    reset_vp_to_bottom if Input.trigger?(:A)
+    s = @blocks[-1]
+    if s.y != get_text_init_y(s)
+      change_hints(:add, :shift)
+      reset_vp_to_bottom if Input.trigger?(:A)
+    else
+      change_hints(:del, :shift)
+    end
   end
   #--------------------------------------------------------------------------
   # ● 将视角移动到底部
   #--------------------------------------------------------------------------
   def reset_vp_to_bottom
+    change_hints(:del, :shift)
     des_vp_oy = @blocks[-1]._y - get_text_init_y(@blocks[-1])
     init_oy = @vp_oy
     d_oy = des_vp_oy - init_oy
@@ -423,34 +496,59 @@ class Window_EagleMessage_Chat < Window
   def ease_value(type, x)
     1 - 2**(-10 * x)
   end
+
   #--------------------------------------------------------------------------
-  # ● 结束？
+  # ● 更新新文本？
   #--------------------------------------------------------------------------
-  def finish?
-    MESSAGE_CHAT.empty? && !$game_switches[MESSAGE_CHAT::S_ID]
+  def update_new?
+    !$game_message.chat_empty? && !$game_message.chat_busy?
   end
   #--------------------------------------------------------------------------
-  # ● 新增一个文本块精灵
+  # ● 更新新文本
   #--------------------------------------------------------------------------
-  def add_new_block
-    d = MESSAGE_CHAT.get
-    return if d.nil?
-    s = Sprite_EagleMessage_Chat.new(self, @viewport, d)
-    reset_positions(s)
-    @blocks.push(s)
-    s.update_position
+  def update_new_blocks
+    loop do
+      d = $game_message.get_chat
+      break if d.nil?
+      add_new_block(d)
+    end
+    s = @blocks[-1]
     reset_vp_to_bottom if s.y - s.oy > @viewport.rect.height - s.height
   end
   #--------------------------------------------------------------------------
-  # ● 重设全部文本块的位置
+  # ● 新增一个精灵
   #--------------------------------------------------------------------------
-  def reset_positions(new_block)
+  def add_new_block(d)
+    type = d[:type]
+    s = method("add_new_block_#{type}").call(d)
+    reset_position(s)
+    @blocks.push(s)
+    $game_message.eagle_chat_params[:type] = type
+    change_hints(:add, type)
+  end
+  #--------------------------------------------------------------------------
+  # ● 新增一个文本块
+  #--------------------------------------------------------------------------
+  def add_new_block_text(d)
+    Sprite_EagleChat_Text.new(self, @viewport, d)
+  end
+  #--------------------------------------------------------------------------
+  # ● 新增一个文本块-选项
+  #--------------------------------------------------------------------------
+  def add_new_block_choice(d)
+    Sprite_EagleChat_Choice.new(self, @viewport, d)
+  end
+  #--------------------------------------------------------------------------
+  # ● 重设文本块的位置
+  #--------------------------------------------------------------------------
+  def reset_position(new_block)
     if @blocks.empty?
       y = get_text_init_y(new_block)
     else
       y = @blocks[-1]._y + @blocks[-1].height + MESSAGE_CHAT::OFFSET
     end
     new_block.reset_position(0, y)
+    new_block.update_position
   end
   #--------------------------------------------------------------------------
   # ● 获取文本块的初始位置
@@ -461,12 +559,96 @@ class Window_EagleMessage_Chat < Window
     t.gsub!( /<th>/im ) { "#{block.height}" }
     return eval(t).to_i
   end
+
+  #--------------------------------------------------------------------------
+  # ● 特殊处理？
+  #--------------------------------------------------------------------------
+  def update_extra?
+    $game_message.chat_busy?
+  end
+  #--------------------------------------------------------------------------
+  # ● 特殊处理
+  #--------------------------------------------------------------------------
+  def update_extra_process
+    result = false
+    case $game_message.eagle_chat_params[:type]
+    when :text; result = update_process_text
+    when :choice; result = update_process_choice
+    end
+    if result
+      change_hints(:del, $game_message.eagle_chat_params[:type])
+      $game_message.eagle_chat_params[:type] = nil
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理纯文字块
+  #  - 按键后结束处理
+  #--------------------------------------------------------------------------
+  def update_process_text
+    Input.trigger?(:C)
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理选项
+  #  - 按键后结束处理
+  #--------------------------------------------------------------------------
+  def update_process_choice
+    s = @blocks[-1]
+    if !s.in_view?
+      change_hints(:del, :choice)
+      return false
+    end
+    change_hints(:add, :choice, s.params[:choice_cancel_type])
+    # 选项切换
+    if Input.trigger?(:UP)
+      s.index -= 1
+      return false
+    elsif Input.trigger?(:DOWN)
+      s.index += 1
+      return false
+    end
+    # 选项决定
+    f = nil
+    f = true  if Input.trigger?(:C)
+    f = false if s.params[:choice_cancel_type] >= 0 && Input.trigger?(:B)
+    if f != nil
+      Input.update
+      change_hints(:add, :choice_lock, f == false ? "选中取消项" : "选中选项")
+      # 锁定当前项
+      s.lock(f)
+      r = false
+      while true
+        Fiber.yield
+        # 再次确定，触发该项
+        if Input.trigger?(:C)
+          s.consider(f)
+          r = true
+          break
+        # 返回选择
+        elsif Input.trigger?(:B)
+          s.lock(nil)
+          r = false
+          break
+        end
+      end
+      change_hints(:del, :choice_lock)
+      return r
+    end
+    return false
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 结束显示？
+  #--------------------------------------------------------------------------
+  def finish?
+    !$game_switches[MESSAGE_CHAT::S_ID]
+  end
 end
+
 #===============================================================================
-# ○ Sprite_EagleMessage_Chat
+# ○ Sprite_EagleChat
 #===============================================================================
-class Sprite_EagleMessage_Chat < Sprite
-  attr_reader :text, :params, :_x, :_y
+class Sprite_EagleChat < Sprite
+  attr_reader :params, :_x, :_y
   #--------------------------------------------------------------------------
   # ● 初始时
   #--------------------------------------------------------------------------
@@ -487,10 +669,8 @@ class Sprite_EagleMessage_Chat < Sprite
     @params = _params
     params[:face_name] ||= ""
     params[:face_index] ||= 0
-    params[:background] ||= 2
-    params[:position] ||= 0
-    params[:text] ||= ""
-    params[:pic] ||= ""
+    params[:background] ||= 0
+    params[:position] ||= 1
     params[:name] ||= ""
     params[:skin] ||= $game_message.eagle_chat_params[:skin]
   end
@@ -500,6 +680,12 @@ class Sprite_EagleMessage_Chat < Sprite
   def dispose
     self.bitmap.dispose if self.bitmap
     super
+  end
+  #--------------------------------------------------------------------------
+  # ● 完整的在视图可视范围内？
+  #--------------------------------------------------------------------------
+  def in_view?
+    self.y >= 0 && self.y + self.height <= self.viewport.rect.height
   end
   #--------------------------------------------------------------------------
   # ● 重设位置
@@ -547,90 +733,126 @@ class Sprite_EagleMessage_Chat < Sprite
   # ● 重绘
   #--------------------------------------------------------------------------
   def redraw
+    reset_constant
+    redraw_name_wh
+    redraw_face_wh
+    redraw_tag_wh
+    redraw_content_wh
+    redraw_bg_wh
+    recreate_bitmap
+    redraw_bg
+    redraw_tag
+    redraw_face
+    redraw_name
+    redraw_content
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置常量
+  #--------------------------------------------------------------------------
+  def reset_constant
+    # 对话框外围 左右空白
+    params[:spacing_lr] = 4
+    # 对话框外围 上下空白
+    params[:spacing_ud] = 2
+    # 姓名与背景之间的空白
+    params[:spacing_name] = 2
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取姓名宽高
+  #--------------------------------------------------------------------------
+  def redraw_name_wh
     # 姓名宽高
-    name_w = 0
-    name_h = 0
+    params[:name_w] = 0
+    params[:name_h] = 0
     if params[:name] != ""
       _bitmap = Cache.empty_bitmap
       _bitmap.font.size = MESSAGE_CHAT::NAME_FONT_SIZE
       r = _bitmap.text_size(params[:name])
-      name_w = r.width + 2
-      name_h = r.height
+      params[:name_w] = r.width + 2
+      params[:name_h] = r.height
       _bitmap.dispose
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取脸图宽高
+  #--------------------------------------------------------------------------
+  def redraw_face_wh
     # 脸图宽高
-    face_w = 0
-    face_h = 0
+    params[:face_w] = 0
+    params[:face_h] = 0
     if params[:face_name] != ""
-      face_w = MESSAGE_CHAT::FACE_W
-      face_h = MESSAGE_CHAT::FACE_H
+      params[:face_w] = MESSAGE_CHAT::FACE_W
+      params[:face_h] = MESSAGE_CHAT::FACE_H
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取TAG宽高
+  #--------------------------------------------------------------------------
+  def redraw_tag_wh
     # tag用的空白宽度
-    tag_w = 8
+    params[:tag_w] = 8
     if params[:background] == 1 # 暗色背景无tag
-      tag_w = 0
+      params[:tag_w] = 0
     end
-    # 对话框外围 左右空白
-    spacing_lr = 4
-    # 对话框外围 上下空白
-    spacing_ud = 2
-    # 姓名与背景之间的空白
-    spacing_name = 2
-
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取内容宽高
+  #--------------------------------------------------------------------------
+  def redraw_content_wh
     # 内容宽高
-    cont_w = 0
-    cont_h = 0
-    cont_w_max = self.viewport.rect.width - spacing_lr * 2 - face_w - tag_w - 2
-    #  若绘制文本
-    if params[:text] != ""
-      ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => 0, :y0 => 0,
-        :w => cont_w_max, :lhd => 2 }
-      d = Process_DrawTextEX.new(params[:text], ps)
-      d.run(false)
-      cont_w = d.width
-      cont_h = d.height
-    elsif params[:pic] != ""
-      bitmap_pic = Cache.picture(params[:pic]) rescue Cache.empty_bitmap
-      cont_w = [bitmap_pic.width, cont_w_max].min
-      cont_h = cont_w / bitmap_pic.width * bitmap_pic.height
-    end
-    bg_w = [cont_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
-    bg_h = [cont_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
-
+    params[:cont_w] = 0
+    params[:cont_h] = 0
+    # 最大内容宽度
+    params[:cont_w_max] = self.viewport.rect.width - params[:spacing_lr] * 2 -
+      params[:face_w] - params[:tag_w] - 2
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取背景宽高
+  #--------------------------------------------------------------------------
+  def redraw_bg_wh
+    params[:bg_w] = [params[:cont_w] + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
+    params[:bg_h] = [params[:cont_h] + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, 32].max
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置位图
+  #--------------------------------------------------------------------------
+  def recreate_bitmap
     # 实际位图宽高
-    w = spacing_lr + face_w + tag_w + spacing_lr +
-      [cont_w + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, name_w, 32].max
-    h = spacing_ud + spacing_ud + spacing_name +
-      [name_h + cont_h + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, face_h, 32].max
+    w = params[:spacing_lr] * 2 + params[:face_w] + params[:tag_w] +
+      [params[:cont_w] + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2, params[:name_w],
+       32].max
+    h = params[:spacing_ud] * 2 + params[:spacing_name] +
+      [params[:name_h] + params[:cont_h] + MESSAGE_CHAT::TEXT_BORDER_WIDTH * 2,
+       params[:face_h], 32].max
     self.bitmap = Bitmap.new(w, h)
-
-    face_x = face_y = bg_x = bg_y = 0
-    name_ali = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制背景
+  #--------------------------------------------------------------------------
+  def redraw_bg
+    params[:bg_x] = params[:bg_y] = 0
     case params[:position]
     when 0 # 居右（居上）
-      face_x = w - spacing_lr - face_w
-      bg_x = spacing_lr
-      bg_x = name_w - bg_w if name_w > bg_w
-      name_ali = 2
+      params[:bg_x] = params[:spacing_lr]
+      if params[:name_w] > params[:bg_w] # 如果姓名更长，则需要补足差值
+        params[:bg_x] = params[:name_w] - params[:bg_w]
+      end
     when 1 # 居中
-      face_x = spacing_lr
-      bg_x = spacing_lr + face_w + tag_w
-      name_ali = 1
+      params[:bg_x] = params[:spacing_lr] + params[:face_w] + params[:tag_w]
     when 2 # 居左（居下）
-      face_x = spacing_lr
-      bg_x = spacing_lr + face_w + tag_w
-      name_ali = 0
+      params[:bg_x] = params[:spacing_lr] + params[:face_w] + params[:tag_w]
     end
-    face_y = spacing_ud
-    bg_y = spacing_ud + name_h + spacing_name
+    params[:bg_y] = params[:spacing_ud] + params[:name_h] + params[:spacing_name]
 
     # 绘制背景
     case params[:background]
     when 0 # 普通背景
       skin = MESSAGE_CHAT.get_skin_name(params[:skin])
       EAGLE.draw_windowskin(skin, self.bitmap,
-        Rect.new(bg_x, bg_y, bg_w, bg_h))
+        Rect.new(params[:bg_x], params[:bg_y], params[:bg_w], params[:bg_h]))
     when 1 # 暗色背景
+      w = self.bitmap.width
+      h = self.bitmap.height
       rect1 = Rect.new(0, 0, w, 12)
       rect2 = Rect.new(0, 12, w, h - 24)
       rect3 = Rect.new(0, h - 12, w, 12)
@@ -639,37 +861,254 @@ class Sprite_EagleMessage_Chat < Sprite
       self.bitmap.gradient_fill_rect(rect3, back_color1, back_color2, true)
     when 2 # 透明背景
     end
-
-    # 绘制脸图
-    if params[:face_name] != ""
-      MESSAGE_CHAT.draw_face(self.bitmap, params[:face_name],
-        params[:face_index], face_x, face_y, face_w, face_h)
-    end
-
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制姓名
+  #--------------------------------------------------------------------------
+  def redraw_name
     # 绘制姓名
     if params[:name] != ""
-      name_x = bg_x
-      name_x = spacing_lr if name_w > cont_w
-      name_y = spacing_ud
-      name_w = [name_w, bg_w].max
+      name_ali = 0
+      case params[:position]
+      when 0 # 居右（居上）
+        name_ali = 2
+      when 1 # 居中
+        name_ali = 1
+      when 2 # 居左（居下）
+        name_ali = 0
+      end
+      name_x = params[:bg_x]
+      if params[:position] == 0 && params[:name_w] > params[:cont_w]
+        name_x = params[:spacing_lr]
+      end
+      name_y = params[:spacing_ud]
       self.bitmap.font.size = MESSAGE_CHAT::NAME_FONT_SIZE
-      self.bitmap.draw_text(name_x, name_y, name_w, name_h,
+      self.bitmap.draw_text(name_x, name_y,
+        [params[:name_w], params[:bg_w]].max, params[:name_h],
         params[:name], name_ali)
     end
-
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制脸图
+  #--------------------------------------------------------------------------
+  def redraw_face
+    # 绘制脸图
+    if params[:face_name] != ""
+      face_x = face_y = 0
+      case params[:position]
+      when 0 # 居右（居上）
+        face_x = self.bitmap.width - params[:spacing_lr] - params[:face_w]
+      when 1 # 居中
+        face_x = params[:spacing_lr]
+      when 2 # 居左（居下）
+        face_x = params[:spacing_lr]
+      end
+      face_y = params[:spacing_ud]
+      MESSAGE_CHAT.draw_face(self.bitmap, params[:face_name],
+        params[:face_index], face_x, face_y, params[:face_w], params[:face_h])
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制TAG
+  #--------------------------------------------------------------------------
+  def redraw_tag
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制内容
+  #--------------------------------------------------------------------------
+  def redraw_content
+  end
+end
+#===============================================================================
+# ○ Sprite_EagleChat_Text
+#===============================================================================
+class Sprite_EagleChat_Text < Sprite_EagleChat
+  #--------------------------------------------------------------------------
+  # ● 初始化参数（确保部分参数存在）
+  #--------------------------------------------------------------------------
+  def init_params(_params)
+    super(_params)
+    params[:text] ||= ""
+    params[:pic] ||= ""
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取内容宽高
+  #--------------------------------------------------------------------------
+  def redraw_content_wh
+    super
+    #  若绘制文本
+    if params[:text] != ""
+      ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => 0, :y0 => 0,
+        :w => params[:cont_w_max], :lhd => 2 }
+      d = Process_DrawTextEX.new(params[:text], ps)
+      d.run(false)
+      params[:cont_w] = d.width
+      params[:cont_h] = d.height
+    elsif params[:pic] != ""
+      bitmap_pic = Cache.picture(params[:pic]) rescue Cache.empty_bitmap
+      params[:cont_w] = [bitmap_pic.width, params[:cont_w_max]].min
+      params[:cont_h] = params[:cont_w] / bitmap_pic.width * bitmap_pic.height
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制内容
+  #--------------------------------------------------------------------------
+  def redraw_content
+    super
     # 绘制内容
-    cont_x = bg_x + MESSAGE_CHAT::TEXT_BORDER_WIDTH
-    cont_y = bg_y + MESSAGE_CHAT::TEXT_BORDER_WIDTH
+    cont_x = params[:bg_x] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
+    cont_y = params[:bg_y] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
     if params[:text] != ""
       ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => cont_x, :y0 => cont_y,
-        :w => cont_w_max, :lhd => 2 }
+        :w => params[:cont_w_max], :lhd => 2 }
       d = Process_DrawTextEX.new(params[:text], ps, self.bitmap)
       d.run(true)
     elsif params[:pic] != ""
+      bitmap_pic = Cache.picture(params[:pic]) rescue Cache.empty_bitmap
       rect = Rect.new(0, 0, bitmap_pic.width, bitmap_pic.height)
-      des_rect = Rect.new(cont_x, cont_y, cont_w, cont_h)
+      des_rect = Rect.new(cont_x, cont_y, params[:cont_w], params[:cont_h])
       self.bitmap.stretch_blt(des_rect, bitmap_pic, rect)
     end
+  end
+end
+#===============================================================================
+# ○ Sprite_EagleChat_Choice
+#===============================================================================
+class Sprite_EagleChat_Choice < Sprite_EagleChat
+  #--------------------------------------------------------------------------
+  # ● 初始化参数（确保部分参数存在）
+  #--------------------------------------------------------------------------
+  def init_params(_params)
+    super(_params)
+    params[:choices] ||= []
+    params[:choice_cancel_type] ||= 0
+
+    params[:choice_result] = nil
+    params[:choice_index] = 0
+    params[:choice_ys] = []
+    params[:choice_ws] = []
+    params[:choice_hs] = []
+    params[:lock] = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置常量
+  #--------------------------------------------------------------------------
+  def reset_constant
+    super
+    # 选择项之间 空白
+    params[:spacing_in] = 4
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取内容宽高
+  #--------------------------------------------------------------------------
+  def redraw_content_wh
+    super
+    return redraw_content_wh_result if params[:choice_result]
+
+    params[:choice_ws].clear
+    params[:choice_hs].clear
+    params[:choices].each do |t|
+      ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => 0, :y0 => 0,
+        :w => params[:cont_w_max], :lhd => 2 }
+      d = Process_DrawTextEX.new(t, ps)
+      d.run(false)
+      params[:choice_ws].push(d.width)
+      params[:choice_hs].push(d.height)
+    end
+    params[:cont_w] = params[:choice_ws].max
+    params[:cont_h] = params[:choice_hs].inject{|s, v| s + v} +
+      params[:spacing_in] * (params[:choice_hs].size - 1)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取内容宽高（选项完成）
+  #--------------------------------------------------------------------------
+  def redraw_content_wh_result
+    params[:choice_result_text] = ""
+    if params[:choice_result] == 4  # 额外的取消分支
+      params[:choice_result_text] = MESSAGE_CHAT::TEXT_CHOICE_CANCEL
+    else
+      params[:choice_result_text] = params[:choices][params[:choice_result]]
+    end
+    ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => 0, :y0 => 0,
+      :w => params[:cont_w_max], :lhd => 2 }
+    d = Process_DrawTextEX.new(params[:choice_result_text], ps)
+    d.run(false)
+    params[:cont_w] = d.width
+    params[:cont_h] = d.height
+  end
+  #--------------------------------------------------------------------------
+  # ● 重绘内容
+  #--------------------------------------------------------------------------
+  def redraw_content
+    super
+    return redraw_content_result if params[:choice_result]
+
+    cont_x = params[:bg_x] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
+    cont_y = params[:bg_y] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
+    _y = cont_y
+    params[:choices].each_with_index do |t, i|
+      params[:choice_ys][i] = _y
+      ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => cont_x, :y0 => _y,
+        :w => params[:cont_w_max], :lhd => 2 }
+      ps[:trans] = params[:choice_index] != i
+      if params[:lock]
+        ps[:trans] = params[:lock] != i
+        ps[:font_color] = Color.new(255,50,50) if params[:lock] == i
+      end
+      d = Process_DrawTextEX.new(t, ps, self.bitmap)
+      d.run(true)
+      _y += params[:choice_hs][i] + params[:spacing_in]
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 重绘内容（选项结果）
+  #--------------------------------------------------------------------------
+  def redraw_content_result
+    cont_x = params[:bg_x] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
+    cont_y = params[:bg_y] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
+    ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => cont_x, :y0 => cont_y,
+      :w => params[:cont_w_max], :lhd => 2 }
+    d = Process_DrawTextEX.new(params[:choice_result_text], ps, self.bitmap)
+    d.run(true)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取当前选项序号
+  #--------------------------------------------------------------------------
+  def index
+    params[:choice_index]
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置当前选项
+  #--------------------------------------------------------------------------
+  def index=(i)
+    params[:choice_index] = i
+    params[:choice_index] = 0 if params[:choice_index] == params[:choices].size
+    params[:choice_index] = params[:choices].size-1 if params[:choice_index] < 0
+    redraw
+  end
+  #--------------------------------------------------------------------------
+  # ● 锁定当前项
+  #--------------------------------------------------------------------------
+  def lock(flag = true)
+    if flag == true
+      params[:lock] = params[:choice_index]
+    elsif flag == false
+      params[:lock] = params[:choice_cancel_type]
+    else
+      params[:lock] = nil
+    end
+    redraw
+  end
+  #--------------------------------------------------------------------------
+  # ● 决定当前项
+  #--------------------------------------------------------------------------
+  def consider(flag = true)
+    if flag == true
+      params[:choice_result] = params[:choice_index]
+    elsif flag == false
+      params[:choice_result] = params[:choice_cancel_type]
+    end
+    redraw
   end
 end
 
@@ -705,24 +1144,76 @@ class Game_Interpreter
       ts.push(@list[@index].parameters[0])
     end
     t = ts.inject("") {|r, text| r += text + "\n" }
-    result = MESSAGE_CHAT.extract_info(t, params)
-    return if result == false
+    result = MESSAGE_CHAT.extract_text_info(t, params)
 
     if $imported["EAGLE-MessageLog"]
       ps = {}
       ps[:name] = params[:name] if !params[:name].empty?
-      MSG_LOG.new_log(params[:text], ps)
+      MSG_LOG.new_log(params[:text], ps) if params[:text] != ""
     end
 
-    Input.update
-    return if params[:flag_no_wait]
-    Fiber.yield until message_chat_next?
+    case next_event_code
+    when 102  # 显示选项
+      @index += 1
+      call_message_chat_choice(@list[@index].parameters, params.dup)
+      return
+    end
+
+    return if result == false
+    wait_for_chat unless params[:flag_no_wait]
   end
   #--------------------------------------------------------------------------
-  # ● 聊天对话时 继续下一条指令？
+  # ● 等待聊天对话结束更新
   #--------------------------------------------------------------------------
-  def message_chat_next?
-    Input.trigger?(:C)
+  def wait_for_chat
+    Input.update
+    loop do
+      break if !$game_message.chat_wait?
+      Fiber.yield
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 显示选项
+  #--------------------------------------------------------------------------
+  alias eagle_message_chat_command_102 command_102
+  def command_102
+    if $game_switches[MESSAGE_CHAT::S_ID]
+      if $game_switches[MESSAGE_CHAT::S_ID_MSG] == false
+        return call_message_chat_choice(@params, {})
+      end
+    end
+    eagle_message_chat_command_102
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理选项
+  #--------------------------------------------------------------------------
+  def call_message_chat_choice(params, data)
+    data[:type] = :choice
+    data[:choices] = []
+    params[0].each {|s| data[:choices].push(s) }
+    data[:choice_cancel_type] = params[1]-1
+    data[:choice_result] = nil
+    $game_message.add_chat(data)
+    wait_for_chat
+    @branch[@indent] = data[:choice_result]
+
+    if $imported["EAGLE-MessageLog"]
+      t = data[:choice_result_text]
+      MSG_LOG.new_log(t, { :choice => true })
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 取消的时候
+  #--------------------------------------------------------------------------
+  alias eagle_message_chat_command_403 command_403
+  def command_403
+    if $game_switches[MESSAGE_CHAT::S_ID]
+      if $game_switches[MESSAGE_CHAT::S_ID_MSG] == false
+        command_skip if @branch[@indent] != 4
+        return
+      end
+    end
+    eagle_message_chat_command_403
   end
 end
 

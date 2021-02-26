@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageBox"] = true
 #=============================================================================
-# - 2021.2.19.19 新增按键提示文本
+# - 2021.2.25.23 修复提示精灵位图释放报错的问题
 #==============================================================================
 # - 本插件新增的大文本框，有以下几个新特性：
 #
@@ -381,7 +381,7 @@ class Window_EagleMessage_Box < Window_Base
   # ● 释放提示精灵
   #--------------------------------------------------------------------------
   def dispose_sprite_hint
-    @sprite_hint.bitmap.dispose
+    @sprite_hint.bitmap.dispose if @sprite_hint.bitmap
     @sprite_hint.dispose
   end
 
