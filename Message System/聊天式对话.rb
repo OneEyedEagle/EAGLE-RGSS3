@@ -1,12 +1,12 @@
 #==============================================================================
 # ■ 聊天式对话 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在
-#  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤】之下
+#  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.2.26.0 新增选项嵌入
+# - 2021.3.1.23 修复最大宽度不够时，绘制出现错位的bug
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -22,7 +22,7 @@ $imported["EAGLE-MessageChat"] = true
 # - 在 显示文字 中，新增了如下的编写规则：
 #
 #  1、在“显示位置”参数中，（默认“居下”，即左对齐）
-#    “居上”被视为 右对齐，“居中”被视为 居中对齐，“居下”被视为左对齐
+#    “居上”被视为 右对齐，“居中”被视为 居中对齐，“居下”被视为 左对齐
 #
 #  2、在“文本框”中，开头编写 【...】 或 [...] 用于指定姓名
 #    如： 【小明】今天天气真好
@@ -84,7 +84,7 @@ module MESSAGE_CHAT
   #--------------------------------------------------------------------------
   # ○【常量】定义初始的视图矩形
   #--------------------------------------------------------------------------
-  INIT_VIEW = Rect.new(50, 30, Graphics.width-50*2, Graphics.height-30*2)
+  INIT_VIEW = Rect.new(20, 30, Graphics.width-20*2, Graphics.height-30*2)
   #--------------------------------------------------------------------------
   # ○【常量】定义初始的屏幕Z值
   #--------------------------------------------------------------------------
@@ -107,6 +107,10 @@ module MESSAGE_CHAT
   # ○【常量】定义姓名文字的大小
   #--------------------------------------------------------------------------
   NAME_FONT_SIZE = 12
+  #--------------------------------------------------------------------------
+  # ○【常量】姓名文字的补足宽度（当发现姓名拥挤时，请尝试调大该值）
+  #--------------------------------------------------------------------------
+  NAME_FONT_W_ADD = 1
   #--------------------------------------------------------------------------
   # ○【常量】定义脸图的绘制宽度和高度
   #--------------------------------------------------------------------------
@@ -162,7 +166,7 @@ module MESSAGE_CHAT
       t3 = "确定键 - 继续"
     end
     if fs[:choice]
-      t2 += " | 切换选项"
+      t2 += " | 切换"
       t3 = "确定键 - 选择"
       if fs[:choice].is_a?(Integer) && fs[:choice] >= 0
         t3 = "确定键、取消键 - 选择"
@@ -570,13 +574,10 @@ class Window_EagleMessage_Chat < Window
   # ● 特殊处理
   #--------------------------------------------------------------------------
   def update_extra_process
-    result = false
-    case $game_message.eagle_chat_params[:type]
-    when :text; result = update_process_text
-    when :choice; result = update_process_choice
-    end
+    type = $game_message.eagle_chat_params[:type]
+    result = method("update_process_#{type}").call
     if result
-      change_hints(:del, $game_message.eagle_chat_params[:type])
+      change_hints(:del, type)
       $game_message.eagle_chat_params[:type] = nil
     end
   end
@@ -601,9 +602,11 @@ class Window_EagleMessage_Chat < Window
     # 选项切换
     if Input.trigger?(:UP)
       s.index -= 1
+      Sound.play_cursor
       return false
     elsif Input.trigger?(:DOWN)
       s.index += 1
+      Sound.play_cursor
       return false
     end
     # 选项决定
@@ -611,6 +614,7 @@ class Window_EagleMessage_Chat < Window
     f = true  if Input.trigger?(:C)
     f = false if s.params[:choice_cancel_type] >= 0 && Input.trigger?(:B)
     if f != nil
+      Sound.play_ok
       Input.update
       change_hints(:add, :choice_lock, f == false ? "选中取消项" : "选中选项")
       # 锁定当前项
@@ -620,11 +624,13 @@ class Window_EagleMessage_Chat < Window
         Fiber.yield
         # 再次确定，触发该项
         if Input.trigger?(:C)
+          Sound.play_ok
           s.consider(f)
           r = true
           break
         # 返回选择
         elsif Input.trigger?(:B)
+          Sound.play_cancel
           s.lock(nil)
           r = false
           break
@@ -768,7 +774,7 @@ class Sprite_EagleChat < Sprite
       _bitmap = Cache.empty_bitmap
       _bitmap.font.size = MESSAGE_CHAT::NAME_FONT_SIZE
       r = _bitmap.text_size(params[:name])
-      params[:name_w] = r.width + 2
+      params[:name_w] = r.width + MESSAGE_CHAT::NAME_FONT_W_ADD * params[:name].size
       params[:name_h] = r.height
       _bitmap.dispose
     end
@@ -960,7 +966,7 @@ class Sprite_EagleChat_Text < Sprite_EagleChat
     cont_y = params[:bg_y] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
     if params[:text] != ""
       ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => cont_x, :y0 => cont_y,
-        :w => params[:cont_w_max], :lhd => 2 }
+        :w => cont_x+params[:cont_w_max], :lhd => 2 }
       d = Process_DrawTextEX.new(params[:text], ps, self.bitmap)
       d.run(true)
     elsif params[:pic] != ""
@@ -1049,7 +1055,7 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
     params[:choices].each_with_index do |t, i|
       params[:choice_ys][i] = _y
       ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => cont_x, :y0 => _y,
-        :w => params[:cont_w_max], :lhd => 2 }
+        :w => cont_x+params[:cont_w_max], :lhd => 2 }
       ps[:trans] = params[:choice_index] != i
       if params[:lock]
         ps[:trans] = params[:lock] != i
@@ -1067,7 +1073,7 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
     cont_x = params[:bg_x] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
     cont_y = params[:bg_y] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
     ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => cont_x, :y0 => cont_y,
-      :w => params[:cont_w_max], :lhd => 2 }
+      :w => cont_x+params[:cont_w_max], :lhd => 2 }
     d = Process_DrawTextEX.new(params[:choice_result_text], ps, self.bitmap)
     d.run(true)
   end
