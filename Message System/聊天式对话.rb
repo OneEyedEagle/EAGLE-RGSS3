@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.3.1.23 修复最大宽度不够时，绘制出现错位的bug
+# - 2021.3.2.11 新增选择支条件，新增选项合并
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -19,6 +19,7 @@ $imported["EAGLE-MessageChat"] = true
 #
 # - 当 S_ID 号开关关闭时，将立即关闭全部聊天式对话
 #
+#---------------------------------------------------------------------------
 # - 在 显示文字 中，新增了如下的编写规则：
 #
 #  1、在“显示位置”参数中，（默认“居下”，即左对齐）
@@ -53,18 +54,42 @@ $imported["EAGLE-MessageChat"] = true
 #     如：<skin:0> 将切换回默认皮肤
 #     如：<skin: Window_Blue> 将切换成 Window_Blue 名称的窗口皮肤文件
 #
-#----------------------------------------------------------------------------
+#---------------------------------------------------------------------------
+# - 在 显示选项 中，新增了如下的编写规则：
+#
+#  1、在选择支内容中新增条件扩展：
+#
+#     if{string} → 设置该选择支显示的条件
+#     en{string} → 设置该选择支能够被选择的条件
+#
+#    对 string 的解析：eval(string)后返回布尔值用于判定，可用下列缩写进行简写
+#      s 代替 $game_switches   v 代替 $game_variables
+#
+#    示例：
+#      选项内容Aif{v[1]>0} → 该选择支只有在1号变量大于0时才正常显示，
+#                          否则显示 TEXT_CHOICE_IF 指定的文本，且不可选择
+#      选项内容Ben{s[2]} → 该选择支只有在2号开关开启时才能选择，否则提示禁止音效
+#
+#  2、在选择支内容中调用脚本输出：
+#
+#     rb{string} → eval(string) 的返回值将替换该内容
+#
+#  3、相邻且同级的 选择支处理 指令将自动合并（若不想自动合并，可在之间插入 注释 指令）
+#
+#    【注意】合并后只保留最后一个选项指令中的取消分支（其他选项指令的取消分支无效）
+#
+#---------------------------------------------------------------------------
 # 【注意】
 #
 # - 由于聊天式对话支持上下方向键滚动查看，但选择框开启时并不会挂起该对话，
 #    因此存在选择框切换时，聊天式对话同样滚动的情况
 #
-#----------------------------------------------------------------------------
+#---------------------------------------------------------------------------
 # 【扩展】
 #
 # - 已经兼容【对话日志 by老鹰】，请将本插件置于它之下
 #
-#----------------------------------------------------------------------------
+#---------------------------------------------------------------------------
 # 【TODO】
 #
 # - Tag图片
@@ -124,6 +149,10 @@ module MESSAGE_CHAT
   # ○【常量】定义取消分支的显示文本
   #--------------------------------------------------------------------------
   TEXT_CHOICE_CANCEL = "（不说话）"
+  #--------------------------------------------------------------------------
+  # ○【常量】定义if条件不足的分支的显示文本
+  #--------------------------------------------------------------------------
+  TEXT_CHOICE_IF =  "（？？？）"
 
   #--------------------------------------------------------------------------
   # ○【常量】定义对话框皮肤
@@ -250,7 +279,7 @@ end
 # ○ Game_Message
 #===============================================================================
 class Game_Message
-  attr_accessor  :eagle_chat_params
+  attr_accessor  :eagle_chat_params, :eagle_chat_choice_cancel_i_e
   #--------------------------------------------------------------------------
   # ● 清除
   #--------------------------------------------------------------------------
@@ -268,6 +297,7 @@ class Game_Message
     @eagle_chat_params[:view] ||= MESSAGE_CHAT::INIT_VIEW
     @eagle_chat_params[:skin] ||= MESSAGE_CHAT::DEF_SKIN_ID
     @eagle_chat_params[:type] = nil  # 最后导入的文本块的类型
+    @eagle_chat_choice_cancel_i_e = -1
   end
   #--------------------------------------------------------------------------
   # ● 新增一个文本块
@@ -614,8 +644,12 @@ class Window_EagleMessage_Chat < Window
     f = true  if Input.trigger?(:C)
     f = false if s.params[:choice_cancel_type] >= 0 && Input.trigger?(:B)
     if f != nil
-      Sound.play_ok
       Input.update
+      if !s.selectable?
+        Sound.play_buzzer
+        return false
+      end
+      Sound.play_ok
       change_hints(:add, :choice_lock, f == false ? "选中取消项" : "选中选项")
       # 锁定当前项
       s.lock(f)
@@ -989,11 +1023,12 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
     params[:choices] ||= []
     params[:choice_cancel_type] ||= 0
 
-    params[:choice_result] = nil
-    params[:choice_index] = 0
+    params[:choice_enables] = []
     params[:choice_ys] = []
     params[:choice_ws] = []
     params[:choice_hs] = []
+    params[:choice_index] = 0
+    params[:choice_result] = nil
     params[:lock] = nil
   end
   #--------------------------------------------------------------------------
@@ -1013,17 +1048,34 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
 
     params[:choice_ws].clear
     params[:choice_hs].clear
-    params[:choices].each do |t|
-      ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => 0, :y0 => 0,
-        :w => params[:cont_w_max], :lhd => 2 }
-      d = Process_DrawTextEX.new(t, ps)
-      d.run(false)
-      params[:choice_ws].push(d.width)
-      params[:choice_hs].push(d.height)
-    end
+    params[:choices].size.times { |i| check_choice(i) }
     params[:cont_w] = params[:choice_ws].max
     params[:cont_h] = params[:choice_hs].inject{|s, v| s + v} +
       params[:spacing_in] * (params[:choice_hs].size - 1)
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理指定选项
+  #--------------------------------------------------------------------------
+  def check_choice(i)
+    text = params[:choices][i]
+    # 判定rb{}
+    text.gsub!(/(?i:rb){(.*?)}/) { eval($1) }
+    # 判定en{}
+    text.gsub!(/(?i:en){(.*?)}/) { "" }
+    params[:choice_enables][i] = $1.nil? || eval($1) == true # 可选状态
+    # 判定if{}
+    text.gsub!(/(?i:if){(.*?)}/) { "" }
+    if $1 && eval($1) == false
+      params[:choice_enables][i] = false
+      text = params[:choices][i] = MESSAGE_CHAT::TEXT_CHOICE_IF
+    end
+
+    ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => 0, :y0 => 0,
+      :w => params[:cont_w_max], :lhd => 2 }
+    d = Process_DrawTextEX.new(text, ps)
+    d.run(false)
+    params[:choice_ws].push(d.width)
+    params[:choice_hs].push(d.height)
   end
   #--------------------------------------------------------------------------
   # ● 获取内容宽高（选项完成）
@@ -1056,7 +1108,14 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
       params[:choice_ys][i] = _y
       ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => cont_x, :y0 => _y,
         :w => cont_x+params[:cont_w_max], :lhd => 2 }
+      # 颜色处理
+      #  若未被选中，则半透明
       ps[:trans] = params[:choice_index] != i
+      #  若无法确定，则灰色
+      if params[:choice_enables][i] == false
+        ps[:font_color] = Color.new(50, 50, 50)
+      end
+      #  若锁定状态，则红色
       if params[:lock]
         ps[:trans] = params[:lock] != i
         ps[:font_color] = Color.new(255,50,50) if params[:lock] == i
@@ -1091,6 +1150,13 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
     params[:choice_index] = 0 if params[:choice_index] == params[:choices].size
     params[:choice_index] = params[:choices].size-1 if params[:choice_index] < 0
     redraw
+  end
+  #--------------------------------------------------------------------------
+  # ● 可以被选择？
+  #--------------------------------------------------------------------------
+  def selectable?(i = nil)
+    i ||= params[:choice_index]
+    params[:choice_enables][i] == true
   end
   #--------------------------------------------------------------------------
   # ● 锁定当前项
@@ -1198,9 +1264,22 @@ class Game_Interpreter
     data[:choices] = []
     params[0].each {|s| data[:choices].push(s) }
     data[:choice_cancel_type] = params[1]-1
-    data[:choice_result] = nil
+    # 处理合并选项，其中会将新选项直接传入 data[:choices] 中
+    cancel_index = chat_merge_choice(data)
+    # 设置取消分支的类型（事件中序号）
+    #（对于params[1]）
+    # 0 代表取消无效，1 ~ size 代表取消时进入对应分支，size+1 代表进入取消专用分支
+    #（对于choice_cancel_i_e）
+    # -1 代表无效，0 ~ size-1 代表对应分支，size代表取消分支
+    #（对于choice_cancel_i_w）
+    # -1 代表有独立取消分支，0 ~ win_size-1 代表对应窗口中分支
+    data[:choice_cancel_type] = data[:choices].size if cancel_index >= 0
+    # 存储全局变量，用于后续跳转
+    $game_message.eagle_chat_choice_cancel_i_e = data[:choice_cancel_type]
     $game_message.add_chat(data)
+    # 等待处理结束
     wait_for_chat
+    # 处理跳转
     @branch[@indent] = data[:choice_result]
 
     if $imported["EAGLE-MessageLog"]
@@ -1209,17 +1288,56 @@ class Game_Interpreter
     end
   end
   #--------------------------------------------------------------------------
+  # ● 处理选项合并
+  #--------------------------------------------------------------------------
+  def chat_merge_choice(data)
+    index = @index # 当前迭代到的指令的所在index # 主选项所在位置为 @index
+    index_choice_add = 0 # 主选择项组的下一个选项的判别index的加值
+    index_cancel = -1 # 最后一个有效的（之后没有其它主选项）取消分支的所在index
+    while true # 未到最后一个
+      index += 1
+      return if @list[index].nil?
+      # 大于主选项缩进值的命令全部跳过
+      next if @list[index].indent > @list[@index].indent
+      # 更新选择项分支的判别index为 原序号+主选项组选项数目
+      @list[index].parameters[0] += index_choice_add if @list[index].code == 402
+      # 更新取消分支的所在index记录
+      index_cancel = index if @list[index].code == 403
+      # 寻找该选择项组的结尾指令
+      next if @list[index].code != 404
+      # 如果接下来为新的选项组，则处理合并
+      if @list[index + 1].code == 102
+        # 更新当前主选项组的下一个选项分支的判别index的加值
+        index_choice_add = @list[@index].parameters[0].size
+        # 上一个存储的取消分支已经无效，将其code置为4031
+        @list[index_cancel].code = 4031 if index_cancel >= 0
+        index_cancel = -1
+        @list[index].code = 0 # 删去该404指令（选项结束）
+        index += 1
+        @list[index].code = 0 # 删去该102指令（选项开始）
+        # 该选项组的内容放入主选项组
+        @list[index].parameters[0].each { |s| data[:choices].push(s) }
+      else
+        break
+      end
+    end # end of while
+    index_cancel
+  end
+  #--------------------------------------------------------------------------
   # ● 取消的时候
   #--------------------------------------------------------------------------
   alias eagle_message_chat_command_403 command_403
   def command_403
     if $game_switches[MESSAGE_CHAT::S_ID]
       if $game_switches[MESSAGE_CHAT::S_ID_MSG] == false
-        command_skip if @branch[@indent] != 4
+        command_skip if @branch[@indent] != $game_message.eagle_chat_choice_cancel_i_e
         return
       end
     end
     eagle_message_chat_command_403
+  end
+  def command_4031
+    command_skip
   end
 end
 
