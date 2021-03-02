@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.3.2.11 新增选择支条件，新增选项合并
+# - 2021.3.2.22 新增选择支条件，新增选项合并
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -645,7 +645,7 @@ class Window_EagleMessage_Chat < Window
     f = false if s.params[:choice_cancel_type] >= 0 && Input.trigger?(:B)
     if f != nil
       Input.update
-      if !s.selectable?
+      if f && !s.selectable?
         Sound.play_buzzer
         return false
       end
@@ -1023,6 +1023,7 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
     params[:choices] ||= []
     params[:choice_cancel_type] ||= 0
 
+    params[:choices_draw] = []
     params[:choice_enables] = []
     params[:choice_ys] = []
     params[:choice_ws] = []
@@ -1038,6 +1039,29 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
     super
     # 选择项之间 空白
     params[:spacing_in] = 4
+    # 预处理选项文本
+    params[:choices].size.times { |i| pre_process_choice(i) }
+  end
+  #--------------------------------------------------------------------------
+  # ● 预处理
+  #--------------------------------------------------------------------------
+  def pre_process_choice(i)
+    # 缩写
+    s = $game_switches; v = $game_variables
+    # 当前选项文本
+    text = params[:choices][i].dup
+    # 判定rb{}
+    text.gsub!(/(?i:rb){(.*?)}/) { eval($1) }
+    # 判定en{}
+    text.gsub!(/(?i:en){(.*?)}/) { "" }
+    params[:choice_enables][i] = $1.nil? || eval($1) == true # 可选状态
+    # 判定if{}
+    text.gsub!(/(?i:if){(.*?)}/) { "" }
+    if $1 && eval($1) == false
+      params[:choice_enables][i] = false
+      text = MESSAGE_CHAT::TEXT_CHOICE_IF
+    end
+    params[:choices_draw][i] = text
   end
   #--------------------------------------------------------------------------
   # ● 获取内容宽高
@@ -1048,7 +1072,7 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
 
     params[:choice_ws].clear
     params[:choice_hs].clear
-    params[:choices].size.times { |i| check_choice(i) }
+    params[:choice_enables].size.times { |i| check_choice(i) }
     params[:cont_w] = params[:choice_ws].max
     params[:cont_h] = params[:choice_hs].inject{|s, v| s + v} +
       params[:spacing_in] * (params[:choice_hs].size - 1)
@@ -1057,22 +1081,9 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
   # ● 处理指定选项
   #--------------------------------------------------------------------------
   def check_choice(i)
-    text = params[:choices][i]
-    # 判定rb{}
-    text.gsub!(/(?i:rb){(.*?)}/) { eval($1) }
-    # 判定en{}
-    text.gsub!(/(?i:en){(.*?)}/) { "" }
-    params[:choice_enables][i] = $1.nil? || eval($1) == true # 可选状态
-    # 判定if{}
-    text.gsub!(/(?i:if){(.*?)}/) { "" }
-    if $1 && eval($1) == false
-      params[:choice_enables][i] = false
-      text = params[:choices][i] = MESSAGE_CHAT::TEXT_CHOICE_IF
-    end
-
     ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => 0, :y0 => 0,
       :w => params[:cont_w_max], :lhd => 2 }
-    d = Process_DrawTextEX.new(text, ps)
+    d = Process_DrawTextEX.new(params[:choices_draw][i], ps)
     d.run(false)
     params[:choice_ws].push(d.width)
     params[:choice_hs].push(d.height)
@@ -1082,7 +1093,8 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
   #--------------------------------------------------------------------------
   def redraw_content_wh_result
     params[:choice_result_text] = ""
-    if params[:choice_result] == 4  # 额外的取消分支
+    # 额外的取消分支
+    if params[:choice_result] == $game_message.eagle_chat_choice_cancel_i_e
       params[:choice_result_text] = MESSAGE_CHAT::TEXT_CHOICE_CANCEL
     else
       params[:choice_result_text] = params[:choices][params[:choice_result]]
@@ -1104,7 +1116,7 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
     cont_x = params[:bg_x] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
     cont_y = params[:bg_y] + MESSAGE_CHAT::TEXT_BORDER_WIDTH
     _y = cont_y
-    params[:choices].each_with_index do |t, i|
+    params[:choices_draw].each_with_index do |t, i|
       params[:choice_ys][i] = _y
       ps = { :font_size => MESSAGE_CHAT::FONT_SIZE, :x0 => cont_x, :y0 => _y,
         :w => cont_x+params[:cont_w_max], :lhd => 2 }
@@ -1113,7 +1125,7 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
       ps[:trans] = params[:choice_index] != i
       #  若无法确定，则灰色
       if params[:choice_enables][i] == false
-        ps[:font_color] = Color.new(50, 50, 50)
+        ps[:font_color] = Color.new(100, 100, 100)
       end
       #  若锁定状态，则红色
       if params[:lock]
@@ -1316,7 +1328,10 @@ class Game_Interpreter
         index += 1
         @list[index].code = 0 # 删去该102指令（选项开始）
         # 该选项组的内容放入主选项组
-        @list[index].parameters[0].each { |s| data[:choices].push(s) }
+        @list[index].parameters[0].each { |s|
+          @list[@index].parameters[0].push(s)
+          data[:choices].push(s)
+        }
       else
         break
       end
