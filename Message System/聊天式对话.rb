@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.3.2.22 新增选择支条件，新增选项合并
+# - 2021.3.6.11 新增自动撤回
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -21,6 +21,8 @@ $imported["EAGLE-MessageChat"] = true
 #
 #---------------------------------------------------------------------------
 # - 在 显示文字 中，新增了如下的编写规则：
+#
+#  （特别的，以下标签中的英语冒号均可以省略）
 #
 #  1、在“显示位置”参数中，（默认“居下”，即左对齐）
 #    “居上”被视为 右对齐，“居中”被视为 居中对齐，“居下”被视为 左对齐
@@ -39,7 +41,7 @@ $imported["EAGLE-MessageChat"] = true
 #
 #  4、在“文本框”中，编写 <pic: filename> 用于显示图片
 #     （图片放置于 Graphics/Pictures 目录下）
-#    如： 【小明】<pic: bird_happy>
+#    如： 【小明】<pic bird_happy>
 #    将显示姓名：小明；显示图片：bird_happy
 #
 #     但由于文字绘制方式问题，图片将被拆开且优先单独显示成一个对话
@@ -51,8 +53,19 @@ $imported["EAGLE-MessageChat"] = true
 #  6、在“文本框”中，编写 <skin: id> 用于为当前对话框切换窗口皮肤
 #     其中 id 首先将在ID_TO_SKIN中查找预设的名称映射
 #       若不存在，则认定其为窗口皮肤的名称（位于Graphics/System目录下）
-#     如：<skin:0> 将切换回默认皮肤
-#     如：<skin: Window_Blue> 将切换成 Window_Blue 名称的窗口皮肤文件
+#     如：<skin0> 将切换回默认皮肤
+#     如：<skin Window_Blue> 将切换成 Window_Blue 名称的窗口皮肤文件
+#
+#  7、在“文本框”中，编写 <unsend: 数字> 用于在 数字 帧后撤回该对话（从开始显示计时）
+#
+#     特别的，可以使用数学表达式，并利用 s 代表开关组，v 代表变量组
+#
+#     如：【小明】<pic: bird_happy><unsend200>我觉得不妥吧……
+#     将显示姓名：小明；显示图片：bird_happy
+#       显示姓名：小明；显示文本：我觉得不妥吧……
+#       并且在200帧后撤回，显示撤回消息：小明撤回了一条消息
+#
+#     如：<unsend v[1]> 代表将在 1 号变量的值的帧数后撤回
 #
 #---------------------------------------------------------------------------
 # - 在 显示选项 中，新增了如下的编写规则：
@@ -153,6 +166,11 @@ module MESSAGE_CHAT
   # ○【常量】定义if条件不足的分支的显示文本
   #--------------------------------------------------------------------------
   TEXT_CHOICE_IF =  "（？？？）"
+  #--------------------------------------------------------------------------
+  # ○【常量】定义撤回消息的显示文本
+  #  其中 <name> 将被替换成姓名
+  #--------------------------------------------------------------------------
+  TEXT_UNSEND = "<name>撤回了一条消息"
 
   #--------------------------------------------------------------------------
   # ○【常量】定义对话框皮肤
@@ -223,23 +241,26 @@ module MESSAGE_CHAT
   #--------------------------------------------------------------------------
   def self.extract_text_info(text, params)
     result = false # 是否成功导入了对话
+    # 缩写
+    s = $game_switches; v = $game_variables
     # 定义类型
     params[:type] = :text
+    # 提取可能存在的flags
+    text.gsub!( /<no ?wait>/im ) { params[:flag_no_wait] = true; "" }
+    text.gsub!( /<skin:? ?(.*?)>/im ) { params[:skin] = $1; "" }
+    text.gsub!( /<unsend:? ?(.*?)>/im ) { params[:unsend] = eval($1).to_i; "" }
     # 提取位于开头的姓名
     n = ""
     text.sub!(/^【(.*?)】|\[(.*?)\]/m) { n = $1 || $2; "" }
     params[:name] = n
     # 提取可能存在的显示图片（将独立为新的对话框显示）
-    text.gsub!(/<pic: ?(.*?)>/im) {
+    text.gsub!(/<pic:? ?(.*?)>/im) {
       _params = params.dup
       _params[:pic] = $1
       $game_message.add_chat(_params)
       result = true
       ""
     }
-    # 提取可能存在的flags
-    text.gsub!( /<no ?wait>/im ) { params[:flag_no_wait] = true; "" }
-    text.gsub!( /<skin: ?(.*?)>/im ) { params[:skin] = $1; "" }
     # 提取文本 删去前后的换行
     text.chomp!
     text.sub!(/^\n/) { "" }
@@ -555,7 +576,7 @@ class Window_EagleMessage_Chat < Window
   def add_new_block(d)
     type = d[:type]
     s = method("add_new_block_#{type}").call(d)
-    reset_position(s)
+    reset_position_with_new(s)
     @blocks.push(s)
     $game_message.eagle_chat_params[:type] = type
     change_hints(:add, type)
@@ -573,25 +594,41 @@ class Window_EagleMessage_Chat < Window
     Sprite_EagleChat_Choice.new(self, @viewport, d)
   end
   #--------------------------------------------------------------------------
-  # ● 重设文本块的位置
+  # ● 重设文本块的位置（最新的文本块）
   #--------------------------------------------------------------------------
-  def reset_position(new_block)
+  def reset_position_with_new(new_block)
     if @blocks.empty?
-      y = get_text_init_y(new_block)
+      _y = get_text_init_y(new_block)
     else
-      y = @blocks[-1]._y + @blocks[-1].height + MESSAGE_CHAT::OFFSET
+      _y = @blocks[-1]._y + @blocks[-1].height + MESSAGE_CHAT::OFFSET
     end
-    new_block.reset_position(0, y)
+    new_block.reset_position(0, _y)
     new_block.update_position
   end
   #--------------------------------------------------------------------------
   # ● 获取文本块的初始位置
   #--------------------------------------------------------------------------
   def get_text_init_y(block)
+    # 缩写
+    s = $game_switches; v = $game_variables
     t = MESSAGE_CHAT::INIT_TEXT_Y.dup
     t.gsub!( /<vph>/im ) { "#{@viewport.rect.height}" }
     t.gsub!( /<th>/im ) { "#{block.height}" }
     return eval(t).to_i
+  end
+  #--------------------------------------------------------------------------
+  # ● 重设文本块的位置（从指定文本块开始）
+  #--------------------------------------------------------------------------
+  def reset_position_with_block(_block)
+    return if @blocks.empty?
+    i = @blocks.index(_block)
+    loop do
+      i += 1
+      break if i >= @blocks.size
+      _y = @blocks[i-1]._y + @blocks[i-1].height + MESSAGE_CHAT::OFFSET
+      @blocks[i].reset_position(0, _y)
+      @blocks[i].update_position
+    end
   end
 
   #--------------------------------------------------------------------------
@@ -688,7 +725,7 @@ end
 # ○ Sprite_EagleChat
 #===============================================================================
 class Sprite_EagleChat < Sprite
-  attr_reader :params, :_x, :_y
+  attr_reader :params, :callbacks, :_x, :_y
   #--------------------------------------------------------------------------
   # ● 初始时
   #--------------------------------------------------------------------------
@@ -696,6 +733,8 @@ class Sprite_EagleChat < Sprite
     super(_viewport)
     @window = _window
     init_params(_params)
+    # 一些需要倒计时的处理
+    init_callbacks
     # 左对齐下，在viewport中的左上角的位置
     @_x = 0; @_y = 0
     # viewport中的显示位置偏移量，即以该点为显示原点
@@ -713,6 +752,12 @@ class Sprite_EagleChat < Sprite
     params[:position] ||= 1
     params[:name] ||= ""
     params[:skin] ||= $game_message.eagle_chat_params[:skin]
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化倒计时处理
+  #--------------------------------------------------------------------------
+  def init_callbacks
+    @callbacks = {}
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -751,7 +796,13 @@ class Sprite_EagleChat < Sprite
   #--------------------------------------------------------------------------
   def update
     super
+    update_callback
     update_position
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新处理
+  #--------------------------------------------------------------------------
+  def update_callback
   end
   #--------------------------------------------------------------------------
   # ● 更新位置
@@ -972,6 +1023,15 @@ class Sprite_EagleChat_Text < Sprite_EagleChat
     params[:pic] ||= ""
   end
   #--------------------------------------------------------------------------
+  # ● 初始化倒计时处理
+  #--------------------------------------------------------------------------
+  def init_callbacks
+    super
+    if params[:unsend]
+      callbacks[:unsend] = [params[:unsend].to_i, 1].max
+    end
+  end
+  #--------------------------------------------------------------------------
   # ● 获取内容宽高
   #--------------------------------------------------------------------------
   def redraw_content_wh
@@ -1009,6 +1069,34 @@ class Sprite_EagleChat_Text < Sprite_EagleChat
       des_rect = Rect.new(cont_x, cont_y, params[:cont_w], params[:cont_h])
       self.bitmap.stretch_blt(des_rect, bitmap_pic, rect)
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新处理
+  #--------------------------------------------------------------------------
+  def update_callback
+    super
+    if callbacks[:unsend]
+      callbacks[:unsend] -= 1
+      unsend if callbacks[:unsend] <= 0
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 撤回
+  #--------------------------------------------------------------------------
+  def unsend
+    name = params[:name]
+    params[:face_name] = ""
+    params[:face_index] = 0
+    params[:background] = 2
+    params[:position] = 1
+    params[:name] = ""
+    t = MESSAGE_CHAT::TEXT_UNSEND.dup
+    t.gsub! ( /<name>/im ) { name }
+    params[:text] = t
+    params[:pic] = ""
+    redraw
+    @window.reset_position_with_block(self)
+    callbacks.delete(:unsend)
   end
 end
 #===============================================================================
