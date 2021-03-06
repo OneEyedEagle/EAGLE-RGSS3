@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.3.6.11 新增自动撤回
+# - 2021.3.7.0 修复快速存读档时，读取的事件指令为未执行到的指令的bug
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -297,6 +297,19 @@ module MESSAGE_CHAT
   end
 end
 #===============================================================================
+# ○ Game_System
+#===============================================================================
+class Game_System
+  #--------------------------------------------------------------------------
+  # ● 读档后的处理
+  #--------------------------------------------------------------------------
+  alias eagle_message_chat_on_after_load on_after_load
+  def on_after_load
+    eagle_message_chat_on_after_load
+    $game_message.load_latest_chat
+  end
+end
+#===============================================================================
 # ○ Game_Message
 #===============================================================================
 class Game_Message
@@ -317,14 +330,16 @@ class Game_Message
     @eagle_chat_params ||= {}
     @eagle_chat_params[:view] ||= MESSAGE_CHAT::INIT_VIEW
     @eagle_chat_params[:skin] ||= MESSAGE_CHAT::DEF_SKIN_ID
-    @eagle_chat_params[:type] = nil  # 最后导入的文本块的类型
     @eagle_chat_choice_cancel_i_e = -1
+    @eagle_chat_params[:type] = nil  # 最后导入的文本块的类型
+    @eagle_chat_data_latest = nil  # 当clear时，清除保留的data
   end
   #--------------------------------------------------------------------------
   # ● 新增一个文本块
   #--------------------------------------------------------------------------
   def add_chat(data = {})
     @eagle_chat_data.push(data)
+    @eagle_chat_data_latest = data # 保留最后一个data
   end
   #--------------------------------------------------------------------------
   # ● 移出一个文本块
@@ -351,6 +366,14 @@ class Game_Message
   def chat_wait?
     # 存在未处理的文本块 或 需要特别处理
     !chat_empty? || chat_busy?
+  end
+  #--------------------------------------------------------------------------
+  # ● （读档后）重新显示上一个文本块（如果有的话）
+  #--------------------------------------------------------------------------
+  def load_latest_chat
+    return if @eagle_chat_data_latest.nil?
+    @eagle_chat_params[:type] = nil  # 清除旧的类型，保证顺利重新绘制
+    add_chat(@eagle_chat_data_latest)
   end
 end
 #===============================================================================
@@ -386,7 +409,6 @@ class Window_EagleMessage_Chat < Window
     @move_c = 0 # 移速的更新等待计数
     @blocks.each { |b| b.dispose }
     @blocks.clear
-    $game_message.clear_chat_params
   end
   #--------------------------------------------------------------------------
   # ● 初始化提示精灵
@@ -1029,6 +1051,7 @@ class Sprite_EagleChat_Text < Sprite_EagleChat
     super
     if params[:unsend]
       callbacks[:unsend] = [params[:unsend].to_i, 1].max
+      params.delete(:unsend)
     end
   end
   #--------------------------------------------------------------------------
@@ -1182,7 +1205,8 @@ class Sprite_EagleChat_Choice < Sprite_EagleChat
   def redraw_content_wh_result
     params[:choice_result_text] = ""
     # 额外的取消分支
-    if params[:choice_result] == $game_message.eagle_chat_choice_cancel_i_e
+    if params[:choice_result] == $game_message.eagle_chat_choice_cancel_i_e &&
+       $game_message.eagle_chat_choice_cancel_i_e == params[:choices].size
       params[:choice_result_text] = MESSAGE_CHAT::TEXT_CHOICE_CANCEL
     else
       params[:choice_result_text] = params[:choices][params[:choice_result]]
@@ -1295,7 +1319,8 @@ class Game_Interpreter
   def command_101
     if $game_switches[MESSAGE_CHAT::S_ID]
       if $game_switches[MESSAGE_CHAT::S_ID_MSG] == false
-        return call_message_chat
+        call_message_chat
+        return
       end
     end
     eagle_message_chat_command_101
@@ -1304,6 +1329,8 @@ class Game_Interpreter
   # ● 呼叫聊天对话
   #--------------------------------------------------------------------------
   def call_message_chat
+    wait_for_chat
+
     params = {}
     params[:face_name] = @params[0]
     params[:face_index] = @params[1]
@@ -1328,7 +1355,6 @@ class Game_Interpreter
     when 102  # 显示选项
       @index += 1
       call_message_chat_choice(@list[@index].parameters, params.dup)
-      return
     end
 
     return if result == false
@@ -1339,10 +1365,7 @@ class Game_Interpreter
   #--------------------------------------------------------------------------
   def wait_for_chat
     Input.update
-    loop do
-      break if !$game_message.chat_wait?
-      Fiber.yield
-    end
+    Fiber.yield while $game_message.chat_wait?
   end
   #--------------------------------------------------------------------------
   # ● 显示选项
@@ -1351,7 +1374,8 @@ class Game_Interpreter
   def command_102
     if $game_switches[MESSAGE_CHAT::S_ID]
       if $game_switches[MESSAGE_CHAT::S_ID_MSG] == false
-        return call_message_chat_choice(@params, {})
+        call_message_chat_choice(@params, {})
+        return
       end
     end
     eagle_message_chat_command_102
@@ -1360,6 +1384,8 @@ class Game_Interpreter
   # ● 处理选项
   #--------------------------------------------------------------------------
   def call_message_chat_choice(params, data)
+    wait_for_chat
+
     data[:type] = :choice
     data[:choices] = []
     params[0].each {|s| data[:choices].push(s) }
