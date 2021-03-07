@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageChat"] = true
 #==============================================================================
-# - 2021.3.7.0 修复快速存读档时，读取的事件指令为未执行到的指令的bug
+# - 2021.3.7.22 精灵全局化
 #==============================================================================
 # - 本插件新增了仿QQ聊天的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -295,7 +295,27 @@ module MESSAGE_CHAT
     return ID_TO_SKIN[sym.to_i] if ID_TO_SKIN.has_key?(sym.to_i)
     return sym
   end
+
+  def self.update
+    @ui ||= UI_EagleMessage_Chat.new
+    @ui.update
+  end
 end
+
+#===============================================================================
+# ○ Scene_Base
+#===============================================================================
+class Scene_Base
+  #--------------------------------------------------------------------------
+  # ● 基础更新
+  #--------------------------------------------------------------------------
+  alias eagle_message_chat_update_basic update_basic
+  def update_basic
+    eagle_message_chat_update_basic
+    MESSAGE_CHAT.update
+  end
+end
+
 #===============================================================================
 # ○ Game_System
 #===============================================================================
@@ -377,16 +397,14 @@ class Game_Message
   end
 end
 #===============================================================================
-# ○ Window_EagleMessage_Chat
+# ○ UI_EagleMessage_Chat
 #===============================================================================
-class Window_EagleMessage_Chat < Window
+class UI_EagleMessage_Chat
   attr_reader :vp_oy
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
   def initialize
-    super
-    self.openness = 0
     init_sprite_hint
     @blocks = [] # 新的被push到最后
     @viewport = Viewport.new
@@ -423,7 +441,6 @@ class Window_EagleMessage_Chat < Window
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    super
     dispose_sprite_hint
     @blocks.each { |b| b.dispose }
     @blocks.clear
@@ -467,7 +484,6 @@ class Window_EagleMessage_Chat < Window
   # ● 更新
   #--------------------------------------------------------------------------
   def update
-    super
     update_fiber
     update_blocks
   end
@@ -675,6 +691,8 @@ class Window_EagleMessage_Chat < Window
   #  - 按键后结束处理
   #--------------------------------------------------------------------------
   def update_process_text
+    s = @blocks[-1]
+    return true if s.params[:flag_no_wait]
     Input.trigger?(:C)
   end
   #--------------------------------------------------------------------------
@@ -1358,7 +1376,7 @@ class Game_Interpreter
     end
 
     return if result == false
-    wait_for_chat unless params[:flag_no_wait]
+    wait_for_chat
   end
   #--------------------------------------------------------------------------
   # ● 等待聊天对话结束更新
@@ -1467,32 +1485,5 @@ class Game_Interpreter
   end
   def command_4031
     command_skip
-  end
-end
-
-#===============================================================================
-# ○ Scene_Map
-#===============================================================================
-class Scene_Map < Scene_Base
-  #--------------------------------------------------------------------------
-  # ● 生成滚动文字窗口
-  #--------------------------------------------------------------------------
-  alias eagle_message_chat_scroll_window create_scroll_text_window
-  def create_scroll_text_window
-    eagle_message_chat_scroll_window
-    @eagle_message_chat_window = Window_EagleMessage_Chat.new
-  end
-end
-#===============================================================================
-# ○ Scene_Battle
-#===============================================================================
-class Scene_Battle < Scene_Base
-  #--------------------------------------------------------------------------
-  # ● 生成滚动文字窗口
-  #--------------------------------------------------------------------------
-  alias eagle_message_chat_scroll_window create_scroll_text_window
-  def create_scroll_text_window
-    eagle_message_chat_scroll_window
-    @eagle_message_chat_window = Window_EagleMessage_Chat.new
   end
 end
