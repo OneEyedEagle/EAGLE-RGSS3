@@ -270,6 +270,9 @@ module EVENT_INTERACT
   def self.update_position(sprite)
     sprite.x = @info[:event].screen_x
     sprite.y = @info[:event].screen_y
+    if sprite.y + sprite.height > Graphics.height
+      sprite.y = Graphics.height - sprite.height
+    end
   end
   #--------------------------------------------------------------------------
   # ● 绘制图标
