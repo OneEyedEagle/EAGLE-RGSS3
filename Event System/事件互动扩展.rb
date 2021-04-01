@@ -1,12 +1,12 @@
 #==============================================================================
-# ■ 事件互动列表 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 事件互动扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageBlock"] = true
+$imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.3.31.15 新增条件判定
+# - 2021.4.1.11 新增事件自动触发自身
 #==============================================================================
-# - 本插件新增了事件页的按空格键触发的互动类型
+# - 本插件新增了事件页的按空格键触发的互动类型，事件自动触发自身
 #------------------------------------------------------------------------------
 # 【思路】
 #
@@ -14,10 +14,16 @@ $imported["EAGLE-MessageBlock"] = true
 #   而且对于玩家面前是否存在可触发的事件，无法给出一个提示，
 #   因此我设计了这个外置的并行的互动列表UI，效仿大部分游戏都有的互动提示功能
 #
-# 【使用】
+# - 由于事件触发自己在默认设计中是不存在的，
+#   如果使用并行触发或自动触发，又会影响事件的正常按键触发，
+#   但如果使用另一个并行事件，在需要判定多个事件时，又非常复杂和冗余，
+#   因此我设计了事件触发自己的判定，在触发时，将和玩家按键触发一样挂起其他内容
+#
+#---------------------------------------------------------------------------
+# 【使用 - 玩家互动列表】
 #
 # - 当事件页的第一条指令为注释，且其中包含【xx】类型的文本时，
-#     在玩家面朝事件，且事件页出现条件均满足，将自动开启它的互动列表
+#     在玩家相邻且面朝事件，且事件页出现条件均满足，将自动开启它的互动列表
 #
 #   注意：注释中的【xx】可重复填写多次。
 #
@@ -45,8 +51,18 @@ $imported["EAGLE-MessageBlock"] = true
 #    可以用 s 代表开关组，v 代表变量组，e 代表当前事件（Game_Event）
 #          es 代表 $game_map.events，gp 代表 $game_player
 #
-#  如：【偷窃if{s[1]}】 代表只有当1号开关开启时，才显示偷窃指令
+#    特别的，为地图人物新增了 path?(chara_id, dirs) 方法，来判定目标对象位置
+#      其中 chara_id 为 -1 时代表玩家，正数代表事件序号，0代表当前事件
+#           为 字符串 时代表名称中含有该字符串的任一事件
+#      其中 dirs 为 wasd 的排列组合字符串（与人物方向相关），可用 | 分隔不同判定
+#        比如 "www" 代表面前的第三格位置
+#        比如 "w|s" 代表面前一格或背后一格
 #
+#      比如 e.path(-1, "w") 为判定玩家是否在当前事件的面前一格处
+#      比如 e.path("路人A", "w|s|c")
+#         为判定名称带有 路人A 的任一事件是否在当前事件的面前/身后/当前一格处
+#
+#  如：【偷窃if{s[1]}】 代表只有当1号开关开启时，才显示偷窃指令
 #
 # 【示例】
 #
@@ -73,6 +89,32 @@ $imported["EAGLE-MessageBlock"] = true
 #   注意1：其中的 测试语句3 将不会被执行到。
 #   注意2：若删去事件页开头的注释指令，将回归默认的事件页执行方式，
 #          即按确定键后，依次执行全部指令
+#
+#---------------------------------------------------------------------------
+# 【使用 - 事件触发自身】
+#
+# - 当事件页的第一条指令为注释时，在其中编写 <auto: xxx{cond}> 来定义自动触发
+#   触发时，同样会挂起玩家的操作，即与玩家主动触发保持一致效果
+#
+#   可以重复编写多次，以设置多个相互独立的自动触发
+#
+#   其中 auto 大小写任意，英语冒号可以省略
+#   其中 xxx 为上一个内容中相同的互动类型，cond 为与上一个内容中相同的触发条件
+#
+# - 事件会每帧判定触发条件是否满足，如果成功，则触发一次互动类型
+#
+#   在成功触发一次后，将删除对应的设置，防止再次无缝触发
+#   而在下一次事件重置或事件页更新时，将重新开启全部的自动触发
+#
+# 【示例】
+#
+# - 以上一个示例为基础
+#   第一个指令注释新增为如下文本：
+#    |- 注释：【交谈】【商店】【贿赂】
+#             <auto 贿赂{e.path(-1, "w")}>
+#
+#   则当事件的面前一格为玩家时，将自动触发一次【贿赂】的互动，且之后不再重复触发
+#   但是当地图刷新或事件页切换再切换回来，将重置触发
 #
 #---------------------------------------------------------------------------
 # 【联动】
@@ -119,6 +161,12 @@ module EVENT_INTERACT
   def self.next_sym?
     Input.trigger?(:A)
   end
+  #--------------------------------------------------------------------------
+  # ● 显示的切换提示文本
+  #--------------------------------------------------------------------------
+  def self.next_text
+    " SHIFT →"
+  end
 
   #--------------------------------------------------------------------------
   # ● 提取事件页开头注释指令中预设的互动类型的数组
@@ -136,6 +184,20 @@ module EVENT_INTERACT
     return syms
   end
   #--------------------------------------------------------------------------
+  # ● 提取事件页开头注释指令中预设的自身触发的互动类型的Hash
+  #  event 为 Game_Event 的对象
+  #--------------------------------------------------------------------------
+  def self.extract_self_syms(event)
+    syms = {}
+    t = EAGLE.event_comment_head(event.list)
+    t.scan(/<auto:? *(.*?)>/mi).each do |ps|
+      _t = ps[0]
+      _t.gsub!(/ *{(.*?)} */) { "" }
+      syms[_t] = $1
+    end
+    return syms
+  end
+  #--------------------------------------------------------------------------
   # ● 执行字符串
   #--------------------------------------------------------------------------
   def self.eagle_eval(t, e)
@@ -145,6 +207,7 @@ module EVENT_INTERACT
     gp = $game_player
     eval(t)
   end
+
   #--------------------------------------------------------------------------
   # ● 清除数据
   #--------------------------------------------------------------------------
@@ -257,7 +320,7 @@ module EVENT_INTERACT
     sprite.bitmap.font.size = 12
     sprite.bitmap.font.color.alpha = 255
     sprite.bitmap.draw_text(0, _y, sprite.width, 14,
-      " SHIFT →", 0)
+      next_text, 0)
     _y += 12
 
     # 将当前选中的互动类型，移动到行走图下方
@@ -324,6 +387,62 @@ module EAGLE
     eagle_list.push( RPG::EventCommand.new )
     return eagle_list
   end
+  #--------------------------------------------------------------------------
+  # ● 判定e2是否在e1的dirs位置上 或 在e1的dirs位置上的事件的名字是否含e2.to_s
+  #  dirs 为 wasd 的排列组合字符串，若为空，则判定是否坐标一致
+  #       可以用 | 分割不同方位
+  #   其中 w 代表面前一格，s 代表后退一格，a 代表左手边一格，d 代表右手边一格
+  #--------------------------------------------------------------------------
+  def self.check_chara_pos?(e1, dirs, e2)
+    w_dx = w_dy = 0
+    a_dx = a_dy = 0
+    s_dx = s_dy = 0
+    d_dx = d_dy = 0
+    case e1.direction
+    when 2; w_dy =  1; a_dx =  1; s_dy = -1; d_dx = -1
+    when 4; w_dx = -1; a_dy =  1; s_dx =  1; d_dy = -1
+    when 6; w_dx =  1; a_dy = -1; s_dx = -1; d_dy =  1
+    when 8; w_dy = -1; a_dx = -1; s_dy =  1; d_dx =  1
+    end
+    dirs.split('|').each do |cs|
+      _x = e1.x
+      _y = e1.y
+      cs.each_char do |c|
+        case c
+        when 'w'; _x += w_dx; _y += w_dy
+        when 'a'; _x += a_dx; _y += a_dy
+        when 's'; _x += s_dx; _y += s_dy
+        when 'd'; _x += d_dx; _y += d_dy
+        end
+      end
+      if e2.is_a?(String)
+        list = $game_map.events_xy(_x, _y)
+        next if list.empty?
+        list.each { |_e| return true if _e.name.include?(e2) }
+        next
+      end
+      return true if e2.x == _x && e2.y == _y
+    end
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取事件对象
+  #--------------------------------------------------------------------------
+  def self.get_chara(event, id)
+    if id == 0 # 当前事件
+      return $game_map.events[event.id]
+    elsif id > 0 # 第id号事件
+      chara = $game_map.events[id]
+      chara ||= $game_map.events[event.id]
+      return chara
+    elsif id < 0 # 队伍中数据库id号角色（不存在则取队长）
+      id = id.abs
+      $game_player.followers.each do |f|
+        return f if f.actor && f.actor.actor.id == id
+      end
+      return $game_player
+    end
+  end
 end
 #===============================================================================
 # ○ Game_Map
@@ -347,10 +466,32 @@ class Game_Map
   end
 end
 #===============================================================================
+# ○ Game_Character
+#===============================================================================
+class Game_Character < Game_CharacterBase
+  #--------------------------------------------------------------------------
+  # ● 通过dirs路径（与当前朝向有关）能否与event_id事件重合？
+  # 或通过dirs路径能否找到一个名称含 event_id.to_s 的事件？
+  #--------------------------------------------------------------------------
+  def path?(event_id, dirs = "")
+    if event_id.is_a?(String)
+      return EAGLE.check_chara_pos?(self, dirs, event_id)
+    end
+    e2 = EAGLE.get_chara(self, event_id)
+    return EAGLE.check_chara_pos?(self, dirs, e2)
+  end
+end
+#===============================================================================
 # ○ Game_Event
 #===============================================================================
 class Game_Event < Game_Character
   attr_reader :starting_type
+  #--------------------------------------------------------------------------
+  # ● 获取事件名称
+  #--------------------------------------------------------------------------
+  def name
+    @event.name
+  end
   #--------------------------------------------------------------------------
   # ● 初始化公有成员变量
   #--------------------------------------------------------------------------
@@ -358,6 +499,7 @@ class Game_Event < Game_Character
   def init_public_members
     eagle_event_interact_init_public_members
     @starting_type = nil
+    @starting_ex = {} # sym => cond_str
   end
   #--------------------------------------------------------------------------
   # ● 清除启动中的标志
@@ -366,6 +508,36 @@ class Game_Event < Game_Character
   def clear_starting_flag
     eagle_event_interact_clear_starting_flag
     @starting_type = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 清除事件页的设置
+  #--------------------------------------------------------------------------
+  alias eagle_event_interact_clear_page_settings clear_page_settings
+  def clear_page_settings
+    eagle_event_interact_clear_page_settings
+    @starting_ex.clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置事件页的设置
+  #--------------------------------------------------------------------------
+  alias eagle_event_interact_setup_page_settings setup_page_settings
+  def setup_page_settings
+    eagle_event_interact_setup_page_settings
+    @starting_ex = EVENT_INTERACT.extract_self_syms(self) if @list
+  end
+  #--------------------------------------------------------------------------
+  # ● 自动事件的启动判定
+  #--------------------------------------------------------------------------
+  alias eagle_event_interact_check_event_trigger_auto check_event_trigger_auto
+  def check_event_trigger_auto
+    eagle_event_interact_check_event_trigger_auto
+    @starting_ex.each do |sym, cond|
+      if EVENT_INTERACT.eagle_eval(cond, self)
+        start_ex(sym)
+        @starting_ex.delete(sym)
+        return
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● 事件启动（扩展）
@@ -421,10 +593,9 @@ class Game_Player < Game_Character
       $game_party.on_player_walk
       return if check_touch_event
     end
-    if movable?
-      f = Input.trigger?(:C)
-      return if f && get_on_off_vehicle
-      return if eagle_check_action_event
+    if movable? # 不再统一判定按键，改为各自处理
+      return if Input.trigger?(:C) && get_on_off_vehicle
+      return if eagle_check_action_event # 将默认的替换成新的方法
     end
     update_encounter if last_moving
   end
