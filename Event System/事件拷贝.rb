@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventCopy"] = true
 #=============================================================================
-# - 2020.10.21.10 兼容VX；修复VX中切换地图导致事件消失的bug
+# - 2021.4.4.1 兼容VX；修复VA中事件图像更新报错的bug
 #=============================================================================
 # - 原始创意：Yanfly Engine Ace - Spawn Event
 # - 本插件新增了拷贝事件的方法
@@ -172,7 +172,7 @@ class Game_Event < Game_Character
   #--------------------------------------------------------------------------
   # ● 初始化公有成员变量
   #--------------------------------------------------------------------------
-  if !defined?(init_public_members)
+  if MODE_VX
     def init_public_members; end
   end
   alias eagle_copy_event_init_public_members init_public_members

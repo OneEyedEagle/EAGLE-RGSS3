@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.4.1.11 新增事件自动触发自身
+# - 2021.4.4.13 重写事件触发事件
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型，事件自动触发自身
 #------------------------------------------------------------------------------
@@ -14,10 +14,10 @@ $imported["EAGLE-EventInteractEX"] = true
 #   而且对于玩家面前是否存在可触发的事件，无法给出一个提示，
 #   因此我设计了这个外置的并行的互动列表UI，效仿大部分游戏都有的互动提示功能
 #
-# - 由于事件触发自己在默认设计中是不存在的，
+# - 由于事件触发事件在默认设计中是不存在的，
 #   如果使用并行触发或自动触发，又会影响事件的正常按键触发，
 #   但如果使用另一个并行事件，在需要判定多个事件时，又非常复杂和冗余，
-#   因此我设计了事件触发自己的判定，在触发时，将和玩家按键触发一样挂起其他内容
+#   因此我设计了事件触发事件的并行判定，在触发时，将和玩家按键触发一样挂起其他内容
 #
 #---------------------------------------------------------------------------
 # 【使用 - 玩家互动列表】
@@ -43,6 +43,8 @@ $imported["EAGLE-EventInteractEX"] = true
 #       按下 确定键 执行对应的互动类型中的指令
 #       按下 方向键 将正常移动，即在显示互动列表时，不会干扰玩家的移动
 #
+# - 特别的，本插件的互动不会锁定事件的方向，因此请自己手动添加【朝向玩家】
+#
 # 【高级】
 #
 # - 在【xx】文本中，编写 if{cond} 来设置该互动的出现条件
@@ -54,12 +56,13 @@ $imported["EAGLE-EventInteractEX"] = true
 #    特别的，为地图人物新增了 path?(chara_id, dirs) 方法，来判定目标对象位置
 #      其中 chara_id 为 -1 时代表玩家，正数代表事件序号，0代表当前事件
 #           为 字符串 时代表名称中含有该字符串的任一事件
+#          （注意，若事件的当前页为空时，会判定为查找失败并被跳过）
 #      其中 dirs 为 wasd 的排列组合字符串（与人物方向相关），可用 | 分隔不同判定
 #        比如 "www" 代表面前的第三格位置
 #        比如 "w|s" 代表面前一格或背后一格
 #
-#      比如 e.path(-1, "w") 为判定玩家是否在当前事件的面前一格处
-#      比如 e.path("路人A", "w|s|c")
+#      比如 e.path?(-1, "w") 为判定玩家是否在当前事件的面前一格处
+#      比如 e.path?("路人A", "w|s|c")
 #         为判定名称带有 路人A 的任一事件是否在当前事件的面前/身后/当前一格处
 #
 #  如：【偷窃if{s[1]}】 代表只有当1号开关开启时，才显示偷窃指令
@@ -91,30 +94,69 @@ $imported["EAGLE-EventInteractEX"] = true
 #          即按确定键后，依次执行全部指令
 #
 #---------------------------------------------------------------------------
-# 【使用 - 事件触发自身】
+# 【使用 - 事件触发事件】
 #
-# - 当事件页的第一条指令为注释时，在其中编写 <auto: xxx{cond}> 来定义自动触发
+# - 当事件页的第一条指令为注释时，在其中编写 <auto tags> 来定义自动触发
 #   触发时，同样会挂起玩家的操作，即与玩家主动触发保持一致效果
 #
 #   可以重复编写多次，以设置多个相互独立的自动触发
 #
-#   其中 auto 大小写任意，英语冒号可以省略
-#   其中 xxx 为上一个内容中相同的互动类型，cond 为与上一个内容中相同的触发条件
+#   其中 auto 大小写任意
+#   其中 tags 为以下语句的任意组合，用空格分隔
+#        注意等号左右不可含有空格
 #
-# - 事件会每帧判定触发条件是否满足，如果成功，则触发一次互动类型
+#      d=dirs → 设置以本事件为中心，朝哪个方向去查找另一个事件
+#                  其中 dirs 替换为上一个内容中的 path? 方法的dirs
+#                  如 c 代表位置相同，w 代表在本事件的前面一格
+#                     c|w|a|s|d 代表在本事件的四方向周围一格或位置相同
+#                若不写，则默认为相同位置
+#
+#      e=eid  → 设置要查找的事件的id
+#                  其中 eid 替换为 -1 时代表玩家，正数代表指定事件的序号
+#                  为 字符串 时代表名称中含有该字符串的任一事件
+#                  （注意，若事件的当前页为空时，会判定为查找失败并被跳过）
+#                若不写，则默认查看玩家的位置
+#
+#      esym=字符串 → 当查找成功时，被找到的事件需要执行的互动内容
+#                       其中 字符串 替换成那个事件的当前页中的互动标签
+#                       当e为玩家时该设置无效
+#                     默认无设置
+#
+#      sym=字符串 → 当查找成功时，本事件需要执行的互动内容
+#                      其中 字符串 替换成本事件的当前页中的互动标签
+#
+#      cond={脚本} → 设置额外的执行条件的脚本，当 eval(脚本)返回true时，才能触发
+#                       其中脚本替换为 Ruby 脚本
+#                     默认无设置
+#
+# - 事件会每帧判定目标事件是否在指定位置上，如果成功，则触发一次互动类型
 #
 #   在成功触发一次后，将删除对应的设置，防止再次无缝触发
-#   而在下一次事件重置或事件页更新时，将重新开启全部的自动触发
+#   而在事件重置或事件页更新，或手动调用 event.refresh 时，将重新开启全部的触发
 #
 # 【示例】
 #
 # - 以上一个示例为基础
 #   第一个指令注释新增为如下文本：
 #    |- 注释：【交谈】【商店】【贿赂】
-#             <auto 贿赂{e.path(-1, "w")}>
+#             <auto d=w|s e=-1 sym=贿赂>
 #
-#   则当事件的面前一格为玩家时，将自动触发一次【贿赂】的互动，且之后不再重复触发
-#   但是当地图刷新或事件页切换再切换回来，将重置触发
+#   则当事件的面前/背后一格为玩家时，将自动触发一次【贿赂】的互动，之后不再重复触发
+#
+# - 以上一个示例为基础
+#   第一个指令注释新增为如下文本：
+#    |- 注释：<auto d=s e=小明 esym=贿赂 sym=受贿>
+#
+#   则当事件的背后一格为 名称含有小明 的事件时（且事件页不为空），
+#     将触发一次 小明 事件的【贿赂】的互动（与玩家按键触发一致），
+#     和本事件的【受贿】的互动（编号小的事件先触发）
+#
+# - 以上一个示例为基础
+#   第一个指令注释新增为如下文本：
+#    |- 注释：<auto d=w|ww|www e=逃犯 sym=抓住>
+#
+#   则当事件的面前三格内有 名称含有逃犯 的事件时（且事件页不为空），
+#     将触发一次本事件的【抓住】的互动
 #
 #---------------------------------------------------------------------------
 # 【联动】
@@ -126,6 +168,16 @@ $imported["EAGLE-EventInteractEX"] = true
 #
 #   如 $game_map.events[1].msg("贿赂", true)
 #     → 触发 1号事件 的 当前事件页 的 贿赂 标签中的指令
+#
+# - 对于事件触发事件，由于完全按照玩家按键触发进行时，总会有一些奇怪的地方出现卡顿感
+#   因此同样新增了调用事件消息来进行处理
+#   内容不变，仅仅将 auto 替换成 para 即可
+#
+#   以上一个示例为基础
+#   第一个指令注释新增为如下文本：
+#    |- 注释：<para d=s e=小明 esym=贿赂 sym=受贿>
+#
+#   就会改成用 并行执行 的方式调用本事件的【受贿】互动和小明事件的【贿赂互动】
 #
 #---------------------------------------------------------------------------
 # 【兼容性】
@@ -187,13 +239,14 @@ module EVENT_INTERACT
   # ● 提取事件页开头注释指令中预设的自身触发的互动类型的Hash
   #  event 为 Game_Event 的对象
   #--------------------------------------------------------------------------
-  def self.extract_self_syms(event)
-    syms = {}
+  def self.extract_tags(event, sym = "auto")
+    syms = []
     t = EAGLE.event_comment_head(event.list)
-    t.scan(/<auto:? *(.*?)>/mi).each do |ps|
-      _t = ps[0]
-      _t.gsub!(/ *{(.*?)} */) { "" }
-      syms[_t] = $1
+    t.scan(/<#{sym}:? *(.*?)>/mi).each do |ps|
+      _hash = EAGLE.parse_tags(ps[0])
+      eid = _hash[:e].to_i
+      _hash[:e] = eid if eid != 0
+      syms.push(_hash)
     end
     return syms
   end
@@ -418,10 +471,13 @@ module EAGLE
       if e2.is_a?(String)
         list = $game_map.events_xy(_x, _y)
         next if list.empty?
-        list.each { |_e| return true if _e.name.include?(e2) }
+        list.each { |_e|
+          next if _e.list == nil || _e.list.size == 1
+          return _e if _e.name.include?(e2)
+        }
         next
       end
-      return true if e2.x == _x && e2.y == _y
+      return e2 if e2.x == _x && e2.y == _y
     end
     return false
   end
@@ -442,6 +498,30 @@ module EAGLE
       end
       return $game_player
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 解析tags文本
+  #--------------------------------------------------------------------------
+  def self.parse_tags(_t)
+    # 脚本替换
+    _evals = {}; _eval_i = -1
+    _t.gsub!(/{(.*?)}/) { _eval_i += 1; _evals[_eval_i] = $1; "<#{_eval_i}>" }
+    # tag 拆分
+    _ts = _t.split(/ | /)
+    # TODO 处理等号左右的空格
+    # tag 解析
+    _hash = {}
+    _ts.each do |_tag|  # _tag = "xxx=xxx"
+      _tags = _tag.split('=')
+      _k = _tags[0].downcase
+      _v = _tags[1]
+      _hash[_k.to_sym] = _v
+    end
+    # 脚本替换
+    _hash.keys.each do |k|
+      _hash[k] = _hash[k].gsub(/<(\d+)>/) { _evals[$1.to_i] }
+    end
+    return _hash
   end
 end
 #===============================================================================
@@ -499,7 +579,8 @@ class Game_Event < Game_Character
   def init_public_members
     eagle_event_interact_init_public_members
     @starting_type = nil
-    @starting_ex = {} # sym => cond_str
+    @starting_ex = []
+    @starting_ex_para = []
   end
   #--------------------------------------------------------------------------
   # ● 清除启动中的标志
@@ -516,6 +597,7 @@ class Game_Event < Game_Character
   def clear_page_settings
     eagle_event_interact_clear_page_settings
     @starting_ex.clear
+    @starting_ex_para.clear
   end
   #--------------------------------------------------------------------------
   # ● 设置事件页的设置
@@ -523,7 +605,10 @@ class Game_Event < Game_Character
   alias eagle_event_interact_setup_page_settings setup_page_settings
   def setup_page_settings
     eagle_event_interact_setup_page_settings
-    @starting_ex = EVENT_INTERACT.extract_self_syms(self) if @list
+    if @list
+      @starting_ex = EVENT_INTERACT.extract_tags(self)
+      @starting_ex_para = EVENT_INTERACT.extract_tags(self, "para")
+    end
   end
   #--------------------------------------------------------------------------
   # ● 自动事件的启动判定
@@ -531,12 +616,44 @@ class Game_Event < Game_Character
   alias eagle_event_interact_check_event_trigger_auto check_event_trigger_auto
   def check_event_trigger_auto
     eagle_event_interact_check_event_trigger_auto
-    @starting_ex.each do |sym, cond|
-      if EVENT_INTERACT.eagle_eval(cond, self)
-        start_ex(sym)
-        @starting_ex.delete(sym)
-        return
+    @starting_ex.each { |_hash| return if check_hash_trigger(_hash) }
+    if $imported["EAGLE-EventMsg"]
+      @starting_ex_para.each { |_hash| check_hash_trigger_para(_hash) }
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 判定互动
+  #--------------------------------------------------------------------------
+  def check_hash_trigger(_hash)
+    return false if _hash[:cond] && !EVENT_INTERACT.eagle_eval(_hash[:cond], self)
+    e = path?(_hash[:e] || -1, _hash[:d] || "c")
+    if e
+      if _hash[:esym] && e != $game_player
+        e.msg(_hash[:esym]) if $imported["EAGLE-EventMsg"]
+        e.start_ex(_hash[:esym])
       end
+      if _hash[:sym]
+        start_ex(_hash[:sym])
+      end
+      @starting_ex.delete(_hash)
+      return true
+    end
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # ● 判定互动（并行执行）
+  #--------------------------------------------------------------------------
+  def check_hash_trigger_para(_hash)
+    return if _hash[:cond] && !EVENT_INTERACT.eagle_eval(_hash[:cond], self)
+    e = path?(_hash[:e] || -1, _hash[:d] || "c")
+    if e
+      if _hash[:esym] && e != $game_player
+        e.msg(_hash[:esym])
+      end
+      if _hash[:sym]
+        msg(_hash[:sym])
+      end
+      @starting_ex.delete(_hash)
     end
   end
   #--------------------------------------------------------------------------
@@ -544,8 +661,9 @@ class Game_Event < Game_Character
   #--------------------------------------------------------------------------
   def start_ex(type = nil)
     return if empty?
-    start
     @starting_type = type
+    @starting = true
+    @locked = true
   end
 end
 #===============================================================================
