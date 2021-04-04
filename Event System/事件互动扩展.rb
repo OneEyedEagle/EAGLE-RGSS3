@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.4.4.13 重写事件触发事件
+# - 2021.4.4.23 重写事件触发事件
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型，事件自动触发自身
 #------------------------------------------------------------------------------
@@ -60,6 +60,7 @@ $imported["EAGLE-EventInteractEX"] = true
 #      其中 dirs 为 wasd 的排列组合字符串（与人物方向相关），可用 | 分隔不同判定
 #        比如 "www" 代表面前的第三格位置
 #        比如 "w|s" 代表面前一格或背后一格
+#        特别的，c 代表当前格
 #
 #      比如 e.path?(-1, "w") 为判定玩家是否在当前事件的面前一格处
 #      比如 e.path?("路人A", "w|s|c")
@@ -99,6 +100,7 @@ $imported["EAGLE-EventInteractEX"] = true
 # - 当事件页的第一条指令为注释时，在其中编写 <auto tags> 来定义自动触发
 #   触发时，同样会挂起玩家的操作，即与玩家主动触发保持一致效果
 #
+# - 事件会每帧判定目标事件是否在指定位置上，如果成功，则触发一次互动类型
 #   可以重复编写多次，以设置多个相互独立的自动触发
 #
 #   其中 auto 大小写任意
@@ -109,12 +111,14 @@ $imported["EAGLE-EventInteractEX"] = true
 #                  其中 dirs 替换为上一个内容中的 path? 方法的dirs
 #                  如 c 代表位置相同，w 代表在本事件的前面一格
 #                     c|w|a|s|d 代表在本事件的四方向周围一格或位置相同
+#                  特别的，如果为数字，代表XY距离的差值绝对值的和恰好为该数字
 #                若不写，则默认为相同位置
 #
 #      e=eid  → 设置要查找的事件的id
 #                  其中 eid 替换为 -1 时代表玩家，正数代表指定事件的序号
 #                  为 字符串 时代表名称中含有该字符串的任一事件
 #                  （注意，若事件的当前页为空时，会判定为查找失败并被跳过）
+#                   可以用 | 分隔不同事件，此时其中任一事件达成条件，即会触发
 #                若不写，则默认查看玩家的位置
 #
 #      esym=字符串 → 当查找成功时，被找到的事件需要执行的互动内容
@@ -129,10 +133,11 @@ $imported["EAGLE-EventInteractEX"] = true
 #                       其中脚本替换为 Ruby 脚本
 #                     默认无设置
 #
-# - 事件会每帧判定目标事件是否在指定位置上，如果成功，则触发一次互动类型
-#
-#   在成功触发一次后，将删除对应的设置，防止再次无缝触发
-#   而在事件重置或事件页更新，或手动调用 event.refresh 时，将重新开启全部的触发
+#      t=时间 → 设置触发一次后，再次触发前的等待帧数
+#                  其中时间替换为 数字，单位为帧
+#                  若存在任一事件在执行（挂起玩家移动的执行模式），等待将暂停计时
+#                  若设置为0，则在事件重置或事件页更新时，才能再次触发
+#                默认设置 0
 #
 # 【示例】
 #
@@ -153,10 +158,20 @@ $imported["EAGLE-EventInteractEX"] = true
 #
 # - 以上一个示例为基础
 #   第一个指令注释新增为如下文本：
-#    |- 注释：<auto d=w|ww|www e=逃犯 sym=抓住>
+#    |- 注释：<auto d=w|ww|www e=逃犯 sym=抓住 t=60>
 #
 #   则当事件的面前三格内有 名称含有逃犯 的事件时（且事件页不为空），
-#     将触发一次本事件的【抓住】的互动
+#     将触发一次本事件的【抓住】的互动，
+#     在互动结束后，进行60帧的冷却，冷却结束时若事件还在，将再次触发
+#
+# 【注意】
+#
+# - 由于这个并行判定的触发同样是地图上玩家按键触发的模式，
+#     即触发时将挂起玩家操作，同样会隐藏互动列表
+#     因此请不要编写太多高频率重复刷新的并行触发，那样将导致互动列表闪烁
+#
+# - 如果实在需要，推荐使用【事件消息机制】，然后将 auto 改为 para
+#     调用事件消息进行并行处理，将不再挂起一般的操作
 #
 #---------------------------------------------------------------------------
 # 【联动】
@@ -244,8 +259,9 @@ module EVENT_INTERACT
     t = EAGLE.event_comment_head(event.list)
     t.scan(/<#{sym}:? *(.*?)>/mi).each do |ps|
       _hash = EAGLE.parse_tags(ps[0])
-      eid = _hash[:e].to_i
-      _hash[:e] = eid if eid != 0
+      _hash[:t] ||= 0
+      _hash[:t] = _hash[:t].to_i
+      _hash[:tc] = 0
       syms.push(_hash)
     end
     return syms
@@ -272,7 +288,9 @@ module EVENT_INTERACT
   # ● 重置存储的数据
   #--------------------------------------------------------------------------
   def self.reset(event, syms)
-    return if @info != nil && @info[:syms] == syms
+    if @info && @info[:event].id == event.id && @info[:syms] == syms
+      return
+    end
     @info = {}
     @info[:event] = event
     @info[:syms] = syms
@@ -443,43 +461,99 @@ module EAGLE
   #--------------------------------------------------------------------------
   # ● 判定e2是否在e1的dirs位置上 或 在e1的dirs位置上的事件的名字是否含e2.to_s
   #  dirs 为 wasd 的排列组合字符串，若为空，则判定是否坐标一致
-  #       可以用 | 分割不同方位
-  #   其中 w 代表面前一格，s 代表后退一格，a 代表左手边一格，d 代表右手边一格
+  #       其中 w 代表面前一格，s 代表后退一格，a 代表左手边一格，d 代表右手边一格
+  #        c 代表当前格，数字代表XY坐标差的和
+  #       可以用 | 分割不同位置
+  #  e2_str 为事件的字符串
+  #       其中 正数 为对应事件，-1 为玩家，字符串为事件名称
+  #       可以用 | 分割不同事件
   #--------------------------------------------------------------------------
-  def self.check_chara_pos?(e1, dirs, e2)
-    w_dx = w_dy = 0
-    a_dx = a_dy = 0
-    s_dx = s_dy = 0
-    d_dx = d_dy = 0
-    case e1.direction
-    when 2; w_dy =  1; a_dx =  1; s_dy = -1; d_dx = -1
-    when 4; w_dx = -1; a_dy =  1; s_dx =  1; d_dy = -1
-    when 6; w_dx =  1; a_dy = -1; s_dx = -1; d_dy =  1
-    when 8; w_dy = -1; a_dx = -1; s_dy =  1; d_dx =  1
-    end
-    dirs.split('|').each do |cs|
-      _x = e1.x
-      _y = e1.y
-      cs.each_char do |c|
-        case c
-        when 'w'; _x += w_dx; _y += w_dy
-        when 'a'; _x += a_dx; _y += a_dy
-        when 's'; _x += s_dx; _y += s_dy
-        when 'd'; _x += d_dx; _y += d_dy
+  def self.check_chara_pos?(e1, dirs, e2_str)
+    e2_str.split('|').each do |e2_|
+      # 提取目标事件
+      e2_id = e2_.to_i
+      if e2_id == 0
+        e2 = e2_  # 字符串：名称含有e2的事件
+      else
+        e2 = EAGLE.get_chara(self, e2_id)  # 数字：指定序号的事件
+      end
+      # 提取目标位置
+      dirs.split('|').each do |cs|
+        # 判定距离的差值
+        if (d = cs.to_i) != 0  # 数字：距离差
+          e = check_chara_pos_dxy?(e1, d, e2)
+          return e if e
+          next
         end
+        # 字符串：wasd组合
+        # 判定直接坐标
+        e = check_chara_pos_wasd?(e1, cs, e2)
+        return e if e
       end
-      if e2.is_a?(String)
-        list = $game_map.events_xy(_x, _y)
-        next if list.empty?
-        list.each { |_e|
-          next if _e.list == nil || _e.list.size == 1
-          return _e if _e.name.include?(e2)
-        }
-        next
-      end
-      return e2 if e2.x == _x && e2.y == _y
     end
     return false
+  end
+  #--------------------------------------------------------------------------
+  # ● 查找指定距离差值的事件
+  #--------------------------------------------------------------------------
+  def self.check_chara_pos_dxy?(e1, d, e2)
+    if e2.is_a?(String) # 名字含有e2的任一事件满足距离差值
+      $game_map.events.each do |eid, _e|
+        next if _e.list == nil || _e.list.size == 1
+        next if !_e.name.include?(e2)
+        dx = (e1.x - _e.x).abs
+        dy = (e1.y - _e.y).abs
+        return _e if dx + dy == d
+      end
+      return nil
+    end
+    # 指定事件与当前事件的距离差值满足d
+    dx = (e2.x - e1.x).abs
+    dy = (e2.y - e1.y).abs
+    return e2 if dx + dy == d
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 计算指定路径的目的地
+  #--------------------------------------------------------------------------
+  WASD_DX = {
+    2 => {'w' => 0, 'a' => 1, 's' => 0, 'd' => -1, 'c' => 0},
+    4 => {'w' => -1, 'a' => 0, 's' => 1, 'd' => 0, 'c' => 0},
+    6 => {'w' => 1, 'a' => 0, 's' => -1, 'd' => 0, 'c' => 0},
+    8 => {'w' => 0, 'a' => -1, 's' => 0, 'd' => 1, 'c' => 0}
+  }
+  WASD_DY = {
+    2 => {'w' => 1, 'a' => 0, 's' => -1, 'd' => 0, 'c' => 0},
+    4 => {'w' => 0, 'a' => 1, 's' => 0, 'd' => -1, 'c' => 0},
+    6 => {'w' => 0, 'a' => -1, 's' => 0, 'd' => 1, 'c' => 0},
+    8 => {'w' => -1, 'a' => 0, 's' => 1, 'd' => 0, 'c' => 0}
+  }
+  def self.get_wasd_pos(e1, dirs)
+    _x = e1.x
+    _y = e1.y
+    _d = e1.direction
+    dirs.each_char { |c|
+      _x += WASD_DX[_d][c]
+      _y += WASD_DY[_d][c]
+    }
+    return _x, _y
+  end
+  #--------------------------------------------------------------------------
+  # ● 查找指定路径目的地的事件
+  #--------------------------------------------------------------------------
+  def self.check_chara_pos_wasd?(e1, dirs, e2)
+    _x, _y = get_wasd_pos(e1, dirs)
+    if e2.is_a?(String) # 名字含有e2的任一事件满足坐标
+      list = $game_map.events_xy(_x, _y)
+      return nil if list.empty?
+      list.each { |_e|
+        next if _e.list == nil || _e.list.size == 1
+        return _e if _e.name.include?(e2)
+      }
+      return nil
+    end
+    return e2 if e2.x == _x && e2.y == _y
+    return nil
   end
   #--------------------------------------------------------------------------
   # ● 获取事件对象
@@ -553,12 +627,8 @@ class Game_Character < Game_CharacterBase
   # ● 通过dirs路径（与当前朝向有关）能否与event_id事件重合？
   # 或通过dirs路径能否找到一个名称含 event_id.to_s 的事件？
   #--------------------------------------------------------------------------
-  def path?(event_id, dirs = "")
-    if event_id.is_a?(String)
-      return EAGLE.check_chara_pos?(self, dirs, event_id)
-    end
-    e2 = EAGLE.get_chara(self, event_id)
-    return EAGLE.check_chara_pos?(self, dirs, e2)
+  def path?(event_str, dirs = "")
+    return EAGLE.check_chara_pos?(self, dirs, event_str)
   end
 end
 #===============================================================================
@@ -618,42 +688,51 @@ class Game_Event < Game_Character
     eagle_event_interact_check_event_trigger_auto
     @starting_ex.each { |_hash| return if check_hash_trigger(_hash) }
     if $imported["EAGLE-EventMsg"]
-      @starting_ex_para.each { |_hash| check_hash_trigger_para(_hash) }
+      @starting_ex_para.each { |_hash| check_hash_trigger(_hash, :msg) }
     end
   end
   #--------------------------------------------------------------------------
   # ● 判定互动
   #--------------------------------------------------------------------------
-  def check_hash_trigger(_hash)
+  def check_hash_trigger(_hash, type = :player)
+    # 若之前触发过了，留出一部分延迟时间，防止无缝触发
+    if _hash[:active] == true
+      return false if $game_map.interpreter.event_id > 0
+      return false if type == :msg && msg?
+      return false if _hash[:t] == 0
+      _hash[:tc] -= 1
+      _hash[:active] = false if _hash[:tc] <= 0
+      return false
+    end
     return false if _hash[:cond] && !EVENT_INTERACT.eagle_eval(_hash[:cond], self)
-    e = path?(_hash[:e] || -1, _hash[:d] || "c")
+    e = path?(_hash[:e] || "-1", _hash[:d] || "c")
     if e
-      if _hash[:esym] && e != $game_player
-        e.msg(_hash[:esym]) if $imported["EAGLE-EventMsg"]
-        e.start_ex(_hash[:esym])
-      end
-      if _hash[:sym]
-        start_ex(_hash[:sym])
-      end
-      @starting_ex.delete(_hash)
+      apply_hash_trigger(_hash, e, type)
+      _hash[:active] = true
+      _hash[:tc] = _hash[:t]
       return true
     end
     return false
   end
   #--------------------------------------------------------------------------
-  # ● 判定互动（并行执行）
+  # ● 执行互动
   #--------------------------------------------------------------------------
-  def check_hash_trigger_para(_hash)
-    return if _hash[:cond] && !EVENT_INTERACT.eagle_eval(_hash[:cond], self)
-    e = path?(_hash[:e] || -1, _hash[:d] || "c")
-    if e
+  def apply_hash_trigger(_hash, e, type)
+    if type == :player
+      if _hash[:esym] && e != $game_player
+        e.start_ex(_hash[:esym])
+      end
+      if _hash[:sym]
+        start_ex(_hash[:sym])
+      end
+    end
+    if type == :msg
       if _hash[:esym] && e != $game_player
         e.msg(_hash[:esym])
       end
       if _hash[:sym]
         msg(_hash[:sym])
       end
-      @starting_ex.delete(_hash)
     end
   end
   #--------------------------------------------------------------------------
@@ -670,6 +749,18 @@ end
 # ○ Game_Player
 #===============================================================================
 class Game_Player < Game_Character
+  #--------------------------------------------------------------------------
+  # ● 获取指定触发条件的事件
+  #--------------------------------------------------------------------------
+  def get_map_event(x, y, triggers, normal)
+    $game_map.events_xy(x, y).each do |event|
+      if event.trigger_in?(triggers) && event.normal_priority? == normal &&
+         event.list.size > 1  # 事件页不为空
+        return event
+      end
+    end
+    return nil
+  end
   #--------------------------------------------------------------------------
   # ● 获取角色当前格子的可触发事件
   #--------------------------------------------------------------------------
@@ -689,17 +780,6 @@ class Game_Player < Game_Character
     y3 = $game_map.round_y_with_direction(y2, @direction)
     e = get_map_event(x3, y3, triggers, true)
     return e
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取指定触发条件的事件
-  #--------------------------------------------------------------------------
-  def get_map_event(x, y, triggers, normal)
-    $game_map.events_xy(x, y).each do |event|
-      if event.trigger_in?(triggers) && event.normal_priority? == normal
-        return event
-      end
-    end
-    return nil
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）非移动中的处理
