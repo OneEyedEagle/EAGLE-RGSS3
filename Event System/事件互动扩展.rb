@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.4.4.23 重写事件触发事件
+# - 2021.4.6.21 当只有一个互动时，不显示切换提示
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型，事件自动触发自身
 #------------------------------------------------------------------------------
@@ -314,13 +314,13 @@ module EVENT_INTERACT
   #--------------------------------------------------------------------------
   # ● 每帧更新（于Spriteset_Map中调用）
   #--------------------------------------------------------------------------
-  def self.update(sprite)
+  def self.update(sprite, event_sprites)
     if @info == nil || self.sym == nil || $game_map.interpreter.running?
       return sprite.visible = false
     end
     sprite.visible = true
     redraw(sprite)
-    update_position(sprite)
+    update_position(sprite, event_sprites)
   end
   #--------------------------------------------------------------------------
   # ● 每帧重绘
@@ -329,6 +329,7 @@ module EVENT_INTERACT
     return if @info[:i_draw] == @info[:i]
     @info[:i_draw] = @info[:i]
     syms = @info[:syms]
+    flag_draw_hint = syms.size > 1
 
     # 互动类型文本的文字大小
     sym_font_size = 16
@@ -343,8 +344,9 @@ module EVENT_INTERACT
     _b.font.size = sym_font_size
     syms.each { |t| r = _b.text_size(t); ws.push(r.width) }
 
-    w = syms.size * (icon_wh + sym_offset) + ws.max + 8
-    h = 2 + 12 + 2 + icon_wh
+    w = syms.size * (icon_wh + sym_offset) + ws.max + 6
+    h = 2 + icon_wh + 2
+    h += 12 if flag_draw_hint
     if sprite.bitmap && (sprite.width != w || sprite.height != h)
       sprite.bitmap.dispose
       sprite.bitmap = nil
@@ -363,7 +365,7 @@ module EVENT_INTERACT
 
     # 绘制具体的选项
     sprite.bitmap.font.size = sym_font_size
-    _x = 4
+    _x = 2
     _ox = 0
     syms.each_with_index do |t, i|
       # 绘制图标
@@ -382,17 +384,19 @@ module EVENT_INTERACT
     end
     _y += icon_wh
 
-    # 绘制分割线
-    sprite.bitmap.fill_rect(0, _y, sprite.width, 1,
-      Color.new(255,255,255,120))
-    _y += 2
+    if flag_draw_hint
+      # 绘制分割线
+      sprite.bitmap.fill_rect(0, _y, sprite.width, 1,
+        Color.new(255,255,255,120))
+      _y += 2
 
-    # 绘制按键说明文本
-    sprite.bitmap.font.size = 12
-    sprite.bitmap.font.color.alpha = 255
-    sprite.bitmap.draw_text(0, _y, sprite.width, 14,
-      next_text, 0)
-    _y += 12
+      # 绘制按键说明文本
+      sprite.bitmap.font.size = 12
+      sprite.bitmap.font.color.alpha = 255
+      sprite.bitmap.draw_text(0, _y, sprite.width, 14,
+        next_text, 0)
+      _y += 12
+    end
 
     # 将当前选中的互动类型，移动到行走图下方
     sprite.ox = _ox
@@ -401,9 +405,14 @@ module EVENT_INTERACT
   #--------------------------------------------------------------------------
   # ● 每帧更新位置
   #--------------------------------------------------------------------------
-  def self.update_position(sprite)
+  def self.update_position(sprite, event_sprites)
     sprite.x = @info[:event].screen_x
     sprite.y = @info[:event].screen_y
+    sprite_e = nil
+    event_sprites.each { |s| break sprite_e = s if s.character == @info[:event] }
+    if sprite_e
+      sprite.y -= sprite_e.oy
+    end
     if sprite.y + sprite.height > Graphics.height
       sprite.y = Graphics.height - sprite.height
     end
@@ -860,6 +869,6 @@ class Spriteset_Map
   alias eagle_event_interact_update_characters update_characters
   def update_characters
     eagle_event_interact_update_characters
-    EVENT_INTERACT.update(@sprite_trigger_hint)
+    EVENT_INTERACT.update(@sprite_trigger_hint, @character_sprites)
   end
 end
