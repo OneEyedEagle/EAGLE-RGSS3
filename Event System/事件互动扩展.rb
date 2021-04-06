@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.4.6.21 当只有一个互动时，不显示切换提示
+# - 2021.4.6.23 当只有一个互动时，不显示切换提示；新增显示位置修改
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型，事件自动触发自身
 #------------------------------------------------------------------------------
@@ -234,6 +234,16 @@ module EVENT_INTERACT
   def self.next_text
     " SHIFT →"
   end
+  #--------------------------------------------------------------------------
+  # ●【常量】互动列表的显示位置
+  # 0 时为事件下方，1 时为事件上方，2 时为事件右侧
+  #--------------------------------------------------------------------------
+  def self.hint_pos
+    # 取消注释下面这一句，可以改成使用1号变量的值进行位置控制
+    # return $game_variables[1]
+    # 默认显示在事件右侧
+    return 2
+  end
 
   #--------------------------------------------------------------------------
   # ● 提取事件页开头注释指令中预设的互动类型的数组
@@ -363,6 +373,20 @@ module EVENT_INTERACT
       Color.new(0, 0, 0, 160))
     _y += 2
 
+    if flag_draw_hint && hint_pos == 1
+      # 绘制按键说明文本
+      sprite.bitmap.font.size = 12
+      sprite.bitmap.font.color.alpha = 255
+      sprite.bitmap.draw_text(0, _y, sprite.width, 14,
+        next_text, 0)
+      _y += 12
+
+      # 绘制分割线
+      sprite.bitmap.fill_rect(0, _y, sprite.width, 1,
+        Color.new(255,255,255,120))
+      _y += 2
+    end
+
     # 绘制具体的选项
     sprite.bitmap.font.size = sym_font_size
     _x = 2
@@ -384,7 +408,7 @@ module EVENT_INTERACT
     end
     _y += icon_wh
 
-    if flag_draw_hint
+    if flag_draw_hint && hint_pos != 1
       # 绘制分割线
       sprite.bitmap.fill_rect(0, _y, sprite.width, 1,
         Color.new(255,255,255,120))
@@ -411,7 +435,18 @@ module EVENT_INTERACT
     sprite_e = nil
     event_sprites.each { |s| break sprite_e = s if s.character == @info[:event] }
     if sprite_e
-      sprite.y -= sprite_e.oy
+      case hint_pos
+      when 0
+      when 1
+        sprite.y = sprite.y - sprite.height - sprite_e.oy
+      when 2
+        sprite.ox = 0
+        sprite.x = sprite.x + sprite_e.ox
+        sprite.y = sprite.y - sprite.height / 2 - sprite_e.height / 2
+      end
+    end
+    if sprite.x + sprite.width > Graphics.width
+      sprite.x = Graphics.width - sprite.width
     end
     if sprite.y + sprite.height > Graphics.height
       sprite.y = Graphics.height - sprite.height
