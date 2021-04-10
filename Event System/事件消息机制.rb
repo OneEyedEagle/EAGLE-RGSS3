@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventMsg"] = true
 #==============================================================================
-# - 2020.9.17.9 扩展 msg? 方法调用
+# - 2021.4.9.12 新增标签跳转功能
 #==============================================================================
 # - 本插件新增消息机制，以直接触发事件中的指令
 #--------------------------------------------------------------------------
@@ -44,6 +44,8 @@ $imported["EAGLE-EventMsg"] = true
 #   1、为了保证事件的等待指令有意义，并且不出现明显的操作延时感，
 #      若消息未执行完，此时再传入同一消息，将不会重复执行，但依然返回 true
 #   2、为了确保并行，当事件在执行消息时，不再执行其 start 方法
+#   3、对于事件消息中的【标签跳转】，将在本消息的初始查找范围内进行跳转：
+#       开始对应标签消息的执行，并终止原本的消息
 #
 # 【高级】
 #    event.msg?  → 当指定事件存在任意正在执行的消息时，返回true
@@ -100,14 +102,10 @@ $imported["EAGLE-EventMsg"] = true
 #==============================================================================
 
 module EAGLE
-#==============================================================================
-# ■ 通用
-#==============================================================================
-module EVENT_MSG
   #--------------------------------------------------------------------------
   # ● 获取指定LABEL的指令序列
   #--------------------------------------------------------------------------
-  def find_label_list(msg_label, lists)
+  def self.find_label_list(msg_label, lists)
     list_start = false
     eagle_list = []
     lists.each do |list|
@@ -128,12 +126,16 @@ module EVENT_MSG
     eagle_list.push( RPG::EventCommand.new )
     return eagle_list
   end
+#==============================================================================
+# ■ 通用
+#==============================================================================
+module EVENT_MSG
   #--------------------------------------------------------------------------
   # ● 初始化消息
   #--------------------------------------------------------------------------
   def msg_trigger_init
     @eagle_msg_lists = []
-    @interpreter_eagle = Game_Interpreter.new
+    @interpreter_eagle = Game_Interpreter_EagleMsg.new
     @eagle_msg_cur_event_id = 0
     @eagle_msg_cur_label = nil
   end
@@ -142,9 +144,9 @@ module EVENT_MSG
   #--------------------------------------------------------------------------
   def msg_trigger_call(label, lists)
     label = label.to_s
-    list = find_label_list(label, lists)
+    list = EAGLE.find_label_list(label, lists)
     return false if list == nil
-    @eagle_msg_lists.push( [label, list] )
+    @eagle_msg_lists.push( [label, list, lists] )
     return true
   end
   #--------------------------------------------------------------------------
@@ -161,7 +163,7 @@ module EVENT_MSG
       if !@eagle_msg_lists.empty?
         list = @eagle_msg_lists.shift
         @eagle_msg_cur_label = list[0]
-        @interpreter_eagle.setup(list[1], @eagle_msg_cur_event_id)
+        @interpreter_eagle.setup(list[1], @eagle_msg_cur_event_id, list[2])
       else
         @eagle_msg_cur_label = nil
       end
@@ -178,6 +180,37 @@ module EVENT_MSG
     return false
   end
 end
+#==============================================================================
+# ■ Game_Interpreter_EagleMsg
+#==============================================================================
+  class Game_Interpreter_EagleMsg < Game_Interpreter
+    #--------------------------------------------------------------------------
+    # ● 设置事件
+    #--------------------------------------------------------------------------
+    def setup(list, event_id = 0, lists = nil)
+      @lists = lists  # 保存原本的全部指令列表，用于做跳转
+      super(list, event_id)
+    end
+    #--------------------------------------------------------------------------
+    # ● 转至标签
+    #--------------------------------------------------------------------------
+    def command_119
+      @eagle_index_before = @index
+      super
+      return if @eagle_index_before != @index
+      if @lists  # 跳转到别的事件消息，同时覆盖当前的执行
+        label_name = @params[0]
+        list = EAGLE.find_label_list(label_name, @lists)
+        if list
+          setup(list, @event_id, @lists)
+        else  # 未找到，报错，并停止当前的执行
+          p "【错误】在执行#{@map_id}号地图#{@event_id}号事件的标签跳转：#{label_name}时："
+          p " - 未找到目标标签，无法进行事件消息的切换。"
+          @index = @list.size  # 依然中止事件的处理
+        end
+      end
+    end
+  end
 end
 #==============================================================================
 # ■ Game_Temp

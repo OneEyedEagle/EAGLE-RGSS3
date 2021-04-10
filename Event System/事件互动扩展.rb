@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.4.6.23 当只有一个互动时，不显示切换提示；新增显示位置修改
+# - 2021.4.9.13 修复标签跳转功能
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型，事件自动触发自身
 #------------------------------------------------------------------------------
@@ -44,6 +44,8 @@ $imported["EAGLE-EventInteractEX"] = true
 #       按下 方向键 将正常移动，即在显示互动列表时，不会干扰玩家的移动
 #
 # - 特别的，本插件的互动不会锁定事件的方向，因此请自己手动添加【朝向玩家】
+#
+# - 特别的，【转至标签】指令仍然有效，在使用时请注意不要出现循环嵌套
 #
 # 【高级】
 #
@@ -479,30 +481,6 @@ module EAGLE
     t
   end
   #--------------------------------------------------------------------------
-  # ● 读取事件页中指定标签对之间的指令数组
-  #--------------------------------------------------------------------------
-  def self.find_label_list(msg_label, lists)
-    list_start = false
-    eagle_list = []
-    lists.each do |list|
-      list.each do |command|
-        if command.code == 118
-          label = command.parameters[0]
-          if list_start
-            break if label == "END"
-          else
-            next list_start = true if label == msg_label
-          end
-        end
-        eagle_list.push(command) if list_start
-      end
-      break if list_start
-    end
-    return nil if eagle_list.empty?
-    eagle_list.push( RPG::EventCommand.new )
-    return eagle_list
-  end
-  #--------------------------------------------------------------------------
   # ● 判定e2是否在e1的dirs位置上 或 在e1的dirs位置上的事件的名字是否含e2.to_s
   #  dirs 为 wasd 的排列组合字符串，若为空，则判定是否坐标一致
   #       其中 w 代表面前一格，s 代表后退一格，a 代表左手边一格，d 代表右手边一格
@@ -643,6 +621,37 @@ module EAGLE
   end
 end
 #===============================================================================
+# ○ Game_Interpreter
+#===============================================================================
+class Game_Interpreter
+  #--------------------------------------------------------------------------
+  # ● 添加标签
+  #--------------------------------------------------------------------------
+  alias eagle_event_interact_command_118 command_118
+  def command_118
+    eagle_event_interact_command_118
+    event_interact_finish if @params[0] == 'END'
+  end
+  #--------------------------------------------------------------------------
+  # ● 转至互动
+  #--------------------------------------------------------------------------
+  def event_interact_search(sym)
+    label_name = sym
+    @list.size.times do |i|
+      if @list[i].code == 118 && @list[i].parameters[0] == label_name
+        @index = i
+        return
+      end
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束互动
+  #--------------------------------------------------------------------------
+  def event_interact_finish
+    @index = @list.size
+  end
+end
+#===============================================================================
 # ○ Game_Map
 #===============================================================================
 class Game_Map
@@ -652,13 +661,11 @@ class Game_Map
   def setup_starting_map_event
     event = @events.values.find {|event| event.starting }
     if event
-      list = event.list
-      # 新增处理，提取当前互动类型的指令组
-      if event.starting_type
-        list = EAGLE.find_label_list(event.starting_type, [list])
-      end
-      @interpreter.setup(list, event.id)
-      event.clear_starting_flag  # 将flag重置放到最后处理
+      @interpreter.setup(event.list, event.id)
+      # 新增处理，跳转到当前互动类型的指令组
+      @interpreter.event_interact_search(event.starting_type)
+      # 将flag重置放到最后处理
+      event.clear_starting_flag
     end
     event
   end
