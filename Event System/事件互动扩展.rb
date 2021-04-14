@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.4.12.9 修改tag分析模式
+# - 2021.4.14.20 修改tag分析模式
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型，事件自动触发自身
 #------------------------------------------------------------------------------
@@ -902,9 +902,9 @@ class Spriteset_Map
   alias eagle_event_interact_dispose_characters dispose_characters
   def dispose_characters
     eagle_event_interact_dispose_characters
-    @sprite_trigger_hint.bitmap = nil
-    @sprite_trigger_hint.dispose
     EVENT_INTERACT.clear
+    @sprite_trigger_hint.bitmap.dispose if @sprite_trigger_hint.bitmap
+    @sprite_trigger_hint.dispose
   end
   #--------------------------------------------------------------------------
   # ● 更新人物精灵
