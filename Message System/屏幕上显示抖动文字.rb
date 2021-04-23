@@ -1,8 +1,9 @@
 #encoding:utf-8
 #==============================================================================
-# ■ 显示抖动文字VX by 老鹰
+# ■ 显示抖动文字 by 老鹰
+# 【此插件兼容VX和VX Ace】
 #==============================================================================
-# - 2020.11.6.18
+# - 2021.4.23.11
 #------------------------------------------------------------------------------
 # - 在固定的位置显示一组抖动文字
 #------------------------------------------------------------------------------
@@ -25,7 +26,11 @@
 #     默认的分割符号为 % ，可在146行处的 /[%]/ 修改，本质为正则表达式
 #
 #   【示例】
+#   VA 版本
+#     事件脚本 map_text("这是一句测试语句", 200,100, 10)
+#        → 在屏幕的 (200,100) 处 显示该句，且每个字符之间等待间隔 10 帧
 #
+#   VX 版本
 #     事件脚本 map_text("这%是%一%句%测%试%语%句", 200,100, 10)
 #        → 在屏幕的 (200,100) 处 显示该句，且每个字符之间等待间隔 10 帧
 #
@@ -105,7 +110,7 @@
 #
 #   在Spriteset_Map中绑定了一个精灵组，用于更新这些抖动文字精灵
 #==============================================================================
-
+FLAG_VX = RUBY_VERSION[0..2] == "1.8"
 class Game_Interpreter
   #--------------------------------------------------------------------------
   # ● 调用显示地图抖动文本
@@ -139,20 +144,38 @@ class Game_Interpreter
   end
 end
 
+class Font_EagleMapChara < Font
+  attr_accessor :opacity_down, :opacity_up
+  #--------------------------------------------------------------------------
+  # ● 初始化
+  #--------------------------------------------------------------------------
+  def initialize
+    super
+    @opacity_down = 150
+    @opacity_up   = 255
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置
+  #--------------------------------------------------------------------------
+  def reset
+    @name = Font.default_name
+    @size = Font.default_size
+    @bold = Font.default_bold
+    @italic = Font.default_italic
+    @shadow = Font.default_shadow
+    @color = Font.default_color
+    @opacity_down = 150
+    @opacity_up   = 255
+  end
+end
+
 module EAGLE end
 module EAGLE::MapChara
-  #--------------------------------------------------------------------------
-  # ● 属性方法
-  #--------------------------------------------------------------------------
-  class << self
-    attr_accessor :text, :clear, :out_id, :move_out
-    attr_accessor :name, :size, :bold, :italic, :shadow, :color
-    attr_accessor :opacity_down, :opacity_up
-  end
   #--------------------------------------------------------------------------
   # ● 新增
   #--------------------------------------------------------------------------
   @text = []
+  @font = Font_EagleMapChara.new
   def self.add(text, params = {})
     params[:x] ||= rand(400)
     params[:y] ||= rand(400)
@@ -160,8 +183,12 @@ module EAGLE::MapChara
     params[:t] ||= 10 # duration
     params[:s] ||= 3 # shake
     params[:d] ||= 3 # offset
-    t = text.split(/[%]/)
-    @text.push([t, params])
+    if FLAG_VX
+      t = text.split(/[%]/)
+    else
+      t = text.split('')
+    end
+    @text.push([t, params, @font.dup])
   end
   #--------------------------------------------------------------------------
   # ● 清除标志
@@ -174,44 +201,32 @@ module EAGLE::MapChara
   # ● 重置字体属性
   #--------------------------------------------------------------------------
   def self.reset
-    @name = Font.default_name
-    @size = Font.default_size
-    @bold = Font.default_bold
-    @italic = Font.default_italic
-    @shadow = Font.default_shadow
-    @color = Font.default_color
-    @opacity_down = 150
-    @opacity_up   = 255
     @move_out = -1
-  end
-end
-
-class Spriteset_Map
-  #--------------------------------------------------------------------------
-  # ● 初始化
-  #--------------------------------------------------------------------------
-  alias eagle_map_characters_initialize initialize
-  def initialize
-    @map_characters = Spriteset_MapCharacters.new
-    eagle_map_characters_initialize
+    @font.reset
   end
   #--------------------------------------------------------------------------
-  # ● 更新
+  # ● 属性方法
   #--------------------------------------------------------------------------
-  alias eagle_map_characters_update update
-  def update
-    eagle_map_characters_update
-    @map_characters.update
+  class << self
+    attr_accessor :text, :clear, :out_id, :move_out
+    def name;     @font.name; end
+    def name=(v); @font.name = v; end
+    def size;     @font.size; end
+    def size=(v); @font.size = v; end
+    def bold;     @font.bold; end
+    def bold=(v); @font.bold = v; end
+    def italic;     @font.italic; end
+    def italic=(v); @font.italic = v; end
+    def shadow;     @font.shadow; end
+    def shadow=(v); @font.shadow = v; end
+    def color;     @font.color; end
+    def color=(v); @font.color = v; end
+    def opacity_down;     @font.opacity_down; end
+    def opacity_down=(v); @font.opacity_down = v; end
+    def opacity_up;     @font.opacity_up; end
+    def opacity_up=(v); @font.opacity_up = v; end
   end
-  #--------------------------------------------------------------------------
-  # ● 释放
-  #--------------------------------------------------------------------------
-  alias eagle_map_characters_dispose dispose
-  def dispose
-    @map_characters.dispose
-    eagle_map_characters_dispose
-  end
-end
+end # end of module
 
 class Spriteset_MapCharacters
   #--------------------------------------------------------------------------
@@ -224,7 +239,6 @@ class Spriteset_MapCharacters
     @duration_count = 0 # 单个字符串中绘制等待计数
     @text_count = 0     # 单个字符串中绘制计数
     @move_out_count = 0 # 移出时的等待计数
-    @first_chara = true # 当前移入的为该句的第一个文字？
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -251,13 +265,19 @@ class Spriteset_MapCharacters
   #--------------------------------------------------------------------------
   def draw
     return if (@duration_count -= 1) > 0
+    # 如果并非首个字，但又没有精灵（显示中途打开菜单等）
+    if @text_count > 0 && @characters.size == 0
+      # 现在是继续显示之前未显示完的
+      #  但如果将 @text_count 修改为全局变量，则会终止之前未显示完的
+      return draw_end
+    end
+
     tp = EAGLE::MapChara.text[0]
     params = tp[1].dup
     params[:dx] = (EAGLE::MapChara.size + 2) * @text_count
     params[:dy] = 0
-    s = Sprite_MapCharacter.new(tp[0][@text_count], params)
-    if @first_chara
-      @first_chara = false
+    s = Sprite_MapCharacter.new(tp[0][@text_count], params, tp[2])
+    if @text_count == 0
       @ids[params[:id]] = s if params[:id]
     else
       @characters[-1].next_chara = s
@@ -265,12 +285,15 @@ class Spriteset_MapCharacters
     @characters.push(s)
 
     @text_count += 1
-    @duration_count = params[:t]
-    if @text_count >= tp[0].size
-      EAGLE::MapChara.text.shift
-      @text_count = 0
-      @first_chara = true # 该句结束
-    end
+    @duration_count = params[:t] # 绘制一个字后的等待帧数
+    draw_end if @text_count >= tp[0].size
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制完成
+  #--------------------------------------------------------------------------
+  def draw_end
+    EAGLE::MapChara.text.shift
+    @text_count = 0
   end
   #--------------------------------------------------------------------------
   # ● 清除地图抖动文本
@@ -328,7 +351,7 @@ class Sprite_MapCharacter < Sprite
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
-  def initialize(c, ps)
+  def initialize(c, ps, _font)
     super(nil)
     @params = ps
     @params[:sc] = 0 # 抖动一次后的等待时间计数
@@ -341,15 +364,14 @@ class Sprite_MapCharacter < Sprite
     @params[:out_active] = false
     update_pos
 
-    t1 = EAGLE::MapChara.opacity_down
-    t2 = EAGLE::MapChara.opacity_up
-    self.opacity = t1 + rand(t2 - t1)
-
     set_box
-    @size = EAGLE::MapChara.size
-    self.bitmap = Bitmap.new(@size + 5, @size + 5)
-    set_font
+    self.bitmap = Bitmap.new(_font.size + 5, _font.size + 5)
+    self.bitmap.font = _font
     self.bitmap.draw_text(0,0,self.width,self.height, c)
+
+    @opa_down = _font.opacity_down
+    @opa_up = _font.opacity_up
+    self.opacity = @opa_down + rand(@opa_up - @opa_down)
 
     @next_chara = nil
   end
@@ -361,17 +383,6 @@ class Sprite_MapCharacter < Sprite
     @r = + @params[:d] + rand(2) * @params[:vx] + 1
     @u = - @params[:d] + rand(2) * @params[:vy] - 1
     @d = + @params[:d] + rand(2) * @params[:vy] - 1
-  end
-  #--------------------------------------------------------------------------
-  # ● 读取字体设置
-  #--------------------------------------------------------------------------
-  def set_font
-    self.bitmap.font.name = EAGLE::MapChara.name
-    self.bitmap.font.size = EAGLE::MapChara.size
-    self.bitmap.font.bold = EAGLE::MapChara.bold
-    self.bitmap.font.italic = EAGLE::MapChara.italic
-    self.bitmap.font.shadow = EAGLE::MapChara.shadow
-    self.bitmap.font.color = EAGLE::MapChara.color
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -395,8 +406,7 @@ class Sprite_MapCharacter < Sprite
   #--------------------------------------------------------------------------
   def update_opacity
     self.opacity += @params[:vo]
-    @params[:vo] *= -1 if self.opacity < EAGLE::MapChara.opacity_down ||
-      self.opacity >=  EAGLE::MapChara.opacity_up
+    @params[:vo] *= -1 if self.opacity < @opa_down || self.opacity >= @opa_up
   end
   #--------------------------------------------------------------------------
   # ● 更新抖动
@@ -453,5 +463,32 @@ class Sprite_MapCharacter < Sprite
   def dispose
     self.bitmap.dispose
     super
+  end
+end
+
+class Spriteset_Map
+  #--------------------------------------------------------------------------
+  # ● 初始化
+  #--------------------------------------------------------------------------
+  alias eagle_map_characters_initialize initialize
+  def initialize
+    @map_characters = Spriteset_MapCharacters.new
+    eagle_map_characters_initialize
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  alias eagle_map_characters_update update
+  def update
+    eagle_map_characters_update
+    @map_characters.update
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  alias eagle_map_characters_dispose dispose
+  def dispose
+    @map_characters.dispose
+    eagle_map_characters_dispose
   end
 end
