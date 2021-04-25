@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.4.14.20 修改tag分析模式
+# - 2021.4.25.13 兼容khas的SAS即时战斗系统
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型，事件自动触发自身
 #------------------------------------------------------------------------------
@@ -804,9 +804,10 @@ class Game_Player < Game_Character
   #--------------------------------------------------------------------------
   # ● 获取指定触发条件的事件
   #--------------------------------------------------------------------------
-  def get_map_event(x, y, triggers, normal)
+  def eagle_get_map_event(x, y, triggers, normal)
     $game_map.events_xy(x, y).each do |event|
-      if event.trigger_in?(triggers) && event.normal_priority? == normal &&
+      if event.trigger_in?(triggers) &&
+         (normal == nil || event.normal_priority? == normal) &&
          event.list.size > 1  # 事件页不为空
         return event
       end
@@ -816,21 +817,21 @@ class Game_Player < Game_Character
   #--------------------------------------------------------------------------
   # ● 获取角色当前格子的可触发事件
   #--------------------------------------------------------------------------
-  def eagle_check_event_here(triggers)
-    e = get_map_event(@x, @y, triggers, false)
-    return e
+  def eagle_get_event_here(triggers)
+    return eagle_get_map_event(@x, @y, triggers, nil)
   end
   #--------------------------------------------------------------------------
   # ● 获取角色面前的可触发事件
   #--------------------------------------------------------------------------
-  def eagle_check_event_there(triggers)
+  def eagle_get_event_there(triggers)
     x2 = $game_map.round_x_with_direction(@x, @direction)
     y2 = $game_map.round_y_with_direction(@y, @direction)
-    e = get_map_event(x2, y2, triggers, true)
-    return e unless $game_map.counter?(x2, y2)
+    e = eagle_get_map_event(x2, y2, triggers, true)
+    return e if e
+    return nil unless $game_map.counter?(x2, y2)
     x3 = $game_map.round_x_with_direction(x2, @direction)
     y3 = $game_map.round_y_with_direction(y2, @direction)
-    e = get_map_event(x3, y3, triggers, true)
+    e = eagle_get_map_event(x3, y3, triggers, true)
     return e
   end
   #--------------------------------------------------------------------------
@@ -855,13 +856,9 @@ class Game_Player < Game_Character
   def eagle_check_action_event
     e = nil
     # 检查位于玩家底层的可以被按键触发的事件
-    if e == nil
-      e = eagle_check_event_here([0])
-    end
+    e = eagle_get_event_here([0]) if e == nil
     # 检查位于前面的可以被按键触发的事件
-    if e == nil
-      e = eagle_check_event_there([0,1,2])
-    end
+    e = eagle_get_event_there([0,1,2]) if e == nil
     # 如果存在事件
     if e
       # 提取事件页预设的互动列表
@@ -882,6 +879,91 @@ class Game_Player < Game_Character
     # 最后返回 false，代表没有按键触发事件
     return false
   end
+end
+#===============================================================================
+# ○ 兼容 Sapphire Action System IV By Khas Arcthunder - arcthunder.site40.net
+#===============================================================================
+$khas_awesome ||= []
+FLAG_khas_SAS = $khas_awesome.any? { |s| s[0] == "Sapphire Action System" }
+if FLAG_khas_SAS
+class Game_Player < Game_Character
+  #--------------------------------------------------------------------------
+  # ● 获取指定触发条件的事件
+  #--------------------------------------------------------------------------
+  def eagle_get_map_event(px, py, triggers, normal)
+    for event in $game_map.events.values
+      if (event.px - px).abs <= event.cx && (event.py - py).abs <= event.cy
+        if event.trigger_in?(triggers) &&
+           (normal == nil || event.normal_priority? == normal) &&
+           event.list.size > 1  # 事件页不为空
+          return event
+        end
+      end
+    end
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取角色当前格子的可触发事件
+  #--------------------------------------------------------------------------
+  def eagle_get_event_here(triggers)
+    return eagle_get_map_event(@px, @py, triggers, nil)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取角色面前的可触发事件
+  #--------------------------------------------------------------------------
+  def eagle_get_event_there(triggers)
+    fx = @px+Trigger_Range[@direction][0]
+    fy = @py+Trigger_Range[@direction][1]
+    e = eagle_get_map_event(fx, fy, triggers, true)
+    return e if e
+    if $game_map.pixel_table[fx,fy,5] == 1
+      fx += Counter_Range[@direction][0]
+      fy += Counter_Range[@direction][1]
+      e = eagle_get_map_event(fx, fy, triggers, true)
+      return e if e
+    end
+    return nil
+  end
+end
+end
+#===============================================================================
+# ○ 兼容 像素级移动 by 老鹰
+#===============================================================================
+if $imported["EAGLE-PixelMove"]
+class Game_Player < Game_Character
+  #--------------------------------------------------------------------------
+  # ● 获取角色当前格子的可触发事件
+  #--------------------------------------------------------------------------
+  def eagle_get_event_here(triggers)
+    $game_map.events_rect(get_collision_rect(false)).each do |event|
+      if event.trigger_in?(triggers) && # 去除了与人物同层的限制
+         event.list.size > 1  # 事件页不为空
+        return event
+      end
+    end
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取角色面前的可触发事件
+  #--------------------------------------------------------------------------
+  def eagle_get_event_there(triggers)
+    x_p, y_p = get_collision_xy(@direction)
+    x2 = $game_map.round_x_with_direction(x_p, @direction)
+    y2 = $game_map.round_y_with_direction(y_p, @direction)
+    e = eagle_get_map_event(x2, y2, triggers, true)
+    return e if e
+    x2_rgss, e = PIXEL_MOVE.unit2rgss(x2)
+    y2_rgss, e = PIXEL_MOVE.unit2rgss(y2)
+    return unless $game_map.counter?(x2_rgss, y2_rgss)
+    # 柜台属性：向前方推进 RGSS 中的一格来查找事件
+    x3 = $game_map.round_x_with_direction_n(x2, @direction,
+      PIXEL_MOVE.pixel2unit(32))
+    y3 = $game_map.round_y_with_direction_n(y2, @direction,
+      PIXEL_MOVE.pixel2unit(32))
+    e = eagle_get_map_event(x3, y3, triggers, true)
+    return e
+  end
+end
 end
 #===============================================================================
 # ○ Spriteset_Map

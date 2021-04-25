@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-PixelMove"] = true
 #=============================================================================
-# - 2020.8.15.11 修复 PIXEL_PER_UNIT 不为1时可能产生的错位BUG
+# - 2021.4.25.13 去除了玩家接触触发事件时的同层限制
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认网格进行了细分
 #-----------------------------------------------------------------------------
@@ -1153,27 +1153,11 @@ class Game_Player < Game_Character
     super
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）非移动中的处理
-  #     last_moving : 此前是否正在移动
-  #--------------------------------------------------------------------------
-  def update_nonmoving(last_moving)
-    return if $game_map.interpreter.running?
-    #if last_moving # 去除上一帧移动的限制，保证不论速度多少，均能触发脚底事件
-      $game_party.on_player_walk
-      return if check_touch_event
-    #end
-    if movable? && Input.trigger?(:C)
-      return if get_on_off_vehicle
-      return if check_action_event
-    end
-    update_encounter if last_moving
-  end
-  #--------------------------------------------------------------------------
   # ● （覆盖）判定同位置事件是否被启动
   #--------------------------------------------------------------------------
   def check_event_trigger_here(triggers)
     $game_map.events_rect(get_collision_rect(false)).each do |event|
-      if event.trigger_in?(triggers) && event.normal_priority? == false
+      if event.trigger_in?(triggers) # 去除了与人物同层的限制
         event.start
       end
     end
