@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.4.25.13 兼容khas的SAS即时战斗系统
+# - 2021.4.27.15 兼容khas的SAS即时战斗系统
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型，事件自动触发自身
 #------------------------------------------------------------------------------
@@ -246,7 +246,168 @@ module EVENT_INTERACT
     # 默认显示在事件右侧
     return 2
   end
-
+end
+#=============================================================================
+# ■ 读取部分
+#=============================================================================
+module EAGLE
+  #--------------------------------------------------------------------------
+  # ● 读取事件页开头的注释组
+  #--------------------------------------------------------------------------
+  def self.event_comment_head(command_list)
+    return "" if command_list.nil? || command_list.empty?
+    t = ""; index = 0
+    while command_list[index].code == 108 || command_list[index].code == 408
+      t += command_list[index].parameters[0]
+      index += 1
+    end
+    t
+  end
+  #--------------------------------------------------------------------------
+  # ● 判定e2是否在e1的dirs位置上 或 在e1的dirs位置上的事件的名字是否含e2.to_s
+  #  dirs 为 wasd 的排列组合字符串，若为空，则判定是否坐标一致
+  #       其中 w 代表面前一格，s 代表后退一格，a 代表左手边一格，d 代表右手边一格
+  #        c 代表当前格，数字代表XY坐标差的和
+  #       可以用 | 分割不同位置
+  #  e2_str 为事件的字符串
+  #       其中 正数 为对应事件，-1 为玩家，字符串为事件名称
+  #       可以用 | 分割不同事件
+  #--------------------------------------------------------------------------
+  def self.check_chara_pos?(e1, dirs, e2_str)
+    e2_str.split('|').each do |e2_|
+      # 提取目标事件
+      e2_id = e2_.to_i
+      if e2_id == 0
+        e2 = e2_  # 字符串：名称含有e2的事件
+      else
+        e2 = EAGLE.get_chara(self, e2_id)  # 数字：指定序号的事件
+      end
+      # 提取目标位置
+      dirs.split('|').each do |cs|
+        # 判定距离的差值
+        if (d = cs.to_i) != 0  # 数字：距离差
+          e = check_chara_pos_dxy?(e1, d, e2)
+          return e if e
+          next
+        end
+        # 字符串：wasd组合
+        # 判定直接坐标
+        e = check_chara_pos_wasd?(e1, cs, e2)
+        return e if e
+      end
+    end
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # ● 查找指定距离差值的事件
+  #--------------------------------------------------------------------------
+  def self.check_chara_pos_dxy?(e1, d, e2)
+    if e2.is_a?(String) # 名字含有e2的任一事件满足距离差值
+      $game_map.events.each do |eid, _e|
+        next if _e.list == nil || _e.list.size == 1
+        next if !_e.name.include?(e2)
+        dx = (e1.x - _e.x).abs
+        dy = (e1.y - _e.y).abs
+        return _e if dx + dy == d
+      end
+      return nil
+    end
+    # 指定事件与当前事件的距离差值满足d
+    dx = (e2.x - e1.x).abs
+    dy = (e2.y - e1.y).abs
+    return e2 if dx + dy == d
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 计算指定路径的目的地
+  #--------------------------------------------------------------------------
+  WASD_DX = {
+    2 => {'w' => 0, 'a' => 1, 's' => 0, 'd' => -1, 'c' => 0},
+    4 => {'w' => -1, 'a' => 0, 's' => 1, 'd' => 0, 'c' => 0},
+    6 => {'w' => 1, 'a' => 0, 's' => -1, 'd' => 0, 'c' => 0},
+    8 => {'w' => 0, 'a' => -1, 's' => 0, 'd' => 1, 'c' => 0}
+  }
+  WASD_DY = {
+    2 => {'w' => 1, 'a' => 0, 's' => -1, 'd' => 0, 'c' => 0},
+    4 => {'w' => 0, 'a' => 1, 's' => 0, 'd' => -1, 'c' => 0},
+    6 => {'w' => 0, 'a' => -1, 's' => 0, 'd' => 1, 'c' => 0},
+    8 => {'w' => -1, 'a' => 0, 's' => 1, 'd' => 0, 'c' => 0}
+  }
+  def self.get_wasd_pos(e1, dirs)
+    _x = e1.x
+    _y = e1.y
+    _d = e1.direction
+    dirs.each_char { |c|
+      _x += WASD_DX[_d][c]
+      _y += WASD_DY[_d][c]
+    }
+    return _x, _y
+  end
+  #--------------------------------------------------------------------------
+  # ● 查找指定路径目的地的事件
+  #--------------------------------------------------------------------------
+  def self.check_chara_pos_wasd?(e1, dirs, e2)
+    _x, _y = get_wasd_pos(e1, dirs)
+    if e2.is_a?(String) # 名字含有e2的任一事件满足坐标
+      list = $game_map.events_xy(_x, _y)
+      return nil if list.empty?
+      list.each { |_e|
+        next if _e.list == nil || _e.list.size == 1
+        return _e if _e.name.include?(e2)
+      }
+      return nil
+    end
+    return e2 if e2.x == _x && e2.y == _y
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取事件对象
+  #--------------------------------------------------------------------------
+  def self.get_chara(event, id)
+    if id == 0 # 当前事件
+      return $game_map.events[event.id]
+    elsif id > 0 # 第id号事件
+      chara = $game_map.events[id]
+      chara ||= $game_map.events[event.id]
+      return chara
+    elsif id < 0 # 队伍中数据库id号角色（不存在则取队长）
+      id = id.abs
+      $game_player.followers.each do |f|
+        return f if f.actor && f.actor.actor.id == id
+      end
+      return $game_player
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 解析tags文本
+  #--------------------------------------------------------------------------
+  def self.parse_tags(_t)
+    # 脚本替换
+    _evals = {}; _eval_i = -1
+    _t.gsub!(/{(.*?)}/) { _eval_i += 1; _evals[_eval_i] = $1; "<#{_eval_i}>" }
+    # 处理等号左右的空格
+    _t.gsub!( / *= */ ) { '=' }
+    # tag 拆分
+    _ts = _t.split(/ | /)
+    # tag 解析
+    _hash = {}
+    _ts.each do |_tag|  # _tag = "xxx=xxx"
+      _tags = _tag.split('=')
+      _k = _tags[0].downcase
+      _v = _tags[1]
+      _hash[_k.to_sym] = _v
+    end
+    # 脚本替换
+    _hash.keys.each do |k|
+      _hash[k] = _hash[k].gsub(/<(\d+)>/) { _evals[$1.to_i] }
+    end
+    return _hash
+  end
+end
+#=============================================================================
+# ■ 读取部分
+#=============================================================================
+module EVENT_INTERACT
   #--------------------------------------------------------------------------
   # ● 提取事件页开头注释指令中预设的互动类型的数组
   #  event 为 Game_Event 的对象
@@ -279,6 +440,18 @@ module EVENT_INTERACT
     return syms
   end
   #--------------------------------------------------------------------------
+  # ● 提取物品备注中预设的互动类型的Hash
+  #--------------------------------------------------------------------------
+  def self.extract_item_tags(item, sym = "item")
+    syms = []
+    t = item.note
+    t.scan(/<#{sym}:? *(.*?)>/mi).each do |ps|
+      _hash = EAGLE.parse_tags(ps[0])
+      syms.push(_hash)
+    end
+    return syms
+  end
+  #--------------------------------------------------------------------------
   # ● 执行字符串
   #--------------------------------------------------------------------------
   def self.eagle_eval(t, e)
@@ -288,7 +461,9 @@ module EVENT_INTERACT
     gp = $game_player
     eval(t)
   end
-
+#=============================================================================
+# ■ 事件互动列表
+#=============================================================================
   #--------------------------------------------------------------------------
   # ● 清除数据
   #--------------------------------------------------------------------------
@@ -462,163 +637,6 @@ module EVENT_INTERACT
     _bitmap = Cache.system("Iconset")
     rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
     bitmap.blt(x, y, _bitmap, rect, enabled ? 255 : 120)
-  end
-end
-#=============================================================================
-# ■ 读取部分
-#=============================================================================
-module EAGLE
-  #--------------------------------------------------------------------------
-  # ● 读取事件页开头的注释组
-  #--------------------------------------------------------------------------
-  def self.event_comment_head(command_list)
-    return "" if command_list.nil? || command_list.empty?
-    t = ""; index = 0
-    while command_list[index].code == 108 || command_list[index].code == 408
-      t += command_list[index].parameters[0]
-      index += 1
-    end
-    t
-  end
-  #--------------------------------------------------------------------------
-  # ● 判定e2是否在e1的dirs位置上 或 在e1的dirs位置上的事件的名字是否含e2.to_s
-  #  dirs 为 wasd 的排列组合字符串，若为空，则判定是否坐标一致
-  #       其中 w 代表面前一格，s 代表后退一格，a 代表左手边一格，d 代表右手边一格
-  #        c 代表当前格，数字代表XY坐标差的和
-  #       可以用 | 分割不同位置
-  #  e2_str 为事件的字符串
-  #       其中 正数 为对应事件，-1 为玩家，字符串为事件名称
-  #       可以用 | 分割不同事件
-  #--------------------------------------------------------------------------
-  def self.check_chara_pos?(e1, dirs, e2_str)
-    e2_str.split('|').each do |e2_|
-      # 提取目标事件
-      e2_id = e2_.to_i
-      if e2_id == 0
-        e2 = e2_  # 字符串：名称含有e2的事件
-      else
-        e2 = EAGLE.get_chara(self, e2_id)  # 数字：指定序号的事件
-      end
-      # 提取目标位置
-      dirs.split('|').each do |cs|
-        # 判定距离的差值
-        if (d = cs.to_i) != 0  # 数字：距离差
-          e = check_chara_pos_dxy?(e1, d, e2)
-          return e if e
-          next
-        end
-        # 字符串：wasd组合
-        # 判定直接坐标
-        e = check_chara_pos_wasd?(e1, cs, e2)
-        return e if e
-      end
-    end
-    return false
-  end
-  #--------------------------------------------------------------------------
-  # ● 查找指定距离差值的事件
-  #--------------------------------------------------------------------------
-  def self.check_chara_pos_dxy?(e1, d, e2)
-    if e2.is_a?(String) # 名字含有e2的任一事件满足距离差值
-      $game_map.events.each do |eid, _e|
-        next if _e.list == nil || _e.list.size == 1
-        next if !_e.name.include?(e2)
-        dx = (e1.x - _e.x).abs
-        dy = (e1.y - _e.y).abs
-        return _e if dx + dy == d
-      end
-      return nil
-    end
-    # 指定事件与当前事件的距离差值满足d
-    dx = (e2.x - e1.x).abs
-    dy = (e2.y - e1.y).abs
-    return e2 if dx + dy == d
-    return nil
-  end
-  #--------------------------------------------------------------------------
-  # ● 计算指定路径的目的地
-  #--------------------------------------------------------------------------
-  WASD_DX = {
-    2 => {'w' => 0, 'a' => 1, 's' => 0, 'd' => -1, 'c' => 0},
-    4 => {'w' => -1, 'a' => 0, 's' => 1, 'd' => 0, 'c' => 0},
-    6 => {'w' => 1, 'a' => 0, 's' => -1, 'd' => 0, 'c' => 0},
-    8 => {'w' => 0, 'a' => -1, 's' => 0, 'd' => 1, 'c' => 0}
-  }
-  WASD_DY = {
-    2 => {'w' => 1, 'a' => 0, 's' => -1, 'd' => 0, 'c' => 0},
-    4 => {'w' => 0, 'a' => 1, 's' => 0, 'd' => -1, 'c' => 0},
-    6 => {'w' => 0, 'a' => -1, 's' => 0, 'd' => 1, 'c' => 0},
-    8 => {'w' => -1, 'a' => 0, 's' => 1, 'd' => 0, 'c' => 0}
-  }
-  def self.get_wasd_pos(e1, dirs)
-    _x = e1.x
-    _y = e1.y
-    _d = e1.direction
-    dirs.each_char { |c|
-      _x += WASD_DX[_d][c]
-      _y += WASD_DY[_d][c]
-    }
-    return _x, _y
-  end
-  #--------------------------------------------------------------------------
-  # ● 查找指定路径目的地的事件
-  #--------------------------------------------------------------------------
-  def self.check_chara_pos_wasd?(e1, dirs, e2)
-    _x, _y = get_wasd_pos(e1, dirs)
-    if e2.is_a?(String) # 名字含有e2的任一事件满足坐标
-      list = $game_map.events_xy(_x, _y)
-      return nil if list.empty?
-      list.each { |_e|
-        next if _e.list == nil || _e.list.size == 1
-        return _e if _e.name.include?(e2)
-      }
-      return nil
-    end
-    return e2 if e2.x == _x && e2.y == _y
-    return nil
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取事件对象
-  #--------------------------------------------------------------------------
-  def self.get_chara(event, id)
-    if id == 0 # 当前事件
-      return $game_map.events[event.id]
-    elsif id > 0 # 第id号事件
-      chara = $game_map.events[id]
-      chara ||= $game_map.events[event.id]
-      return chara
-    elsif id < 0 # 队伍中数据库id号角色（不存在则取队长）
-      id = id.abs
-      $game_player.followers.each do |f|
-        return f if f.actor && f.actor.actor.id == id
-      end
-      return $game_player
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 解析tags文本
-  #--------------------------------------------------------------------------
-  def self.parse_tags(_t)
-    # 脚本替换
-    _evals = {}; _eval_i = -1
-    _t.gsub!(/{(.*?)}/) { _eval_i += 1; _evals[_eval_i] = $1; "<#{_eval_i}>" }
-    # 处理等号左右的空格
-    _t.gsub!( / *= */ ) { '=' }
-    # tag 拆分
-    _ts = _t.split(/ | /)
-    # tag 解析
-    _hash = {}
-    _ts.each do |_tag|  # _tag = "xxx=xxx"
-      _tags = _tag.split('=')
-      _k = _tags[0].downcase
-      _v = _tags[1]
-      _hash[_k.to_sym] = _v
-    end
-    # 脚本替换
-    _hash.keys.each do |k|
-      _hash[k] = _hash[k].gsub(/<(\d+)>/) { _evals[$1.to_i] }
-    end
-    return _hash
   end
 end
 #===============================================================================
