@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageLive2D"] = true
 #==============================================================================
-# - 2020.9.16.11 更新
+# - 2021.5.22.11 更新
 #==============================================================================
 # - 本插件为对话框新增了 Live2D 的显示
 #----------------------------------------------------------------------------
@@ -67,7 +67,7 @@ $imported["EAGLE-MessageLive2D"] = true
 #
 # 【示例】
 #
-#    在上述示例后，继续写 \l2de[haru|f01]，以调用 Haru 中 "Name":"f01" 的表情
+#    在上述示例后，继续写 \l2dat[haru|x0y100]，以将立绘调整至看向屏幕（0,100）处
 #
 # 【高级】
 #
@@ -92,21 +92,28 @@ $imported["EAGLE-MessageLive2D"] = true
 #----------------------------------------------------------------------------
 # 【Live2D控制：动作】
 #
-#   利用转义符 \l2dm[id|motion|index] 来调用 Live2D 中预设的动作 "Motions"
+#   利用转义符 \l2dm[id|motion|params] 来调用 Live2D 中预设的动作 "Motions"
 #
 #     其中 id 为在 \l2d 中设置的唯一标识符
 #     其中 motion 为 Live2D 中预设动作 "Motions" 中的字符串，即动作组的名称
-#     其中 index 为对应动作组下的 index 号的动作（从0开始）
-#        （若省略，则会随机取一个）
+#     其中 params 为下述组合的变量参数字符串（可省略）
+#          i → 【默认】对应动作组下的 i 号的动作（从0开始）（若省略，则会随机取一个）
+#          t → 该动作的强制等待时间，等待时间结束后才会执行之后调用的动作
+#             （若省略或为0，则当调用下一个动作时，当前动作立即结束）
 #
 # 【示例】
 #
 #    在上述示例后，继续写 \l2dm[haru|Idle]，以调用 Haru 中的 "Idle" 下的随机动作
-#    写 \l2dm[haru|TapBody|0]，以调用 Haru 中 "TapBody" 中的第 1 个动作
+#    写 \l2dm[haru|TapBody|i0t40]，以调用 Haru 中 "TapBody" 中的第 1 个动作，
+#          并且强制该动作40帧，之后才响应后续调用的动作
 #
 # 【高级】
 #
-#    利用脚本 MESSAGE_EX.live2d_motion(id, motion, index) 可达到同样目的
+#    利用脚本 MESSAGE_EX.live2d_motion(id, motion, {:i => i}) 可达到同样目的
+#
+#    如示例中的写法为
+#       MESSAGE_EX.live2d_motion("haru", "Idle")
+#       MESSAGE_EX.live2d_motion("haru", "TapBody", {:i => 0, :t => 40})
 #
 #----------------------------------------------------------------------------
 # 【图片控制】
@@ -118,6 +125,8 @@ $imported["EAGLE-MessageLive2D"] = true
 #     其中 param 可省略，为变量参数字符串
 #
 #   具体 motion 与 param 与【对话框扩展】中的 \facem 转义符保持一致
+#
+#   注意，当调用 out 指令移出后，不可再调用 in 移入，请重新初始化一个新的live2d
 #
 # 【示例】
 #
@@ -233,11 +242,10 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   # ● 对指定的live2d精灵进行动作处理
   #--------------------------------------------------------------------------
-  def self.live2d_motion(id, key, index = nil)
+  def self.live2d_motion(id, key, params = {})
     s = live2d_get(id)
     return if s.nil?
-    return s.l2d.set_random_motion(key) if index == nil
-    s.l2d.set_motion(key, index.to_i)
+    s.add_l2d_motion(key, params)
   end
   #--------------------------------------------------------------------------
   # ● 对指定的live2d精灵进行视点处理
@@ -296,8 +304,10 @@ class Window_EagleMessage
   #--------------------------------------------------------------------------
   def eagle_text_control_l2dm(param = '0')
     return if !@flag_draw
-    params = param.split('|') # [id, motion, index]
-    MESSAGE_EX.live2d_motion(params[0], params[1], params[2])
+    params = param.split('|') # [id, motion, params]
+    h = {}
+    parse_param(h, params[2], default_type = "i")
+    MESSAGE_EX.live2d_motion(params[0], params[1], h)
   end
   #--------------------------------------------------------------------------
   # ● 执行 l2de
@@ -333,7 +343,8 @@ class Sprite_EagleLive2d < Sprite_EagleFace
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    @l2d.dispose
+    @l2d.dispose if @l2d
+    @l2d = nil
     super
   end
   #--------------------------------------------------------------------------
@@ -360,6 +371,7 @@ class Sprite_EagleLive2d < Sprite_EagleFace
     @l2d = L2D.new(path, "#{name}.model3.json")
     @l2d.zoom_x = @params[:sx] * 1.0 / 100
     @l2d.zoom_y = @params[:sy] * 1.0 / 100
+    @l2d_motions = [] # 存储等待执行的动作组
   end
   #--------------------------------------------------------------------------
   # ● 看向
@@ -375,6 +387,7 @@ class Sprite_EagleLive2d < Sprite_EagleFace
   def update
     @fiber.resume if @fiber
     update_position
+    update_l2d_motion
   end
   #--------------------------------------------------------------------------
   # ● 更新位置
@@ -383,10 +396,12 @@ class Sprite_EagleLive2d < Sprite_EagleFace
     reset_doxy(params[:do]) if params[:do]
     @x0 = params[:x] if params[:x]
     @y0 = params[:y] if params[:y]
-    @l2d.x = @x0 + @x1 + params[:dx]
-    @l2d.y = @y0 + @y1 + params[:dy]
-    @l2d.z = params[:z]
-    @l2d.opacity = @opa
+    if @l2d
+      @l2d.x = @x0 + @x1 + params[:dx]
+      @l2d.y = @y0 + @y1 + params[:dy]
+      @l2d.z = params[:z]
+      @l2d.opacity = @opa
+    end
   end
   #--------------------------------------------------------------------------
   # ● 设置相对显示（屏幕上）
@@ -397,5 +412,34 @@ class Sprite_EagleLive2d < Sprite_EagleFace
     MESSAGE_EX.reset_xy_dorigin(self, @window, o)
     @x0 = self.x - Graphics.width / 2
     @y0 = self.y - Graphics.height / 2
+  end
+  #--------------------------------------------------------------------------
+  # ● 动作：淡出
+  #--------------------------------------------------------------------------
+  def fiber_fade_out(param_str = "")
+    super(param_str)
+    @l2d.dispose
+    @l2d = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 新增live2d动作
+  #--------------------------------------------------------------------------
+  def add_l2d_motion(motion_name, params)
+    params[:key] = motion_name
+    params[:c] = 0
+    params[:t] ||= 0
+    @l2d_motions.push(params)
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新live2d动作序列
+  #--------------------------------------------------------------------------
+  def update_l2d_motion
+    return if @l2d_motions.size == 0
+    if @l2d_motions[0][:c] == 0
+      i = @l2d_motions[0][:i].to_i
+      i ? @l2d.set_motion(@l2d_motions[0][:key], i) : @l2d.set_random_expression
+    end
+    @l2d_motions[0][:c] += 1
+    @l2d_motions.shift if @l2d_motions[0][:t] <= @l2d_motions[0][:c]
   end
 end
