@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageLive2D"] = true
 #==============================================================================
-# - 2021.5.22.11 更新
+# - 2021.5.22.14 更新
 #==============================================================================
 # - 本插件为对话框新增了 Live2D 的显示
 #----------------------------------------------------------------------------
@@ -73,6 +73,9 @@ $imported["EAGLE-MessageLive2D"] = true
 #
 #    利用脚本 MESSAGE_EX.live2d_lookat(id, param) 可达到同样目的
 #
+#    如示例中的写法为
+#       MESSAGE_EX.live2d_lookat("haru", {:x => 0, :y => 100})
+#
 #----------------------------------------------------------------------------
 # 【Live2D控制：表情】
 #
@@ -88,6 +91,9 @@ $imported["EAGLE-MessageLive2D"] = true
 # 【高级】
 #
 #    利用脚本 MESSAGE_EX.live2d_expression(id, expression) 可达到同样目的
+#
+#    如示例中的写法为
+#       MESSAGE_EX.live2d_expression("haru", "f01")
 #
 #----------------------------------------------------------------------------
 # 【Live2D控制：动作】
@@ -131,10 +137,15 @@ $imported["EAGLE-MessageLive2D"] = true
 # 【示例】
 #
 #    在上述示例后，继续写 \l2dm2[haru|jump]，便是将 "haru" 的Live2d进行一次跳跃
+#    在上述示例后，继续写 \l2dm2[haru|out]，便是将 "haru" 的Live2d提前移出
 #
 # 【高级】
 #
 #    利用脚本 MESSAGE_EX.live2d_eagle_motion(id, motion, param) 可达到同样目的
+#
+#    如示例中的写法为
+#       MESSAGE_EX.live2d_eagle_motion("haru", "jump")
+#       MESSAGE_EX.live2d_eagle_motion("haru", "out")
 #
 #=============================================================================
 
@@ -285,6 +296,14 @@ class Window_EagleMessage
   def eagle_move_out_assets
     MESSAGE_EX.live2ds { |s| s.motion(:fade_out) if s.keep?(self) }
     eagle_live2d_ex_move_out_assets
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化脸图
+  #--------------------------------------------------------------------------
+  alias eagle_live2d_ex_eagle_draw_face eagle_draw_face
+  def eagle_draw_face(text)
+    MESSAGE_EX.live2ds { |s| s.bind_window(self) if !s.keep?(self) }
+    eagle_live2d_ex_eagle_draw_face(text)
   end
   #--------------------------------------------------------------------------
   # ● 设置 l2d 参数
