@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageSeq"] = true
 #==============================================================================
-# - 2020.10.31.17 修复过早结束序列对话的问题
+# - 2021.5.27.23 修复pop的tag可能错位的bug
 #==============================================================================
 # - 本插件为对话框新增了自动向上/下移动的序列对话模式
 #----------------------------------------------------------------------------
@@ -128,6 +128,8 @@ class Window_EagleMessage
       when 1,2,3
         r2.y = r.y - (r2.height - r.height)
       end
+      # 根据当前对话框的最终xy，预先将seq对话框进行移动
+      @eagle_seq_windows[-1].before_set_seq_y # 进行一些预处理
       @eagle_seq_windows[-1].set_seq_y(r2.y, _p[:h])
     end
   end
@@ -247,6 +249,13 @@ class Window_EagleMessage_Seq_Clone < Window_EagleMessage_Clone
       @seq_y = next_window_y - self.height
     end
     @flag_seq_need_update = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置目的y值前的处理
+  #--------------------------------------------------------------------------
+  def before_set_seq_y
+    # 隐藏掉pop的tag
+    @eagle_sprite_pop_tag.visible = false
   end
   #--------------------------------------------------------------------------
   # ● 应用对话框xywh的参数Hash的预修改
