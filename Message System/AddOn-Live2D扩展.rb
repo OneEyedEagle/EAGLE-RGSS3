@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageLive2D"] = true
 #==============================================================================
-# - 2021.5.22.14 更新
+# - 2021.5.22.22 更新
 #==============================================================================
 # - 本插件为对话框新增了 Live2D 的显示
 #----------------------------------------------------------------------------
@@ -106,6 +106,7 @@ $imported["EAGLE-MessageLive2D"] = true
 #          i → 【默认】对应动作组下的 i 号的动作（从0开始）（若省略，则会随机取一个）
 #          t → 该动作的强制等待时间，等待时间结束后才会执行之后调用的动作
 #             （若省略或为0，则当调用下一个动作时，当前动作立即结束）
+#          f → 是否强制立即执行该动作，并舍弃之前的全部动作（传入1，代表是）
 #
 # 【示例】
 #
@@ -174,7 +175,7 @@ module MESSAGE_EX
 
     :it => 8, # 淡入所用帧数
     :ot => 6, # 淡出所用帧数
-    :k => 1, # 是否只绑定于当前对话框
+    :k => 0, # 是否只绑定于当前对话框
   }
 #=============================================================================
 # ○ 精灵池
@@ -325,7 +326,7 @@ class Window_EagleMessage
     return if !@flag_draw
     params = param.split('|') # [id, motion, params]
     h = {}
-    parse_param(h, params[2], default_type = "i")
+    parse_param(h, params[2], :i)
     MESSAGE_EX.live2d_motion(params[0], params[1], h)
   end
   #--------------------------------------------------------------------------
@@ -443,11 +444,13 @@ class Sprite_EagleLive2d < Sprite_EagleFace
   #--------------------------------------------------------------------------
   # ● 新增live2d动作
   #--------------------------------------------------------------------------
-  def add_l2d_motion(motion_name, params)
-    params[:key] = motion_name
-    params[:c] = 0
-    params[:t] ||= 0
-    @l2d_motions.push(params)
+  def add_l2d_motion(motion_name, ps)
+    _params = ps.dup
+    _params[:key] = motion_name
+    _params[:c] = 0
+    _params[:t] ||= 0
+    @l2d_motions.clear if _params[:f] && _params[:f] != 0
+    @l2d_motions.push(_params)
   end
   #--------------------------------------------------------------------------
   # ● 更新live2d动作序列
@@ -455,8 +458,12 @@ class Sprite_EagleLive2d < Sprite_EagleFace
   def update_l2d_motion
     return if @l2d_motions.size == 0
     if @l2d_motions[0][:c] == 0
-      i = @l2d_motions[0][:i].to_i
-      i ? @l2d.set_motion(@l2d_motions[0][:key], i) : @l2d.set_random_expression
+      i = @l2d_motions[0][:i]
+      if i
+        @l2d.set_motion(@l2d_motions[0][:key], i.to_i, true)
+      else
+        @l2d.set_random_expression(@l2d_motions[0][:key], true)
+      end
     end
     @l2d_motions[0][:c] += 1
     @l2d_motions.shift if @l2d_motions[0][:t] <= @l2d_motions[0][:c]
