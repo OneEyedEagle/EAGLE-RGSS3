@@ -19,7 +19,11 @@ class Window_EagleMessage
   alias eagle_text_replace_process_conv eagle_process_conv
   def eagle_process_conv(text)
     text = eagle_text_replace_process_conv(text)
-
+    # 此处增加替换规则
     text
   end
 end
+
+
+# 弹幕式对话
+# 将默认对话替换为滚动弹幕
