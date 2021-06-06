@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageDanmaku"] = true
 #==============================================================================
-# - 2021.6.5.23
+# - 2021.6.6.13 新增精灵自动回收
 #==============================================================================
 # - 本插件新增了在屏幕上显示滚动弹幕的文本系统
 #---------------------------------------------------------------------------
@@ -106,6 +106,10 @@ module MESSAGE_DANMAKU
   # 推荐给该开关命名为：滚动文本→弹幕
   #--------------------------------------------------------------------------
   S_ID_SCROLL_TEXT = 26
+  #--------------------------------------------------------------------------
+  # ● 【常量】弹幕文本的字体名称
+  #--------------------------------------------------------------------------
+  TEXT_NAME = "黑体" # Font.default_name
 
   #--------------------------------------------------------------------------
   # ● 处理参数
@@ -144,6 +148,7 @@ module MESSAGE_DANMAKU
   def self.update
     @sprites.each { |s| s.update }
     update_new
+    update_dispose
   end
   #--------------------------------------------------------------------------
   # ● 新增一个弹幕
@@ -155,6 +160,7 @@ module MESSAGE_DANMAKU
       s = get_sprite
       s.bind(data)
     end
+    @count_dispose = 0
   end
   #--------------------------------------------------------------------------
   # ● 获取一个可用的精灵
@@ -164,6 +170,16 @@ module MESSAGE_DANMAKU
     s = Sprite_Danmaku.new(nil)
     @sprites.push(s)
     return s
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新释放
+  #--------------------------------------------------------------------------
+  @count_dispose = 0  # 释放倒计时
+  TIME_DISPOSE = 600  # 在该帧数内未生成新弹幕时，释放一次冗余精灵
+  def self.update_dispose
+    @count_dispose += 1
+    return if @count_dispose < TIME_DISPOSE
+    @sprites.delete_if { |s| f = s.finish?; s.dispose if f; f }
   end
 end
 #===============================================================================
@@ -278,11 +294,13 @@ class Sprite_Danmaku < Sprite
     t = @data[:text]
     ps = { :font_size=>@data[:font], :x0=>4, :y0=>4, :lhd=>4 }
     b = Bitmap.new(32, 32)
+    b.font.name = TEXT_NAME
     b.font.size = @data[:font]
     d = Process_DrawTextEX.new(t, ps, b)
     d.run(false)
     # 生成位图
     self.bitmap = Bitmap.new(d.width+8, d.height+4)
+    self.bitmap.font.name = TEXT_NAME
     # 绘制背景
     if @data[:bg] == 1
       bitmap.fill_rect(0, 0, bitmap.width, bitmap.height, Color.new(0,0,0,150))
@@ -312,6 +330,7 @@ class Sprite_Danmaku < Sprite
     self.y = @data[:y] || rand(Graphics.height)
     self.y = @data[:yf] * Graphics.height if @data[:yf]
     self.z = @data[:z]
+    self.opactiy = 255
   end
 end
 
