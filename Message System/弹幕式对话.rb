@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageDanmaku"] = true
 #==============================================================================
-# - 2021.6.6.13 新增精灵自动回收
+# - 2021.6.9.22 新增不透明度设置
 #==============================================================================
 # - 本插件新增了在屏幕上显示滚动弹幕的文本系统
 #---------------------------------------------------------------------------
@@ -57,6 +57,8 @@ $imported["EAGLE-MessageDanmaku"] = true
 #
 #      z=数字 → 弹幕精灵的z值
 #
+#      opa=数字 → 弹幕的不透明度（默认255）
+#
 # - 特别的，可以使用 {{eval}} 来进行一次脚本结果的替换
 #     其中可用 s 代表开关组，即 s[1] 代表1号开关的状态
 #         可用 v 代表变量组，即 v[2] 获取2号变量的值
@@ -99,6 +101,20 @@ $imported["EAGLE-MessageDanmaku"] = true
 #     data = { :text => "\\c[#{c}]前方高能！", :n => rand(5)+1, :v => 2 }
 #     $game_message.add_danmaku(data)
 #
+#---------------------------------------------------------------------------
+# 【设置弹幕：全局脚本】
+#
+# - 利用脚本对弹幕进行整体设置
+#
+#     $game_message.set_danmaku(sym, v)
+#
+#   当前可用的设置参数有：
+#
+#     :opa → 设置全部弹幕的不透明度（优先级低于弹幕自己的opa=数字）
+#
+# - 示例1：
+#     $game_message.set_danmaku(:opa, 150)
+#
 #==============================================================================
 module MESSAGE_DANMAKU
   #--------------------------------------------------------------------------
@@ -127,6 +143,7 @@ module MESSAGE_DANMAKU
     data[:bg] ||= 0 # 背景的类型
     data[:font] ||= 20 # 弹幕文字大小
     data[:z] ||= 200
+    #data[:opa]
     # 参数格式
     data[:y] = data[:y].to_i if data[:y]
     data[:yf] = data[:yf].to_f if data[:yf]
@@ -140,6 +157,7 @@ module MESSAGE_DANMAKU
     data[:bg] = data[:bg].to_i
     data[:font] = data[:font].to_i
     data[:z] = data[:z].to_i
+    data[:opa] = data[:opa].to_i if data[:opa]
   end
   #--------------------------------------------------------------------------
   # ● 更新（在Scene_Base中）
@@ -199,7 +217,7 @@ end
 # ○ Game_Message
 #===============================================================================
 class Game_Message
-  attr_accessor  :eagle_danmaku
+  attr_accessor  :eagle_danmaku, :danmaku_params
   #--------------------------------------------------------------------------
   # ● 清除
   #--------------------------------------------------------------------------
@@ -213,6 +231,7 @@ class Game_Message
   #--------------------------------------------------------------------------
   def clear_danmaku
     @eagle_danmaku = []
+    @danmaku_params ||= {}
   end
   #--------------------------------------------------------------------------
   # ● 新增弹幕
@@ -221,6 +240,12 @@ class Game_Message
     return if data[:text] == nil || data[:text] == ""
     MESSAGE_DANMAKU.process_data(data)
     @eagle_danmaku.push(data)
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置弹幕（整体参数）
+  #--------------------------------------------------------------------------
+  def set_danmaku(sym, v)
+    @danmaku_params[sym] = v
   end
 end
 #===============================================================================
@@ -330,7 +355,10 @@ class Sprite_Danmaku < Sprite
     self.y = @data[:y] || rand(Graphics.height)
     self.y = @data[:yf] * Graphics.height if @data[:yf]
     self.z = @data[:z]
-    self.opactiy = 255
+    if $game_message.danmaku_params[:opa]
+      self.opacity = $game_message.danmaku_params[:opa].to_i
+    end
+    self.opactiy = @data[:opa] if @data[:opa]
   end
 end
 
