@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.5.22.11 修改注释
+# - 2021.6.22.1 更新
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框能够正常使用
@@ -42,6 +42,8 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #
 # - param “变量参数字符串”解析：
 #     由 变量名（字母组合）+ 参数值（整数或nil（用$代表传入nil））重复构成
+#      其中可以编写无意义的空格，用于分隔不同变量
+#      其中 变量名 和 参数值 之间可以新增 = 符号，用于直观表示变量的赋值
 #      当传入 无变量名 的 参数值 时，将存入其【默认】变量
 #      而没有传入值的 变量 ，将读取上一次设置所存储的值
 #     （带有【重置】的变量，将在每一次设置转义符时，重置为脚本中的预设值）
@@ -54,7 +56,7 @@ EAGLE_MSG_EX_COMPAT_MODE = false
 #         变量名称 c → 设置某个功能
 #
 #    在对话中编写：
-#      对话文本\foo[1b-1tc0d$]，其他对话文本
+#      对话文本\foo[1 b=-1 tc=0 d$]，其他对话文本
 #    → 调用 foo 的功能，同时给它的所有变量传入预设值
 #      再给 a 变量传入值 1，b 变量传入值 -1，tc 变量传入值 0，d 变量传入值 nil
 #      （转义符的帮助中并没有写 tc 和 d 两个变量，
@@ -311,16 +313,16 @@ TEXT_COLORS["gold"] = Color.new(255,215,0)
 FONT_PARAMS_INIT = {
 # \font[]
   :name => nil,
-  :size => Font.default_size, # 字体大小
+  :size => nil, # 字体大小
   :ca => 255, # 不透明度
-  :i => Font.default_italic, # 斜体绘制
-  :b => Font.default_bold, # 加粗绘制
-  :s => Font.default_shadow, # 阴影
-  :o => Font.default_outline, # 描边
-  :or => Font.default_out_color.red,
-  :og => Font.default_out_color.green,
-  :ob => Font.default_out_color.blue,
-  :oa => Font.default_out_color.alpha,
+  :i => nil, # 斜体绘制
+  :b => nil, # 加粗绘制
+  :s => nil, # 阴影
+  :o => nil, # 描边
+  :or => nil,
+  :og => nil,
+  :ob => nil,
+  :oa => nil,
   :p => 0, # 底纹
   :pc => 0, # 底纹颜色index
   :l => 0, # 外发光
@@ -382,12 +384,12 @@ DEFAULT_COLOR_INDEX = 0
 #       （若小于对话框的 line_height 方法值，则识别为行数，并进行二次计算）
 #    dh → 窗口内容高度是否随文字绘制而动态变更（默认false）（不翻页）
 #    fh → 窗口内容高度是否指定为全部文字绘制完成时的所需高度值（优先级高于dh）
-#    hmin/hmax → 窗口内容高度的上下限（启用dh/fh时生效）（若小于行高，则修正为行数）
+#    hmin/hmax → 窗口内容高度的最小最大值（启用dh/fh时生效）（若小于行高，则修正为行数）
 #
 #  （文本显示相关）
 #    se → 启用的打字音类型index（默认0，按常量设置进行 index → 声效SE设置 映射）
 #    ali → 文本的对齐方式（0左对齐，1居中对齐，2右对齐；默认0）
-#    ck → 缩减的字符间距值（默认0）
+#    ck → 增加的字符间距值（默认0）
 #    lh → 设置基础行高 line_height 值（默认0无效，取原方法值）
 #    ld → 增加的行间距值（默认0）（默认行间距为0）（每一行行高将取其最大字号）
 #    cwi → 单个文字绘制完成后的等待帧数（最小值0）
@@ -426,8 +428,8 @@ WIN_PARAMS_INIT = {
   # （文本显示相关）
   :se => 0, # 打字音类型序号（默认0，无声效）
   :ali => 0, # 设置文本对齐方式
-  :ck => 0, # 缩减的字符间距值
-  :lh => Font.default_size, # 基础行高
+  :ck => 0, # 增加的字符间距值
+  :lh => nil, # 基础行高（若为nil，则取当前文字大小）
   :ld => 4, # 增加的行间距值
   :cwi => 2, # 单个文字绘制后的等待帧数（最小值0）
   :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
@@ -436,6 +438,7 @@ WIN_PARAMS_INIT = {
   :cdx => 0, # 文本左侧与窗口padding的间距
   :cdy => 0, # 文本上边距
   :cdw => 0, # 文本右边距
+  :cdh => 0, # 文本下边距
 # \auto[]
   :auto_t => nil, # 在 t 帧后自动继续对话
   :auto_r => 0,  # 是否重置 t 参数
@@ -1717,10 +1720,17 @@ module MESSAGE_EX
   def self.parse_param(param_hash, param_text, default_type = "default")
     param_text = param_text.downcase rescue ""
     # 只有首位是省略名字的参数设置
+    param_text.slice!(/ */)
     t = param_text.slice!(/^\-?\d+/)
     param_hash[default_type.to_sym] = t.to_i if t && t != ""
     while(param_text != "")
+      param_text.slice!(/ */)
       t = param_text.slice!(/^[a-z]+/)
+      param_text.slice!(/ */)
+      if param_text[0] == '='
+        param_text[0] = ''
+        param_text.slice!(/ */)
+      end
       if param_text[0] == "$"
         param_text[0] = ''
         next param_hash[t.to_sym] = nil
@@ -1748,22 +1758,26 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   # ● 应用font参数到font对象上
   #--------------------------------------------------------------------------
-  def self.apply_font_params(font, params)
-    font.name = INDEX_TO_FONT[params[:name]] if params[:name]
-    font.size = params[:size]
-    font.italic = MESSAGE_EX.check_bool(params[:i])
-    font.bold = MESSAGE_EX.check_bool(params[:b])
-    font.shadow = MESSAGE_EX.check_bool(params[:s])
-    font.color.alpha = params[:ca]
-    font.outline = MESSAGE_EX.check_bool(params[:o])
-    font.out_color.set(params[:or],params[:og],params[:ob],params[:oa])
-    params[:l] = MESSAGE_EX.check_bool(params[:l])
-    params[:lc] ||= 0
-    params[:lp] ||= 2
-    params[:d] = MESSAGE_EX.check_bool(params[:d])
-    params[:dc] ||= 0
-    params[:u] = MESSAGE_EX.check_bool(params[:u])
-    params[:uc] ||= 0
+  def self.apply_font_params(font, ps)
+    font.name = INDEX_TO_FONT[ps[:name]] if ps[:name]
+    font.size = ps[:size] || Font.default_size
+    font.color.alpha = ps[:ca]
+    font.italic = ps[:i] ? MESSAGE_EX.check_bool(ps[:i]) : Font.default_italic
+    font.bold = ps[:b] ? MESSAGE_EX.check_bool(ps[:b]) : Font.default_bold
+    font.shadow = ps[:s] ? MESSAGE_EX.check_bool(ps[:s]) : Font.default_shadow
+    font.outline = ps[:o] ? MESSAGE_EX.check_bool(ps[:o]) : Font.default_outline
+    if ps[:or]
+      font.out_color.set(ps[:or],ps[:og],ps[:ob],ps[:oa])
+    else
+      font.out_color = Font.default_out_color
+    end
+    ps[:l] = MESSAGE_EX.check_bool(ps[:l])
+    ps[:lc] ||= 0
+    ps[:lp] ||= 2
+    ps[:d] = MESSAGE_EX.check_bool(ps[:d])
+    ps[:dc] ||= 0
+    ps[:u] = MESSAGE_EX.check_bool(ps[:u])
+    ps[:uc] ||= 0
   end
   #--------------------------------------------------------------------------
   # ● 重置指定精灵的显示原点
@@ -3074,7 +3088,7 @@ class Window_EagleMessage < Window_Base
     win_params[:cdx] + @eagle_sprite_pause_width_add + win_params[:cdw]
   end
   def eagle_window_h_empty
-    win_params[:cdy]
+    win_params[:cdy] + win_params[:cdh]
   end
 
   #--------------------------------------------------------------------------
@@ -3447,8 +3461,7 @@ class Window_EagleMessage < Window_Base
     result = eagle_process_conv(result)
     result = eagle_process_rb(result)
     result = super(result) # 此处将 \\ 替换成了 \e
-    result.gsub!(/\eINFO\[(\w)(\d+)\]/i) { MESSAGE_EX.get_data_info($1, $2.to_i) }
-    result.gsub!(/\enl|\enew_line/i) { "\n" } # 替换换行转义符
+    result = eagle_process_extra(result)
     result
   end
   #--------------------------------------------------------------------------
@@ -3464,6 +3477,14 @@ class Window_EagleMessage < Window_Base
   def eagle_process_rb(text)
     s = $game_switches; v = $game_variables
     text.gsub!(/\\RB\{(.*?)\}/i) { eval($1).to_s }
+    text
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理其它转义符（此时是 \e 开头的转义符）
+  #--------------------------------------------------------------------------
+  def eagle_process_extra(text)
+    text.gsub!(/\eINFO\[(\w)[ ,]*(\d+)\]/i) { MESSAGE_EX.get_data_info($1, $2.to_i) }
+    text.gsub!(/\enl|\enew_line/i) { "\n" } # 替换换行转义符
     text
   end
 
@@ -3685,7 +3706,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_draw_end(c_w, c_h, pos)
     # 处理下一次绘制的参数
-    pos[:x] += (c_w - game_message.win_params[:ck])
+    pos[:x] += (c_w + game_message.win_params[:ck])
     pos[:height] = [pos[:height], c_h].max
     # 记录下一个文字绘制位置x
     @eagle_next_chara_x = pos[:x]
@@ -3965,6 +3986,9 @@ class Window_EagleMessage < Window_Base
     }
     parse_pre_params(text, 'name', name_params, :o)
     name_params[:name] = str_name
+    process_draw_name
+  end
+  def process_draw_name
     @eagle_window_name.reset if @eagle_window_name
   end
 
@@ -4107,7 +4131,7 @@ class Window_EagleMessage < Window_Base
   # ● （覆盖）获取基础行高
   #--------------------------------------------------------------------------
   def line_height
-    h = win_params[:lh]
+    h = win_params[:lh] || Font.default_size
     return h if h > 0
     return super
   end
