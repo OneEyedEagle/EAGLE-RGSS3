@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageBox"] = true
 #=============================================================================
-# - 2021.6.6.10 修改注释
+# - 2021.6.24.11 修改注释
 #==============================================================================
 # - 本插件新增的大文本框，有以下几个新特性：
 #
@@ -201,7 +201,7 @@ module MESSAGE_EX
 
     # \pause[]
     :pause => {
-      :pause => 0,  # 源位图index
+      :id => 0,  # 源位图index
       :o => 4,  # 自身的显示原点类型
       :do => 0,  # 相对于对话框的显示位置（九宫格小键盘）（0时在文末）
       :dx => 0,  # xy偏移值
@@ -1055,17 +1055,14 @@ class Window_EagleMessage_Box < Window_Base
   #--------------------------------------------------------------------------
   def pause_params; params[:pause]; end
   def eagle_text_control_pause(param = "")
-    parse_param(params[:pause], param, :pause)
+    parse_param(pause_params, param, :id)
     @eagle_sprite_pause.reset
   end
   #--------------------------------------------------------------------------
   # ● 设置wait参数
   #--------------------------------------------------------------------------
   def eagle_text_control_wait(param = '0')
-    h = {}
-    h[:t] = 0 # 等待帧数
-    parse_param(h, param, :t)
-    wait(h[:t])
+    wait(param.to_i)
   end
   #--------------------------------------------------------------------------
   # ● 等待
