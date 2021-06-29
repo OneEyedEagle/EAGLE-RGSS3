@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageSkip"] = true
 #==============================================================================
-# - 2021.6.26.19
+# - 2021.6.28.0 兼容并行对话
 #==============================================================================
 # - 本插件为对话框新增了对话跳过功能
 #----------------------------------------------------------------------------
@@ -87,36 +87,30 @@ end
 #=============================================================================
 class Window_EagleMessage
   #--------------------------------------------------------------------------
-  # ● 初始化组件
+  # ● 生成所有子窗口
+  #  在此方法里生成精灵，阻止了继承对话框的窗口获得该功能
   #--------------------------------------------------------------------------
-  alias eagle_skip_dialog_init_assets eagle_message_init_assets
-  def eagle_message_init_assets
-    eagle_skip_dialog_init_assets
+  alias eagle_skip_dialog_create_all_windows create_all_windows
+  def create_all_windows
+    eagle_skip_dialog_create_all_windows
     @sprite_skip = Sprite_EagleMsgSkip.new(self)
   end
   #--------------------------------------------------------------------------
-  # ● 释放
+  # ● 释放所有窗口
   #--------------------------------------------------------------------------
-  alias eagle_skip_dialog_dispose dispose
-  def dispose
+  alias eagle_skip_dialog_dispose_all_windows dispose_all_windows
+  def dispose_all_windows
     @sprite_skip.dispose
-    eagle_skip_dialog_dispose
+    eagle_skip_dialog_dispose_all_windows
   end
   #--------------------------------------------------------------------------
-  # ● 更新（在 @fiber 更新之前）
+  # ● 更新所有窗口
   #--------------------------------------------------------------------------
-  alias eagle_skip_dialog_update_before_fiber eagle_update_before_fiber
-  def eagle_update_before_fiber
-    eagle_skip_dialog_update_before_fiber
+  alias eagle_skip_dialog_update_all_windows update_all_windows
+  def update_all_windows
+    eagle_skip_dialog_update_all_windows
     @sprite_skip.update
-  end
-  #--------------------------------------------------------------------------
-  # ● 对话框打开后进行扩展功能更新
-  #--------------------------------------------------------------------------
-  alias eagle_skip_dialog_update_func_after_open eagle_update_func_after_open
-  def eagle_update_func_after_open
-    eagle_skip_dialog_update_func_after_open
-    force_close if @sprite_skip.active?
+    force_close if @sprite_skip && @sprite_skip.active?
   end
 end
 
@@ -189,7 +183,7 @@ class Sprite_EagleMsgSkip < Sprite
     if Input.press?(MESSAGE_EX::SKIP_KEY)
       @count += 1
     else
-      @count -= 1
+      @count -= 3
     end
     @count = count_max if @count > count_max
     @count = 0 if @count < 0
