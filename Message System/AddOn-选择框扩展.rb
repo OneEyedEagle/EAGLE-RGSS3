@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2021.7.2.23 优化注释；新增选项名称
+# - 2021.7.6.9 不存在任何选项时，自动跳过
 #==============================================================================
 #------------------------------------------------------------------------------
 # 【优化】
@@ -240,6 +240,10 @@ module MESSAGE_EX
   # ● 【常量】被选择过的有名称的选择支，再次显示时的文字颜色
   #--------------------------------------------------------------------------
   CHOICE_CHOSEN_COLOR = 4
+  #--------------------------------------------------------------------------
+  # ● 【常量】不存在任何选项时，出现的额外选项的文本
+  #--------------------------------------------------------------------------
+  CHOICE_TEXT_NO = "（……）"
 end
 #==============================================================================
 # ○ Game_Message
@@ -398,6 +402,11 @@ class Window_EagleChoiceList < Window_Command
     i = 0 # 选择支的窗口序号
     $game_message.choices.each_with_index do |text, index|
       i += 1 if process_choice(text.dup, index, i, true)
+    end
+    # 如果不存在任一选项，则增加一个辅助选项
+    if i == 0
+      process_choice(MESSAGE_EX::CHOICE_TEXT_NO, -1, i, false)
+      i += 1
     end
     @choices_num = i # 存储总共显示的选项数目
     # 查找取消分支的窗口序号
@@ -1122,7 +1131,11 @@ class Spriteset_Choice
     when 'C'
       param = message_window.obtain_escape_param(text)
       @font_params[:c] = param
-      change_color( @choice_window.text_color(param) )
+      if param == 0
+        reset_font_settings
+      else
+        change_color( @choice_window.text_color(param) )
+      end
     when 'F'
       param = message_window.obtain_escape_param_string(text)
       MESSAGE_EX.parse_param(@font_params, param, :size)

@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-ESAS"] = true
 #==============================================================================
-# - 2020.9.28.16
+# - 2021.7.6.11
 #==============================================================================
 # - 本插件新增一系列方便事件脚本调用的方法，用于创作简易ARPG
 #--------------------------------------------------------------------------
@@ -31,40 +31,48 @@ $imported["EAGLE-ESAS"] = true
 #    而对于事件脚本，也新增了报错捕捉，确保能快速DEBUG
 #--------------------------------------------------------------------------
 #  @esas
-#  【事件】当事件页是在ESAS中被调用时，事件指令-脚本中才会存在的数据变量
-#         具体见 Process_Event_Data 类
 #
-#  在事件脚本中，新增下列数据：
-#  @esas.mid 和 @esas.eid 和 @esas.pid 获取当前事件页信息（地图ID，事件ID，事件页ID）
-#  @esas.chara 获取当前事件页的调用来源角色，
-#              比如若是玩家绑定的按键触发的当前事件页，则该变量值为 $game_player
-#              比如若是 $game_map.events[1].run_event 调用的当前事件页，
-#                则该变量值为 $game_map.events[1]
-#              比如若是动画播放时调用的当前事件页，则该变量值为设置动画时的来源
-#  @esas.x 和 @esas.y 获取来源角色位于地图上的坐标
-#              比如若是动画播放时调用的当前事件页，则存储了动画所在的地图坐标
-#--------------------------------------------------------------------------
-#  run_event(map_id, event_id, page_id)
-#  【事件】执行指定地图中指定事件指定页的全部指令，和调用公共事件一样，等待执行结束
-#     map_id → 地图ID号，若传入 0 则指当前地图，若传入负数，则指公共事件列表
-#     event_id → 事件ID号
-#     page_id → 页数ID号，若不传入，则默认取 1号页
+#  【事件】当事件页是在ESAS相关功能中（具体的，就是下述注释中出现的功能）被调用时，
+#         事件指令-脚本中才会存在的变量
+#         （具体见 Process_Event_Data 类）
 #
-# - 示例：
-#    事件脚本：run_event(0, 2)
-#    则 调用当前地图的2号事件的1号页的全部指令，执行结束后继续之后的指令
+#  在ESAS事件脚本中，新增了下列可读取的数据：
+#    @esas.mid 获取当前执行事件页所在的地图ID
+#    @esas.eid 获取当前执行事件页所在的事件ID
+#    @esas.pid 获取当前执行事件页的页码ID
+#    @esas.chara 获取当前事件页的调用来源角色
+#             比如：由玩家绑定的按键触发的当前事件页，该变量值为 $game_player
+#             比如：由 $game_map.events[1].run_event() 调用的当前事件页，
+#                  该变量值为 $game_map.events[1]
+#             比如：由动画播放时调用的当前事件页，该变量值为动画的调用来源
+#    @esas.x
+#    @esas.y 获取来源角色位于地图上的坐标
+#             比如：由动画播放时调用的当前事件页，则为动画所在的地图坐标
+#
 #--------------------------------------------------------------------------
 #  chara.run_event(params)
+#
 #  【地图】以事件/角色为【本事件】，执行指定事件页（并行处理）
+#
 #     注意：通过该方法，每个角色同时只会执行一个事件页，
 #          若旧的事件页还未执行完，再次调用时将尝试强制终止，并开始执行新事件页
+#
 #    chara → Game_Character类及其子类的对象
 #          可以用 chara = ESAS.get_chara(chara_id) 获取
 #          其中 chara_id 为 -1 时代表玩家，正数时代表对应ID事件的对象
+#
 #    params → 存储一系列执行信息的哈希表
-#       :mid / :eid / :pid → 所要执行的事件页的来源（地图ID / 事件ID / 页号）
+#       :mid → 所要执行的事件页的地图ID（若不传入或传入0，则为当前地图）
+#       :eid → 所要执行的事件页的事件ID
+#       :pid → 所要执行的事件页的页号（若不传入或传入0，则取符合出现条件的最大页）
 #       :abort → 是否可以强制终止，默认 true
 #                若设置为 false ，则会保证必定执行完，中途的其余事件页调用都被取消
+#
+#     若使用了【事件互动扩展 by老鹰】，新增如下设置：
+#       :sym → 仅调用事件页中的对应名称的互动，而不执行整页
+#
+#      此外，可以传入【事件互动扩展 by老鹰】的tags格式字符串来进行params设置：
+#        如 chara.run_event("mid=1 abort=false")
 #
 # - 示例：
 #    事件脚本：chara = ESAS.get_chara(1) # 获取1号事件对象
@@ -73,71 +81,89 @@ $imported["EAGLE-ESAS"] = true
 #             chara.run_event(ps) # 并行调用事件页（当前事件继续执行之后的指令）
 #
 # - 高级：
-#  chara.esas_running? → 角色是否存在正在执行run_event调用的事件页
-#  chara.esas_abort(n) → 打断角色正在执行的run_event事件页，
-#                        若成功，给角色增加n帧硬直
-#              （硬直期间角色无法移动、无法利用 chara.run_event 触发esas事件）
+#    chara.esas_running? → 角色是否存在正在执行run_event调用的事件页
+#    chara.esas_abort(n) → 打断角色正在执行的run_event事件页，
+#                          若成功，给角色增加n帧硬直
+#                 （硬直期间角色无法移动、无法利用 chara.run_event 触发esas事件）
+#
 #--------------------------------------------------------------------------
 #  chara.freeze(n)
-#  【地图】给角色设置持续 n 帧的硬直，期间角色无法行动，无法触发 chara.run_event
-#         在 n 帧后将会自动解除
+#
+#  【地图】给角色设置持续 n 帧的硬直，
+#         期间角色无法行动，无法触发它的 chara.run_event() 方法，
+#         在 n 帧后将会自动解除该硬直状态
+#
 #    n → 若不传入或传入 0，则不限制持续时间
 #
 #  chara.unfreeze
+#
 #  【地图】解除角色硬直
 #
 # - 高级：
-#  chara.freeze? → 角色正处于硬直？
+#    chara.freeze? → 角色正处于硬直？
+#
 #--------------------------------------------------------------------------
 #  chara.no_esas(n)
-#  【地图】给角色设置持续 n 帧的无敌，期间角色不可被 esas_iter 应用事件
-#         即当在事件中通过事件脚本 esas_iter(ids) 迭代事件时，该事件将被跳过
-#         在 n 帧后将会自动解除
+#
+#  【地图】给角色设置持续 n 帧的无敌，期间角色不可被 esas_iter 响应事件指令，
+#         即事件中通过事件脚本 esas_iter(ids) 迭代事件时，该chara事件将被跳过，
+#         在 n 帧后将会自动解除该无敌状态
+#
 #    n → 若不传入或传入 0，则不限制持续时间
 #
 #  chara.re_esas
+#
 #  【地图】解除角色无敌
 #
 # - 高级：
-#  chara.no_esas? → 角色正处于无敌？
+#    chara.no_esas? → 角色正处于无敌？
+#
 #--------------------------------------------------------------------------
 # - 玩家按键触发事件页
 #
-#  $game_player.set_key(key, params)
-#  【全局】给玩家绑定按键触发的事件页
-#    key → 设置绑定按键，当按下对应按键时，自动执行一次事件页
-#    params → 要调用的事件页的信息，同 chara.run_event 中的params
+#    $game_player.set_key(key, params)
 #
-#  $game_player.call_key(key)
-#  【全局】直接调用一次按键所绑定的事件页
+#      【全局】给玩家绑定按键触发的事件页
+#
+#       key → 设置绑定按键，当按下对应按键时，自动执行一次事件页
+#             与 Input 模块中所响应的键值Symbol保持一致
+#       params → 要调用的事件页的信息，同 chara.run_event 中的params
+#
+#    $game_player.call_key(key)
+#
+#      【全局】直接调用一次按键所绑定的事件页
 #
 # - 高级：
-#  $game_player.esas_running? → 角色是否存在正在执行的事件页（含按键触发的）
-#  $game_player.esas_abort(n) → 打断角色正在执行的事件页（含按键触发的），
-#                               若有任意一个打断成功，给角色增加n帧硬直
+#    $game_player.esas_running? → 角色是否存在正在执行的事件页（含按键触发的）
+#    $game_player.esas_abort(n) → 打断角色正在执行的事件页（含按键触发的），
+#                                若有任意一个打断成功，给角色增加n帧硬直
 #
 # - 示例：
 #    事件脚本：$game_player.set_key(:A, {:mid => 0, :eid => 1, :pid => 2})
-#     则 当玩家按下Shift键时，调用当前地图1号事件的第2页，将并行执行
+#     → 当玩家按下Shift键时，调用当前地图1号事件的第2页，将并行执行
 #        请在事件页中设置玩家的禁止移动等
+#
 #--------------------------------------------------------------------------
-# - 事件页并行
+# - 绑定事件页并行
 #
 #    在事件页的开头第一个指令为注释的情况下，在注释中编写
 #
 #       <esas mid eid pid>
 #
 #    可以指定该事件页符合条件并显示时，同步开始并行执行的事件页，
-#    同时事件页中的【本事件】全部会被替换为当前事件
+#      其中的【本事件】全部被替换为当前事件。
 #
-#    其中 mid 为 地图ID，0时代表当前地图
-#         eid 为 事件ID
-#         pid为 事件页ID
+#    若使用了【事件互动扩展 by老鹰】，则可以编写tags字符串，并新增sym设置：
+#       <esas mid=1 eid=2 pid=0 sym=互动>
+#      来便捷编写所绑定的事件页，或者具体设置所触发的事件页中的互动。
+#
+#    当本事件被按键/接触触发时，绑定的事件页也暂停执行。
 #
 # - 示例：
 #     1号事件的第2页开头注释中填写了 <esas 0 2 1>
 #     当事件的第2页符合出现条件并显示时，同步开始并行执行当前地图2号事件的第1页
 #     并且执行过程中的【本事件】均为 1号事件
+#
 #--------------------------------------------------------------------------
 #
 #=============================================================================
@@ -147,7 +173,9 @@ $imported["EAGLE-ESAS"] = true
 #   本插件扩展了动画播放相关方式
 #--------------------------------------------------------------------------
 #  ESAS.anim_map(anim_id, x, y, params)
+#
 #  【地图】在地图上指定位置播放动画
+#
 #    anim_id → 数据库中对应动画的ID
 #              请提前设置动画的x坐标偏移值 16，y坐标偏移值0，以对齐格子底部中心播放
 #    x, y → 地图上的坐标（与编辑器中一致）
@@ -160,6 +188,7 @@ $imported["EAGLE-ESAS"] = true
 #    事件脚本：ps = { 2 => {:mid => -1, :eid => 2} } # 设置第2帧时调用2号公共事件
 #             ps[:chara_id] = 1 # 设置调用来源为1号事件
 #             ESAS.anim_map(112, 6, 9, ps) # 并行显示112号动画
+#
 #--------------------------------------------------------------------------
 #
 #=============================================================================
@@ -184,7 +213,9 @@ $imported["EAGLE-ESAS"] = true
 #     □
 #--------------------------------------------------------------------------
 #  xys = ESAS.range_xys(chara_id, arr)
+#
 #  【全局】传入角色ID和范围数组，返回实际在地图上的坐标的数组
+#
 #     chara_id → -1 代表玩家，正数代表事件ID
 #     arr → 范围数组
 #
@@ -192,9 +223,12 @@ $imported["EAGLE-ESAS"] = true
 #    玩家位于地图的(5,3)处，朝向右
 #      xys = ESAS.range_xys(-1, [[1,0], [2,0]])
 #    则 xys = [ [6,3], [7,3] ]
+#
 #--------------------------------------------------------------------------
 #  xys = ESAS.range_xys(x, y, direction, arr)
+#
 #  【全局】传入地图位置(x,y)和朝向和范围数组，返回实际在地图上的坐标的数组
+#
 #     x,y → 地图上的坐标，和编辑器中显示的保持一致
 #     direction → 朝向（2朝下，4朝左，6朝右，8朝上）
 #     arr → 范围数组
@@ -203,9 +237,12 @@ $imported["EAGLE-ESAS"] = true
 #    在地图的(5,3)处，朝向右
 #      xys = ESAS.range_xys(5,3, 6, [[1,0], [2,0]])
 #    则 xys = [ [6,3], [7,3] ]
+#
 #--------------------------------------------------------------------------
 #  ids = ESAS.range_ids(xys, type)
+#
 #  【全局】传入地图坐标数组和索引范围，返回位于这些坐标内的角色的ID数组
+#
 #     xys → 地图上实际坐标的数组
 #     type → :party 代表只检索我方角色，:enemy 代表只检索敌方角色
 #            :all 代表全部角色都会检索，若不传入，则检索敌方角色
@@ -216,9 +253,12 @@ $imported["EAGLE-ESAS"] = true
 #    承上，在地图的(6,3)处存在3号事件，在(7,3)处存在5号事件，在(8,3)处存在2号事件
 #      ids = ESAS.range_ids(xys)
 #    则 ids = [ 3, 5 ]
+#
 #--------------------------------------------------------------------------
 #  ids = ESAS.select_ids(ids, sym)
+#
 #  【全局】传入角色ID数组和筛选条件，返回符合条件的ID数组
+#
 #     sym →
 #       若 sym 为符号，则事件/角色名字需含有该字符串
 #              比如 ESAS.select_ids(ids, :<NPC>) ，就筛选出名称含有 <NPC> 的事件
@@ -235,6 +275,7 @@ $imported["EAGLE-ESAS"] = true
 #    承上，3号事件名称为 "事件<npc>"， 5号事件名称为 "事件<enemy>"
 #      ids = ESAS.select_ids(ids, :<enemy>)
 #    则 ids = [ 5 ]
+#
 #--------------------------------------------------------------------------
 #
 #=============================================================================
@@ -245,8 +286,11 @@ $imported["EAGLE-ESAS"] = true
 #   因此本插件对默认的事件编辑器进行了扩展，使其能够在一个事件页中对其他事件进行处理
 #--------------------------------------------------------------------------
 #  esas_iter(ids)
+#
 #  【事件】开始对角色ID数组中的事件迭代，之后事件指令的【本事件】将替换为被迭代事件
+#
 #  esas_iter_end
+#
 #  【事件】结束事件的迭代区域，若未迭代完，则回到迭代开头继续
 #
 # - 示例：当前事件为 2 号事件
@@ -260,6 +304,7 @@ $imported["EAGLE-ESAS"] = true
 #         先开启1号事件的独立开关A，在1号事件上面显示1号动画，
 #         再开启3号事件的独立开关A，在3号事件上面显示1号动画，
 #      最后开启当前事件（2号事件）的独立开关A
+#
 #--------------------------------------------------------------------------
 #
 #=============================================================================
@@ -269,18 +314,25 @@ $imported["EAGLE-ESAS"] = true
 #   本插件新增了扩展性较强的气泡文本显示模块，能够轻松增加任意弹出文本
 #--------------------------------------------------------------------------
 #  ESAS.new_pop(params)
+#
 #  【全局】生成一个立即显示，然后消失的气泡文本，
+#
 #     params → 各种参数的Hash
 #        :text => 需要绘制的文本（单行，不可含转义符）
-#        :chara_id => 绑定显示的角色ID（-1为玩家，正数为事件）
+#        :cid => 绑定显示的角色ID（-1为玩家，正数为事件）
 #        :type => 显示模式（:zoom 放大并淡出，:bounce 弹跳并淡出）
 #        :w / :h => 精灵宽度、高度
 #        :size => 字体大小
-#        :color => 字体颜色
+#        :color => 字体颜色的索引号
 #
 # - 示例：
 #    在玩家行走图上显示 10 的文本
-#      ESAS.new_pop( {:chara_id => -1, :text => "10"} )
+#      ESAS.new_pop( {:cid => -1, :text => "10"} )
+#
+# - 若使用了【事件互动扩展 by老鹰】，则可以编写tags字符串进行设置：
+#
+#      ESAS.new_pop( "text=miss cid=-1 color=17" )
+#
 #--------------------------------------------------------------------------
 #
 #=============================================================================
@@ -305,6 +357,7 @@ $imported["EAGLE-ESAS"] = true
 #     chara.tmp[:hp_max] 存储了初始化时的HP值，并且将被作为HP上限进行绘制
 #                       （但并不会对hp值的更改进行限制）
 #     chara.tmp[:hp_draw] 存储了当前被绘制的HP值
+#
 #=============================================================================
 
 #=============================================================================
@@ -369,15 +422,27 @@ module ESAS
   # （参数均与编辑器中显示的数字保持一致）
   #--------------------------------------------------------------------------
   def self.get_event_list(map_id, event_id, page_id = nil)
+    event = nil
+    map_id = $game_map.map_id if map_id.nil? || map_id == 0
+    # 公共事件
     if map_id < 0
-      common_event = $data_common_events[event_id]
-      return common_event.list
+      event = $data_common_events[event_id]
+      return event.list
     end
-    map = ESAS.get_map_data(map_id)
-    event = map.events[event_id] rescue nil
-    return nil if event == nil
-    page_id ||= 1
-    page = event.pages[page_id-1]
+    # 地图上的事件
+    if map_id != $game_map.map_id
+      map = ESAS.get_map_data(map_id)
+      event_data = map.events[event_id] rescue return
+      event = Game_Event.new(map_id, event_data)
+    else
+      event = $game_map.events[event_id] rescue return
+    end
+    page = nil
+    if page_id == nil || page_id == 0
+      page = event.find_proper_page
+    else
+      page = event.event.pages[page_id-1] rescue return
+    end
     return page.list
   end
   #--------------------------------------------------------------------------
@@ -499,11 +564,14 @@ module ESAS
     def run
       list = ESAS.get_event_list(@params[:mid], @params[:eid], @params[:pid])
       return if list.nil?
+      @params[:active] = true
       @interpreter.bind_esas(@data)
       event_id = 0
       event_id = @data.chara.id if @data.chara
       @interpreter.setup(list, event_id)
-      @params[:active] = true
+      if $imported["EAGLE-EventInteractEX"]
+        @interpreter.event_interact_search(@params[:sym]) if @params[:sym]
+      end
     end
     #--------------------------------------------------------------------------
     # ● 在更新？
@@ -558,22 +626,6 @@ class Game_Interpreter
   #--------------------------------------------------------------------------
   def bind_esas(data)
     @esas = data
-  end
-  #--------------------------------------------------------------------------
-  # ● 执行指定事件页（仿公共事件调用）
-  #--------------------------------------------------------------------------
-  def run_event(map_id, event_id, page_id = nil)
-    map_id = @map_id if map_id.nil? || map_id == 0
-    list = ESAS.get_event_list(map_id, event_id, page_id)
-    child = Game_Interpreter.new(@depth + 1)
-    child.setup(list, self.event_id)
-    begin
-      child.run
-    rescue
-      p "调用ESAS新增的run_event事件脚本时出错！"
-      p " - 出错事件：#{@map_id}号地图#{@event_id}号事件"
-      p " - 出错指令：第#{@index+1}条指令的run_event(#{map_id},#{event_id})出错！"
-    end
   end
   #--------------------------------------------------------------------------
   # ● 脚本
@@ -715,7 +767,13 @@ class Game_Character < Game_CharacterBase
     if @esas_event.running?
       return if !@esas_event.abort # 不可以强制中止，就取消当前事件的执行
     end
-    params[:mid] = $game_map.map_id if params[:mid] == 0
+    if params.is_a?(String) && $imported["EAGLE-EventInteractEX"]
+      params = EAGLE.parse_tags(params)
+      params[:mid] = params[:mid].to_i if params[:mid]
+      params[:eid] = params[:eid].to_i
+      params[:pid] = params[:pid].to_i if params[:pid]
+      params[:abort] = false if params[:abort] == "false"
+    end
     @esas_event.reset(params)
     @esas_event.run
   end
@@ -775,7 +833,7 @@ class Game_Player < Game_Character
   def init_esas_members
     super
     @esas_keys = {}
-    set_key(:A, {:mid => 1, :eid => 9}) # TEST
+#~     set_key(:A, {:mid => 1, :eid => 9}) # TEST
   end
   #--------------------------------------------------------------------------
   # ● 获取名称
@@ -834,6 +892,13 @@ class Game_Player < Game_Character
   # ● 绑定按键对应的事件
   #--------------------------------------------------------------------------
   def set_key(key, params)
+    if params.is_a?(String) && $imported["EAGLE-EventInteractEX"]
+      params = EAGLE.parse_tags(params)
+      params[:mid] = params[:mid].to_i if params[:mid]
+      params[:eid] = params[:eid].to_i
+      params[:pid] = params[:pid].to_i if params[:pid]
+      params[:abort] = false if params[:abort] == "false"
+    end
     params[:key] = key
     data = { :chara => self, :x => self.x, :y => self.y }
     @esas_keys[key] = ESAS::Process_Event.new(params, data)
@@ -943,11 +1008,20 @@ class Game_Event < Game_Character
     eagle_esas_event_setup_page_settings
     t = EAGLE.event_comment_head(@list)
     ps = { :repeat => true }
-    t.scan( /<esas ?(\d+) (\d+) ?(\d+)?>/ ).each { |params|
-      ps[:mid] = params[0].to_i
-      ps[:eid] = params[1].to_i
-      ps[:pid] = params[2].to_i
-    }
+    t.scan( /<esas ?(.*?)>/ ).each do |params|
+      _t = params[0]
+      if _t =~ /(\d+) (\d+) (\d+)/
+        ps[:mid] = $1.to_i
+        ps[:eid] = $2.to_i
+        ps[:pid] = $3.to_i
+      elsif $imported["EAGLE-EventInteractEX"]
+        _params = EAGLE.parse_tags(_t)
+        ps[:mid] = _params[:mid].to_i if _params[:mid]
+        ps[:eid] = _params[:eid].to_i
+        ps[:pid] = _params[:pid].to_i if _params[:pid]
+        ps[:sym] = _params[:sym] if _params[:sym]
+      end
+    end
     if ps[:eid]
       ps[:mid] = $game_map.map_id if ps[:mid] == 0
       ps[:eid] = @id if ps[:eid] == 0
@@ -1456,11 +1530,20 @@ module ESAS
   #--------------------------------------------------------------------------
   def self.new_pop(params = {})
     # :text => 绘制文本
-    # :chara_id => 绑定角色的ID
+    # :cid => 绑定角色的ID
     # :type => 显示模式
     # :w / :h => 精灵宽度高度
     # :size => 字体大小
     # :color => 字体颜色
+    if params.is_a?(String) && $imported["EAGLE-EventInteractEX"]
+      params = EAGLE.parse_tags(params)
+      params[:cid] = params[:cid].to_i
+      params[:type] = params[:type].to_sym if params[:type]
+      params[:w] = params[:w].to_i if params[:w]
+      params[:h] = params[:h].to_i if params[:h]
+      params[:size] = params[:size].to_i if params[:size]
+      params[:color] = params[:color].to_i if params[:color]
+    end
     s = Sprite_Pop.new(params)
     s.reset
     @sprites_pop.push(s)
@@ -1485,8 +1568,8 @@ module ESAS
     #--------------------------------------------------------------------------
     def process_params
       @params[:type] ||= :bounce
-      @params[:chara] = ESAS.get_chara(@params[:chara_id])
-      @params[:chara_s] = ESAS.get_chara_sprite(@params[:chara_id])
+      @params[:chara] = ESAS.get_chara(@params[:cid])
+      @params[:chara_s] = ESAS.get_chara_sprite(@params[:cid])
     end
     #--------------------------------------------------------------------------
     # ● 释放
