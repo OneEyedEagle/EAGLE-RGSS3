@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MsgKeywordInfo"] = true
 #==============================================================================
-# - 2021.6.28.16 优化提示精灵
+# - 2021.7.7.21 对话框关闭时，按键提示精灵强制渐隐
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细信息
 #------------------------------------------------------------------------------
@@ -250,6 +250,7 @@ class Window_Keyword_Info < Window_Base
     @sprite_tag.src_rect.set(0,0, w/3, h/3)
     @sprite_tag.visible = false
 
+    # 绘制按键提示精灵
     @sprite_hint = Sprite.new
     t1 = MESSAGE_EX::KEYWORD_HINT1
     t2 = MESSAGE_EX::KEYWORD_HINT2
@@ -263,28 +264,28 @@ class Window_Keyword_Info < Window_Base
     @sprite_hint.bitmap.font.size = 16
     @sprite_hint.bitmap.font.outline = false
     @sprite_hint.bitmap.font.shadow = false
-
+    # 绘制边框
     @sprite_hint.bitmap.fill_rect(0, 0, @sprite_hint.width,
       @sprite_hint.height - 4, Color.new(255,255,255,255))
     @sprite_hint.bitmap.clear_rect(1, 1, @sprite_hint.width-2,
       4+r2.height+4 - 2)
-
+    # 绘制左侧文字和底纹
     @sprite_hint.bitmap.fill_rect(4, 4, 2+r1.width+2, r1.height,
       Color.new(255,255,255,255))
     @sprite_hint.bitmap.font.color = Color.new(0,0,0,255)
     @sprite_hint.bitmap.draw_text(4+2, 4, r1.width * 2, r1.height, t1, 0)
-
+    # 绘制右侧文字
     @sprite_hint.bitmap.font.color = Color.new(255,255,255,255)
     @sprite_hint.bitmap.draw_text(4 + 2+r1.width+2 + 4, 4,
       r2.width * 2, r2.height, t2, 0)
-
+    # 绘制底部箭头
     @sprite_hint.bitmap.clear_rect(@sprite_hint.width / 2-3,
       @sprite_hint.height-5, 7, 2)
     [ [-3,1],[3,1], [-2,2],[2,2], [-1,3],[1,3], [0,4] ].each do |xy|
       @sprite_hint.bitmap.set_pixel(@sprite_hint.width / 2 + xy[0],
        @sprite_hint.height - 5 + xy[1], Color.new(255,255,255,255))
     end
-
+    # 底部中心为原点
     @sprite_hint.ox = @sprite_hint.width / 2
     @sprite_hint.oy = @sprite_hint.height
     @state_hint = :init
@@ -324,6 +325,8 @@ class Window_Keyword_Info < Window_Base
     super()
     self.openness -= 1  # 保证tag精灵不会被再次显示
     @sprite_tag.visible = false
+    @state_hint = :hide
+    @count_hint = 0
   end
   #--------------------------------------------------------------------------
   # ● 重置清除
@@ -378,6 +381,15 @@ class Window_Keyword_Info < Window_Base
     _x += s_c.origin_x
     _y = @message_window.eagle_charas_y0 - @message_window.eagle_charas_oy
     _y += s_c.origin_y
+
+    _x = @message_window.x if _x < @message_window.x
+    if _x > @message_window.x + @message_window.width
+      _x = @message_window.x + @message_window.width
+    end
+    _y = @message_window.y if _y < @message_window.y
+    if _y > @message_window.y + @message_window.height
+      _y = @message_window.y + @message_window.height
+    end
     return _x, _y
   end
   #--------------------------------------------------------------------------
@@ -460,10 +472,10 @@ class Window_Keyword_Info < Window_Base
       @count_hint = 0
       @state_hint = :show
     when :show
-      if @count_hint < 180
+      if @count_hint < 20
       else
-        @sprite_hint.opacity += 5
-        if @count_hint > 280
+        @sprite_hint.opacity += 10
+        if @count_hint > 120
           @count_hint = 0
           @state_hint = :jump
         end
@@ -480,13 +492,13 @@ class Window_Keyword_Info < Window_Base
         @state_hint = :hide
       end
     when :hide
-      @sprite_hint.opacity -= 5
+      @sprite_hint.opacity -= 12
       if @count_hint > 100
         @count_hint = 0
         @state_hint = :fin
       end
     when :fin
-      if @count_hint > 240
+      if @count_hint > 60
         @count_hint = 0
         @state_hint = :init
       end
