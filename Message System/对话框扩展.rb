@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.6.24.23 更新注释
+# - 2021.7.13.16 修复姓名框图片背景无法隐藏的问题
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2449,7 +2449,6 @@ class Window_EagleMessage < Window_Base
     if game_message.name?
       @eagle_window_name.opacity = opa
       @eagle_window_name.contents_opacity = opa
-      @eagle_window_name.update_back_sprite_opa(opa)
     end
     update_back_sprite_opa(opa)
   end
@@ -2461,8 +2460,8 @@ class Window_EagleMessage < Window_Base
     @back_sprite.z = self.z
     @eagle_chara_viewport.z = self.z + 1
     @eagle_sprite_pop_tag.z = self.z + 1
-    @eagle_window_name.z = self.z + 2
     @eagle_sprite_pause.z = self.z + 2
+    @eagle_window_name.z = self.z + 3
   end
   #--------------------------------------------------------------------------
   # ● 显示窗口
@@ -4698,6 +4697,7 @@ class Window_EagleMsgName < Window_Base
     super(0, 0, 32, 32)
     self.openness = 0
     @back_sprite = Sprite.new
+    @flag_use_back_sprite = false
     @params = {}
   end
   def bind_window(window); @window_msg = window; end
@@ -4740,14 +4740,17 @@ class Window_EagleMsgName < Window_Base
     reset_size(t)
     redraw(t)
     if name_params[:bg] && eagle_draw_bg_pic(self.width, self.height)
+      @flag_use_back_sprite = true
       @back_sprite.visible = true
       self.opacity = 0
       self.back_opacity = 0
     else
+      @flag_use_back_sprite = false
       @back_sprite.visible = false
       self.opacity = name_params[:opa]
       self.back_opacity = name_params[:opa]
     end
+    @back_sprite.z = self.z - 1
     self.contents_opacity = 255
     open
   end
@@ -4813,21 +4816,43 @@ class Window_EagleMsgName < Window_Base
     MESSAGE_EX.reset_xy_dorigin(@back_sprite, self, name_params[:bgo])
     MESSAGE_EX.reset_sprite_oxy(@back_sprite, name_params[:bgo])
   end
-  def update_back_sprite_opa(opa)
-    @back_sprite.opacity = opa
-  end
   #--------------------------------------------------------------------------
   # ● 更新（在 eagle_win_update 中调用）
   #--------------------------------------------------------------------------
   def update_with_msg
     update_position
-    update_back_sprite
+    update_back_sprite if @flag_use_back_sprite
   end
   #--------------------------------------------------------------------------
   # ● 更新位置
   #  尽管已经更新了姓名框位置，但保留此处用于扩展
   #--------------------------------------------------------------------------
   def update_position
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 显示
+  #--------------------------------------------------------------------------
+  def show
+    @back_sprite.visible = true if @flag_use_back_sprite
+    super
+  end
+  #--------------------------------------------------------------------------
+  # ● 隐藏
+  #--------------------------------------------------------------------------
+  def hide
+    @back_sprite.visible = false if @flag_use_back_sprite
+    super
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新（每帧调用）
+  #--------------------------------------------------------------------------
+  def update
+    super
+    if @flag_use_back_sprite
+      @back_sprite.opacity = self.openness
+      @back_sprite.opacity = self.contents_opacity if self.contents_opacity < 255
+    end
   end
 end
 
