@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MsgKeywordInfo"] = true
 #==============================================================================
-# - 2021.7.7.21 对话框关闭时，按键提示精灵强制渐隐
+# - 2021.7.29.21 兼容词条系统
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细信息
 #------------------------------------------------------------------------------
@@ -17,6 +17,17 @@ $imported["EAGLE-MsgKeywordInfo"] = true
 # - 在第一次按下 SHIFT键，将定位到最后绘制的关键词，并显示它的预设信息文本
 #   再次按下 SHIFT键，将跳转到前一个关键词处，并同步更新显示它的信息文本
 #   当已经显示第一个关键词时，再次按下 SHIFT键，将关闭信息窗口
+#
+#------------------------------------------------------------------------------
+# 【高级：兼容 词条系统（文字版）by老鹰】
+#
+# - 本插件已经兼容了【词条系统（文字版）by老鹰】。
+#
+#   当同时使用了该插件，将无视本插件的关键词预设信息，而使用词条的预设信息。
+#
+# - 为了解锁词条的信息词，可以使用\key[关键词|信息词1|信息词2]的方式进行转义符编写，
+#
+#   此时将解锁 关键词 词条和它的 信息词1 与 信息词2。
 #
 #------------------------------------------------------------------------------
 # 【高级：更改关键词的信息文本】
@@ -108,11 +119,19 @@ module MESSAGE_EX
   # （同 对话框扩展 中的 \pop 的 td 变量）
   #--------------------------------------------------------------------------
   KEYWORD_WINDOWTAG_D = 4
+  #--------------------------------------------------------------------------
+  # ● 【设置】定义关键词信息窗口的文字大小
+  #--------------------------------------------------------------------------
+  KEYWORD_WINDOW_FONT_SIZE = 16
 
   #--------------------------------------------------------------------------
   # ● 获取关键词的信息文本
   #--------------------------------------------------------------------------
   def self.get_keyword_info(keyword)
+    if $imported["EAGLE-Dictionary"]
+      t = DICT.text(keyword)
+      return t
+    end
     if $game_message.keywords_info[keyword]
       s = ""
       $game_message.keywords_info[keyword].each do |word|
@@ -209,7 +228,11 @@ class Window_EagleMessage
   def eagle_process_conv(text)
     text = eagle_keyword_info_process_conv(text)
     text.gsub!(/\\key\[(.*?)\]/i) {
-      c1 = $1[0]; c2 = $1[1..-1]; @eagle_keywords.push($1)
+      s = $1.split('|'); k = s.shift
+      c1 = k[0]; c2 = k[1..-1]; @eagle_keywords.push(k)
+      if $imported["EAGLE-Dictionary"]
+        DICT.add(k, s)
+      end
       t =  MESSAGE_EX::KEYWORD_PREFIX
       t += "#{c1}\\key[#{@eagle_keywords.size-1}]#{c2}"
       t += MESSAGE_EX::KEYWORD_SURFIX
@@ -360,6 +383,7 @@ class Window_Keyword_Info < Window_Base
       text += MESSAGE_EX::KEYWORD_INFO_SURFIX
       dh = [line_height - contents.font.size, 0].max
       text = @message_window.convert_escape_characters(text)
+      contents.font.size = MESSAGE_EX::KEYWORD_WINDOW_FONT_SIZE
       w, h = MESSAGE_EX.calculate_text_wh(contents, text, 0, dh)
       h += dh # 最后一行补足高度
       self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
@@ -371,6 +395,15 @@ class Window_Keyword_Info < Window_Base
       self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
       self.contents = @bitmaps[@index]
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置字体设置
+  #--------------------------------------------------------------------------
+  def reset_font_settings
+    change_color(normal_color)
+    contents.font.size = MESSAGE_EX::KEYWORD_WINDOW_FONT_SIZE
+    contents.font.bold = false
+    contents.font.italic = false
   end
   #--------------------------------------------------------------------------
   # ● 获取第i个关键词的首字符精灵的左上角xy（屏幕坐标）
@@ -406,7 +439,7 @@ class Window_Keyword_Info < Window_Base
       self.y = _y + s_c.height + MESSAGE_EX::KEYWORD_WINDOW_D
     end
     fix_position
-    self.z = @message_window.z + 100
+    self.z = @message_window.z + 20
 
     o = up ? 2 : 8
     MESSAGE_EX.set_windowtag(self, @sprite_tag, o, 10 - o, o)

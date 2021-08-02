@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara2"] = true
 #==============================================================================
-# - 2021.7.18.16
+# - 2021.7.29.16
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -355,12 +355,12 @@ module MESSAGE_PARA2
   def self.reset_xy(obj, o, obj2, o2)
     # 先把 obj 的左上角放置于目的地
     case o2
-    when 1,4,7; obj.x = obj2.x
+    when 0,1,4,7; obj.x = obj2.x
     when 2,5,8; obj.x = obj2.x + obj2.width / 2
     when 3,6,9; obj.x = obj2.x + obj2.width
     end
     case o2
-    when 1,2,3; obj.y = obj2.y + obj2.height
+    when 0,1,2,3; obj.y = obj2.y + obj2.height
     when 4,5,6; obj.y = obj2.y + obj2.height / 2
     when 7,8,9; obj.y = obj2.y
     end
