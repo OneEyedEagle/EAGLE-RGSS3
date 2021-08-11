@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-Dictionary"] = true
 #==============================================================================
-# - 2021.7.31.15
+# - 2021.8.7.22 优化词条提示
 #==============================================================================
 # - 本插件新增了简易的文字版词条收集系统，并增加了一个简易的显示UI
 #------------------------------------------------------------------------------
@@ -266,8 +266,10 @@ module DICT
         pre = data[0] == :new ? "新增词条" : "词条更新"
         t += "#{pre}：#{data[1]}\n"
       end
-      t = "<msg>\\win[do-8o5dx0dy200w0h0fw1fh1z500]\\ins#{t}</msg>"
+      t = "<msg>\\win[do-2 o5 dx0dy-100 w0h0 fw1fh1 z250]\\ins#{t}</msg>"
       MESSAGE_PARA.add(:dict, t)
+      @data_hints.clear
+      return
     end
     if $imported["EAGLE-MessagePara2"]
       return if !MESSAGE_PARA2.finish?(:dict)
@@ -279,8 +281,9 @@ module DICT
       d = { :text => t,
       :pos => { :o => 5, :wx => Graphics.width/2, :wy => Graphics.height-100 } }
       MESSAGE_PARA2.add(:dict, d)
+      @data_hints.clear
+      return
     end
-    @data_hints.clear
   end
 end
 #===============================================================================

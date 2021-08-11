@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.7.13.16 修复姓名框图片背景无法隐藏的问题
+# - 2021.8.7.14 新增{{}}转义符；修复与并行对话框一同显示时，temp失效的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -1437,7 +1437,7 @@ FUNC_PARAMS_INIT = {
 #      （下一次对话时，若之后为选择框，将并行打开）
 #
 #----------------------------------------------------------------------------
-#  \eval{string}
+#  \eval{string} 或 {{string}}
 #----------------------------------------------------------------------------
 # 【功能】
 #    当绘制到该转义符时，执行 eval(string)，并丢弃返回值
@@ -1450,7 +1450,8 @@ FUNC_PARAMS_INIT = {
 #
 #   - 可用 s 代替 $game_switches ，用 v 代替 $game_variables
 #     可用 msg 代表当前对话（Window_Message类的实例）
-#      如 \eval{s[1]=true} 就是当文字绘制到该转义符时，打开1号开关，并继续绘制
+#      如 \eval{s[1]=true} 或 {{s[1]=true}}
+#       就是当文字绘制到该转义符时，打开1号开关，并继续绘制
 #
 #   - 由于文本替换类的转义符优先级最高，实际绘制的内容为对话框打开时的状态
 #      即如果存在 \eval{v[1]=5}\v[1]，其中1号变量初值为0，
@@ -2146,6 +2147,10 @@ class Game_Message
   # ● 保存当前环境
   #--------------------------------------------------------------------------
   def save_env(sym = '0')
+    if sym == '0' # 如果是默认环境，则保存到自己，防止与子窗口的默认环境相互干扰
+      @default_env = self.clone
+      return
+    end
     $game_system.message_envs[sym] = self.clone
   end
   #--------------------------------------------------------------------------
@@ -2153,10 +2158,11 @@ class Game_Message
   #--------------------------------------------------------------------------
   def load_env(sym = '0')
     t = $game_system.message_envs[sym]
+    t = @default_env if sym == '0'
     return false if t.nil?
     # 应用params
-    eagle_params.each do |sym|
-      m = "#{sym}_params"
+    eagle_params.each do |s|
+      m = "#{s}_params"
       self.send("#{m}=".to_sym, t.method(m.to_sym).call.clone)
     end
     # 新增转义符的应用预定
@@ -3799,6 +3805,10 @@ class Window_EagleMessage < Window_Base
     @eagle_evals.clear # 清除旧的
     text.gsub!(/\eeval\{(.*?)\}/m) {
       @eagle_evals.push($1) # ID 从 1 开始，防止之后param传入nil出错
+      "\eeval[#{@eagle_evals.size}]"
+    }
+    text.gsub!(/\{\{(.*?)\}\}/m) {
+      @eagle_evals.push($1)
       "\eeval[#{@eagle_evals.size}]"
     }
   end
