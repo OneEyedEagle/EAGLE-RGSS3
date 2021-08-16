@@ -1,5 +1,5 @@
 #=============================================================================
-# ■ Add-On 属性帮助文本  by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 属性帮助文本  by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【装备附加属性-核心 by老鹰】之下
 #=============================================================================
 # - 2019.10.13.11
@@ -40,32 +40,38 @@ module EQUIP_EX
     64 => "队伍能力"
   }
   #--------------------------------------------------------------------------
-  # ○ 常量：基础能力一览
+  # ○ 常量：普通能力一览
   #--------------------------------------------------------------------------
-  HELP_PARAMS = {
-    0 => "最大HP",
-    1 => "最大MP",
-    2 => "物攻",
-    3 => "物防",
-    4 => "魔攻",
-    5 => "魔防",
-    6 => "敏捷",
-    7 => "幸运"
-  }
+  # HELP_PARAMS = {
+  #   0 => "最大HP",
+  #   1 => "最大MP",
+  #   2 => "物攻",
+  #   3 => "物防",
+  #   4 => "魔攻",
+  #   5 => "魔防",
+  #   6 => "敏捷",
+  #   7 => "幸运"
+  # }
+  def self.get_params_help(param_id)
+    if param_id >= 0 and param_id <= 7
+      return Vocab.param(param_id)
+    end
+    return ""
+  end
   #--------------------------------------------------------------------------
   # ○ 常量：添加能力一览
   #--------------------------------------------------------------------------
   HELP_XPARAMS = {
-    0 => "物理命中几率：",
-    1 => "物理闪避几率：",
-    2 => "必杀几率:",
-    3 => "必杀闪避几率：",
-    4 => "魔法闪避几率：",
-    5 => "魔法反射几率：",
-    6 => "物理反击几率：",
-    7 => "体力值再生速度：",
-    8 => "魔力值再生速度：",
-    9 => "特技值再生速度："
+    0 => "物理命中几率",
+    1 => "物理闪避几率",
+    2 => "必杀几率",
+    3 => "必杀闪避几率",
+    4 => "魔法闪避几率",
+    5 => "魔法反射几率",
+    6 => "物理反击几率",
+    7 => "体力值再生速度",
+    8 => "魔力值再生速度",
+    9 => "特技值再生速度"
   }
   #--------------------------------------------------------------------------
   # ○ 常量：特殊能力一览
@@ -82,6 +88,30 @@ module EQUIP_EX
     8 => "地形伤害加成",
     9 => "经验获得加成"
   }
+
+  def self.get_item_help(item)
+    d = []
+    item.params_o.each_with_index do |v, i|
+      next if v == 0
+      t = get_params_help(i) + attr_help_v2s(v)
+      d.push(t)
+    end
+    item.features_o.each do |f|
+      t = ""
+      case f.code
+      when 21; t = attr_help_params(f.data_id, f.value)
+      when 22; t = attr_help_xparams(f.data_id, f.value)
+      when 23; t = attr_help_sparams(f.data_id, f.value)
+      end
+      d.push(t) if t != ""
+    end
+    if item.eagle_ex
+      d += get_attrs_help(attrs)
+    end
+    return d
+  end
+
+
   #--------------------------------------------------------------------------
   # ○ 返回指定attrs数组的帮助文本数组
   #--------------------------------------------------------------------------
@@ -94,11 +124,11 @@ module EQUIP_EX
   #--------------------------------------------------------------------------
   def self.attr_help(attr)
     return attr_help_ex(attr) if attr[0] == :ex
-    return attr_help_params([PARAMS_TO_ID[attr[0]], attr[1]]) if attr.size == 2
+    return attr_help_params(PARAMS_TO_ID[attr[0]], attr[1]) if attr.size == 2
     if attr.size == 3
-      return attr_help_params([attr[1], attr[2]]) if attr[0] == 21
-      return attr_help_xparams([attr[1], attr[2]]) if attr[0] == 22
-      return attr_help_sparams([attr[1], attr[2]]) if attr[0] == 23
+      return attr_help_params(attr[1], attr[2]) if attr[0] == 21
+      return attr_help_xparams(attr[1], attr[2]) if attr[0] == 22
+      return attr_help_sparams(attr[1], attr[2]) if attr[0] == 23
     end
   end
   #--------------------------------------------------------------------------
@@ -106,7 +136,7 @@ module EQUIP_EX
   #--------------------------------------------------------------------------
   def self.attr_help_v2s(value)
     return "0" if value == 0
-    prefix = value > 0 ? "+ " : "- "
+    prefix = value > 0 ? " + " : " - "
     v_ = value.abs
     return sprintf("%s%d\%", prefix, v_ * 100)  if v_ < 1
     return sprintf("%s%d", prefix, v_)
@@ -114,22 +144,20 @@ module EQUIP_EX
   #--------------------------------------------------------------------------
   # ○ 获取普通能力帮助文本
   #--------------------------------------------------------------------------
-  def self.attr_help_params(attr)
-    # attr = [ sym_id, sym_value ]
-    HELP_PARAMS[attr[0]] + attr_help_v2s(attr[1])
+  def self.attr_help_params(data_id, value)
+    get_params_help(data_id) + attr_help_v2s(value)
   end
   #--------------------------------------------------------------------------
   # ○ 获取添加能力帮助文本
   #--------------------------------------------------------------------------
-  def self.attr_help_xparams(attr)
-    # attr = [ code_id, value]
-    HELP_XPARAMS[attr[0]] + attr_help_v2s(attr[1])
+  def self.attr_help_xparams(data_id, value)
+    HELP_XPARAMS[data_id] + attr_help_v2s(value)
   end
   #--------------------------------------------------------------------------
   # ○ 获取特殊能力帮助文本
   #--------------------------------------------------------------------------
-  def self.attr_help_sparams(attr)
-    HELP_SPARAMS[attr[0]] + attr_help_v2s(attr[1])
+  def self.attr_help_sparams(data_id, value)
+    HELP_SPARAMS[data_id] + attr_help_v2s(value)
   end
   #--------------------------------------------------------------------------
   # ○ 获取额外属性帮助文本

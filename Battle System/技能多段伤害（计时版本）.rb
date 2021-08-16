@@ -1,12 +1,12 @@
 #==============================================================================
-# ■ 技能多段伤害 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 技能多段伤害（计时版本） by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2020.7.3.11 兼容 SideView
+# - 2021.8.15.23 计时版本，更好地兼容 SideView
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-SkillDamageEX"] = true
 #==============================================================================
-# - 新增跟随动画进行伤害结算，指定动画某一帧结算指定技能公式
+# - 本插件新增独立的伤害结算，可以指定在技能后的某一帧结算指定技能公式
 #----------------------------------------------------------------------------
 # ● 设置
 #----------------------------------------------------------------------------
@@ -35,14 +35,15 @@ $imported["EAGLE-SkillDamageEX"] = true
 #----------------------------------------------------------------------------
 # ● 兼容
 #----------------------------------------------------------------------------
-# 1. 为了让伤害结算与动画同步，本插件覆盖了 Scene_Battle#wait_for_animation 方法，
-#   如需调用原方法，请使用别名方法 Scene_Battle#eagle_wait_for_animation。
+# 1. 为了让伤害结算尽量与动画同步，
+#    本插件覆盖了 Scene_Battle#wait_for_animation 方法，并使其无效，
+#    如需调用原方法，请使用别名方法 Scene_Battle#eagle_wait_for_animation。
 #
 # 2. 新增 显示动画+对目标应用物品 的方法
-#   如在原始脚本中，新增
+#   假如在原始脚本中，使用了：
 #      show_animation(targets, anim_id)
 #      targets.each {|target| item.repeats.times{invoke_item(target, item)}}
-#   可达成目的（因为默认 invoke_item 方法中包含了 wait_for_animation），
+#   （在默认 invoke_item 方法中包含了 wait_for_animation），
 #   那在使用本插件后，需要在这两句后再加上
 #      eagle_wait_for_animation
 #   来等待 伤害计算与动画显示 的结束。
@@ -95,6 +96,7 @@ module EAGLE::SkillDamage_EX
   #  <frame n: i1>  1号物品
   #--------------------------------------------------------------------------
   REGEXP_SKILL_SET = /([si]) ?(\d+)>/i
+
   #--------------------------------------------------------------------------
   # ● 读取技能/物品的多段伤害
   #--------------------------------------------------------------------------
@@ -121,7 +123,27 @@ module EAGLE::SkillDamage_EX
     end
     frame_to_item
   end
-end
+  #--------------------------------------------------------------------------
+  # ● 生成一个新的伤害结算
+  #--------------------------------------------------------------------------
+  @data = []
+  def self.add(subject, objects, item, anim_id = nil)
+    frame_to_item = load_item_anim_damage(item)
+    anim_id ||= item.animation_id
+    frame_max = $data_animations[anim_id].frame_max rescue 0
+    # 如果未找到设置或无动画，加入伤害判定
+    frame_to_item[frame_max] = item if frame_max == 0 || frame_to_item.empty?
+    d = Process_AnimDamage.new
+    d.set(subject, objects, frame_to_item, frame_max)
+    @data.push(d)
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新（随Scene_Battle#update_basic）
+  #--------------------------------------------------------------------------
+  def self.update
+    @data.delete_if { |d| d.finish? }
+    @data.each { |d| d.add_frame }
+  end
 #==============================================================================
 # ○ 伤害处理类
 #==============================================================================
@@ -149,13 +171,15 @@ class Process_AnimDamage
   #--------------------------------------------------------------------------
   # ● 设置
   #--------------------------------------------------------------------------
-  def set(subject, obj, frame_to_item, frame_max)
+  def set(subject, targets, frame_to_item, frame_max)
     @subject = subject # 攻击者
-    @object = obj # 被攻击者（动画显示于其上）
+    @objects = targets # 被攻击者
     @items = frame_to_item # frame_index => item
     @frame = 0
     @frame_max = frame_max
-    @object.add_state(EAGLE::SkillDamage_EX::STATE_IMMUNE_DIE) # 附加不死
+    @objects.each do |s|
+      s.add_state(EAGLE::SkillDamage_EX::STATE_IMMUNE_DIE) # 附加不死
+    end
     apply_item_effects(0)
   end
   #--------------------------------------------------------------------------
@@ -171,11 +195,13 @@ class Process_AnimDamage
   def apply_item_effects(frame)
     item = @items[frame]
     if item
-      @object.item_apply(@subject, item)
-      if defined?(SideView)
-        SceneManager.scene.spriteset.set_damage_pop(@object)
+      scene = SceneManager.scene
+      @objects.each do |s|
+        s.item_apply(@subject, item)
+        scene.spriteset.set_damage_pop(s) if defined?(SideView)
+        scene.log_window.display_action_results(s, item)
+        s.result.clear
       end
-      SceneManager.scene.log_window.display_action_results(@object, item)
     end
     end_apply_item_effects if finish?
   end
@@ -183,70 +209,19 @@ class Process_AnimDamage
   # ● 结束应用
   #--------------------------------------------------------------------------
   def end_apply_item_effects
-    @object.remove_state(EAGLE::SkillDamage_EX::STATE_IMMUNE_DIE) # 移除不死
-    @object.result.clear
-    if $imported["YEA-BattleEngine"]
-      SceneManager.scene.perform_collapse_check(@object)
-    else
-      @object.refresh
+    @objects.each do |s|
+      s.remove_state(EAGLE::SkillDamage_EX::STATE_IMMUNE_DIE) # 移除不死
+      s.result.clear
+      if $imported["YEA-BattleEngine"]
+        SceneManager.scene.perform_collapse_check(s)
+      else
+        s.refresh
+      end
     end
     clear
   end
 end
-#==============================================================================
-# ○ Game_Battler
-#==============================================================================
-class Game_Battler < Game_BattlerBase
-  attr_accessor :process_anim_damage
-  #--------------------------------------------------------------------------
-  # ● 初始化对象
-  #--------------------------------------------------------------------------
-  alias eagle_skill_damage_ex_init initialize
-  def initialize
-    @process_anim_damage = Process_AnimDamage.new
-    eagle_skill_damage_ex_init
-  end
-  #--------------------------------------------------------------------------
-  # ● 新增技能/物品应用
-  #--------------------------------------------------------------------------
-  def add_item_apply(subject, item, anim_id = nil)
-    frame_to_item = EAGLE::SkillDamage_EX.load_item_anim_damage(item)
-    anim_id ||= item.animation_id
-    frame_max = $data_animations[anim_id].frame_max rescue 0
-    # 如果未找到设置或无动画，加入伤害判定
-    frame_to_item[frame_max] = item if frame_max == 0 || frame_to_item.empty?
-    @process_anim_damage.set(subject, self, frame_to_item, frame_max)
-  end
-end
-#==============================================================================
-# ○ Sprite_Battler
-#==============================================================================
-class Sprite_Battler < Sprite_Base
-  #--------------------------------------------------------------------------
-  # ● 设置动画的精灵
-  #     frame : 帧数据（RPG::Animation::Frame）
-  #--------------------------------------------------------------------------
-  def animation_set_sprites(frame)
-    super(frame)
-    battler.process_anim_damage.add_frame
-  end
-end
-
-#==============================================================================
-# ○ Sprite_Weapon
-#==============================================================================
-if defined?(SideView)
-class Sprite_Weapon < Sprite_Base  # 该精灵与技能的主动方绑定……
-  #--------------------------------------------------------------------------
-  # ● 设置动画的精灵
-  #     frame : 帧数据（RPG::Animation::Frame）
-  #--------------------------------------------------------------------------
-  def animation_set_sprites(frame)
-    super(frame)
-    battler.process_anim_damage.add_frame
-  end
-end
-end
+end # end of module
 
 #==============================================================================
 # ○ Scene_Battle
@@ -254,10 +229,24 @@ end
 class Scene_Battle < Scene_Base
   attr_reader  :log_window
   #--------------------------------------------------------------------------
+  # ● 更新画面（基础）
+  #--------------------------------------------------------------------------
+  alias eagle_skill_damage_ex_update_basic update_basic
+  def update_basic
+    eagle_skill_damage_ex_update_basic
+    EAGLE::SkillDamage_EX.update
+  end
+  #--------------------------------------------------------------------------
   # ● 等待动画显示的结束
   #--------------------------------------------------------------------------
   alias eagle_wait_for_animation wait_for_animation
   def wait_for_animation
+  end
+  #--------------------------------------------------------------------------
+  # ● 短时间等待（快进无效）
+  #--------------------------------------------------------------------------
+  def abs_wait_short
+    #abs_wait(15)
   end
   #--------------------------------------------------------------------------
   # ● 使用物品
@@ -265,7 +254,7 @@ class Scene_Battle < Scene_Base
   alias eagle_skill_damage_ex_use_item use_item
   def use_item
     eagle_skill_damage_ex_use_item
-    eagle_wait_for_animation
+    #eagle_wait_for_animation
   end
   #--------------------------------------------------------------------------
   # ● 发动技能／物品
@@ -273,7 +262,7 @@ class Scene_Battle < Scene_Base
   alias eagle_skill_damage_ex_invoke_item invoke_item
   def invoke_item(target, item)
     eagle_skill_damage_ex_invoke_item(target, item)
-    eagle_wait_for_animation # 兼容sideview，增加额外的等待
+    #eagle_wait_for_animation # 兼容sideview，增加额外的等待
   end
   #--------------------------------------------------------------------------
   # ●（覆盖）处理攻击动画
@@ -287,7 +276,7 @@ class Scene_Battle < Scene_Base
     if anim_id2 > 0
       item = @subject.current_action.item
       # 直接处理双持角色的第一次攻击
-      targets.each { |t| t.add_item_apply(@subject, item, anim_id) }
+      EAGLE::SkillDamage_EX.add(@subject, targets, item, anim_id)
       eagle_wait_for_animation
       # 处理第二次攻击
       show_normal_animation(targets, anim_id2, true)
@@ -306,7 +295,7 @@ class Scene_Battle < Scene_Base
       anim_id2 = @subject.atk_animation_id2 rescue 0
       anim_id = anim_id2 if anim_id2 > 0
     end
-    target.add_item_apply(@subject, item, anim_id)
+    EAGLE::SkillDamage_EX.add(@subject, [target], item, anim_id)
   end
   #--------------------------------------------------------------------------
   # ●（覆盖）发动反击

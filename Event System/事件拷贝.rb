@@ -4,53 +4,76 @@
 $imported ||= {}
 $imported["EAGLE-EventCopy"] = true
 #=============================================================================
-# - 2021.4.4.1 兼容VX；修复VA中事件图像更新报错的bug
+# - 2021.8.15.10 新增允许指定拷贝事件的ID
 #=============================================================================
 # - 原始创意：Yanfly Engine Ace - Spawn Event
 # - 本插件新增了拷贝事件的方法
 #-----------------------------------------------------------------------------
-MODE_VX = false # 如果要在VX上使用，请修改为 true
+# 【兼容VX】
 #-----------------------------------------------------------------------------
-# - 从指定地图将指定事件拷贝到当前地图
+MODE_VX = false # 如果要在RPG Maker VX中使用，请修改为 true
+#-----------------------------------------------------------------------------
+# 【使用方法】
 #
-#     event = $game_map.copy_event(map_id, event_id, x, y)
+# - 利用全局脚本（事件脚本）从指定地图将指定事件拷贝到当前地图
 #
-#   传入参数：
-#      map_id 为原始地图的id，若传入 0 则为当前地图
-#      event_id 为原始事件的id
-#      (x, y) 为拷贝后的事件的初始位置
-#   返回值：
+#     event = $game_map.copy_event(map_id, event_id, x, y[,id])
+#
+#   传入参数解释：
+#      map_id   为来源地图的id，若传入 0 则为当前地图
+#      event_id 为来源事件的id
+#      (x, y)   为拷贝后的事件的初始放置位置，编辑器中的地图坐标
+#      id 【可选】为拷贝后的事件的新ID，若传入，则会覆盖当前地图已存在的同ID事件，
+#         若不传入，则为当前地图最大事件ID+100后的次序编号，确保不覆盖现有事件
+#
+#   返回值解释：
 #      event 为拷贝后的事件（Game_Event实例）（若拷贝失败，则为nil）
 #
-# - 示例：
+# 【示例】
+#
 #      $game_map.copy_event(0, 3, 2, 2)
 #         → 将当前地图的3号事件拷贝一份，并放置到(2,2)
+#
 #      event = $game_map.copy_event(1, 6, 12, 5)
 #         → 将1号地图的6号事件拷贝一份，并放置到(12,5)，
 #            它在当前地图的实例为 event
 #
-# - 注意：
-#    ·本插件只临时增加新事件，并不会将其保存在数据库/存档内；
-#       在重新读取地图时，将不会复原全部因拷贝而产生的事件。
-#    ·由于拷贝事件的ID是动态增加的，因此推荐不要在事件内部使用独立开关，
-#       独立开关是全局存储，且只与地图ID/事件ID/开关名称相关，易发生冲突
+# 【注意】
+#
+#   ·本插件只临时增加新事件，并不会将其保存在数据库/存档内，
+#     在重新读取地图时，将不会复原全部因拷贝而产生的事件
+#
+#   ·当未指定拷贝后的事件ID时，拷贝事件的ID是动态增加的，
+#     因此推荐不要在事件内部使用独立开关，
+#     独立开关是全局存储，且只与地图ID/事件ID/开关名称相关，易发生冲突
+#
 #-----------------------------------------------------------------------------
-# - 事件的临时变量
-#   为Game_Event类新增了可以存储临时数据的Hash变量 event.tmp
-#     ·获取事件的临时变量 key 的值
-#        event.tmp[key]
-#     ·设置事件的临时变量 key 的值
-#        event.tmp[key] = value
-# - 注意：
-#    ·该临时变量在重新读取地图后将被丢弃
-#    ·可结合【事件页触发条件扩展 by老鹰】为拷贝事件设置触发条件
+# 【事件的临时变量】
+#
+# - 本插件为Game_Event类新增了可以存储临时数据的Hash变量：event.tmp
+#
+#   ·获取事件的临时变量 key 的值
+#      event.tmp[key]
+#
+#   ·设置事件的临时变量 key 的值
+#      event.tmp[key] = value
+#
+# 【注意】
+#
+#   ·该临时变量在重新读取地图后将被丢弃
+#
+#   ·可结合【事件页触发条件扩展 by老鹰】为拷贝事件设置触发条件
+#
 #-----------------------------------------------------------------------------
-# - 回收拷贝事件（节约空间并减少精灵）
+# 【回收】
+#
+# - 利用脚本回收拷贝事件（节约空间并减少精灵）
 #
 #     event.copy_finish
 #
-#   若拷贝事件已经不再需要，调用该方法将其回收，以用于下一次同事件的复制
-#   同时将调用 暂时消除事件
+#  - 若拷贝事件已经不再需要，调用该方法将其回收，以用于下一次同事件的复制，
+#    同时该操作将调用 暂时消除事件 指令，所以不需要重复调用。
+#
 #=============================================================================
 # - 特别感谢：葱兔
 #=============================================================================
@@ -102,7 +125,7 @@ class Game_Map
   #--------------------------------------------------------------------------
   # ● 预定拷贝事件
   #--------------------------------------------------------------------------
-  def copy_event(map_id, event_id, x, y)
+  def copy_event(map_id, event_id, x, y, id_want = nil)
     map_id = @map_id if map_id == 0
     @events_copy[map_id] ||= {}
     @events_copy[map_id][event_id] ||= []
@@ -121,15 +144,21 @@ class Game_Map
       map = get_map_data(map_id)
       event = map.events[event_id] rescue return
     end
-    id = @events.keys.max
-    id = [id, @events_tmp.keys.max].max if !@events_tmp.empty?
-    id = [id, 100].max # 直接增大事件ID，尽可能确保不产生冲突
-    id += 1
+    if id_want
+      id = id_want
+    else
+      id = @events.keys.max
+      id = [id, @events_tmp.keys.max].max if !@events_tmp.empty?
+      id = [id, 100].max # 直接增大事件ID，尽可能确保不产生冲突
+      id += 1
+    end
     cloned_event = Marshal.load(Marshal.dump(event))
 	  cloned_event.id = id
     @events_tmp[id] = Game_Event.new(@map_id, cloned_event)
-    @events_tmp[id].flag_copy = true
-    @events_tmp[id].copy_origin = [map_id, event_id]
+    if id_want == nil
+      @events_tmp[id].flag_copy = true
+      @events_tmp[id].copy_origin = [map_id, event_id]
+    end
     @events_tmp[id].moveto(x, y)
     @events_tmp[id]
   end
@@ -139,7 +168,7 @@ class Game_Map
   def update_copy_events
     @events_tmp.each do |id, e|
       e.update
-      @events_copy[e.copy_origin[0]][e.copy_origin[1]].push(id)
+      @events_copy[e.copy_origin[0]][e.copy_origin[1]].push(id) if e.flag_copy
     end
     s = get_cur_scene
     return if !s.respond_to?(:spriteset)
@@ -202,6 +231,19 @@ class Game_Event < Game_Character
   end
 end
 #=============================================================================
+# ○ Sprite_Character
+#=============================================================================
+class Sprite_Character < Sprite_Base
+  #--------------------------------------------------------------------------
+  # ● 绑定character
+  #--------------------------------------------------------------------------
+  def rebind_character(character)
+    @character = character
+    @balloon_duration = 0
+    update
+  end
+end
+#=============================================================================
 # ○ Spriteset_Map
 #=============================================================================
 class Spriteset_Map
@@ -210,6 +252,14 @@ class Spriteset_Map
   #--------------------------------------------------------------------------
   def add_characters_tmp
     $game_map.events_tmp.values.each do |event|
+      if event.flag_copy == false  # 指定了ID的拷贝事件，检查是否已经有精灵存在
+        s = nil
+        @character_sprites.each do |a|
+          s = a if a.character.is_a?(Game_Event) && a.character.id == event.id
+        end
+        next s.rebind_character(event) if s
+      end
+      # 需要新增的拷贝事件的精灵
       s = Sprite_Character.new(@viewport1, event)
       @character_sprites.push(s)
     end

@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventCondEX"] = true
 #=============================================================================
-# - 2019.9.18.15 修改注释
+# - 2021.8.15.11 修改注释
 #=============================================================================
 # - 本插件对事件页的出现条件进行了扩展，并新增了事件的独立变量（与独立开关一致）
 #----------------------------------------------------------------------------
@@ -31,10 +31,12 @@ $imported["EAGLE-EventCondEX"] = true
 #
 #   其中...替换成需要满足的条件的脚本字符串
 #   当 eval(...) 返回false时认为未满足条件
-#     可用 se 获取当前事件对象（如 se.id 为事件id，se.name 为事件名称）
+#     可用 se 获取当前事件（Game_Event实例）
+#     可用 e 获取当前事件的数据对象（RPG::Event实例）
+#         （如 e.id 为事件id，e.name 为事件名称）
 #     可用 s 代替 $game_switches，用 v 代替 $game_variables
 #     可用 p 代替 $game_player，用 m 代替 $game_party.members
-#     可用 e 代替 $game_map.events 或 $game_troop.members
+#     可用 es 代替 $game_map.events 或 $game_troop.members
 #     可用 ss[A] 代表当前事件的 A 号独立开关的值
 #     可用 sv[1] 代表当前事件的 1 号独立变量的值
 #
@@ -116,11 +118,12 @@ class Game_Event
   def conditions_met?(page)
     return false if !eagle_event_cond_met(page)
     text = EAGLE.event_comment_head( page.list )
-    se = @event
+    se = self
+    e = @event
     p = $game_player
     m = $game_party.members
-    e = $game_map.events if SceneManager.scene_is?(Scene_Map)
-    e = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
+    es = $game_map.events if SceneManager.scene_is?(Scene_Map)
+    es = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
     s = $game_switches; v = $game_variables
     text.gsub!( /ss\[([ABCD])\]/ ) { "ss[[#{@map_id},#{@event.id},\"#{$1}\"]]" }
     ss = $game_self_switches

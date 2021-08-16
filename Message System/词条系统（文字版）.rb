@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-Dictionary"] = true
 #==============================================================================
-# - 2021.8.7.22 优化词条提示
+# - 2021.8.14.20 新增词条文本滚动显示
 #==============================================================================
 # - 本插件新增了简易的文字版词条收集系统，并增加了一个简易的显示UI
 #------------------------------------------------------------------------------
@@ -431,13 +431,15 @@ class << DICT
 
     # 生成词条信息
     _w = Graphics.width - _x - 12
-    @sprite_info = Sprite.new
-    @sprite_info.bitmap = Bitmap.new(_w, _h+24)
-    @sprite_info.x = _x + 12
-    @sprite_info.y = @window_list.y + 12
-    @sprite_info.z = @sprite_bg.z + 12
+    @viewport_info = Viewport.new(_x + 12, @window_list.y + 12, _w, _h)
+    @viewport_info.z = @sprite_bg.z + 12
+    @sprite_info = Sprite.new(@viewport_info)
+    @sprite_info.bitmap = Bitmap.new(_w, _h)
+
     @data_last_draw = nil
     @count_last_draw = 0
+    @sprite_info_view_h = @viewport_info.rect.height
+    @count_last_view = 0
 
     @refresh = true
     update_key_result
@@ -557,6 +559,21 @@ class << DICT
       t = DICT.text(cur)
       draw_info(t)
     end
+    if @count_last_draw < 0 && @sprite_info_view_h < @sprite_info.height
+      @count_last_view += 1
+      # 当文字底移动到顶部位置时，重置回开头
+      if @viewport_info.oy + @sprite_info_view_h >
+         @sprite_info.height + @sprite_info_view_h - 24
+        @viewport_info.oy = 0
+        @count_last_view = 0
+      else
+        # 等待该帧数后，开始滚动
+        return if @count_last_view < 180
+        if @count_last_view % 4 == 0  # 每隔几帧滚动1像素
+          @viewport_info.oy += 1
+        end
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● 绘制信息文本
@@ -566,7 +583,15 @@ class << DICT
     ps = { :font_size => DICT::INFO_FONT_SIZE,
       :x0 => 0, :y0 => 0, :lhd => 2, :w => @sprite_info.width }
     d = Process_DrawTextEX.new(t, ps, @sprite_info.bitmap)
+    d.run(false)
+    if d.height > @sprite_info.height
+      b = Bitmap.new(@sprite_info.width, d.height + 10)
+      d.bind_bitmap(b, true)
+      @sprite_info.bitmap = b
+    end
     d.run(true)
+    @viewport_info.oy = 0
+    @count_last_view = 0
   end
   #--------------------------------------------------------------------------
   # ● 退出
