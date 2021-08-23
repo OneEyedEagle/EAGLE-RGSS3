@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-Dictionary"] = true
 #==============================================================================
-# - 2021.8.14.20 新增词条文本滚动显示
+# - 2021.8.22.10 新增词条文本滚动/翻页切换
 #==============================================================================
 # - 本插件新增了简易的文字版词条收集系统，并增加了一个简易的显示UI
 #------------------------------------------------------------------------------
@@ -170,7 +170,7 @@ module DICT
   #--------------------------------------------------------------------------
   # ○【常量】UI - 详细信息文本等待绘制时的文本
   #--------------------------------------------------------------------------
-  TEXT_WAIT = "..."
+  TEXT_WAIT = "读取中..."
   #--------------------------------------------------------------------------
   # ○【常量】UI - 详细信息文本绘制前的等待时间
   #--------------------------------------------------------------------------
@@ -386,7 +386,7 @@ class << DICT
     # 生成背景文字
     @sprite_bg_info = Sprite.new
     @sprite_bg_info.z = @sprite_bg.z + 1
-    set_sprite_info(@sprite_bg_info)
+    set_sprite_title(@sprite_bg_info)
 
     # 生成底部按键提示
     @sprite_hint = Sprite.new
@@ -411,7 +411,7 @@ class << DICT
     end
     @index_category = 0
 
-    # 绘制分割线
+    # 绘制水平分割线
     _y = @sprites_category[0].y + @sprites_category[0].height / 2
     @sprite_layer.bitmap.fill_rect(12, _y, @sprite_layer.width-24,1,
       Color.new(255,255,255,120))
@@ -424,22 +424,29 @@ class << DICT
     @window_list.y = _y
     @window_list.z = @sprite_bg.z + 11
 
-    # 绘制分割线
+    # 绘制垂直分割线
     _x = @window_list.x + @window_list.width
     @sprite_layer.bitmap.fill_rect(_x, @window_list.y + 12 + 4, 1, _h,
       Color.new(255,255,255,120))
 
-    # 生成词条信息
+    # 生成词条文本
     _w = Graphics.width - _x - 12
     @viewport_info = Viewport.new(_x + 12, @window_list.y + 12, _w, _h)
     @viewport_info.z = @sprite_bg.z + 12
     @sprite_info = Sprite.new(@viewport_info)
     @sprite_info.bitmap = Bitmap.new(_w, _h)
 
-    @data_last_draw = nil
-    @count_last_draw = 0
-    @sprite_info_view_h = @viewport_info.rect.height
-    @count_last_view = 0
+    # 词条翻页提示
+    @sprite_info_hint = Sprite.new
+    @sprite_info_hint.z = @sprite_bg.z + 20
+    set_sprite_info_hint(@sprite_info_hint)
+
+    @data_last_draw = nil  # 上一次绘制的词条
+    @count_last_draw = 0   # 绘制倒计时计数，防止切换过快时立即绘制导致的卡顿
+    @sprite_info_view_h = @viewport_info.rect.height  # 可显示文本的高度
+    @type_info_page = :scroll # 文本翻页方式
+                          # :scroll为自动滚动，:page 为翻页
+    @count_last_view = 0 # 自动滚动用计数
 
     @refresh = true
     update_key_result
@@ -455,7 +462,7 @@ class << DICT
   #--------------------------------------------------------------------------
   # ● 设置标题精灵
   #--------------------------------------------------------------------------
-  def set_sprite_info(sprite)
+  def set_sprite_title(sprite)
     sprite.zoom_x = sprite.zoom_y = 1.5
     sprite.bitmap = Bitmap.new(Graphics.height, Graphics.height)
     sprite.bitmap.font.size = 64
@@ -480,6 +487,30 @@ class << DICT
     sprite.y = Graphics.height
   end
   #--------------------------------------------------------------------------
+  # ● 设置翻页提示精灵
+  #--------------------------------------------------------------------------
+  def set_sprite_info_hint(sprite)
+    sprite.bitmap = Bitmap.new(@viewport_info.rect.width, 18)
+    sprite.bitmap.font.size = DICT::HINT_FONT_SIZE
+    sprite.oy = 0
+    sprite.x = @viewport_info.rect.x
+    sprite.y = @viewport_info.rect.y + @viewport_info.rect.height
+  end
+  #--------------------------------------------------------------------------
+  # ● 重绘翻页提示精灵
+  #--------------------------------------------------------------------------
+  def redraw_sprite_info_hint
+    s = @sprite_info_hint
+    s.bitmap.clear
+    t = nil
+    if @type_info_page == :scroll
+      t = "SHIFT键 - 手动翻页"
+    elsif @type_info_page == :page
+      t = "Q键 - 上一页 | SHIFT键 - 自动滚动 | W键 - 下一页"
+    end
+    s.bitmap.draw_text(0, 0, s.width, s.height, t, 1) if t
+  end
+  #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
@@ -491,6 +522,7 @@ class << DICT
         ivar.dispose
       end
     end
+    @viewport_info.dispose
     @window_list.dispose
   end
   #--------------------------------------------------------------------------
@@ -558,21 +590,10 @@ class << DICT
       $game_system.eagle_dict_new.delete(cur)
       t = DICT.text(cur)
       draw_info(t)
+      redraw_sprite_info_hint if @sprite_info_view_h < @sprite_info.height
     end
     if @count_last_draw < 0 && @sprite_info_view_h < @sprite_info.height
-      @count_last_view += 1
-      # 当文字底移动到顶部位置时，重置回开头
-      if @viewport_info.oy + @sprite_info_view_h >
-         @sprite_info.height + @sprite_info_view_h - 24
-        @viewport_info.oy = 0
-        @count_last_view = 0
-      else
-        # 等待该帧数后，开始滚动
-        return if @count_last_view < 180
-        if @count_last_view % 4 == 0  # 每隔几帧滚动1像素
-          @viewport_info.oy += 1
-        end
-      end
+      update_info_page
     end
   end
   #--------------------------------------------------------------------------
@@ -592,6 +613,48 @@ class << DICT
     d.run(true)
     @viewport_info.oy = 0
     @count_last_view = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新信息文本的翻页
+  #--------------------------------------------------------------------------
+  def update_info_page
+    if Input.trigger?(:A)
+      if @type_info_page == :scroll
+        @type_info_page = :page
+        @viewport_info.oy = 0
+        @count_last_view = 0
+      else
+        @type_info_page = :scroll
+        @count_last_view = 120
+      end
+      redraw_sprite_info_hint
+    end
+    if @type_info_page == :page
+      if Input.trigger?(:L)
+        return if @viewport_info.oy - @sprite_info_view_h < 0
+        @viewport_info.oy -= @sprite_info_view_h
+      elsif Input.trigger?(:R)
+        return if @viewport_info.oy + @sprite_info_view_h > @sprite_info.height
+        @viewport_info.oy += @sprite_info_view_h
+      end
+      return
+    end
+    if @type_info_page == :scroll # 更新自动滚动
+      @count_last_view += 1
+      # 当文字底移动到顶部位置时，重置回开头
+      if @viewport_info.oy + @sprite_info_view_h >
+         @sprite_info.height + @sprite_info_view_h - 24
+        @viewport_info.oy = 0
+        @count_last_view = 0
+      else
+        # 等待该帧数后，开始滚动
+        return if @count_last_view < 180
+        if @count_last_view % 4 == 0  # 每隔几帧滚动1像素
+          @viewport_info.oy += 1
+        end
+      end
+      return
+    end
   end
   #--------------------------------------------------------------------------
   # ● 退出
