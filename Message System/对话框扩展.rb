@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.8.7.14 新增{{}}转义符；修复与并行对话框一同显示时，temp失效的bug
+# - 2021.8.25.20 修复旧版对话框更新后，pause精灵导致崩溃的问题
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -3537,7 +3537,12 @@ class Window_EagleMessage < Window_Base
   def process_draw_pic(text, pos)
     param = text.slice!(/^\[.*?\]/)[1..-2]
     params = param.split('|') # [filename, param_str]
-    _bitmap = Cache.picture(MESSAGE_EX.get_pic_file(params[0])) rescue return
+    begin
+      _bitmap = Cache.picture(MESSAGE_EX.get_pic_file(params[0]))
+    rescue
+      p "【对话框扩展 by老鹰】未找到pic转义符所需要的Graphics/Pictures/#{params[0]}图片！"
+      return
+    end
     h = {}
     parse_param(h, params[1], :opa) if params[1]
     h[:w] ||= _bitmap.width
@@ -4025,6 +4030,7 @@ class Window_EagleMessage < Window_Base
     @eagle_pop_obj = eagle_get_pop_obj # 获取所绑定的对象
     return pop_params[:type] = nil if @eagle_pop_obj.nil?
     s = eagle_get_pop_sprite # 获取所绑定对象的精灵
+    return pop_params[:type] = nil if s.nil?
     eagle_set_pop_sprite_info(s)
     pop_params[:dw] = MESSAGE_EX.check_bool(pop_params[:dw])
     pop_params[:fw] = MESSAGE_EX.check_bool(pop_params[:fw])
@@ -4105,6 +4111,7 @@ class Window_EagleMessage < Window_Base
           return s if s.character == @eagle_pop_obj
         end
       rescue
+        p "【对话框扩展 by老鹰】未找到pop转义符绑定事件的精灵！可能存在兼容问题！"
       end
       return nil
     end
@@ -4879,7 +4886,7 @@ class Sprite_EaglePauseTag < Sprite
     @type_source = 0 # 记录当前源位图的类型（见module中对应【设置】）
     @type_pos = 0 # 记录当前相对于对话框的位置类型
     @last_chara = nil
-    @last_pause_index = nil
+    @last_pause_index = ""
     init_auto_countdown
     reset
     hide

@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageSkip"] = true
 #==============================================================================
-# - 2021.7.7.21 新增计数下限，确保不过于频繁响应
+# - 2021.9.4.9 对话框关闭时，若事件仍在执行，则不中止
 #==============================================================================
 # - 本插件为对话框新增了对话跳过功能
 #----------------------------------------------------------------------------
@@ -24,9 +24,9 @@ $imported["EAGLE-MessageSkip"] = true
 #==============================================================================
 module MESSAGE_EX
   #--------------------------------------------------------------------------
-  # ○【常量】当持续该帧数未开启对话框时，阻止对话跳过UI的显示
+  # ○【常量】当事件未执行，且持续该帧数未开启对话框时，阻止对话跳过UI的显示
   #--------------------------------------------------------------------------
-  SKIP_COUNT_SHOW_MAX = 180
+  SKIP_COUNT_SHOW_MAX = 60
 
   #--------------------------------------------------------------------------
   # ○【常量】长按该键持续一定帧数后，启用对话跳过功能
@@ -59,7 +59,8 @@ module MESSAGE_EX
   #   1~ 9 代表在对话框的对应位置，如1代表在对话框的左下角，5代表对话框中心
   #  -1~-1 代表在屏幕对应位置，如-1代表在屏幕左下角，5代表在屏幕中心
   #--------------------------------------------------------------------------
-  SKIP_SHOW_DO = -5
+  SKIP_SHOW_DO_MSG = -5  # 对话框开启时，快进精灵的显示位置
+  SKIP_SHOW_DO_WIN = -5  # 对话框关闭时，快进精灵的显示位置
 
   #--------------------------------------------------------------------------
   # ○【常量】精灵的x坐标增量
@@ -170,6 +171,7 @@ class Sprite_EagleMsgSkip < Sprite
   #--------------------------------------------------------------------------
   def update_show
     return @count_show = 0 if @window_bind.openness > 0
+    return if $game_map.interpreter.running?
     @count_show += 1
     # 当该计数到一定值时，阻止呼叫快进（对话框打开则重置为0）
     deactivate if @count_show == MESSAGE_EX::SKIP_COUNT_SHOW_MAX
@@ -206,7 +208,11 @@ class Sprite_EagleMsgSkip < Sprite
   #--------------------------------------------------------------------------
   def update_position
     MESSAGE_EX.reset_sprite_oxy(self, MESSAGE_EX::SKIP_SHOW_O)
-    MESSAGE_EX.reset_xy_dorigin(self, @window_bind, MESSAGE_EX::SKIP_SHOW_DO)
+    if @window_bind.openness == 255
+      MESSAGE_EX.reset_xy_dorigin(self, @window_bind, MESSAGE_EX::SKIP_SHOW_DO_MSG)
+    else
+      MESSAGE_EX.reset_xy_dorigin(self, @window_bind, MESSAGE_EX::SKIP_SHOW_DO_WIN)
+    end
     self.x += MESSAGE_EX::SKIP_SHOW_DX
     self.y += MESSAGE_EX::SKIP_SHOW_DY
     self.z = @window_bind.z + MESSAGE_EX::SKIP_SPRITE_Z

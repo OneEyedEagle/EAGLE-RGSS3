@@ -1,11 +1,12 @@
 #==============================================================================
 # ■ Add-On 关键词信息查看 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
+# ※ 推荐同时使用【组件-位图绘制转义符文本 by老鹰】以获得更好的文本绘制效果
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-MsgKeywordInfo"] = true
 #==============================================================================
-# - 2021.7.29.21 兼容词条系统
+# - 2021.8.25.20 修复 | 拆分失败的bug
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细信息
 #------------------------------------------------------------------------------
@@ -228,7 +229,11 @@ class Window_EagleMessage
   def eagle_process_conv(text)
     text = eagle_keyword_info_process_conv(text)
     text.gsub!(/\\key\[(.*?)\]/i) {
-      s = $1.split('|'); k = s.shift
+      if $1.include?('|')
+        s = $1.split('|'); k = s.shift
+      else
+        s = []; k = $1
+      end
       c1 = k[0]; c2 = k[1..-1]; @eagle_keywords.push(k)
       if $imported["EAGLE-Dictionary"]
         DICT.add(k, s)
@@ -381,14 +386,27 @@ class Window_Keyword_Info < Window_Base
       text.sub!(/\keyword/) { keyword }
       text += MESSAGE_EX.get_keyword_info(keyword)
       text += MESSAGE_EX::KEYWORD_INFO_SURFIX
-      dh = [line_height - contents.font.size, 0].max
       text = @message_window.convert_escape_characters(text)
+
       contents.font.size = MESSAGE_EX::KEYWORD_WINDOW_FONT_SIZE
-      w, h = MESSAGE_EX.calculate_text_wh(contents, text, 0, dh)
-      h += dh # 最后一行补足高度
-      self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
-      create_contents_no_dispose
-      draw_text_ex(0, 0, text)
+      if defined?(Process_DrawTextEX)
+        ps = { :font_size => MESSAGE_EX::KEYWORD_WINDOW_FONT_SIZE,
+          :x0 => 0, :y0 => 0, :lhd => 2
+        }
+        d = Process_DrawTextEX.new(text, ps, contents)
+        d.run(false)
+        self.move(0, 0, d.width+standard_padding*2, d.height+standard_padding*2)
+        create_contents_no_dispose
+        d.bind_bitmap(self.contents, false)
+        d.run(true)
+      else
+        dh = [line_height - contents.font.size, 0].max
+        w, h = MESSAGE_EX.calculate_text_wh(contents, text, 0, dh)
+        h += dh # 最后一行补足高度
+        self.move(0, 0, w+standard_padding*2, h+standard_padding*2)
+        create_contents_no_dispose
+        draw_text_ex(0, 0, text)
+      end
       @bitmaps[@index] = self.contents
     else
       w, h = @bitmaps[@index].width, @bitmaps[@index].height
@@ -411,9 +429,9 @@ class Window_Keyword_Info < Window_Base
   def get_keyword_xy(i)
     s_c = @keywords[i][1]
     _x = @message_window.eagle_charas_x0 - @message_window.eagle_charas_ox
-    _x += s_c.origin_x
+    _x += s_c._x
     _y = @message_window.eagle_charas_y0 - @message_window.eagle_charas_oy
-    _y += s_c.origin_y
+    _y += s_c._y
 
     _x = @message_window.x if _x < @message_window.x
     if _x > @message_window.x + @message_window.width
