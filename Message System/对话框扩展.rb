@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.8.25.20 修复旧版对话框更新后，pause精灵导致崩溃的问题
+# - 2021.9.10.15 动态宽高时，暗色背景可以正常动态生成
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2831,17 +2831,16 @@ class Window_EagleMessage < Window_Base
       self.height = _p[:h]
       _p[:update].clear
     end
-    if _p[:open] || @flag_need_change_wh # 如果为打开，记录最终宽高，生成新背景位图
+    if _p[:open] || @flag_need_change_wh # 如果为打开，记录最终宽高
       @eagle_win_des_w = _p[:w]
       @eagle_win_des_h = _p[:h]
-      eagle_recreate_back_bitmap(_p[:w], _p[:h])
     end
   end
   #--------------------------------------------------------------------------
   # ● 更新对话框宽高直至完成
   #--------------------------------------------------------------------------
   def wait_until_des_wh(_p = {})
-    return eagle_win_update if _p[:update].empty?
+    return eagle_after_wh_change if _p[:update].empty?
     max_w = [_p[:w], _p[:w_init]].max
     max_h = [_p[:h], _p[:h_init]].max
     _i = 0; _t = _p[:t]
@@ -2865,11 +2864,21 @@ class Window_EagleMessage < Window_Base
           self.height = _p[:h_init] + _p[:h_d] * per
         end
       end
-      eagle_win_update
+      eagle_after_wh_change
       update_back_sprite_zoom(max_w, max_h)
       Fiber.yield
       _i += 1
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 在宽度高度变化后的处理
+  # 此时 self.width 与 self.height 为实时的宽高，非最终完成时的宽高
+  #--------------------------------------------------------------------------
+  def eagle_after_wh_change
+    # 生成新的背景位图
+    eagle_recreate_back_bitmap(self.width, self.height)
+     # 更新对话框位置
+    eagle_win_update
   end
   #--------------------------------------------------------------------------
   # ● 对话框进行位置大小更新后的处理
@@ -3234,14 +3243,17 @@ class Window_EagleMessage < Window_Base
   # ● 更新背景精灵
   #--------------------------------------------------------------------------
   def update_back_sprite
-    MESSAGE_EX.reset_xy_dorigin(@back_sprite, self, win_params[:bgo])
-    MESSAGE_EX.reset_sprite_oxy(@back_sprite, win_params[:bgo])
+    _o = win_params[:bgo]
+    _o = win_params[:o] if @background == 1  # 暗色背景下，与对话框的原点一致
+    MESSAGE_EX.reset_xy_dorigin(@back_sprite, self, _o)
+    MESSAGE_EX.reset_sprite_oxy(@back_sprite, _o)
     @back_sprite.update
   end
   #--------------------------------------------------------------------------
   # ● 更新背景精灵的缩放
   #--------------------------------------------------------------------------
   def update_back_sprite_zoom(max_w = nil, max_h = nil)
+    return if @background != 0  # 正常背景下，使用了图片背景，才进行缩放
     if max_w == nil
       @back_sprite.zoom_x = 1
     else
