@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.9.10.15 动态宽高时，暗色背景可以正常动态生成
+# - 2021.9.12.21 新增常量控制：对话框内容无需滚动时，可以用方向键继续对话
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -1540,6 +1540,11 @@ EX_PARAMS_INIT = {
 # ○ 新游戏开始时，对话框预定将要显示的文本
 # （由于解析问题，请将 "\" 替换成 "\\"）
 ESCAPE_STRING_INIT = ""
+
+#----------------------------------------------------------------------------
+# ○ 当对话框内容无需滚动浏览时，若该常量设置为 true，则使用方向键也可以继续对话
+# 如果设置为 false，则无改变（仍然需要按确定键或取消键继续对话）
+INPUT_NEXT_WITH_DIR4 = true
 
 #--------------------------------------------------------------------------
 # ○ 切换显示/隐藏
@@ -4434,18 +4439,12 @@ class Window_EagleMessage < Window_Base
     flag_move = ox_max != 0 || oy_max != 0
     self.arrows_visible = true
     d_oxy = 1; last_input = nil; last_input_c = 0
-    while true
+    @flag_input_loop = true
+    while @flag_input_loop
       Fiber.yield
-      # 处理自动继续
-      if @eagle_auto_continue_c
-        break if @eagle_auto_continue_c <= 0
-        process_while_auto_wait_input_pause(@eagle_auto_continue_c)
-        @eagle_auto_continue_c -= 1
-      end
-      # 处理按键继续
-      break if check_input_pause?
-      # 处理内容滚动
-      if flag_move == true
+      process_input_pause_auto # 处理自动继续
+      process_input_pause_key # 处理按键继续
+      if flag_move # 处理内容滚动
         _ox = self.ox; _oy = self.oy
         if Input.press?(:UP)
           self.oy -= d_oxy
@@ -4469,12 +4468,22 @@ class Window_EagleMessage < Window_Base
         end
         last_input = Input.dir4
         update_moving_charas_oxy if _ox != self.ox || _oy != self.oy
-      else
-        break if Input.dir4 > 0
+      elsif MESSAGE_EX::INPUT_NEXT_WITH_DIR4
+        @flag_input_loop = false if Input.dir4 > 0
       end
     end
     self.arrows_visible = false
     Input.update
+  end
+  #--------------------------------------------------------------------------
+  # ● 等待按键时，自动继续的处理
+  #--------------------------------------------------------------------------
+  def process_input_pause_auto
+    if @eagle_auto_continue_c
+      return @flag_input_loop = false if @eagle_auto_continue_c <= 0
+      process_while_auto_wait_input_pause(@eagle_auto_continue_c)
+      @eagle_auto_continue_c -= 1
+    end
   end
   #--------------------------------------------------------------------------
   # ● 等待按键时，启用auto时的额外处理
@@ -4482,6 +4491,12 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def process_while_auto_wait_input_pause(c)
     @eagle_sprite_pause.redraw_auto_countdown(c)
+  end
+  #--------------------------------------------------------------------------
+  # ● 等待按键时，按键继续的处理
+  #--------------------------------------------------------------------------
+  def process_input_pause_key
+    return @flag_input_loop = false if check_input_pause?
   end
   #--------------------------------------------------------------------------
   # ● 检查输入等待的按键

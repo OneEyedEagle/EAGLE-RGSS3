@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-CallEvent"] = true
 #==============================================================================
-# - 2021.6.16.20
+# - 2021.9.12.11 兼容对话框扩展
 #==============================================================================
 # - 本插件新增了在事件解释器中呼叫任意事件页并执行的事件脚本
 #   （与 呼叫公共事件 效果一致，会等待执行结束）
@@ -213,7 +213,8 @@ module EAGLE
       interpreter = Game_Interpreter.new
     else # 如果在其他场景
       interpreter = Game_Interpreter_EagleCallEvent.new
-      message_window = Window_Message.new
+      message_window = Window_EagleMessage.new if $imported["EAGLE-MessageEX"]
+      message_window ||= Window_Message.new
     end
     interpreter.setup(page.list, h[:eid])
     if $imported["EAGLE-EventInteractEX"]
