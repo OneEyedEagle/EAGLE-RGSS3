@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.9.12.21 新增常量控制：对话框内容无需滚动时，可以用方向键继续对话
+# - 2021.9.22.18 新增\next转义符
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -103,6 +103,7 @@ module MESSAGE_EX
 #    \ins    对话框立即完全显示
 #    \hold   保留当前对话框
 #    \close  当前对话框必定处理关闭
+#    \next   当前对话框不关闭，下一次的事件文本在该对话框后面继续显示
 #
 # （文字特效类）
 #    \cin    文字移入
@@ -867,6 +868,13 @@ NO_DEFAULT_PAUSE = true
 # 【功能】
 #    当前对话框不再受 settings_changed? 影响，必定进行关闭处理
 #
+#----------------------------------------------------------------------------
+#  \next 【结尾】
+#----------------------------------------------------------------------------
+# 【功能】
+#    当前对话框不处理按键继续，且不会关闭，
+#    在处理下一条事件指令-显示文本时，文本将继续显示在该对话框内。
+#    （中途可以调用其它事件指令，对话框将一直保持开启状态。）
 
 #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # ○ 文字特效类
@@ -2304,6 +2312,7 @@ class Window_EagleMessage < Window_Base
     @flag_need_close = false # 当为 true 时，当前对话框必定处理关闭
     @flag_hold = false # 当为 true 时，当前对话框会被拷贝保留，并同步更新
     @flag_instant = false # 当为 true 时，当前对话框不再处理文字显示的等待
+    @flag_next = false  # 当为 true 时，当前对话框不关闭，下一个显示文字继续使用
     @flag_temp_env = nil # 当不为 nil 时，重置当前对话框的环境
     @flag_save_env = nil # 当不为 nil 时，当前对话框状态保存到对应环境中
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
@@ -2422,7 +2431,7 @@ class Window_EagleMessage < Window_Base
     @eagle_skip_count = 0  # 重置快进计数
   end
   #--------------------------------------------------------------------------
-  # ● 重置对话框（对话框不关闭，并继续显示）
+  # ● 重置对话框（对话框不关闭，清空全部设置，并继续显示）
   #--------------------------------------------------------------------------
   def eagle_message_reset_continue
     eagle_process_env # 处理环境的存储或读取
@@ -2434,6 +2443,14 @@ class Window_EagleMessage < Window_Base
     @eagle_sprite_pause.visible = false  # 隐藏等待按键pause精灵
     @eagle_sprite_pause.bind_last_chara(nil)  # 重置pause精灵的文末位置
     @eagle_sprite_pause_width_add = 0 # 因pause精灵而扩展的窗口宽度
+    @eagle_force_close = false  # 重置强制关闭
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置对话框（对话框不关闭，保留全部设置，并继续显示）
+  #--------------------------------------------------------------------------
+  def eagle_message_reset_next
+    show if self.visible == false # # 确保对话框显示
+    @eagle_next_chara_x = 0 # 重置下一个文字的绘制坐标x（左对齐、不考虑换行）
     @eagle_force_close = false  # 重置强制关闭
   end
   #--------------------------------------------------------------------------
@@ -3289,7 +3306,7 @@ class Window_EagleMessage < Window_Base
       break unless text_continue?
       eagle_process_after_check_continue
     end
-    close_and_wait
+    close_and_wait if !@flag_next
     game_message.visible = false
     @fiber = nil
   end
@@ -3305,7 +3322,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_all_text
     return if !game_message.has_text?
-    if func_params[:para] && !game_message.input_pause?
+    if func_params[:para] && !input_pause?
       @fiber_para = Fiber.new { process_all_text; @fiber_para = nil }
       return
     end
@@ -3341,12 +3358,10 @@ class Window_EagleMessage < Window_Base
     @flag_need_change_wh = true  # 由于没有打开关闭，需要执行一次更新宽高
   end
   #--------------------------------------------------------------------------
-  # ● 继续显示时的宽高处理（在第一个文字绘制后被调用）
+  # ● 继续显示时的宽高变更处理（在第一个文字绘制后被调用）
   #--------------------------------------------------------------------------
   def eagle_change_wh_when_continue
-    @eagle_chara_sprites.each { |c| c.visible = false }
     eagle_set_wh
-    @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
     @flag_need_change_wh = false
   end
 
@@ -3422,19 +3437,29 @@ class Window_EagleMessage < Window_Base
     @eagle_auto_continue_c = 0 # 若进入了按键等待，则将计数置0，并依靠auto跳过按键
   end
   #--------------------------------------------------------------------------
-  # ● （覆盖）翻页处理（删去了翻页功能）
+  # ● 翻页处理（删去了翻页功能）
   #--------------------------------------------------------------------------
   def new_page(text, pos)
-    eagle_message_sprites_move_out  # 移出之前的全部文字精灵
-    eagle_reset_charas_oxy  # 重置文字显示区域
+    pos[:x] = 0; pos[:y] = 0
+    pos[:new_x] = 0; pos[:height] = line_height
+
+    if @flag_next
+      pos[:y] = @eagle_charas_h_final
+      # 如果是旧页面继续绘制，则需要更新一下宽高
+      @flag_need_change_wh = true
+    else
+      eagle_message_sprites_move_out  # 移出之前的全部文字精灵
+      eagle_reset_charas_oxy  # 重置文字显示区域
+    end
+
     reset_font_settings
-    clear_flags
-    pos[:x] = 0; pos[:y] = 0; pos[:new_x] = 0; pos[:height] = line_height
     eagle_check_pre_settings(text) # 处理预先内容（脸图、姓名等）
     # 存储实际绘制的文本，预先转义符已删去（扩展用，获取显示的对话文本）
     game_message.eagle_text = text.clone
     eagle_apply_params_changes # 执行预定的转义符修改
     game_message.save_env(game_message.env) # 保存当前环境（用于预绘制及temp）
+
+    clear_flags
     pre_calc_charas_wh(text, pos) # 预绘制，计算最终宽高
     clear_flags # 重置绘制会用到的变量
   end
@@ -3511,6 +3536,8 @@ class Window_EagleMessage < Window_Base
   def eagle_reset_charas_oxy
     self.ox = self.oy = 0
     @eagle_chara_viewport.rect.set(0,0,Graphics.width,Graphics.height)
+    @eagle_charas_w_final = 0
+    @eagle_charas_h_final = 0
   end
   #--------------------------------------------------------------------------
   # ● 重新生成适合全部文字的位图
@@ -3631,8 +3658,15 @@ class Window_EagleMessage < Window_Base
   def eagle_process_window_xywh
     # 第一个文字绘制后打开窗口
     return open_and_wait if @flag_need_open
-    # 如果是继续显示，需要更新一次宽高
-    return eagle_change_wh_when_continue if @flag_need_change_wh
+    # 如果是继续显示，需要先更新一下宽高
+    if @flag_need_change_wh
+      # 为了美观，将刚刚生成的文字进行隐藏
+      @eagle_chara_sprites[-1].visible = false
+      eagle_change_wh_when_continue
+      @eagle_chara_sprites[-1].move_in
+      @eagle_chara_sprites[-1].visible = true
+      return
+    end
     eagle_set_wh({:ins => true}) # 重设对话框宽高，并更新对话框位置
   end
   #--------------------------------------------------------------------------
@@ -3736,6 +3770,7 @@ class Window_EagleMessage < Window_Base
     eagle_check_hold(text)
     eagle_check_instant(text)
     eagle_check_close(text)
+    eagle_check_next(text)
     eagle_check_eval(text)
     eagle_draw_face(text)
     eagle_draw_name(text)
@@ -3819,6 +3854,13 @@ class Window_EagleMessage < Window_Base
   def eagle_check_close(text)
     text.gsub!(/\e(close)/i) { "" }
     @flag_need_close = $1 ? true : false
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置next指令
+  #--------------------------------------------------------------------------
+  def eagle_check_next(text)
+    text.gsub!(/\e(next)/i) { "" }
+    @flag_next = $1 ? true : false
   end
   #--------------------------------------------------------------------------
   # ● 设置eval指令
@@ -4386,9 +4428,18 @@ class Window_EagleMessage < Window_Base
     elsif game_message.item_choice?
       input_item
     else
-      input_pause unless @pause_skip
+      if @pause_skip || @flag_next
+      else
+        input_pause
+      end
     end
     eagle_process_hold
+  end
+  #--------------------------------------------------------------------------
+  # ● 需要输入等待？
+  #--------------------------------------------------------------------------
+  def input_pause?
+    game_message.input_pause? && !@pause_skip && !@flag_next
   end
   #--------------------------------------------------------------------------
   # ● 处理输入等待
@@ -4413,7 +4464,7 @@ class Window_EagleMessage < Window_Base
     # 当pause精灵位于句末且紧靠边界时
     #  增加对话框宽度保证它在对话框内部（不可占用padding）
     if pause_params[:v] != 0 && pause_params[:do] <= 0 &&
-       game_message.input_pause? && eagle_add_w_by_child_window?
+       input_pause? && eagle_add_w_by_child_window?
       # 最大可用于文字绘制的宽度 eagle_charas_max_w
       # 全部文字实际绘制的宽度 @eagle_charas_w_final + win_params[:cdw]
       # 最后一行所需的绘制宽度 @eagle_next_chara_x
@@ -4496,12 +4547,12 @@ class Window_EagleMessage < Window_Base
   # ● 等待按键时，按键继续的处理
   #--------------------------------------------------------------------------
   def process_input_pause_key
-    return @flag_input_loop = false if check_input_pause?
+    return @flag_input_loop = false if check_input?
   end
   #--------------------------------------------------------------------------
   # ● 检查输入等待的按键
   #--------------------------------------------------------------------------
-  def check_input_pause?
+  def check_input?
     Input.trigger?(:B) || Input.trigger?(:C)
   end
   #--------------------------------------------------------------------------
