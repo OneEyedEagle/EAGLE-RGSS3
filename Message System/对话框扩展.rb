@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.9.22.18 新增\next转义符
+# - 2021.9.23.9 新增\next转义符；修复next下宽度可能缩小的问题
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -3444,7 +3444,7 @@ class Window_EagleMessage < Window_Base
     pos[:new_x] = 0; pos[:height] = line_height
 
     if @flag_next
-      pos[:y] = @eagle_charas_h_final
+      pos[:y] = @eagle_charas_h_final + win_params[:ld] # 不要忘记加个行间距
       # 如果是旧页面继续绘制，则需要更新一下宽高
       @flag_need_change_wh = true
     else
@@ -3488,12 +3488,16 @@ class Window_EagleMessage < Window_Base
   def pre_calc_charas_wh(text, pos)
     text_ = text.clone; pos_ = pos.clone
     @flag_draw = false # 不进行实际绘制
+    last_c_w = @eagle_charas_w
+    last_c_h = @eagle_charas_h
     @eagle_charas_w = @eagle_charas_h = 0
     process_character(text_.slice!(0, 1), text_, pos_) until text_.empty?
-    @eagle_charas_w_final = @eagle_charas_w # 记录文字区域绘制完成时的宽高
+    # 记录文字区域绘制完成时的宽高
+    @eagle_charas_w_final = [@eagle_charas_w, last_c_w].max
     @eagle_charas_h_final = @eagle_charas_h
     before_input_pause unless @pause_skip # 此处追加对pause精灵占用宽度的处理
-    @eagle_charas_w = @eagle_charas_h = 0 # 复原当前文字区域宽高
+    @eagle_charas_w = last_c_w
+    @eagle_charas_h = last_c_h # 复原当前文字区域宽高
     game_message.load_env(game_message.env) # 复原转义符环境
     game_message.clear_applys
     @flag_draw = true
@@ -3534,8 +3538,12 @@ class Window_EagleMessage < Window_Base
   # ● 重置文字显示区域
   #--------------------------------------------------------------------------
   def eagle_reset_charas_oxy
+    # 重置初始区域
     self.ox = self.oy = 0
+    # 重置显示区域
     @eagle_chara_viewport.rect.set(0,0,Graphics.width,Graphics.height)
+    # 重置文字宽高
+    @eagle_charas_w = @eagle_charas_h = 0
     @eagle_charas_w_final = 0
     @eagle_charas_h_final = 0
   end
