@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-EventLog"] = true
 #==============================================================================
-# - 2021.9.12.12 与快捷功能界面兼容
+# - 2021.9.30.15 name可以使用转义符
 #==============================================================================
 # - 本插件新增了通过脚本写入的事件日志
 #------------------------------------------------------------------------------
@@ -23,7 +23,7 @@ $imported["EAGLE-EventLog"] = true
 #       EVENT_LOG.add(text, name, params)
 #
 #    其中 text 为可含有转义符的字符串，其中转义符的 \ 需要写成 \\，但是换行依然为 \n
-#    其中 name 为显示在左侧的名称（单行），不可含转义符，可省略
+#    其中 name 为显示在左侧的名称，其中转义符的 \ 需要写成 \\，可省略
 #    其中 params 为可能的扩展设置的Hash，可省略
 #
 #----------------------------------------------------------------------------
@@ -52,7 +52,9 @@ EVENT_LOG.add(t, n)
 #
 #    当 S_ID 对应的开关开启时，将覆盖默认的滚动文本框指令
 #      即滚动文本框的内容会被存入 事件日志
-#      同时我们约定，第一行文本必定为 名称name
+#      同时我们约定，第一行文本必定为 名称name。
+#
+#    在滚动文本框中，正常编写转义符即可。
 #
 #----------------------------------------------------------------------------
 # 【注意】
@@ -180,8 +182,16 @@ module EVENT_LOG
 
       # 绘制左侧标题内容
       if @ex[:name]
-        s.bitmap.font.color = text_color(16)
-        s.bitmap.draw_text(0, 0, LINE_X, s.height, @ex[:name], 1)
+        params2 = { :font_size => LOG_FONT_SIZE, :lhd => 2,
+         :font_color => text_color(16), :w => LINE_X }
+        d2 = EVENT_LOG_DrawTextEX.new(@ex[:name], params2)
+        d2.bind_bitmap(s.bitmap, true)
+        d2.run(false)
+        params2[:x0] = (params2[:w] - d2.width) / 2
+        params2[:y0] = (s.height - d2.height) / 2
+        d2.run
+        #s.bitmap.font.color = text_color(16)
+        #s.bitmap.draw_text(0, 0, LINE_X, s.height, @ex[:name], 1)
       end
 
       # 绘制位于中间线上的点

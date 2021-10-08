@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2021.8.7.14 更新注释
+# - 2021.10.4.1 修复en{}失效的bug
 #==============================================================================
 #------------------------------------------------------------------------------
 # 【优化】
@@ -433,6 +433,9 @@ class Window_EagleChoiceList < Window_Command
     # 初始化对应hash信息组
     @choices_info[i_w] = {}
     @choices_info[i_w][:i_e] = i_e # 存储该选择支在事件页里的序号
+    # 判定en{}
+    text.gsub!(/(?i:en){(.*?)}/) { "" }
+    @choices_info[i_w][:enable] = $1.nil? || eval($1) == true # 可选状态
     # 判定n{}
     i_w_name = ""; i_w_flag = nil
     text.gsub!(/(?i:n){([*])?(.*?)}/) { i_w_flag = $1; i_w_name = $2; "" }
@@ -442,9 +445,6 @@ class Window_EagleChoiceList < Window_Command
       return false if i_w_flag == '*' && i_w_read
       @choices_info[i_w][:read] = i_w_read
     end
-    # 判定en{}
-    text.gsub!(/(?i:en){(.*?)}/) { "" }
-    @choices_info[i_w][:enable] = $1.nil? || eval($1) == true # 可选状态
     # 判定cl{}
     text.gsub!(/(?i:cl){(.*?)}/) { "" }
     $game_message.choice_cancel_i_e = i_e if $1 && eval($1) == true

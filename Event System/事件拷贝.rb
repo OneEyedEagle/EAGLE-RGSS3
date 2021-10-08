@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventCopy"] = true
 #=============================================================================
-# - 2021.9.14.8 新增事件注释进行拷贝
+# - 2021.10.4.1 修复拷贝事件复用时ID为0的bug
 #=============================================================================
 # - 原始创意：Yanfly Engine Ace - Spawn Event
 # - 本插件新增了拷贝事件的方法
@@ -171,7 +171,7 @@ class Game_Map
         break id = eid if @events[eid].flag_copy_restore
       end
       if id
-        @events[id].copy_reset(x, y)
+        @events[id].copy_reset(id, x, y)
         return @events[id]
       end
       id = @events_copy[map_id][event_id][0]
@@ -257,9 +257,10 @@ class Game_Event < Game_Character
   #--------------------------------------------------------------------------
   # ● 重置拷贝事件
   #--------------------------------------------------------------------------
-  def copy_reset(x, y)
+  def copy_reset(id, x, y)
     init_public_members
     init_private_members
+    @id = id
     @flag_copy = true # 若为copy的事件，置为true
     @flag_copy_restore = false # 若copy事件已经可以回收，置为true
     moveto(x, y)

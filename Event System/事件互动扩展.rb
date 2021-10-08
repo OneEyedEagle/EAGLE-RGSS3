@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.7.6.10 未找到互动时，直接结束执行
+# - 2021.9.28.22 增加文字大小的自定义
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型；事件触发事件
 #------------------------------------------------------------------------------
@@ -229,6 +229,10 @@ module EVENT_INTERACT
   #--------------------------------------------------------------------------
   DEFAULT_ICON = 4
   #--------------------------------------------------------------------------
+  # ● 【常量】互动文本的文字大小
+  #--------------------------------------------------------------------------
+  SYM_FONT_SIZE = 16
+  #--------------------------------------------------------------------------
   # ● 当返回true时，切换到下一个互动类型
   #--------------------------------------------------------------------------
   def self.next_sym?
@@ -240,6 +244,10 @@ module EVENT_INTERACT
   def self.next_text
     " SHIFT →"
   end
+  #--------------------------------------------------------------------------
+  # ● 【常量】切换提示文本的文字大小
+  #--------------------------------------------------------------------------
+  SYM_HELP_FONT_SIZE = 12
   #--------------------------------------------------------------------------
   # ●【常量】互动列表的显示位置
   # 0 时为事件下方，1 时为事件上方，2 时为事件右侧
@@ -523,7 +531,7 @@ module EVENT_INTERACT
     flag_draw_hint = syms.size > 1
 
     # 互动类型文本的文字大小
-    sym_font_size = 16
+    sym_font_size = SYM_FONT_SIZE
     # 图标的宽高
     icon_wh = 28
     # 两个互动文本之间的间隔值
@@ -556,11 +564,11 @@ module EVENT_INTERACT
 
     if flag_draw_hint && hint_pos == 1
       # 绘制按键说明文本
-      sprite.bitmap.font.size = 12
+      sprite.bitmap.font.size = SYM_HELP_FONT_SIZE
       sprite.bitmap.font.color.alpha = 255
-      sprite.bitmap.draw_text(0, _y, sprite.width, 14,
+      sprite.bitmap.draw_text(0, _y, sprite.width, SYM_HELP_FONT_SIZE+2,
         next_text, 0)
-      _y += 12
+      _y += SYM_HELP_FONT_SIZE
 
       # 绘制分割线
       sprite.bitmap.fill_rect(0, _y, sprite.width, 1,
@@ -596,11 +604,11 @@ module EVENT_INTERACT
       _y += 2
 
       # 绘制按键说明文本
-      sprite.bitmap.font.size = 12
+      sprite.bitmap.font.size = SYM_HELP_FONT_SIZE
       sprite.bitmap.font.color.alpha = 255
-      sprite.bitmap.draw_text(0, _y, sprite.width, 14,
+      sprite.bitmap.draw_text(0, _y, sprite.width, SYM_HELP_FONT_SIZE+2,
         next_text, 0)
-      _y += 12
+      _y += SYM_HELP_FONT_SIZE
     end
 
     # 将当前选中的互动类型，移动到行走图下方
