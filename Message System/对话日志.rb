@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageLog"] = true
 #==============================================================================
-# - 2021.9.12.12 与快捷功能界面兼容
+# - 2021.10.10.23 方便扩展姓名
 #==============================================================================
 # - 本插件新增了对 $game_message 的对话文本的记录
 #------------------------------------------------------------------------------
@@ -152,6 +152,7 @@ module MSG_LOG
   # ● 新增日志
   #--------------------------------------------------------------------------
   def self.new_log(text, ex_params = {})
+    return if text == ""
     d = Data.new(text, ex_params)
     logs.unshift(d)
     logs.pop if logs.size > LOG_MAX_NUM
@@ -226,15 +227,19 @@ end
   # ● 新增文本日志
   #--------------------------------------------------------------------------
   def self.add_text(msg)
+    params = {}
+    set_name(msg, params)
     if $imported["EAGLE-MessageEX"] && $game_message.eagle_message == true
-      return if msg.eagle_text == ""
-      params = {}
-      t = msg.eagle_text
-      params[:name] = msg.name_params[:name] if msg.name?
-      new_log(t, params)
+      params[:name] = msg.name_params[:name] if msg.name?  # 覆盖姓名
+      new_log(msg.eagle_text, params)
       return
     end
-    new_log(msg.all_text)
+    new_log(msg.all_text, params)
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取姓名
+  #--------------------------------------------------------------------------
+  def self.set_name(msg, params)
   end
   #--------------------------------------------------------------------------
   # ● 新增选项结果日志

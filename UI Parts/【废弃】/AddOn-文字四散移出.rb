@@ -2,7 +2,7 @@
 # ■ Add-On 文字四散移出 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【Add-On 部分粒子模板 by老鹰】之下
 #==============================================================================
-# - 2020.8.22.15 随对话框独立
+# - 2021.10.10.23 更新
 #==============================================================================
 # - 本插件为 文字精灵组的粒子化 实现了一个简单便捷的调用接口
 #----------------------------------------------------------------------------
@@ -80,7 +80,14 @@ module ParticleManager
     # 将文字精灵的拷贝放入模板
     f.total = charas.size
     f.bitmaps = charas.collect { |s| s.bitmap.dup }
-    f.xys = charas.collect { |s| Vector.new(s.x + s.width/2, s.y + s.height/2) }
+    f.xys = charas.collect { |s|
+      x = s.x + s.width/2; y = s.y + s.height/2
+      if s.viewport
+        x += s.viewport.rect.x
+        y += s.viewport.rect.y
+      end
+      Vector.new(x, y)
+    }
     # 发射器开始工作
     ParticleManager.start(sym)
   end
@@ -116,7 +123,7 @@ class Window_EagleMessage
           win_params[:cwo].times { Fiber.yield }
         end
       else
-        charas = @eagle_chara_sprites.select { |s| s.check_move_out; !s.finish? }
+        charas = @eagle_chara_sprites.select { |s| !s.finish? }
         charas.each { |s| s.finish }
         ParticleManager.pout(:msg_charas, charas, game_message.pout_params)
       end
@@ -149,14 +156,13 @@ class Window_ScrollText < Window_Base
     if pout_params[:type] && pout_params[:type] > 0
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
-          s.check_move_out
           next if s.finish?
           s.finish
           ParticleManager.pout(:st_charas, [s], pout_params)
           win_params[:cwo].times { Fiber.yield }
         end
       else
-        charas = @eagle_chara_sprites.select { |s| s.check_move_out; !s.finish? }
+        charas = @eagle_chara_sprites.select { |s| !s.finish? }
         charas.each { |s| s.finish }
         ParticleManager.pout(:st_charas, charas, pout_params)
       end
@@ -188,7 +194,7 @@ class Spriteset_Choice
   alias eagle_particle_out_move_out move_out
   def move_out
     if @pout_params && pout_params[:type] > 0
-      charas = @charas.select { |s| s.check_move_out; !s.finish? }
+      charas = @charas.select { |s| !s.finish? }
       charas.each { |s| s.finish }
       ParticleManager.pout("choice_#{@i_w}".to_sym, charas, @pout_params)
     end

@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-Particle"] = true
 #==============================================================================
-# - 2019.9.13.0 新增粒子移入
+# - 2021.10.11.0 优化
 #==============================================================================
 # - 本插件新增了一个管理发散式粒子特效的系统
 # - 使用流程：
@@ -26,10 +26,6 @@ $imported["EAGLE-Particle"] = true
 
 module ParticleManager
   #--------------------------------------------------------------------------
-  # ● 发射器处理接口
-  #--------------------------------------------------------------------------
-  class << self; attr_reader :emitters; end
-  #--------------------------------------------------------------------------
   # ● 初始化（绑定于DataManager.run）
   # 【可重载进行预设粒子模板】
   #--------------------------------------------------------------------------
@@ -42,6 +38,10 @@ module ParticleManager
   def self.update
     @emitters.each { |k, v| v.update }
   end
+  #--------------------------------------------------------------------------
+  # ● 发射器处理接口
+  #--------------------------------------------------------------------------
+  class << self; attr_reader :emitters; end
   #--------------------------------------------------------------------------
   # ● 设置指定id发射器的粒子模板
   #--------------------------------------------------------------------------
@@ -139,6 +139,7 @@ end
 #==============================================================================
 class Particle_Emitter
   attr_accessor :template, :viewport
+  attr_reader   :particles
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -190,45 +191,7 @@ class Particle_Emitter
   # ● 由粒子模板新增一个粒子
   #--------------------------------------------------------------------------
   def add_particle
-    t = Sprite_Particle.new(self, @viewport)
-    # 将新生成粒子绑定于模板，便于获取和粒子本身有关的参数
-    @template.setup(t)
-    t.z = @template.z
-    t.bitmap = @template.bitmap
-    t.ox = t.width / 2
-    t.oy = t.height / 2
-    t.win_pos_init = @template.xy
-    t.pos_init_offset = @template.xy_offset
-    # 计算初始方向向量
-    t.dir = @template.dir
-    # 计算实际速度
-    t.dir *= @template.speed
-    # 计算生命周期
-    t.life  = @template.life
-    # 计算初始颜色
-    c = @template.start_color
-    t.color = c
-    e = @template.end_color
-    # 计算颜色差值
-    d = Color.new(0,0,0,0)
-    d.red   = (c.red - e.red) / t.life
-    d.green = (c.green - e.green) / t.life
-    d.blue  = (c.blue - e.blue) / t.life
-    d.alpha = (c.alpha - e.alpha) / t.life
-    t.color_delta = d
-    # 计算透明度
-    t.opacity   = @template.start_opa
-    t.opa_delta = (@template.end_opa - t.opacity) / t.life
-    # 计算初始角度
-    t.angle = @template.angle_init
-    # 计算每帧旋转度数
-    t.angle_delta = @template.angle
-    # 计算缩放值
-    t.zoom_x = t.zoom_y = @template.start_zoom
-    t.zoom_delta = (@template.end_zoom - t.zoom_x) / t.life
-    # 预更新并加入更新粒子池
-    t.update
-    @particles.push(t)
+    @particles.push(Sprite_Particle.new(self))
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -259,31 +222,76 @@ end
 # ■ 单个粒子精灵
 #==============================================================================
 class Sprite_Particle < Sprite
+  attr_reader   :params
+  attr_accessor :life
   attr_accessor :win_pos_init
   attr_accessor :pos_init_offset
   attr_accessor :move_offset
   attr_accessor :map_grid_init
   attr_accessor :dir
-  attr_accessor :life
   attr_accessor :color_delta, :opa_delta, :angle_delta, :zoom_delta
   attr_accessor :wait_count
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
-  def initialize(emitter, viewport = nil)
-    super(viewport)
+  def initialize(emitter)
+    super(emitter.viewport)
     @emitter  = emitter
+    @params = {}
+    @life     = 0            # 还会存在的时间
     @win_pos_init  = Vector.new   # （窗口）基础显示位置
     @map_grid_init = Vector.new   # （地图格子）基础所处位置
     @pos_init_offset = Vector.new # 在基础显示位置上的偏移值
     @move_offset   = Vector.new   # 移动中所产生的偏移值
     @dir      = Vector.new   # x和y方向上的速度
-    @life     = 0            # 还会存在的时间
     @color_delta = Color.new(0,0,0) # 颜色变更值
     @opa_delta   = 0     # 透明度变更值
     @angle_delta = 0     # 旋转角度变更值
     @zoom_delta  = 0.0   # 缩放的变更值
     @wait_count  = 0     # 更新等待用计数（emitter内使用）
+    start
+  end
+  #--------------------------------------------------------------------------
+  # ● 启动
+  #--------------------------------------------------------------------------
+  def start
+    # 将粒子绑定于模板，便于获取和粒子本身有关的参数
+    @emitter.template.setup(self)
+    self.z = @emitter.template.z
+    self.bitmap = @emitter.template.bitmap
+    self.ox = self.width / 2
+    self.oy = self.height / 2
+    self.win_pos_init = @emitter.template.xy
+    self.pos_init_offset = @emitter.template.xy_offset
+    # 计算初始方向向量
+    self.dir = @emitter.template.dir
+    # 计算实际速度
+    self.dir *= @emitter.template.speed
+    # 计算生命周期
+    self.life  = @emitter.template.life
+    # 计算初始颜色
+    c = @emitter.template.start_color
+    self.color = c
+    e = @emitter.template.end_color
+    # 计算颜色差值
+    d = Color.new(0,0,0,0)
+    d.red   = (c.red - e.red) / self.life
+    d.green = (c.green - e.green) / self.life
+    d.blue  = (c.blue - e.blue) / self.life
+    d.alpha = (c.alpha - e.alpha) / self.life
+    self.color_delta = d
+    # 计算透明度
+    self.opacity   = @emitter.template.start_opa
+    self.opa_delta = (@emitter.template.end_opa - self.opacity) / self.life
+    # 计算初始角度
+    self.angle = @emitter.template.angle_init
+    # 计算每帧旋转度数
+    self.angle_delta = @emitter.template.angle
+    # 计算缩放值
+    self.zoom_x = self.zoom_y = @emitter.template.start_zoom
+    self.zoom_delta = (@emitter.template.end_zoom - self.zoom_x) / self.life
+    # 预更新并加入更新粒子池
+    self.update
   end
   #--------------------------------------------------------------------------
   # ● 更新
