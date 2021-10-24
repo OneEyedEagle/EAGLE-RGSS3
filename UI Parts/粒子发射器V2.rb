@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-Particle"] = true
 #==============================================================================
-# - 2021.10.18.23
+# - 2021.10.23.21
 #==============================================================================
 # - 本插件新增了一个发射粒子的系统
 #------------------------------------------------------------------------------
@@ -87,8 +87,16 @@ PARTICLE.show("测试")
 # 隐藏粒子模板的全部粒子
 PARTICLE.hide("测试")
 
-# 结束粒子模板（不再生成粒子）
+# 结束粒子模板（不再生成新的粒子，旧粒子继续更新）
 PARTICLE.finish("测试")
+
+# 完全结束（先调用finish，再强制清空全部粒子）
+PARTICLE.dispose("测试")
+
+
+#【高级】对全部粒子精灵应用代码块
+#  比如对 "测试" 中的全部精灵，将其z值设置为 300
+PARTICLE.apply("测试") { |s| s.z = 300 }
 
 =end
 #
@@ -145,10 +153,20 @@ module PARTICLE
   # ● 指定id发射器开始工作（产生新粒子）/ 暂停工作（不产生新粒子）
   #--------------------------------------------------------------------------
   def self.start(id)
-    @emitters[id].start if @emitters[id]
+    if @emitters[id]
+      return if @emitters[id].running?
+      @emitters[id].start
+    end
   end
   def self.finish(id)
     @emitters[id].finish if @emitters[id]
+  end
+  #--------------------------------------------------------------------------
+  # ● 指定id发射器还在工作？（可能还有粒子在更新，也可能还在生成新粒子）
+  #--------------------------------------------------------------------------
+  def self.running?(id)
+    return @emitters[id].running? if @emitters[id]
+    return false
   end
   #--------------------------------------------------------------------------
   # ● 指定id发射器已完成工作？
@@ -174,6 +192,22 @@ module PARTICLE
   end
   def self.hide(id)
     @emitters[id].hide if @emitters[id]
+  end
+  #--------------------------------------------------------------------------
+  # ● 指定id发射器释放（会首先调用 finish 方法）
+  #--------------------------------------------------------------------------
+  def self.dispose(id)
+    @emitters[id].dispose if @emitters[id]
+  end
+  #--------------------------------------------------------------------------
+  # ● 指定id发射器的全部粒子，应用代码块
+  #--------------------------------------------------------------------------
+  def self.apply(id) # block
+    return if @emitters[id].nil?
+    return if !block_given?
+    @emitters[id].particles.each do |s|
+      yield s
+    end
   end
 end
 #==============================================================================
@@ -226,12 +260,20 @@ class Particle_Emitter
     @template = template if template
     @active = true
     @freeze = false
+    @template.start
+  end
+  #--------------------------------------------------------------------------
+  # ● 在工作？
+  #--------------------------------------------------------------------------
+  def running?
+    @active || !@particles.empty?
   end
   #--------------------------------------------------------------------------
   # ● 结束工作（不再产生新粒子）
   #--------------------------------------------------------------------------
   def finish
     @active = false
+    @template.finish
   end
   def finish?
     @active == false && @particles.empty?
@@ -241,18 +283,31 @@ class Particle_Emitter
   #--------------------------------------------------------------------------
   def freeze
     @freeze = true
+    @template.freeze
   end
   def awake
     @freeze = false
+    @template.awake
   end
   #--------------------------------------------------------------------------
   # ● 显示 / 隐藏
   #--------------------------------------------------------------------------
   def show
     @particles.each { |s| s.visible = true }
+    @template.show
   end
   def hide
     @particles.each { |s| s.visible = false }
+    @template.hide
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  def dispose
+    finish
+    @particles.each { |s| s.finish; @@particles_fin.push(s) }
+    @particles.clear
+    @template.dispose
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -280,6 +335,7 @@ class Particle_Emitter
       t.update
     end
     @particles.delete_if { |t| t.fin? }
+    @template.update(@particles)
   end
   #--------------------------------------------------------------------------
   # ● 由粒子模板新增一个粒子
@@ -323,7 +379,7 @@ class Sprite_Particle < Sprite
     @emitter  = emitter
     @params   = { :life => 0 } # 还会存在的时间
     @wait_count = 0  # 更新等待用计数（emitter内使用）
-    @emitter.template.start(self)
+    @emitter.template.start_particle(self)
     update
   end
   #--------------------------------------------------------------------------
@@ -331,19 +387,19 @@ class Sprite_Particle < Sprite
   #--------------------------------------------------------------------------
   def update
     super
-    @emitter.template.update(self)
+    @emitter.template.update_particle(self)
   end
   #--------------------------------------------------------------------------
   # ● 结束？
   #--------------------------------------------------------------------------
   def fin?
-    @params[:life] <= 0
+    @params[:life] == 0
   end
   #--------------------------------------------------------------------------
   # ● 结束
   #--------------------------------------------------------------------------
   def finish
-    @emitter.template.finish(self)
+    @emitter.template.finish_particle(self)
   end
 end
 
@@ -419,7 +475,7 @@ class ParticleTemplate
     @params[:force]    = Vector.new(0,0)    # 作用力（加速度）Vector
     # 以下变量均可以传入 VarValue类型 或 数值 或 字符串（会先被eval求值）
     @params[:update_wait]   = 2    # 粒子每次更新后的的等待帧数
-    @params[:life] = VarValue.new(180, 120) # 存在时间
+    @params[:life] = VarValue.new(180, 120) # 存在时间（若为负数，则一直存在）
     @params[:theta] = VarValue.new(0, 0) # 初速度方向（角度）
     @params[:speed] = VarValue.new(0, 0) # 初速度值（标量）
     @params[:start_opa] = VarValue.new(255, 0) # 开始时透明度
@@ -429,6 +485,30 @@ class ParticleTemplate
     @params[:start_zoom] = VarValue.new(1.0, 0) # 开始时的缩放值
     @params[:end_zoom] = VarValue.new(1.0, 0) # 结束时的缩放值
     @params[:z]    = 1    # 粒子的z值
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 发射器调用对应方法时，将调用下述方法
+  #--------------------------------------------------------------------------
+  def start
+  end
+  def finish
+  end
+  def freeze
+  end
+  def awake
+  end
+  def show
+  end
+  def hide
+  end
+  def dispose
+  end
+  #--------------------------------------------------------------------------
+  # ● 全部粒子更新完成后，发射器将调用模板的该方法
+  # all_particles = [Sprite_Particle, Sprite_Particle...]
+  #--------------------------------------------------------------------------
+  def update(all_particles)
   end
 
   #--------------------------------------------------------------------------
@@ -467,7 +547,7 @@ class ParticleTemplate
   #--------------------------------------------------------------------------
   # ● 粒子开始
   #--------------------------------------------------------------------------
-  def start(particle)
+  def start_particle(particle)
     @particle = particle
     init_life
     init_bitmap
@@ -481,7 +561,7 @@ class ParticleTemplate
   #--------------------------------------------------------------------------
   # ● 粒子更新
   #--------------------------------------------------------------------------
-  def update(particle)
+  def update_particle(particle)
     @particle = particle
     update_life
     update_bitmap
@@ -495,8 +575,8 @@ class ParticleTemplate
   #--------------------------------------------------------------------------
   # ● 粒子结束
   #--------------------------------------------------------------------------
-  def finish(particle)
-    @particle.particle = particle
+  def finish_particle(particle)
+    @particle = particle
     @particle.bitmap.dispose if @flag_dispose_bitmap
     @particle.bitmap = nil
     @particle.opacity = 0
@@ -506,9 +586,10 @@ class ParticleTemplate
   # ● 生命周期初值与每次更新
   #--------------------------------------------------------------------------
   def init_life
-    @particle.params[:life] = get_value(@params[:life]).to_i
+    @particle.params[:life] = get_value(@params[:life]).to_i  # 必须为整数
   end
   def update_life
+    return if @particle.params[:life] < 0
     @particle.params[:life] -= 1  # 生命周期减一
   end
   #--------------------------------------------------------------------------
@@ -602,15 +683,6 @@ class ParticleTemplate
 end
 
 #==============================================================================
-# ■ Add-On 部分粒子模板 by 老鹰（http://oneeyedeagle.lofter.com/）
-# ※ 本插件需要放置在【简单粒子系统-发散式 by老鹰】之下
-#==============================================================================
-# - 2019.9.13.11
-#==============================================================================
-# - 本插件为部分特别实现的粒子模板，可以参考并生成实例供调用
-#==============================================================================
-
-#==============================================================================
 # ■ 粒子模板类 - 单点引力场
 #==============================================================================
 class ParticleTemplate_Single_Gravity < ParticleTemplate
@@ -628,15 +700,6 @@ class ParticleTemplate_Single_Gravity < ParticleTemplate
     r = Math.sqrt(dx * dx + dy * dy)
     @particle.params[:dir].x += @params[:gravity] * dx * 1.0 / r
     @particle.params[:dir].y += @params[:gravity] * dy * 1.0 / r
-  end
-end
-
-#==============================================================================
-# ■ 粒子模板类 - 从鼠标处
-#==============================================================================
-class ParticleTemplate_Mouse < ParticleTemplate
-  def init_xy
-    Vector.new(Mouse.x, Mouse.y)
   end
 end
 
@@ -746,31 +809,22 @@ class ParticleTemplate_ReboundBox < ParticleTemplate
     @params[:rebound_factor] = -1.0   # 反弹因子，速度的改变因子（乘法）
   end
   def update_speed
+    last_dx = @particle.params[:pos_offset].x
+    last_dy = @particle.params[:pos_offset].y
     super
     box = @params[:rebound_box]
-    _x = @particle.x.to_i; _y = @particle.y.to_i
-    _dir_x = @particle.params[:dir].x; _dir_y = @particle.params[:dir].y
-    if (_y > box.y && _y < box.y + box.height)
-      if (_x - box.x).abs < _dir_x
-        @particle.x = box.x
-        @particle.params[:dir].x *= @params[:rebound_factor]
-      elsif (_x - box.x - box.width).abs < _dir_x
-        @particle.x = box.x + box.width
-        @particle.params[:dir].x *= @params[:rebound_factor]
-      end
+    new_x = @particle.params[:pos].x + @particle.params[:pos_offset].x
+    new_y = @particle.params[:pos].y + @particle.params[:pos_offset].y
+    if new_x <= box.x or new_x >= box.x + box.width
+      @particle.params[:pos_offset].x = last_dx
+      @particle.params[:dir].x *= @params[:rebound_factor]
     end
-    if (_x > box.x && _x < box.x + box.width)
-      if (_y - box.y).abs < _dir_y
-        @particle.y = box.y
-        @particle.params[:dir].y *= @params[:rebound_factor]
-      elsif (_y - box.y - box.height).abs < _dir_y
-        @particle.y = box.y + box.height
-        @particle.params[:dir].y *= @params[:rebound_factor]
-      end
+    if new_y <= box.y or new_y >= box.y + box.height
+      @particle.params[:pos_offset].y = last_dy
+      @particle.params[:dir].y *= @params[:rebound_factor]
     end
   end
 end
-
 
 #==============================================================================
 # ■ 在脚本中预设粒子模板

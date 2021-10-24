@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-Counter"] = true
 #=============================================================================
-# - 2020.10.30.17 初始z值变更为300
+# - 2021.10.24.13 新增:t参数，当一段时间内未变化时，自动隐藏
 #=============================================================================
 # - 本插件提供了一组绑定于默认变量 $game_variables 的计数器
 # - 在地图上时，指定的文本将显示于屏幕指定位置，当变量值变更时将自动重绘
@@ -21,6 +21,7 @@ $imported["EAGLE-Counter"] = true
 #   （精灵相关）
 #     :x/:y/:z → 计数器精灵在屏幕中的显示位置
 #     :ox/:oy  → 计数器精灵的显示原点
+#     :t       → 当一段时间（t帧）未有变化时，自动隐藏
 #   （位图相关）
 #     :w/:h → 位图Bitmap的宽度和高度
 #     :pic  → 所用的背景图片的名称（位于Graphics/System下）（覆盖:w/:h的设置）
@@ -69,6 +70,7 @@ module Counter
   def self.add(v_id, params = {})
     params[:refresh] = true # 需要刷新的标志
     params[:visible] = true # 是否显示
+    params[:t] = params[:t].to_i if params[:t]  # 渐隐的限时
     $game_system.counters[v_id] = params
   end
   #--------------------------------------------------------------------------
@@ -178,8 +180,37 @@ class Sprite_Counter < Sprite
   #--------------------------------------------------------------------------
   def update
     super
-    self.visible = params[:visible]
+    update_visible
+    update_fade if params[:t]
     refresh if params[:refresh]
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新显隐
+  #--------------------------------------------------------------------------
+  def update_visible
+    if params[:visible] == true && self.visible == false
+      fade_init
+    elsif params[:visible] == false && self.visible == true
+    end
+    self.visible = params[:visible]
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新渐隐
+  #--------------------------------------------------------------------------
+  def update_fade
+    params[:tc] ||= params[:t]
+    if params[:tc] == 0
+      self.opacity -= 15 if self.opacity > 0
+    else
+      params[:tc] -= 1
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化渐隐
+  #--------------------------------------------------------------------------
+  def fade_init
+    self.opacity = 255
+    params[:tc] = nil
   end
   #--------------------------------------------------------------------------
   # ● 重绘
@@ -193,6 +224,7 @@ class Sprite_Counter < Sprite
     self.oy = params[:oy] || 0
     redraw_bg
     redraw_contents
+    fade_init
   end
   #--------------------------------------------------------------------------
   # ● 重绘背景

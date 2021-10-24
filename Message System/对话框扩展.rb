@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.9.23.9 新增\next转义符；修复next下宽度可能缩小的问题
+# - 2021.10.24.11 修复cout与uout位置错误的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -1141,12 +1141,12 @@ CZOOM_PARAMS_INIT = {
 # 【常量设置：参数预设值】
 CSHAKE_PARAMS_INIT = {
 # \cshake[]
-  :l => 2,  # 距离所在原点的最大偏移量（左右上下）
+  :l => 0,  # 距离所在原点的最大偏移量（左右上下）
   :r => 1,
-  :u => 2,
+  :u => 1,
   :d => 1,
   :vx  => 0,  # x的初始移动方向（0为随机方向）
-  :vxt => 1,  # x方向移动一像素所耗帧数
+  :vxt => 2,  # x方向移动一像素所耗帧数
   :vy  => 0,  # y的初始移动方向（0为随机方向）
   :vyt => 1,  # y方向移动一像素所耗帧数
 }
@@ -5991,11 +5991,11 @@ class Sprite_EagleCharacter < Sprite
   def move_out
     finish_effects # 先结束全部特效
     finish if !in_viewport? # 若精灵在视图外，则会直接结束
-    bind_viewport(nil) # 取消视图，确保不会出现资源崩溃，且不再限制可见范围
     if !finish?
       process_move_out  # 处理移出模式
-      update_position # 更新一次位置
     end
+    bind_viewport(nil) # 取消视图，确保不会出现资源崩溃，且不再限制可见范围
+    update_position # 更新一次位置
     @window_bind = nil # 取消窗口的绑定
     MESSAGE_EX.charapool_push(self) # 由文字池接管
     @flag_in_charapool = true
@@ -6023,15 +6023,19 @@ class Sprite_EagleCharacter < Sprite
   # ● 执行默认移出
   #--------------------------------------------------------------------------
   def move_out_cout(params)
-    _rect = Rect.new(self.x, self.y, self.width, self.height)
+    _x = self.x; _y = self.y
+    if(self.viewport)
+      _x += self.viewport.rect.x; _y += self.viewport.rect.y
+    end
+    _rect = Rect.new(_x, _y, self.width, self.height)
     if params[:do] != 0
       MESSAGE_EX.reset_xy_dorigin(_rect, @window_bind, params[:do])
       MESSAGE_EX.reset_xy_origin(_rect, 5)
     end
     params[:dx_init] = 0
     params[:dy_init] = 0
-    params[:dx_d] = (_rect.x + params[:dx]) - self.x
-    params[:dy_d] = (_rect.y + params[:dy]) - self.y
+    params[:dx_d] = (_rect.x + params[:dx]) - _x
+    params[:dy_d] = (_rect.y + params[:dy]) - _y
 
     @dx = @dy = @_zoom = 0
     reset_oxy(5)
@@ -6047,7 +6051,11 @@ class Sprite_EagleCharacter < Sprite
     params[:s] = MESSAGE_EX::CU_PARAM_S[ params[:s] ]
   end
   def move_out_uout(params)
-    Unravel_Bitmap.new(self.x, self.y, self.bitmap.clone, 0, 0, self.width,
+    _x = self.x; _y = self.y
+    if(self.viewport)
+      _x += self.viewport.rect.x; _y += self.viewport.rect.y
+    end
+    Unravel_Bitmap.new(_x, _y, self.bitmap.clone, 0, 0, self.width,
       self.height, params[:n], params[:d], params[:o], params[:dir], params[:s])
     finish
   end

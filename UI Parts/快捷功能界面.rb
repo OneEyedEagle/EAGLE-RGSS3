@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventToolbar"] = true
 #==============================================================================
-# - 2021.9.12.12 兼容【任务列表】
+# - 2021.10.23.23 修改z值
 #==============================================================================
 # - 本插件新增了剧情演出时可供开启的快捷功能场景
 #------------------------------------------------------------------------------
@@ -68,7 +68,7 @@ module TOOLBAR
   #--------------------------------------------------------------------------
   # 设置不需要退出当前界面的指令
   COMMANDS_NO_CLOSE = [:msg_auto, :msg_vi]
-  
+
   def self.init_window_command
     #@window_toolbar.add_command("名称", :唯一符号, 是否允许选择, "说明文本")
     #@window_toolbar.set_handler(:唯一符号, method(:command))
@@ -279,7 +279,7 @@ module TOOLBAR
       @sprite_bg.z = 500 if $game_message.visible
 
       @sprite_bg_info = Sprite.new
-      @sprite_bg_info.z = @sprite_bg.z + 1
+      @sprite_bg_info.z = @sprite_bg.z + 10
       set_sprite_info(@sprite_bg_info)
       @sprite_bg_info.opacity = 0
 
@@ -292,11 +292,11 @@ module TOOLBAR
       @window_toolbar.opacity = 0
       @window_toolbar.back_opacity = 0
       @window_toolbar.contents_opacity = 255
-      @window_toolbar.z = @sprite_bg.z + 1
+      @window_toolbar.z = @sprite_bg.z + 20
       set_window_toolbar
 
       @window_help = Window_ToolbarHelp.new(1)
-      @window_help.z = @sprite_bg.z + 1
+      @window_help.z = @sprite_bg.z + 20
       @window_help.opacity = 0
       @window_help.back_opacity = 0
       @window_help.contents_opacity = 255
@@ -305,11 +305,11 @@ module TOOLBAR
       @window_toolbar.help_window = @window_help
 
       @sprite_hint_up = Sprite.new
-      @sprite_hint_up.z = @sprite_bg.z + 1
+      @sprite_hint_up.z = @sprite_bg.z + 30
       set_sprite_up(@sprite_hint_up)
 
       @sprite_hint_down = Sprite.new
-      @sprite_hint_down.z = @sprite_bg.z + 1
+      @sprite_hint_down.z = @sprite_bg.z + 30
       set_sprite_down(@sprite_hint_down)
     end
     #--------------------------------------------------------------------------
