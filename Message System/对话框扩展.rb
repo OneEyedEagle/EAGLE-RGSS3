@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.10.24.11 修复cout与uout位置错误的bug
+# - 2021.10.27.19 修复输入等待时，同时按多个方向键，滚动速度骤变的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -4504,6 +4504,14 @@ class Window_EagleMessage < Window_Base
       process_input_pause_auto # 处理自动继续
       process_input_pause_key # 处理按键继续
       if flag_move # 处理内容滚动
+        if last_input == Input.dir4  # 先处理变速，防止同时按多个方向，导致速度不对
+          last_input_c += 1
+          d_oxy += 1 if last_input_c % 10 == 0
+        else
+          d_oxy = 1
+          last_input_c = 0
+        end
+        last_input = Input.dir4
         _ox = self.ox; _oy = self.oy
         if Input.press?(:UP)
           self.oy -= d_oxy
@@ -4518,14 +4526,6 @@ class Window_EagleMessage < Window_Base
           self.ox += d_oxy
           self.ox = ox_max if self.ox > ox_max
         end
-        if last_input == Input.dir4
-          last_input_c += 1
-          d_oxy += 1 if last_input_c % 10 == 0
-        else
-          d_oxy = 1
-          last_input_c = 0
-        end
-        last_input = Input.dir4
         update_moving_charas_oxy if _ox != self.ox || _oy != self.oy
       elsif MESSAGE_EX::INPUT_NEXT_WITH_DIR4
         @flag_input_loop = false if Input.dir4 > 0

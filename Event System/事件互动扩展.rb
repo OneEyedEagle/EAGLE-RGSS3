@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.9.28.22 增加文字大小的自定义
+# - 2021.10.25.23 优化注释
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型；事件触发事件
 #------------------------------------------------------------------------------
@@ -487,6 +487,7 @@ module EVENT_INTERACT
   # ● 重置存储的数据
   #--------------------------------------------------------------------------
   def self.reset(event, syms)
+    # 如果对应的事件没变化，就不用重置
     if @info && @info[:event].id == event.id && @info[:syms] == syms
       return
     end
@@ -511,6 +512,12 @@ module EVENT_INTERACT
     @info[:syms][@info[:i]]
   end
   #--------------------------------------------------------------------------
+  # ● 获取指定互动类型的图标
+  #--------------------------------------------------------------------------
+  def self.icon(t)
+    SYM_TO_ICON[t] || DEFAULT_ICON
+  end
+  #--------------------------------------------------------------------------
   # ● 每帧更新（于Spriteset_Map中调用）
   #--------------------------------------------------------------------------
   def self.update(sprite, event_sprites)
@@ -525,9 +532,12 @@ module EVENT_INTERACT
   # ● 每帧重绘
   #--------------------------------------------------------------------------
   def self.redraw(sprite)
+    # 如果当前索引没变，则不用重绘
     return if @info[:i_draw] == @info[:i]
     @info[:i_draw] = @info[:i]
+    # 获取当前事件的全部互动
     syms = @info[:syms]
+    # 如果互动数目大于1，则需要绘制按键切换的提示文本
     flag_draw_hint = syms.size > 1
 
     # 互动类型文本的文字大小
@@ -543,9 +553,13 @@ module EVENT_INTERACT
     _b.font.size = sym_font_size
     syms.each { |t| r = _b.text_size(t); ws.push(r.width) }
 
-    w = syms.size * (icon_wh + sym_offset) + ws.max + 6
-    h = 2 + icon_wh + 2
+    # 总的宽度 = 最大互动文本的宽度 + 图标数目*图标宽度
+    w = syms.size * (icon_wh + sym_offset) + ws.max + 6 # 增加两侧边界
+    # 假定：文本高度 小于 图标的高度
+    h = 2 + icon_wh + 2  # 增加上下边界
     h += 12 if flag_draw_hint
+
+    # 重设位图
     if sprite.bitmap && (sprite.width != w || sprite.height != h)
       sprite.bitmap.dispose
       sprite.bitmap = nil
@@ -555,14 +569,16 @@ module EVENT_INTERACT
     sprite.bitmap.font.outline = true
     sprite.bitmap.font.shadow = false
     sprite.bitmap.font.color.alpha = 255
+
+    # 绘制用y
     _y = 0
 
     # 绘制背景
     sprite.bitmap.fill_rect(0, 0, sprite.width, sprite.height,
       Color.new(0, 0, 0, 160))
-    _y += 2
+    _y += 2 # 顶部的空白
 
-    if flag_draw_hint && hint_pos == 1
+    if flag_draw_hint && hint_pos == 1  # 如果显示在事件上方，按键提示文本在上面
       # 绘制按键说明文本
       sprite.bitmap.font.size = SYM_HELP_FONT_SIZE
       sprite.bitmap.font.color.alpha = 255
@@ -576,13 +592,13 @@ module EVENT_INTERACT
       _y += 2
     end
 
-    # 绘制具体的选项
+    # 绘制互动文本
     sprite.bitmap.font.size = sym_font_size
     _x = 2
     _ox = 0
     syms.each_with_index do |t, i|
       # 绘制图标
-      icon_index = SYM_TO_ICON[t] || DEFAULT_ICON
+      icon_index = self.icon(t)
       dx = (icon_wh-24) / 2
       dy = (icon_wh-24) / 2
       draw_icon(sprite.bitmap, icon_index, _x+dx, _y+dy, i == @info[:i])
@@ -597,7 +613,7 @@ module EVENT_INTERACT
     end
     _y += icon_wh
 
-    if flag_draw_hint && hint_pos != 1
+    if flag_draw_hint && hint_pos != 1  # 按键提示文本在下面
       # 绘制分割线
       sprite.bitmap.fill_rect(0, _y, sprite.width, 1,
         Color.new(255,255,255,120))
