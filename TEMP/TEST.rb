@@ -31,7 +31,3 @@ def update_parallax
   @parallax.oy = $game_map.display_y * 32 #$game_map.parallax_oy(@parallax.bitmap)
 end
 =end
-
-a = [1,2,3]
-b = [1,3,5]
-p a|b
