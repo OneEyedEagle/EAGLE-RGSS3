@@ -1,7 +1,10 @@
 #==============================================================================
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2021.2.25.21 新增半透明绘制
+$imported ||= {}
+$imported["EAGLE-DrawTextEX"] = true
+#==============================================================================
+# - 2021.10.30.12 新增\ln转义符
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #-----------------------------------------------------------------------------
@@ -10,8 +13,15 @@
 #     d = Process_DrawTextEX.new(text[, params, bitmap])
 #
 #   其中 text 为带有转义符的文本字符串
-#       params 为绘制的控制参数组（见 initialize 方法注释）
-#       bitmap 为需要将文本绘制在其上的位图对象
+#
+#     同默认对话框中的绘制类转义符，如 \i、\v
+#
+#     \ln → 在当前行底部绘制横线，同时进行换行
+#
+#     注意，在脚本的字符串中编写时，需要用 \\ 替换 \（换行符仍然写为\n）
+#
+#   其中 params 为绘制的控制参数组（见 initialize 方法注释）
+#   其中 bitmap 为需要将文本绘制在其上的位图对象
 #
 # - 利用 d.run(false) 执行预绘制
 #   随后可调用 d.width 与 d.height 获得文本绘制总共所需的宽度和高度
@@ -74,7 +84,7 @@ class Process_DrawTextEX
   def height
     r = @info[:h].inject(0) { |s, v| s += v }
     r = r + (@info[:h].size - 1) * @params[:lhd] + @params[:y0]
-    r
+    r + @info[:h_add]
   end
   #--------------------------------------------------------------------------
   # ● 进行控制符的事前变换
@@ -114,6 +124,7 @@ class Process_DrawTextEX
     pos = { :line => -1, :x0 => @params[:x0], :x => 0,
       :y0 => @params[:y0], :y => 0,
       :w => 0, :h => 0, :flag_draw => flag_draw }
+    @info[:h_add] = 0
     @bitmap.font.size = @params[:font_size]
     change_color(@params[:font_color], !@params[:trans])
     process_new_line(pos)
@@ -134,6 +145,7 @@ class Process_DrawTextEX
       pos[:h] = @info[:h][pos[:line]]
     else
       pos[:w] = 0
+      pos[:h] = 0
       @info[:w][pos[:line]] = 0
       @info[:h][pos[:line]] = 0
     end
@@ -228,6 +240,8 @@ class Process_DrawTextEX
       make_font_bigger
     when '}'
       make_font_smaller
+    when 'LN'
+      process_new_line_with_line(text, pos)
     else
       @escapes[code] = obtain_escape_param_string(text)
     end
@@ -276,5 +290,21 @@ class Process_DrawTextEX
   #--------------------------------------------------------------------------
   def make_font_smaller
     @bitmap.font.size -= 4 if @bitmap.font.size > 16
+  end
+  #--------------------------------------------------------------------------
+  # ● 底部绘制横线并换行
+  #--------------------------------------------------------------------------
+  def process_new_line_with_line(text, pos)
+    _x = pos[:x0] + 2
+    _y = pos[:y] + pos[:h]
+    dy = 4 + @params[:lhd]
+    if pos[:flag_draw]
+      @bitmap.fill_rect(_x, _y+dy, self.width-4, 1, Color.new(255,255,255,150))
+      dy += 1 + 4
+    else
+      @info[:h_add] += dy + 1 + 4
+    end
+    pos[:y0] += dy
+    process_new_line(pos)
   end
 end

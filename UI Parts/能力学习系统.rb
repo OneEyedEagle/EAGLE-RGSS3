@@ -1,9 +1,220 @@
-# 简易能力解锁系统
-#  （仿霓虹深渊）
-
-# TODO
+#==============================================================================
+# ■ 能力学习系统 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ※ 本插件需要放置在
+#  【组件-位图绘制转义符文本 by老鹰】与
+#  【组件-位图绘制窗口皮肤 by老鹰】与
+#  【组件-形状绘制 by老鹰】之下
+#==============================================================================
+$imported ||= {}
+$imported["EAGLE-AbilityLearn"] = true
+#==============================================================================
+# - 2021.10.31.23
+#==============================================================================
+# - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
+#------------------------------------------------------------------------------
+# 【使用】
+#
+#    利用全局脚本 ABILITY_LEARN.call 呼叫能力学习界面。
+#
+#--------------------------------------------------------------------------
+# 【设置】
+#
+# - 推荐在本插件的下一页脚本中，新增一个空白页，命名为“【角色能力设置】”，
+#   并复制如下的内容，进行修改和扩写：
+#
+=begin
+# --------复制以下的内容！--------
 
 module ABILITY_LEARN
+ACTORS ||= {}  # 确保常量存在，不要删除
+
+#--------------------------------------------------------------------------
+# 首先确定是哪个角色的，把它的ID写在方括号里
+#   此处写的是数据库中不存在的0号角色，防止出现冲突
+ACTORS[0] = {  # 不要漏了花括号
+#--------------------------------------------------------------------------
+# 然后定义各个能力，把它的名称（建议数字或字符串，1 和 "1" 为不同名称）写在箭头前
+#   不同能力的脚本中名称需要不同，比如这个能力的名称是 1
+  1 => {
+  #------------------------------------------------------------------------
+  # 之后定义这个能力的各个属性
+  #------------------------------------------------------------------------
+  # -【必须】设置这个能力在UI界面中的位置
+  #  （界面中格子的坐标，左上为0,0，往右为x正方向，往下为y正方向）
+    :pos => [1, 1],
+  #------------------------------------------------------------------------
+  # -【可选】如果这个能力为一个技能，可以绑定它的ID
+  #  （覆盖 :icon 与 :pic）
+    :skill => 1,
+  #------------------------------------------------------------------------
+  # -【可选】也可以不和技能相关，直接设定一个图标ID进行显示
+  #  （覆盖 :pic）
+    :icon => 1,
+  #------------------------------------------------------------------------
+  # -【可选】还可以指定为 Graphics\System 路径下的一张图片进行显示
+    :pic => "",
+  #------------------------------------------------------------------------
+  # -【可选】学习一次这个能力，需要消耗的AP点数
+  #  （如果不写或写0，则默认激活，:level固定1，:skill与:params与:eval_off无效）
+    :ap => 1,
+  #------------------------------------------------------------------------
+  # -【可选】设置这个能力学习一次后，角色增加的基础属性值
+  #  （编写 属性=数字 的字符串，用空格分隔不同属性，
+  #    角色八维属性依次是 mhp mmp atk def mat mdf agi luk
+  #    比如 "mhp=1" 为最大生命值增加1，
+  #         "atk=1 mat=1"为物理攻击+1且魔法攻击+1）
+    :params => "",
+  #------------------------------------------------------------------------
+  # -【可选】界面中显示的这个能力的名称
+  #  （如果设置了 :skill，则该属性无效；如果未设置该项，则取一开始设置的脚本中名称）
+    :name => "",
+  #------------------------------------------------------------------------
+  # -【可选】设置追加显示的说明文本
+  #  （显示在UI界面的能力帮助窗口中，显示在技能说明、属性说明的后面）
+  #  （可以使用默认的扩展转义符，记得用 \\ 代替 \，比如 \\i[1] 显示1号图标）
+    :help => "",
+  #------------------------------------------------------------------------
+  # -【可选】设置这个能力的最大层数，也就是可重复学习的最大次数
+  #  （若不设置，默认为1）
+    :level => 1,
+  #------------------------------------------------------------------------
+  # -【可选】设置这个能力的学习前置要求
+  #  （为一个数组，其中填写其他能力的名称，比如 [1,2,3] 或 [1,1, "1"]）
+  #  （可以重复填写同一个能力的名称，此时为那个能力的层数需求）
+  #  （但注意，对于设置了:ap为0的能力，是无法被学习的，也就无法被作为前置判定）
+    :pre => [1],
+  #------------------------------------------------------------------------
+  # -【可选】设置这个能力的学习前置要求（扩展内容）
+  #  （为一个数组，其中每一项依然为数组，数组内容依次为：
+  #     类型、参数... 或者为 判定脚本、学习时执行脚本、说明文本）
+  #  （其中已经支持的类型如下：
+  #     [:lv, v]   → 当前角色等级不小于v
+  #     [:gold, v] → 消耗v金钱
+  #     [:item, id, v] → 需要id号物品v个
+  #   ）
+  #  （注意：此处的学习消耗，在重置时并不会自动返还，
+  #     但你可以在:eval_off中自己编写相应的返还，在:help中增加返还的说明文本）
+  #  （脚本中可用缩写同 :if）
+  #  （比如前置要求为 角色等级大于等于5，则可以写为
+  #     [:lv, 5] 或者 ["actor.level>=5", "", "角色等级不小于5"] ）
+  #  （比如前置要求为 消耗金钱x1000，则可以写为
+  #     [:gold, 1000] 或者
+  #     ["$game_party.gold>=1000","$game_party.lose_gold(1000)","消耗1000G"] ）
+  #  （比如前置要求为 1号开关打开，则可以写为
+  #     ["s[1]==true", "", "这里可以写一些说明文本，比如打败恶龙"] ）
+    :pre_ex => [ [:lv, 5] ],
+  #------------------------------------------------------------------------
+  # -【可选】设置这个能力的出现条件
+  #  （为一个字符串，当被 eval 后返回 true 时，才会显示这个能力）
+  #  （可以用 s 代表 $game_switches，用 v 代表 $game_variables，
+  #    用 actor 代表当前角色对象Game_Actor）
+    :if => "" ,
+  #------------------------------------------------------------------------
+  # -【可选】学习后执行的脚本
+  #  （每次学习，都会执行一次这个脚本）
+  #  （可用缩写同 :if）
+    :eval_on => "",
+  #------------------------------------------------------------------------
+  # -【可选】重置后执行的脚本
+  #  （每次重置，都会执行一次这个脚本）
+  #  （可用缩写同 :if）
+    :eval_off => "", # 重置时执行的脚本
+  #------------------------------------------------------------------------
+  }, # 别忘了花括号，与能力 1 相对应；如果有多个能力，需要加个英语逗号进行分隔
+
+  #------------------------------------------------------------------------
+  #【便捷模板】绑定指定技能
+  2 => {
+    :pos => [5, 5],  # 位置不可少
+    :skill => 1,     # 技能要绑好
+    :ap => 1,        # AP不要忘
+    :pre => [1],     # 还可加前置
+  },
+
+  #------------------------------------------------------------------------
+  #【便捷模板】绑定指定属性
+  3 => {
+    :pos => [6, 7],  # 位置不可少
+    :icon => 1,      # 显示啥图标
+    :params => "atk=1", # 属性要列好
+    :ap => 1,        # AP不要忘
+    :level => 9,     # 等级也可有
+  },
+
+  #------------------------------------------------------------------------
+  #【便捷模板】绑定指定开关
+  # （学习后，对应开关打开，重置时关闭，也因此其它地方就别处理打开开关了）
+  4 => {
+    :pos => [8, 5],  # 位置不可少
+    :icon => 1,      # 显示啥图标
+    :ap => 1,        # AP不要忘
+    :eval_on => "s[1]=true",   # 开关应打开
+    :eval_off => "s[1]=false", # 更记得要关
+  },
+
+} # 与ACTORS[0]那一行所对应存在的花括号，不要漏了
+
+# 至此，0号角色设置完了
+
+#--------------------------------------------------------------------------
+# 推荐不要修改上面的样本，而是自己在下方编写新内容
+#--------------------------------------------------------------------------
+
+ACTORS[1] = {
+  1 => { :pos => [4, 4], :skill => 1, :ap => 1 },
+}
+
+#--------------------------------------------------------------------------
+end  # 必须的模块结尾，不要漏掉
+
+# --------复制以上的内容！--------
+=end
+#
+# - 如果没有设置角色的能力数据，那么在UI中就不会有任何能力。
+#
+#--------------------------------------------------------------------------
+# 【高级】
+#
+# - 对于Game_Actor对象，用 $game_actors[1].add_ap(v) 为 1号角色增加 v 点AP
+#
+# - 利用全局脚本 $game_party.add_ap(v) 为队伍中的全部角色增加 v 点AP
+#
+#==============================================================================
+module ABILITY_LEARN
+  #--------------------------------------------------------------------------
+  # ○【常量】能力点的名称
+  #--------------------------------------------------------------------------
+  AP_TEXT = "AP"
+  #--------------------------------------------------------------------------
+  # ○【常量】角色升一级时获得的AP点数
+  #--------------------------------------------------------------------------
+  AP_LEVEL_UP = 1
+  #--------------------------------------------------------------------------
+  # ○【常量】所有角色共有的能力数据
+  #  注意：此处能力的唯一ID不要和其它的重复
+  #--------------------------------------------------------------------------
+  ALL_ACTORS = {
+  # 这个能力用于重置全部能力
+    "reset" => {
+      :pos => [1, 1],
+      :icon => 280,
+      :name => "重置",
+      :help => "重置当前角色全部能力。\n仅返还#{AP_TEXT}，可能不会返还其它资源。",
+      :eval_on => "ABILITY_LEARN.reset",
+    },
+    "test_addap" => {
+      :pos => [1, 3],
+      :icon => 184,
+      :name => "测试-增加#{AP_TEXT}",
+      :help => "队伍中全部角色增加 1 点#{AP_TEXT}。",
+      :eval_on => "$game_party.add_ap(1); ABILITY_LEARN.redraw_actor_info",
+      :if => "$TEST",
+    },
+  }
+  #--------------------------------------------------------------------------
+  # ○【常量】角色数据
+  #--------------------------------------------------------------------------
+  ACTORS = {}
   #--------------------------------------------------------------------------
   # ○【常量】格子的宽度/高度
   #--------------------------------------------------------------------------
@@ -14,90 +225,54 @@ module ABILITY_LEARN
   #--------------------------------------------------------------------------
   GRID_MAX_X = 20
   GRID_MAX_Y = 20
-
   #--------------------------------------------------------------------------
-  # ○【常量】提示文本的字体大小
+  # ○【常量】能力图标中，等级数字的字体大小
   #--------------------------------------------------------------------------
-  HINT_FONT_SIZE = 14
-
+  TOKEN_LEVEL_FONT_SIZE = 14
   #--------------------------------------------------------------------------
-  # ○【常量】角色数据
+  # ○【常量】帮助窗口中文本的字体大小
   #--------------------------------------------------------------------------
-  ACTORS = {}
-
-=begin
-ACTORS[角色ID] = {
-  1 => {  # 该能力的唯一ID
-    :skill => 1,  # 所绑定的技能ID（覆盖 :icon 与 :pic）
-    :sp => 1,  # 解锁一次需要消耗的能力点数
-    :pos => [1, 1],  # 在界面中的位置（格子坐标）
-    :help => "",  # 追加的说明文本（显示在帮助窗口里）
-    :level => 1, # 最大层数
-    :params => "mhp=1",  # 附加的属性
-    :pre => [1],  # 前置需求（能力的唯一ID，可重复，代表层数需求）
-    :if => "" , # eval后返回true时，才显示该能力
-    :icon => 1,  # 所显示的图标（覆盖 :pic）
-    :pic => "", # 所显示的图片
-    :eval_on => "",  # 解锁时执行的脚本
-    :eval_off => "", # 重置时执行的脚本
-  }
-},
-=end
-
-  ACTORS[1] = {
-    1 => {
-      :skill => 1,
-      :sp => 1,
-      :pos => [5, 2],
-    },
-    2 => {
-      :icon => 128,
-      :sp => 1,
-      :pos => [3, 4],
-      :pre => [1],
-      :params => "atk=1",
-      :level => 10,
-    },
-    3 => {
-      :icon => 139,
-      :sp => 1,
-      :pos => [7, 4],
-      :pre => [1],
-      :params => "def=1",
-      :level => 10,
-    },
-    4 => {
-      :skill => 10,
-      :sp => 1,
-      :pos => [5, 6],
-      :pre => [2,2,2, 3,3,3],
-      :help => "",
-    },
-  }
-
-  # 所有角色共有的
-  ALL_ACTORS = {
-    "reset" => {
-      :icon => 117,
-      :pos => [1, 1],
-      :help => "重置全部能力。",
-      :eval_on => "ABILITY_LEARN.reset",
-    },
-  }
-
+  HELP_TEXT_FONT_SIZE = 20
   #--------------------------------------------------------------------------
-  # ○ 常量：基础属性与对应ID
+  # ○【常量】帮助窗口的空白边框宽度
+  #--------------------------------------------------------------------------
+  HELP_TEXT_BORDER_WIDTH = 12
+  #--------------------------------------------------------------------------
+  # ○【常量】帮助窗口中，满足条件的文本的前置符号
+  #--------------------------------------------------------------------------
+  HELP_TEXT_COND_OK = "○"
+  #--------------------------------------------------------------------------
+  # ○【常量】帮助窗口中，不满足条件的文本的前置符号
+  #--------------------------------------------------------------------------
+  HELP_TEXT_COND_NO = "×"
+  #--------------------------------------------------------------------------
+  # ○【常量】帮助窗口中，不满足条件的文本的颜色
+  #--------------------------------------------------------------------------
+  HELP_TEXT_COLOR_NOT = 10
+  #--------------------------------------------------------------------------
+  # ○【常量】底部角色信息中文本的字体大小
+  #--------------------------------------------------------------------------
+  INFO_TEXT_FONT_SIZE = 20
+  #--------------------------------------------------------------------------
+  # ○【常量】底部角色信息的预设高度
+  #--------------------------------------------------------------------------
+  INFO_TEXT_HEIGHT = 64
+  #--------------------------------------------------------------------------
+  # ○【常量】底部按键提示文本的字体大小
+  #--------------------------------------------------------------------------
+  HINT_FONT_SIZE = 16
+  #--------------------------------------------------------------------------
+  # ○【常量】基础属性与对应ID
   #--------------------------------------------------------------------------
   PARAMS_TO_ID = {
     :mhp => 0, :mmp => 1, :atk => 2, :def => 3,
     :mat => 4, :mdf => 5, :agi => 6, :luk => 7,
   }
-
   #--------------------------------------------------------------------------
   # ● 获取指定角色的全部数据
   #--------------------------------------------------------------------------
   def self.get_tokens(actor_id)
-    ACTORS[actor_id]
+    ACTORS[actor_id] || {}
   end
   def self.get_tokens_all
     ALL_ACTORS
@@ -106,7 +281,11 @@ ACTORS[角色ID] = {
   # ● 获取指定角色的指定id的数据
   #--------------------------------------------------------------------------
   def self.get_token(actor_id, token_id)
-    ACTORS[actor_id][token_id] || ALL_ACTORS[token_id]
+    return ALL_ACTORS[token_id] if ALL_ACTORS[token_id]
+    if ACTORS[actor_id]
+      return ACTORS[actor_id][token_id] || {}
+    end
+    return {}
   end
   #--------------------------------------------------------------------------
   # ● 获取指定id的对应技能
@@ -116,30 +295,14 @@ ACTORS[角色ID] = {
     ps[:skill] || nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的属性值Hash（利用paras_params进行解析）
+  # ● 获取指定id的名称
   #--------------------------------------------------------------------------
-  def self.get_token_params(actor_id, token_id)
+  def self.get_token_name(actor_id, token_id)
     ps = get_token(actor_id, token_id)
-    str = ps[:params]
-    if str
-      hash = ABILITY_LEARN.parse_params(str)
-      return hash
+    if ps[:skill]
+      return $data_skills[ps[:skill]].name || ""
     end
-    return {}
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取指定id的sp消耗量
-  #--------------------------------------------------------------------------
-  def self.get_token_sp(actor_id, token_id)
-    ps = get_token(actor_id, token_id)
-    ps[:sp] || 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取指定id的前置id们
-  #--------------------------------------------------------------------------
-  def self.get_token_pre(actor_id, token_id)
-    ps = get_token(actor_id, token_id)
-    ps[:pre] || []
+    ps[:name] || token_id.to_s
   end
   #--------------------------------------------------------------------------
   # ● 获取指定id的对应图标/图片bitmap
@@ -154,6 +317,32 @@ ACTORS[角色ID] = {
     b
   end
   #--------------------------------------------------------------------------
+  # ● 获取指定id的属性值Hash（利用paras_params进行解析）
+  #--------------------------------------------------------------------------
+  def self.get_token_params(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    str = ps[:params]
+    if str
+      hash = ABILITY_LEARN.parse_params(str)
+      return hash
+    end
+    return {}
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定id的ap消耗量
+  #--------------------------------------------------------------------------
+  def self.get_token_ap(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    ps[:ap] || 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定id是否可以再次学习
+  #--------------------------------------------------------------------------
+  def self.get_token_level(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    ps[:level] || 1
+  end
+  #--------------------------------------------------------------------------
   # ● 获取指定id的on/off时的触发脚本
   #--------------------------------------------------------------------------
   def self.get_token_eval_on(actor_id, token_id)
@@ -165,11 +354,60 @@ ACTORS[角色ID] = {
     ps[:eval_off] || nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id是否可以再次解锁
+  # ● 获取指定id的前置id们
   #--------------------------------------------------------------------------
-  def self.get_token_level(actor_id, token_id)
+  def self.get_token_pre(actor_id, token_id)
     ps = get_token(actor_id, token_id)
-    ps[:level] || 1
+    ps[:pre] || []
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定id的扩展条件
+  #--------------------------------------------------------------------------
+  def self.get_token_pre_ex(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    ps[:pre_ex] || []
+  end
+  def self.process_pre_ex(actor_id, token_id, ps, type=:cond)
+    # ps = [sym, value...] or [cond_eval, run_eval, text]
+    # type 为 :cond 代表为是否满足条件
+    #      为 :run  代表解锁时需要执行的内容
+    #      为 :text 代表显示的文本
+    if ps[0].is_a?(Symbol)
+      case ps[0]
+      when :lv
+        if type == :cond
+          return $game_actors[actor_id].level >= ps[1]
+        elsif type == :run
+        elsif type == :text
+          return "角色#{Vocab.level}不小于#{ps[1]}"
+        end
+      when :gold
+        if type == :cond
+          return $game_party.gold >= ps[1]
+        elsif type == :run
+          $game_party.lose_gold(ps[1])
+        elsif type == :text
+          return "需要 #{ps[1]} #{Vocab.currency_unit}"
+        end
+      when :item
+        item = $data_items[ps[1]]
+        if type == :cond
+          return $game_party.item_number(item) >= ps[2]
+        elsif type == :run
+          $game_party.lose_item(item, ps[2])
+        elsif type == :text
+          return "需要 \\i[#{item.icon_index}]#{item.name} x #{ps[2]}"
+        end
+      end
+    else
+      if type == :cond
+        return eagle_eval(ps[0], actor_id) == true
+      elsif type == :run
+        eagle_eval(ps[1])
+      elsif type == :text
+        return ps[2]
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● 获取指定id的帮助文本
@@ -181,8 +419,15 @@ ACTORS[角色ID] = {
     skill_id = get_token_skill(actor_id, token_id)
     if skill_id
       skill = $data_skills[skill_id]
-      t += "\\i[#{skill.icon_index}]#{skill.name}\n"
-      t += "#{skill.description}\n"
+      stype = $data_system.skill_types[skill.stype_id]
+      t += "\\i[#{skill.icon_index}]#{skill.name} \\c[8]#{stype}\\c[0]\n"
+      _t = " >> " + skill.description.gsub("\r\n") { "\n    " }
+      t += _t + "\\ln"
+    else
+      icon = get_token_icon(actor_id, token_id)
+      t += "\\i[#{icon}]" if icon
+      name = get_token_name(actor_id, token_id)
+      t += "#{name}\\ln"
     end
 
     params_hash = get_token_params(actor_id, token_id)
@@ -194,21 +439,52 @@ ACTORS[角色ID] = {
           t += Vocab.param(param_id) + (_v > 0 ? "+#{_v}" : "-#{_v.abs}") + " "
         end
       end
-      t += "\n"
+      t += "\\ln"
     end
 
     ps = get_token(actor_id, token_id)
-    t += ps[:help] + "\n" if ps[:help]
+    if ps[:help] && ps[:help] != ""
+      t += " >> " + ps[:help].gsub("\r\n") { "\n    " } + "\\ln"
+    end
 
-    v = get_token_sp(actor_id, token_id)
-    if !unlock?(token_id)
-      t += "<消耗 #{v} 点SP解锁>\n" if v > 0
+    if no_unlock?(token_id)
+      t += " >> 无需学习\n"
     else
-      level_max = get_token_level(actor_id, token_id)
-      if level_max > 1 && data.level(token_id) < level_max
-        t += "<消耗 #{v} 点SP继续解锁>\n"
+      v = get_token_ap(actor_id, token_id)
+      if !unlock?(token_id)
+        pres_all = ABILITY_LEARN.get_token_pre(actor_id, token_id)
+        pres = pres_all | pres_all
+        t += "要求：\n"
+        # 处理前置需求
+        pres.each do |id2|
+          name = get_token_name(actor_id, id2)
+          l = pres_all.count(id2)
+          lv = level(id2)
+          t += (lv >= l ? " #{HELP_TEXT_COND_OK} " : \
+                "\\c[#{HELP_TEXT_COLOR_NOT}] #{HELP_TEXT_COND_NO} ")
+          t += "#{name} lv.#{l}\\c[0]\n"
+        end
+        # 处理扩展的前置需求
+        pres_ex = get_token_pre_ex(actor_id, token_id)
+        pres_ex.each do |ps|
+          f = process_pre_ex(actor_id, token_id, ps, :cond)
+          t += (f ? " #{HELP_TEXT_COND_OK} " : \
+                "\\c[#{HELP_TEXT_COLOR_NOT}] #{HELP_TEXT_COND_NO} ")
+          t += "#{process_pre_ex(actor_id, token_id, ps, :text)}\\c[0]\n"
+        end
+        # 处理ap消耗
+        t += "\\c[#{HELP_TEXT_COLOR_NOT}]" if data.ap < v # ap不足
+        t += " - #{v} 点#{AP_TEXT}\\c[0]\n"
       else
-        t += "<已完全解锁>\n"
+        level = data.level(token_id)
+        level_max = get_token_level(actor_id, token_id)
+        if level_max > 1 && level < level_max
+          t += "当前等级 #{level}（最大#{level_max}）\n"
+          t += "\\c[#{HELP_TEXT_COLOR_NOT}]" if data.ap < v # ap不足
+          t += " - #{v} 点#{AP_TEXT}提升等级\\c[0]\n"
+        else
+          t += " >> 已达最大等级 lv.#{level_max}\n"
+        end
       end
     end
 
@@ -243,7 +519,7 @@ ACTORS[角色ID] = {
   end
   #--------------------------------------------------------------------------
   # ● 绘制人物行走图
-  #  (x, y) 为行走图放置位置的底部中心点的位置
+  #  (x, y) 为行走图放置位置的底部左顶点的位置
   #--------------------------------------------------------------------------
   def self.draw_character(bitmap, character_name, character_index, x, y)
     return unless character_name
@@ -258,7 +534,7 @@ ACTORS[角色ID] = {
     end
     n = character_index
     src_rect = Rect.new((n%4*3+1)*cw, (n/4*4)*ch, cw, ch)
-    bitmap.blt(x - cw / 2, y - ch, _bitmap, src_rect)
+    bitmap.blt(x, y - ch, _bitmap, src_rect)
     return cw, ch
   end
   #--------------------------------------------------------------------------
@@ -277,6 +553,12 @@ ACTORS[角色ID] = {
     $game_actors[@actor_id].eagle_ability_data.unlock?(token_id)
   end
   #--------------------------------------------------------------------------
+  # ● 指定id不需要解锁？
+  #--------------------------------------------------------------------------
+  def self.no_unlock?(token_id)
+    $game_actors[@actor_id].eagle_ability_data.no_unlock?(token_id)
+  end
+  #--------------------------------------------------------------------------
   # ● 指定id允许再次解锁？
   #--------------------------------------------------------------------------
   def self.repeat?(token_id)
@@ -287,7 +569,7 @@ ACTORS[角色ID] = {
     return true
   end
   #--------------------------------------------------------------------------
-  # ● 指定id的解锁层数
+  # ● 指定id的层数
   #--------------------------------------------------------------------------
   def self.level(token_id)
     return $game_actors[@actor_id].eagle_ability_data.level(token_id)
@@ -295,9 +577,10 @@ ACTORS[角色ID] = {
   #--------------------------------------------------------------------------
   # ● eval
   #--------------------------------------------------------------------------
-  def self.eagle_eval(str, actor_id = 0)
+  def self.eagle_eval(str, actor_id = nil)
     s = $game_switches
     v = $game_variables
+    actor_id ||= @actor_id
     actor = $game_actors[actor_id] rescue nil
     begin
       eval(str)
@@ -451,10 +734,12 @@ class << ABILITY_LEARN
   def redraw_hint(sprite)
     t = "方向键 - 移动 | "
     if @selected_token
-      if !ABILITY_LEARN.unlock?(@selected_token.id)
-        t += "确定键 - 解锁 | "
+      if ABILITY_LEARN.no_unlock?(@selected_token.id)
+        t += "确定键 - 激活 | "
+      elsif !ABILITY_LEARN.unlock?(@selected_token.id)
+        t += "确定键 - 学习 | "
       elsif ABILITY_LEARN.repeat?(@selected_token.id)
-        t += "确定键 - 再次解锁 | "
+        t += "确定键 - 再次学习 | "
       end
     end
     t += "取消键 - 退出"
@@ -497,14 +782,26 @@ class << ABILITY_LEARN
     @sprite_lines.bitmap.clear
     @sprites_token.each do |id, s1|
       f = ABILITY_LEARN.unlock?(id)
-      pres = ABILITY_LEARN.get_token_pre(@actor_id, id)
+      pres_all = ABILITY_LEARN.get_token_pre(@actor_id, id)
+      pres = pres_all | pres_all
       pres.each do |id2|
         s2 = @sprites_token[id2]
         next if s2 == nil
+        c = Color.new(255,255,255, 150)
+        if f
+          t = "1"
+        elsif ABILITY_LEARN.unlock?(id2)
+          n = pres_all.count(id2)
+          l = ABILITY_LEARN.level(id2)
+          if l >= n
+            t = "001111111"
+          else
+            t = "0011"
+          end
+        else
+          t = "0011"
+        end
         # 绘制从s1到s2的直线
-        c = Color.new(255,255,255)
-        c.alpha = 150
-        t = f && ABILITY_LEARN.unlock?(id2) ? "1" : "0011"
         EAGLE.DDALine(@sprite_lines.bitmap, s1.x,s1.y, s2.x, s2.y, 1, t, c)
       end
     end
@@ -525,7 +822,6 @@ class << ABILITY_LEARN
       update_unlock
       update_actors
       break if finish_ui?
-      update_test if $TEST
     end
   end
   #--------------------------------------------------------------------------
@@ -639,16 +935,6 @@ class << ABILITY_LEARN
       reset_actor(@actor.id)
     end
   end
-  #--------------------------------------------------------------------------
-  # ● UI-测试用
-  #--------------------------------------------------------------------------
-  def update_test
-    data = $game_actors[@actor_id].eagle_ability_data
-    if Input.trigger?(:A)
-      data.add_sp(1)
-      redraw_actor_info
-    end
-  end
 end
 
 #==============================================================================
@@ -694,16 +980,13 @@ end
 # ■ 角色信息精灵
 #==============================================================================
 class Sprite_AbilityLearn_ActorInfo < Sprite
-  # 帮助文本的字体大小
-  FONT_SIZE = 16
-
   include ABILITY_LEARN
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
   def initialize(vp = nil)
     super(vp)
-    self.bitmap = Bitmap.new(200, 64)
+    self.bitmap = Bitmap.new(Graphics.width, INFO_TEXT_HEIGHT)
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -725,20 +1008,37 @@ class Sprite_AbilityLearn_ActorInfo < Sprite
   #--------------------------------------------------------------------------
   def refresh
     self.bitmap.clear
-    actor = $game_actors[@actor_id]
-    data = actor.eagle_ability_data
-    sp = data.sp
-    sp_all = data.sp_all
-    t = "#{actor.name}\nSP #{sp} / #{sp_all}"
-
-    cw, ch = ABILITY_LEARN.draw_character(self.bitmap, actor.character_name,
-      actor.character_index, 16, self.height - 2)
-
-    ps = { :font_size => FONT_SIZE, :x0 => 32+10, :y0 => 0, :lhd => 2 }
-    d = Process_DrawTextEX.new(t, ps, self.bitmap)
-    d.run(false)
-    ps[:y0] = self.height - d.height
-    d.run(true)
+    actors = $game_party.members
+    _x = 0
+    _w_key = 32  # 按键提示的占位宽度
+    _offset = 6  # 角色行走图与文本信息之间的间隔距离
+    # 绘制L切换提示
+    self.bitmap.font.size = INFO_TEXT_FONT_SIZE
+    self.bitmap.draw_text(_x,0,_w_key,self.height,"Q",1)
+    self.bitmap.draw_text(_x,self.height/2,_w_key,self.height/2,"<<",1)
+    _x += _w_key
+    actors.each do |actor|
+      # 绘制行走图
+      cw, ch = ABILITY_LEARN.draw_character(self.bitmap, actor.character_name,
+        actor.character_index, _x, self.height - 2)
+      _x += cw
+      # 绘制信息
+      if actor.id == @actor_id
+        data = actor.eagle_ability_data
+        t = "#{actor.name}\n#{AP_TEXT} #{data.ap} / #{data.ap_max}"
+        ps = { :font_size => INFO_TEXT_FONT_SIZE,
+          :x0 => _x+_offset, :y0 => 0, :lhd => 2 }
+        d = Process_DrawTextEX.new(t, ps, self.bitmap)
+        d.run(false)
+        ps[:y0] = self.height - d.height
+        d.run(true)
+        _x += _offset + d.width + _offset
+      end
+    end
+    # 绘制R切换提示
+    self.bitmap.font.size = INFO_TEXT_FONT_SIZE
+    self.bitmap.draw_text(_x,0,_w_key,self.height,"E",1)
+    self.bitmap.draw_text(_x,self.height/2,_w_key,self.height/2,">>",1)
   end
   #--------------------------------------------------------------------------
   # ● 重置位置
@@ -763,7 +1063,8 @@ class Sprite_AbilityLearn_Token < Sprite
     @actor_id = actor_id
     @id = token_id
     refresh
-    reset_position(ps[:pos][0], ps[:pos][1])
+    pos = ps[:pos] || [0, 0]
+    reset_position(pos[0], pos[1])
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -779,7 +1080,7 @@ class Sprite_AbilityLearn_Token < Sprite
     reset_bitmap
     draw_level
     self.color = Color.new(0,0,0,0)
-    if ABILITY_LEARN.get_token_sp(@actor_id, @id) > 0 && !ABILITY_LEARN.unlock?(@id)
+    if !ABILITY_LEARN.unlock?(@id)
       self.color = Color.new(0,0,0,120)
     end
   end
@@ -823,10 +1124,11 @@ class Sprite_AbilityLearn_Token < Sprite
     return if f <= 1
     level = ABILITY_LEARN.level(@id)
     return if level <= 0
-    self.bitmap.font.size = 14
+    s = TOKEN_LEVEL_FONT_SIZE
+    self.bitmap.font.size = s
     self.bitmap.font.outline = true
     self.bitmap.font.color = Color.new(255,255,255,255)
-    self.bitmap.draw_text(0,self.height-14,self.width,14, level, 1)
+    self.bitmap.draw_text(0,self.height-s,self.width,s, level, 1)
   end
   #--------------------------------------------------------------------------
   # ● 重置位置
@@ -852,13 +1154,10 @@ class Sprite_AbilityLearn_Token < Sprite
 end
 
 #==============================================================================
-# ■ 能力帮助文本精灵
+# ■ 帮助文本精灵
 #==============================================================================
 class Sprite_AbilityLearn_TokenHelp < Sprite
-  # 帮助文本的字体大小
-  FONT_SIZE = 16
-  # 帮助窗口的空白边框宽度
-  TEXT_BORDER_WIDTH = 12
+  include ABILITY_LEARN
   #--------------------------------------------------------------------------
   # ● 重绘
   #--------------------------------------------------------------------------
@@ -869,20 +1168,20 @@ class Sprite_AbilityLearn_TokenHelp < Sprite
     text = ABILITY_LEARN.get_token_help(s.actor_id, s.id)
     return if text == ""
 
-    ps = { :font_size => FONT_SIZE, :x0 => 0, :y0 => 0, :lhd => 2 }
+    ps = { :font_size => HELP_TEXT_FONT_SIZE, :x0 => 0, :y0 => 0, :lhd => 2 }
     d = Process_DrawTextEX.new(text, ps)
     d.run(false)
 
-    w = d.width + TEXT_BORDER_WIDTH * 2
-    h = d.height + TEXT_BORDER_WIDTH * 2
+    w = d.width + HELP_TEXT_BORDER_WIDTH * 2
+    h = d.height + HELP_TEXT_BORDER_WIDTH * 2
     self.bitmap = Bitmap.new(w, h)
 
     skin = "Window"
     EAGLE.draw_windowskin(skin, self.bitmap,
       Rect.new(0, 0, self.width, self.height))
 
-    ps[:x0] = TEXT_BORDER_WIDTH
-    ps[:y0] = TEXT_BORDER_WIDTH
+    ps[:x0] = HELP_TEXT_BORDER_WIDTH
+    ps[:y0] = HELP_TEXT_BORDER_WIDTH
     d.bind_bitmap(self.bitmap)
     d.run(true)
 
@@ -894,7 +1193,7 @@ class Sprite_AbilityLearn_TokenHelp < Sprite
       self.y = 30
     else
       self.oy = self.height
-      self.y = Graphics.height - 30
+      self.y = Graphics.height - 30 - INFO_TEXT_HEIGHT
     end
   end
 end
@@ -903,31 +1202,32 @@ end
 # ■ 数据类
 #==============================================================================
 class Data_AbilityLearn
-  attr_reader :sp, :sp_all
+  attr_reader :ap, :ap_max
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
   def initialize(actor_id)
     @actor_id = actor_id
     @unlocks = [] # 已经解锁的token的id
-    @sp = 0  # 当前能力点数目
-    @sp_all = 0  # 全部能力点数目（用于重置）
+    @ap = 0  # 当前能力点数目
+    @ap_max = 0  # 全部能力点数目（用于重置）
     @skill_ids = []  # 已经解锁的技能的ID
     @param_plus = [0] * 8  # 8维属性的增量
   end
   #--------------------------------------------------------------------------
-  # ● 增加sp
+  # ● 增加ap
   #--------------------------------------------------------------------------
-  def add_sp(v)
-    @sp += v
-    @sp_all += v
+  def add_ap(v)
+    return if v <= 0
+    @ap += v
+    @ap_max += v
   end
   #--------------------------------------------------------------------------
   # ● 重置
   #--------------------------------------------------------------------------
   def reset
-    # 回复全部sp
-    @sp = @sp_all
+    # 回复全部ap
+    @ap = @ap_max
     # 清空已学技能
     @skill_ids.clear
     # 清空附加属性
@@ -937,24 +1237,32 @@ class Data_AbilityLearn
       str = ABILITY_LEARN.get_token_eval_off(@actor_id, token_id)
       ABILITY_LEARN.eagle_eval(str, @actor_id) if str
     end
-    # 清空已解锁
+    # 清空已解锁的数组
     @unlocks.clear
   end
   #--------------------------------------------------------------------------
   # ● 解锁指定id
   #--------------------------------------------------------------------------
   def unlock(token_id)
-    @unlocks.push(token_id)
-    # 扣除sp
-    @sp -= ABILITY_LEARN.get_token_sp(@actor_id, token_id)
-    # 习得技能
-    skill_id = ABILITY_LEARN.get_token_skill(@actor_id, token_id)
-    @skill_ids.push(skill_id) if skill_id
-    # 增加属性
-    hash = ABILITY_LEARN.get_token_params(@actor_id, token_id)
-    hash.each do |sym, v|
-      param_id = ABILITY_LEARN::PARAMS_TO_ID[sym]
-      @param_plus[param_id] += v.to_i
+    # 如果是不需要解锁的，则跳过这些处理
+    if !no_unlock?(token_id)
+      # 放入已解锁的数组
+      @unlocks.push(token_id)
+      # 处理扩展的前置需求
+      pres_ex = ABILITY_LEARN.get_token_pre_ex(@actor_id, token_id)
+      pres_ex.each { |ps|
+        ABILITY_LEARN.process_pre_ex(@actor_id, token_id, ps, :run) }
+      # 扣除ap
+      @ap -= ABILITY_LEARN.get_token_ap(@actor_id, token_id)
+      # 习得技能
+      skill_id = ABILITY_LEARN.get_token_skill(@actor_id, token_id)
+      @skill_ids.push(skill_id) if skill_id
+      # 增加属性
+      hash = ABILITY_LEARN.get_token_params(@actor_id, token_id)
+      hash.each do |sym, v|
+        param_id = ABILITY_LEARN::PARAMS_TO_ID[sym]
+        @param_plus[param_id] += v.to_i
+      end
     end
     # 触发脚本
     str = ABILITY_LEARN.get_token_eval_on(@actor_id, token_id)
@@ -964,6 +1272,7 @@ class Data_AbilityLearn
   # ● 指定id已经解锁？
   #--------------------------------------------------------------------------
   def unlock?(token_id)
+    return true if no_unlock?(token_id)
     @unlocks.include?(token_id)
   end
   #--------------------------------------------------------------------------
@@ -977,32 +1286,43 @@ class Data_AbilityLearn
         return false if !unlock?(id)
         return false if level(id) < pres_all.count(id)
       }
+      pres_ex = ABILITY_LEARN.get_token_pre_ex(@actor_id, token_id)
+      pres_ex.each do |ps|
+        return false if ABILITY_LEARN.eagle_eval(ps[0]) == false
+      end
     else
       f = leven_max(token_id)
       return false if f <= 0 or f <= level(token_id)
     end
-    @sp >= ABILITY_LEARN.get_token_sp(@actor_id, token_id)
+    @ap >= ABILITY_LEARN.get_token_ap(@actor_id, token_id)
   end
   #--------------------------------------------------------------------------
-  # ● 指定ID能够重复解锁的次数
+  # ● 指定ID不需要解锁？
+  #--------------------------------------------------------------------------
+  def no_unlock?(token_id)
+    ABILITY_LEARN.get_token_ap(@actor_id, token_id) == 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 指定ID能够重复学习的次数
   #--------------------------------------------------------------------------
   def leven_max(token_id)
+    return 1 if no_unlock?(token_id)
     return ABILITY_LEARN.get_token_level(@actor_id, token_id)
   end
   #--------------------------------------------------------------------------
-  # ● 获取解锁次数
+  # ● 获取学习次数
   #--------------------------------------------------------------------------
   def level(token_id)
     @unlocks.count(token_id)
   end
   #--------------------------------------------------------------------------
-  # ● 获取已经解锁的技能
+  # ● 获取已经学习的技能
   #--------------------------------------------------------------------------
   def skills
     @skill_ids
   end
   #--------------------------------------------------------------------------
-  # ● 获取已经解锁的附加属性
+  # ● 获取已经学习的附加属性
   #--------------------------------------------------------------------------
   def param_plus(param_id)
     @param_plus[param_id]
@@ -1014,6 +1334,12 @@ end
 #==============================================================================
 class Game_Actor
   attr_reader :eagle_ability_data
+  #--------------------------------------------------------------------------
+  # ● 增加AP
+  #--------------------------------------------------------------------------
+  def add_ap(v)
+    @eagle_ability_data.add_ap(v)
+  end
   #--------------------------------------------------------------------------
   # ● 初始化技能
   #--------------------------------------------------------------------------
@@ -1036,16 +1362,24 @@ class Game_Actor
     v = eagle_ability_learn_param_plus(param_id)
     v + @eagle_ability_data.param_plus(param_id)
   end
+  #--------------------------------------------------------------------------
+  # ● 等级上升
+  #--------------------------------------------------------------------------
+  alias eagle_ability_learn_level_up level_up
+  def level_up
+    eagle_ability_learn_level_up
+    add_ap(ABILITY_LEARN::AP_LEVEL_UP)
+  end
 end
 
-
-class Scene_Map
+#==============================================================================
+# ■ Game_Party
+#==============================================================================
+class Game_Party < Game_Unit
   #--------------------------------------------------------------------------
-  # ● 监听取消键的按下。如果菜单可用且地图上没有事件在运行，则打开菜单界面。
+  # ● 增加AP
   #--------------------------------------------------------------------------
-  alias eagle_update_call_menu update_call_menu
-  def update_call_menu
-    eagle_update_call_menu
-    ABILITY_LEARN.call if Input.trigger?(:A)
+  def add_ap(v)
+    members.each { |a| a.eagle_ability_data.add_ap(v) }
   end
 end
