@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageLog"] = true
 #==============================================================================
-# - 2021.10.10.23 方便扩展姓名
+# - 2021.11.4.19 姓名支持转义符
 #==============================================================================
 # - 本插件新增了对 $game_message 的对话文本的记录
 #------------------------------------------------------------------------------
@@ -190,8 +190,13 @@ class Data
 
     # 绘制额外文本（放置于左侧头部）
     if @ex[:name]
-      s.bitmap.font.color = text_color(17)
-      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], @ex[:name], 1)
+      params2 = { :font_size => params[:font_size], :w => NAME_WIDTH,
+        :font_color => text_color(17), :x0 => 0, :y0 => 0, :lhd => 2 }
+      d2 = MSG_LOG_DrawTextEX.new(@ex[:name], params2, s.bitmap)
+      d2.run(false)
+      params2[:x0] = (NAME_WIDTH - d2.width) / 2
+      params2[:y0] = 0
+      d2.run
     end
     if @ex[:choice]
       s.bitmap.font.color = text_color(16)
@@ -230,7 +235,11 @@ end
     params = {}
     set_name(msg, params)
     if $imported["EAGLE-MessageEX"] && $game_message.eagle_message == true
-      params[:name] = msg.name_params[:name] if msg.name?  # 覆盖姓名
+      if msg.name?  # 覆盖姓名
+        t = msg.name_params[:name]
+        t = t.gsub(/<(.*?)>/) { "[" + $1 + "]" }
+        params[:name] = t
+      end
       new_log(msg.eagle_text, params)
       return
     end

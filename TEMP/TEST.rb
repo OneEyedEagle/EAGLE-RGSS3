@@ -31,3 +31,6 @@ def update_parallax
   @parallax.oy = $game_map.display_y * 32 #$game_map.parallax_oy(@parallax.bitmap)
 end
 =end
+
+t = "1.5"
+p rand(0.5)

@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-Particle"] = true
 #==============================================================================
-# - 2021.10.23.21
+# - 2021.11.4.20 优化绑定在地图上的粒子模板
 #==============================================================================
 # - 本插件新增了一个发射粒子的系统
 #------------------------------------------------------------------------------
@@ -145,6 +145,7 @@ module PARTICLE
   def self.setup(id, template, viewport = nil)
     if @emitters[id]
       @emitters[id].template = template
+      @emitters[id].viewport = viewport if viewport
     else
       @emitters[id] = Particle_Emitter.new(id, template, viewport)
     end
@@ -210,9 +211,23 @@ module PARTICLE
     end
   end
 end
-#==============================================================================
+#=============================================================================
 # ■ 绑定
-#==============================================================================
+#=============================================================================
+if RUBY_VERSION[0..2] == "1.8"  # 兼容VX
+
+PARTICLE.init
+class Scene_Base
+  alias eagle_particle_snapshot_for_background snapshot_for_background
+  def snapshot_for_background
+    PARTICLE.emitters.each { |k, v| v.hide }
+    eagle_particle_snapshot_for_background
+    PARTICLE.emitters.each { |k, v| v.show }
+  end
+end
+
+else
+
 class << SceneManager
   alias eagle_particle_run run
   def run
@@ -226,6 +241,9 @@ class << SceneManager
     PARTICLE.emitters.each { |k, v| v.show }
   end
 end
+
+end
+
 class << Graphics
   alias eagle_particle_update update
   def update
@@ -308,6 +326,7 @@ class Particle_Emitter
     @particles.each { |s| s.finish; @@particles_fin.push(s) }
     @particles.clear
     @template.dispose
+    @viewport = nil
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -368,6 +387,7 @@ class Sprite_Particle < Sprite
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
+    self.viewport = nil
     self.bitmap.dispose if self.bitmap
     super
   end
@@ -404,17 +424,63 @@ class Sprite_Particle < Sprite
 end
 
 #==============================================================================
-# ■ 向量工具类
+# ■ 矩形
+#==============================================================================
+class Rect
+  #--------------------------------------------------------------------------
+  # ● 当前矩形在rect1的外部？
+  #--------------------------------------------------------------------------
+  def out?(rect1)
+    return true if self.x > rect1.x + rect1.width ||
+      self.x + self.width < rect1.x ||
+      self.y > rect1.y + rect1.height ||
+      self.y + self.height < rect1.y
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # ● 当前矩形与rect1相交？
+  #--------------------------------------------------------------------------
+  def intersect?(rect1)
+    return false if out?(rect1)
+    return false if in?(rect1)
+    return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 当前矩形在rect1的内部？（完全包围）
+  #--------------------------------------------------------------------------
+  def in?(rect1)
+    if self.x >= rect1.x && self.x + self.width <= rect1.x + rect1.width &&
+       self.y >= rect1.y && self.y + self.height <= rect1.y + rect1.height
+      return true
+    end
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # ● 随机取一点
+  #--------------------------------------------------------------------------
+  def rand_pos
+    return x + rand(width), y + rand(height)
+  end
+end
+
+#==============================================================================
+# ■ 二维向量
 #==============================================================================
 class Vector # 注意 在互相赋值时 要使用dup方法 否则为指针传递！
   attr_accessor :x, :y
   def initialize(x = 0, y = 0)
     @x = x; @y = y
   end
+  #--------------------------------------------------------------------------
+  # ● 向量加法
+  #--------------------------------------------------------------------------
   def +(vector)
     @x += vector.x; @y += vector.y
     self
   end
+  #--------------------------------------------------------------------------
+  # ● 向量乘以值
+  #--------------------------------------------------------------------------
   def *(value)
     @x *= value; @y *= value
     self
@@ -426,8 +492,27 @@ class Vector # 注意 在互相赋值时 要使用dup方法 否则为指针传�
     rect.x < x && rect.x+rect.width > x && rect.y < y && rect.y+rect.height > y
   end
 end
+
 #==============================================================================
 # ■ 范围随机量
+#==============================================================================
+class RangeValue
+  attr_writer :v1, :v2
+  def initialize(v1, v2)
+    @v1 = v1
+    @v2 = v2
+  end
+  #--------------------------------------------------------------------------
+  # ● 取值
+  #--------------------------------------------------------------------------
+  # v1 到 v2 之间的随机小数
+  def v
+    @v1 + rand * (@v2 - @v1).abs
+  end
+end
+
+#==============================================================================
+# ■ 前后范围随机量
 #==============================================================================
 class VarValue
   attr_writer :v, :var
@@ -435,6 +520,9 @@ class VarValue
     @v = v
     @var = var
   end
+  #--------------------------------------------------------------------------
+  # ● 取值
+  #--------------------------------------------------------------------------
   # v-var ~ v+var 中的随机小数
   def v
     @v + (rand * 2 - 1) * @var
@@ -503,6 +591,8 @@ class ParticleTemplate
   def hide
   end
   def dispose
+    @params[:bitmaps].each { |b| b.dispose }
+    @params[:bitmaps].clear
   end
   #--------------------------------------------------------------------------
   # ● 全部粒子更新完成后，发射器将调用模板的该方法
@@ -515,6 +605,7 @@ class ParticleTemplate
   # ● 获取数值
   #--------------------------------------------------------------------------
   def get_value(value)
+    return value.v if value.is_a?(RangeValue)
     return value.v if value.is_a?(VarValue)
     return eval(value) if value.is_a?(String)
     return value
@@ -712,20 +803,31 @@ class ParticleTemplate_OnMap < ParticleTemplate
     super
     @flag_no_when_out  = true   # 出屏幕后不再生成新粒子？
     @params[:rect_window] = Rect.new(0,0,Graphics.width,Graphics.height)
-    @params[:pos_map] = Vector.new(0,0)  # （地图坐标）粒子所处地图格子位置
-    # 利用父类的 :pos_rect 作为在地图格子内的随机范围
+    # （地图坐标）粒子所处地图格子位置
+    #  x,y 为左上角格子位置， w,h 为矩形宽高（地图格子数）（右下角为 x+w-1,y+h-1）
+    @params[:pos_map] = Rect.new(0,0,1,1)
+    # 先在 :pos_map 划分出的矩形区域中取随机一格，
+    # 再利用父类的 :pos_rect 作为更小的随机范围
+    @params[:pos_rect] = Rect.new(0,0,32,32)
   end
   def get_total_num
     if @flag_no_when_out
       _x = (@params[:pos_map].x - $game_map.display_x) * 32
       _y = (@params[:pos_map].y - $game_map.display_y) * 32
-      return 0 if !Vector.new(_x, _y).in_rect?(@params[:rect_window])
+      _w = @params[:pos_map].width * 32
+      _h = @params[:pos_map].height * 32
+      return 0 if Rect.new(_x, _y, _w, _h).out?(@params[:rect_window])
     end
     super
   end
+  def init_xy
+    super
+    _x, _y = @params[:pos_map].rand_pos
+    @particle.params[:pos_map] = Vector.new(_x, _y)
+  end
   def update_xy
-    _x = (@params[:pos_map].x - $game_map.display_x) * 32
-    _y = (@params[:pos_map].y - $game_map.display_y) * 32
+    _x = (@particle.params[:pos_map].x - $game_map.display_x) * 32
+    _y = (@particle.params[:pos_map].y - $game_map.display_y) * 32
     super
     @particle.x += _x
     @particle.y += _y
@@ -846,5 +948,6 @@ class << PARTICLE
     f.params[:life] = VarValue.new(300, 120) # 存在时间
     setup("测试", f)  # 这个粒子模板的名称为 "测试"
     #  需要启用时，使用全局脚本 PARTICLE.start("测试")
+
   end
 end
