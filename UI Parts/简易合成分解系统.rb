@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-ItemEX"] = true
 #==============================================================================
-# - 2021.7.18.12
+# - 2021.11.17.18
 #==============================================================================
 # - 本插件新增在菜单物品栏中触发的物品分解与合成系统
 #--------------------------------------------------------------------------
@@ -24,6 +24,7 @@ $imported["EAGLE-ItemEX"] = true
 #     2w52 代表 2 个 52 号武器
 #     a4   代表 1 个 4 号护甲
 #     6    代表 1 个 6 号物品
+#
 #--------------------------------------------------------------------------
 # ○ 物品分解
 #--------------------------------------------------------------------------
@@ -37,7 +38,6 @@ $imported["EAGLE-ItemEX"] = true
 #    1号物品备注栏 <break i2 2i3> 则分解成 1个2号物品 与 2个3号物品
 #    2号武器备注栏 <break i1 w1> 则分解成 1个1号物品 与 1个1号武器
 #
-# - 注：每次只会分解 1 个当前物品
 #--------------------------------------------------------------------------
 # ○ 物品合成
 #--------------------------------------------------------------------------
@@ -62,8 +62,10 @@ $imported["EAGLE-ItemEX"] = true
 # - 本插件为菜单中的物品栏绑定了简单的按键交互，以进行物品合成与分解
 #
 # - 物品分解：
-#  ·当 trigger_break? 返回true时（默认按下A键），将触发当前选中物品的分解，
-#      并立即刷新物品栏
+#  ·当 trigger_break? 返回true时（默认按下A键），将进入当前选中物品的分解模式
+#  ·当按下确定键，将立即执行指定数量物品的分解，并退出分解模式
+#  ·当按下上下方向键，将修改分解数量，最大为持有数，最小为0（0时将不会分解）
+#  ·当按下取消键，将退出分解模式
 #
 # - 物品合成：
 #  ·当 trigger_compose? 返回true时（默认按下S键），将进入合成模式，
@@ -75,7 +77,6 @@ $imported["EAGLE-ItemEX"] = true
 #  ·按下取消键，将清空材料列表，退出合成模式
 #
 # - 局限：
-#  ·每次只能分解1个物品
 #  ·每种合成材料的输入数目存在上限（值为 COMPOSE_ITEM_MAX）
 #  ·合成材料的选择无法跨越类别
 #    （供参考的修改方式：单列物品栏，只靠左右键动态切换类别，
@@ -103,6 +104,15 @@ module ITEM_EX
   def self.trigger_compose?
     Input.trigger?(:Y)
   end
+  #--------------------------------------------------------------------------
+  # ● UI - 分解模式下物品背景颜色
+  #--------------------------------------------------------------------------
+  COLOR_BG_BREAK = Color.new(255,100,100,130)
+  #--------------------------------------------------------------------------
+  # ● UI - 合成模式下物品背景颜色
+  #--------------------------------------------------------------------------
+  COLOR_BG_COMPOSE = Color.new(255,255,255,130)
+
 #==============================================================================
 # ○ Core
 #==============================================================================
@@ -132,6 +142,7 @@ module ITEM_EX
       end
       n.times { inputs.push(get_item_str(item)) }
     end
+    # inputs = [ "i1", "i1", "i1" ] # 其中数量拆开
     return rules[ sort_item_array(inputs) ] # { item => num } or nil
   end
   #--------------------------------------------------------------------------
@@ -154,7 +165,7 @@ module ITEM_EX
         items[obj] ||= 0
         items[obj] += num
       else
-        items.push(get_item_str(obj))
+        num.times { items.push(get_item_str(obj, 1)) }
       end
     end
     return items
@@ -177,15 +188,16 @@ module ITEM_EX
   #--------------------------------------------------------------------------
   # ● 由指定对象获取物品标志字符
   #--------------------------------------------------------------------------
-  def self.get_item_str(item)
-    type = ''
-    case item.class
-    when RPG::Skill; type = 's'
-    when RPG::Item;  type = 'i'
-    when RPG::Weapon;type = 'w'
-    when RPG::Armor; type = 'a'
-    end
-    return type + item.id.to_s
+  def self.get_item_str(item, num = 1)
+    _type = ""
+    c = item.class
+    _type += "s" if c == RPG::Skill
+    _type += "i" if c == RPG::Item
+    _type += "w" if c == RPG::Weapon
+    _type += 'a' if c == RPG::Armor
+    t = _type + item.id.to_s
+    t = num.to_s + t if num != 1
+    return t
   end
 #==============================================================================
 # ○ Scene
@@ -200,22 +212,81 @@ module ITEM_EX
   # ● 更新
   #--------------------------------------------------------------------------
   def self.update
-    return if !@item_window.active
-    ITEM_EX.process_compose if trigger_compose?
-    return if $game_temp.item_compose?
-    ITEM_EX.process_break if trigger_break?
+    f1 = $game_temp.item_break?
+    f2 = $game_temp.item_compose?
+    if @item_window.active && !f1 && !f2
+      ITEM_EX.activate_break if trigger_break?
+      ITEM_EX.process_compose if trigger_compose?
+      return
+    end
+    return ITEM_EX.update_break if f1
+    return ITEM_EX.process_compose if f2 && trigger_compose?
+  end
+  #--------------------------------------------------------------------------
+  # ● 进入物品分解
+  #--------------------------------------------------------------------------
+  def self.activate_break
+    item = @item_window.item
+    items = ITEM_EX.break_down(item)
+    return Sound.play_buzzer if items.empty?
+    $game_temp.item_break_selected = item
+    $game_temp.item_break_num = 1
+    @item_window.deactivate
+    @item_window.redraw_current_item
+    Sound.play_ok
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新物品分解
+  #--------------------------------------------------------------------------
+  def self.update_break
+    item = $game_temp.item_break_selected
+    if Input.trigger?(:C)
+      Sound.play_ok
+      process_break
+    elsif Input.trigger?(:B)
+      Sound.play_cancel
+      finish_break
+    elsif Input.trigger?(:UP) || trigger_break?
+      Sound.play_cursor
+      change_break_num(+1)
+    elsif Input.trigger?(:DOWN)
+      Sound.play_cursor
+      change_break_num(-1)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 修改物品分解数量
+  #--------------------------------------------------------------------------
+  def self.change_break_num(v)
+    item = $game_temp.item_break_selected
+    n = $game_temp.item_break_num
+    max = $game_party.item_number(item)
+    n2 = n + v
+    n2 = max if n2 < 1
+    n2 = 1 if n2 > max
+    $game_temp.item_break_num = n2
+    @item_window.redraw_current_item
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束物品分解
+  #--------------------------------------------------------------------------
+  def self.finish_break
+    $game_temp.item_break_selected = nil
+    @item_window.activate.refresh
   end
   #--------------------------------------------------------------------------
   # ● 处理物品分解
   #--------------------------------------------------------------------------
   def self.process_break
-    item = @item_window.item
+    item = $game_temp.item_break_selected
     items = ITEM_EX.break_down(item)
-    return Sound.play_buzzer if items.empty?
+    return if items.empty?
+    num = $game_temp.item_break_num
+    return finish_break if num == 0
     index = @item_window.index
-    $game_party.gain_item(item, -1)
-    items.each { |i, c| $game_party.gain_item(i, c) }
-    @item_window.refresh
+    $game_party.gain_item(item, -num)
+    items.each { |i, c| $game_party.gain_item(i, c * num) }
+    finish_break
     @item_window.index = index
   end
   #--------------------------------------------------------------------------
@@ -235,6 +306,7 @@ module ITEM_EX
       $game_temp.item_compose_selected[item] = 1
     end
     @item_window.redraw_current_item
+    Sound.play_cursor
   end
   #--------------------------------------------------------------------------
   # ● 物品合成确认
@@ -264,14 +336,23 @@ end
 # ○ Game_Temp
 #==============================================================================
 class Game_Temp
-  attr_accessor :item_compose_selected
+  attr_accessor  :item_break_selected, :item_break_num
+  attr_accessor  :item_compose_selected
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
   alias eagle_item_ex_init initialize
   def initialize
     eagle_item_ex_init
+    @item_break_selected = nil
+    @item_break_num = 0
     @item_compose_selected = {}
+  end
+  #--------------------------------------------------------------------------
+  # ● 处于分解模式？
+  #--------------------------------------------------------------------------
+  def item_break?
+    @item_break_selected != nil
   end
   #--------------------------------------------------------------------------
   # ● 处于合成模式？
@@ -296,10 +377,14 @@ class Window_ItemList < Window_Selectable
   alias eagle_item_ex_draw_item draw_item
   def draw_item(index)
     item = @data[index]
-    if item && $game_temp.selected_item_num(item) > 0
-      rect = item_rect(index)
-      contents.gradient_fill_rect(rect,
-        Color.new(0,0,0,0), Color.new(255,255,255,130))
+    if item
+      c = nil
+      c = ITEM_EX::COLOR_BG_BREAK if $game_temp.item_break_selected == item
+      c = ITEM_EX::COLOR_BG_COMPOSE if $game_temp.selected_item_num(item) > 0
+      if c
+        rect = item_rect(index)
+        contents.gradient_fill_rect(rect, Color.new(0,0,0,0), c)
+      end
     end
     eagle_item_ex_draw_item(index)
   end
@@ -308,13 +393,21 @@ class Window_ItemList < Window_Selectable
   #--------------------------------------------------------------------------
   alias eagle_item_ex_draw_item_number draw_item_number
   def draw_item_number(rect, item)
-    n = $game_temp.selected_item_num(item)
-    if n > 0
-      t = sprintf("%d / %2d", n, $game_party.item_number(item))
+    if $game_temp.item_break? && $game_temp.item_break_selected == item
+      n = $game_temp.item_break_num
+      t = sprintf("%2d - %d", $game_party.item_number(item), n)
       draw_text(rect, t, 2)
-    else
-      eagle_item_ex_draw_item_number(rect, item)
+      return
     end
+    if $game_temp.item_compose?
+      n = $game_temp.selected_item_num(item)
+      if n > 0
+        t = sprintf("%d / %2d", n, $game_party.item_number(item))
+        draw_text(rect, t, 2)
+        return
+      end
+    end
+    eagle_item_ex_draw_item_number(rect, item)
   end
 end
 #==============================================================================
