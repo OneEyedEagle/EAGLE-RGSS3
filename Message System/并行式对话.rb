@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-MessagePara2"] = true
 #==============================================================================
-# - 2021.10.3.9 修复F12后sprite报错的bug
+# - 2021.11.29.19 pos参数中新增fix设置
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -68,6 +68,9 @@ $imported["EAGLE-MessagePara2"] = true
 #
 #      dx=数字 dy=数字 → 设置对话框坐标的最终偏移值
 #              如 dy=-10 代表再往上移动10像素
+#
+#      fix=数字 → 设置是否强制显示在屏幕内
+#                  传入 1 时代表强制该对话框完整显示在屏幕内，默认 0 可以出屏幕
 #
 #     如 <pos o=5 e=-1 o2=8> 代表对话框中心会显示到玩家的顶部中心
 #
@@ -218,6 +221,12 @@ module MESSAGE_PARA2
   # ○【常量】定义默认使用的对话框皮肤
   #--------------------------------------------------------------------------
   DEF_SKIN_ID = 0
+  #--------------------------------------------------------------------------
+  # ○【常量】定义预先进行一次替换的文本
+  # 可以方便进行一些统一的设置，不需要每个对话框都写一串设置
+  #--------------------------------------------------------------------------
+  PRE_CONVERT = {}
+  PRE_CONVERT["【角色头顶】"] = "<pos o=2 o2=8 e=0 fix=1><wait 120><no hangup>"
 
   #--------------------------------------------------------------------------
   # ● 新增一个并行对话精灵
@@ -593,6 +602,7 @@ class Sprite_EagleMsg < Sprite
       end
       h[:dx] = h[:dx].to_i
       h[:dy] = h[:dy].to_i
+      h[:fix] = h[:fix].to_i || 0
       params[:pos_update] = h
     end
   end
@@ -651,6 +661,14 @@ class Sprite_EagleMsg < Sprite
     end
     MESSAGE_PARA2.reset_xy(self, h[:o], r, h[:o2])
     MESSAGE_PARA2.reset_sprite_oxy(self, h[:o])
+    if h[:fix] == 1 # 保证显示在屏幕内
+      _x = self.x - self.ox
+      _y = self.y - self.oy
+      _x = [[_x, 0].max, Graphics.width - self.width].min
+      _y = [[_y, 0].max, Graphics.height - self.height].min
+      self.x = _x + self.ox
+      self.y = _y + self.oy
+    end
     self.x += h[:dx]
     self.y += h[:dy]
   end
@@ -844,6 +862,10 @@ class Game_Interpreter
   def call_message_para2_2(text, params)
     # 缩写
     s = $game_switches; v = $game_variables
+    # 预替换
+    MESSAGE_PARA2::PRE_CONVERT.each do |t1, t2|
+      text.gsub!( /#{t1}/im) { t2 }
+    end
     # 提取可能存在的flags
     text.gsub!( /<no hangup>/im) { params[:nohangup] = true; "" }
     text.gsub!( /<id:? ?(.*?)>/im ) { params[:id] = $1; "" }
@@ -854,7 +876,7 @@ class Game_Interpreter
       params[:io] = $1; params[:io_t] = $2.to_i; "" }
     # 设置位置 当前对话框的o处，与 w/m/e 的o处相重合
     text.gsub!( /<pos:? ?(.*?)>/im ) {
-      # "o=? wx=? wy=? mx=? my=? e=? o2=? dx=? dy=?"
+      # "o=? wx=? wy=? mx=? my=? e=? o2=? dx=? dy=? fix=?"
       params[:pos] = EAGLE.parse_tags($1)
       ""
     }

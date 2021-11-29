@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-Particle"] = true
 #==============================================================================
-# - 2021.11.4.20 优化绑定在地图上的粒子模板
+# - 2021.11.27.12 增强兼容性（与 像素级移动）
 #==============================================================================
 # - 本插件新增了一个发射粒子的系统
 #------------------------------------------------------------------------------
@@ -868,9 +868,9 @@ class Game_Player
   # ● 移动一格
   #--------------------------------------------------------------------------
   alias eagle_particle_move_straight move_straight
-  def move_straight(d, turn_ok = true)
+  def move_straight(*params)
     @last_x = x; @last_y = y # 存储移动前的位置
-    eagle_particle_move_straight(d, turn_ok)
+    eagle_particle_move_straight(*params)
   end
 end
 

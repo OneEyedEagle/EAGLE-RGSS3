@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-ESAS"] = true
 #==============================================================================
-# - 2021.7.6.11
+# - 2021.11.27.14
 #==============================================================================
 # - 本插件新增一系列方便事件脚本调用的方法，用于创作简易ARPG
 #--------------------------------------------------------------------------
@@ -63,6 +63,7 @@ $imported["EAGLE-ESAS"] = true
 #
 #    params → 存储一系列执行信息的哈希表
 #       :mid → 所要执行的事件页的地图ID（若不传入或传入0，则为当前地图）
+#               （若传入 -1，则为公共事件，且 :pid 无效）
 #       :eid → 所要执行的事件页的事件ID
 #       :pid → 所要执行的事件页的页号（若不传入或传入0，则取符合出现条件的最大页）
 #       :abort → 是否可以强制终止，默认 true
@@ -184,6 +185,21 @@ $imported["EAGLE-ESAS"] = true
 #             比如 { 5 => {:mid=>1,:eid=>2,:pid=>1}, :chara_id => -1 }
 #             代表当前动画第 5 帧时执行1号地图2号事件第1页，且来源为玩家
 #
+# （若使用了【像素级移动 by老鹰】）
+#  ESAS.anim_map_pixel(anim_id, px, py, params)
+#
+#  【地图】在地图上指定位置播放动画
+#
+#    x, y → 地图上的移动单位坐标
+#
+#
+#  ESAS.anim_event(anim_id, chara_id, params)
+#
+#  【地图】在指定事件上指定位置播放动画
+#
+#    chara_id → -1时代表玩家，正数代表对应事件
+#
+#
 # - 示例：
 #    事件脚本：ps = { 2 => {:mid => -1, :eid => 2} } # 设置第2帧时调用2号公共事件
 #             ps[:chara_id] = 1 # 设置调用来源为1号事件
@@ -204,13 +220,19 @@ $imported["EAGLE-ESAS"] = true
 #     范围设置时，角色朝向右，且角色位于(0,0)处，向右为x正方向，向下为y正方向
 #
 # - 示例：（黑色方块为角色，空心方块为范围）
-#     □
+#      □
 #    ■□□   → 该范围数组为 arr = [ [1,0], [2,0], [1,-1], [1,1] ]
-#     □
+#      □
 #
 # - 示例：
 #   □□■□□   → 该范围数组为 arr = [ [-2,0], [-1,0], [1,0], [2,0], [0,1] ]
-#     □
+#       □
+#--------------------------------------------------------------------------
+# - 兼容
+#
+#    如果使用了【像素级移动 by 老鹰】，则需要注意，此处传入的依然为RGSS中的坐标，
+#    但 $game_player.x 获取的是 移动单位坐标！
+#
 #--------------------------------------------------------------------------
 #  xys = ESAS.range_xys(chara_id, arr)
 #
@@ -433,6 +455,7 @@ module ESAS
     if map_id != $game_map.map_id
       map = ESAS.get_map_data(map_id)
       event_data = map.events[event_id] rescue return
+      return if event_data == nil
       event = Game_Event.new(map_id, event_data)
     else
       event = $game_map.events[event_id] rescue return
@@ -1075,12 +1098,23 @@ module ESAS
     s
   end
   #--------------------------------------------------------------------------
+  # ● 在地图指定位置显示动画（移动单位坐标）
+  # 当使用了【像素级移动 by老鹰】
+  #--------------------------------------------------------------------------
+  def self.anim_map_pixel(anim_id, px, py, params = {})
+    s = empty_anim_sprite
+    s.bind_map_pixel(px, py)
+    s.bind_params(params)
+    s.eagle_start_animation(anim_id)
+    s
+  end
+  #--------------------------------------------------------------------------
   # ● 在事件上显示动画
   #  chara_id 为 -1 时为玩家，正数为当前地图事件
   #--------------------------------------------------------------------------
   def self.anim_event(anim_id, chara_id, params = {})
     return if !SceneManager.scene_is?(Scene_Map)
-    s = empty_sprite
+    s = empty_anim_sprite
     c = ESAS.get_chara(chara_id)
     s.bind_character(c)
     s.bind_params(params)
@@ -1098,40 +1132,7 @@ module ESAS
     return s
   end
 end
-class Sprite_Base < Sprite
-  #--------------------------------------------------------------------------
-  # ● （覆盖）更新动画
-  #--------------------------------------------------------------------------
-  def update_animation
-    return unless animation?
-    @ani_duration -= 1
-    if @ani_duration % @ani_rate == 0
-      if @ani_duration > 0
-        frame_index = @animation.frame_max
-        frame_index -= (@ani_duration + @ani_rate - 1) / @ani_rate
-        animation_set_sprites(@animation.frames[frame_index])
-        apply_frame_ex(frame_index)
-        @animation.timings.each do |timing|
-          animation_process_timing(timing) if timing.frame == frame_index
-        end
-      else
-        end_animation
-      end
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ○ 执行第 frame_index 帧时的额外处理
-  #--------------------------------------------------------------------------
-  def apply_frame_ex(frame_index)
-  end
-  #--------------------------------------------------------------------------
-  # ○ 中止动画
-  #--------------------------------------------------------------------------
-  def stop_animation
-    @ani_duration = 0 # 剩余动画时间（帧）
-    end_animation
-  end
-end
+
 class Sprite_EagleBase < Sprite_Base
   #--------------------------------------------------------------------------
   # ● 初始化对象
@@ -1149,6 +1150,7 @@ class Sprite_EagleBase < Sprite_Base
   def reset
     @character = nil
     @map_x = @map_y = nil
+    @px = @py = nil
     @params = {}
     @esas_events = []
     stop_animation
@@ -1177,7 +1179,7 @@ class Sprite_EagleBase < Sprite_Base
     update_position
   end
   #--------------------------------------------------------------------------
-  # ● 绑定显示在地图上
+  # ● 绑定显示在地图上（RGSS坐标）
   #--------------------------------------------------------------------------
   def bind_map(map_x, map_y)
     @map_x = map_x
@@ -1185,11 +1187,12 @@ class Sprite_EagleBase < Sprite_Base
     update_position
   end
   #--------------------------------------------------------------------------
-  # ● 显示动画
+  # ● 绑定显示在地图上（移动单位坐标）
   #--------------------------------------------------------------------------
-  def eagle_start_animation(anim_id)
-    animation = $data_animations[anim_id]
-    start_animation(animation)
+  def bind_map_pixel(px, py)
+    @px = px
+    @py = py
+    update_position
   end
   #--------------------------------------------------------------------------
   # ● 更新画面
@@ -1209,6 +1212,11 @@ class Sprite_EagleBase < Sprite_Base
       self.z = @character.screen_z
       return
     end
+    if @px && $imported["EAGLE-PixelMove"]
+      self.x = PIXEL_MOVE.unit2pixel($game_map.adjust_x(@px)) + 16
+      self.y = PIXEL_MOVE.unit2pixel($game_map.adjust_y(@py)) + 32
+      return
+    end
     if @map_x
       if $imported["EAGLE-PixelMove"]
         x_, e_ = PIXEL_MOVE.rgss2unit(@map_x)
@@ -1217,8 +1225,8 @@ class Sprite_EagleBase < Sprite_Base
         self.y = PIXEL_MOVE.unit2pixel($game_map.adjust_y(y_))
         return
       end
-      self.x = $game_map.adjust_x(@map_x) * 32 + 16
-      self.y = $game_map.adjust_y(@map_y) * 32 + 32
+      self.x = $game_map.adjust_x(@map_x) * 32 + 32
+      self.y = $game_map.adjust_y(@map_y) * 32 + 48
       return
     end
   end
@@ -1229,10 +1237,104 @@ class Sprite_EagleBase < Sprite_Base
     @esas_events.each { |e| e.update }
   end
   #--------------------------------------------------------------------------
+  # ● 生成动画精灵
+  #--------------------------------------------------------------------------
+  def make_animation_sprites
+    @ani_sprites = []
+    if @use_sprite && !@@ani_spr_checker.include?(@animation)
+      16.times do
+        sprite = Sprite_EagleAnimFrame.new(viewport)
+        sprite.visible = false
+        sprite.dx = sprite.dy = 0
+        @ani_sprites.push(sprite)
+      end
+      if @animation.position == 3
+        @@ani_spr_checker.push(@animation)
+      end
+    end
+    @ani_duplicated = @@ani_checker.include?(@animation)
+    if !@ani_duplicated && @animation.position == 3
+      @@ani_checker.push(@animation)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 显示动画
+  #--------------------------------------------------------------------------
+  def eagle_start_animation(anim_id)
+    animation = $data_animations[anim_id]
+    start_animation(animation)
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新动画
+  #--------------------------------------------------------------------------
+  def update_animation
+    return unless animation?
+    @ani_duration -= 1
+    if @ani_duration % @ani_rate == 0
+      if @ani_duration > 0
+        frame_index = @animation.frame_max
+        frame_index -= (@ani_duration + @ani_rate - 1) / @ani_rate
+        animation_set_sprites(@animation.frames[frame_index])
+        apply_frame_ex(frame_index)  # 额外处理
+        @animation.timings.each do |timing|
+          animation_process_timing(timing) if timing.frame == frame_index
+        end
+      else
+        end_animation
+        return
+      end
+    end
+    update_animation_origin   # 更新原点
+    update_animation_position # 更新位置
+  end
+  #--------------------------------------------------------------------------
+  # ○ 中止动画
+  #--------------------------------------------------------------------------
+  def stop_animation
+    @ani_duration = 0 # 剩余动画时间（帧）
+    end_animation
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置动画的精灵
+  #     frame : 帧数据（RPG::Animation::Frame）
+  #--------------------------------------------------------------------------
+  def animation_set_sprites(frame)
+    cell_data = frame.cell_data
+    @ani_sprites.each_with_index do |sprite, i|
+      next unless sprite
+      pattern = cell_data[i, 0]
+      if !pattern || pattern < 0
+        sprite.visible = false
+        next
+      end
+      sprite.bitmap = pattern < 100 ? @ani_bitmap1 : @ani_bitmap2
+      sprite.visible = true
+      sprite.src_rect.set(pattern % 5 * 192,
+        pattern % 100 / 5 * 192, 192, 192)
+      if @ani_mirror
+        sprite.dx = - cell_data[i, 1]
+        sprite.dy = + cell_data[i, 2]
+        sprite.angle = (360 - cell_data[i, 4])
+        sprite.mirror = (cell_data[i, 5] == 0)
+      else
+        sprite.dx = cell_data[i, 1]
+        sprite.dy = cell_data[i, 2]
+        sprite.angle = cell_data[i, 4]
+        sprite.mirror = (cell_data[i, 5] == 1)
+      end
+      sprite.z = self.z + 300 + i
+      sprite.ox = 96
+      sprite.oy = 96
+      sprite.zoom_x = cell_data[i, 3] / 100.0
+      sprite.zoom_y = cell_data[i, 3] / 100.0
+      sprite.opacity = cell_data[i, 6] * self.opacity / 255.0
+      sprite.blend_type = cell_data[i, 7]
+    end
+  end
+  #--------------------------------------------------------------------------
   # ○ 执行第 frame_index 帧时的额外处理
   #--------------------------------------------------------------------------
   def apply_frame_ex(frame_index)
-    super(frame_index)
     if ps = @params[frame_index]
       data = {}
       data[:chara] = ESAS.get_chara(@params[:chara_id]) if @params[:chara_id]
@@ -1249,6 +1351,41 @@ class Sprite_EagleBase < Sprite_Base
       @esas_events.push(e)
     end
   end
+  #--------------------------------------------------------------------------
+  # ○ 更新动画的原点
+  #--------------------------------------------------------------------------
+  def update_animation_origin
+    if @animation.position == 3
+      if viewport == nil
+        @ani_ox = Graphics.width / 2
+        @ani_oy = Graphics.height / 2
+      else
+        @ani_ox = viewport.rect.width / 2
+        @ani_oy = viewport.rect.height / 2
+      end
+    else
+      @ani_ox = x - ox + width / 2
+      @ani_oy = y - oy + height / 2
+      if @animation.position == 0
+        @ani_oy -= height / 2
+      elsif @animation.position == 2
+        @ani_oy += height / 2
+      end
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ○ 更新动画的位置
+  #--------------------------------------------------------------------------
+  def update_animation_position
+    @ani_sprites.each_with_index do |sprite, i|
+      sprite.x = @ani_ox + sprite.dx
+      sprite.y = @ani_oy + sprite.dy
+    end
+  end
+end
+
+class Sprite_EagleAnimFrame < Sprite
+  attr_accessor  :dx, :dy
 end
 
 #=============================================================================
@@ -1257,29 +1394,34 @@ end
 module ESAS
   #--------------------------------------------------------------------------
   # ● 依据技能范围数组，获取实际地图坐标的数组
-  # 技能范围坐标编写时，请按角色位于[0,0]且朝右方向设置（向右为x正方向，向下为y正方向）
-  #  比如角色面前一格，写成 [1,0]，角色面朝x正方向，面前一格就是[1,0]
-  #  比如角色左手边一格，写成 [0,-1]
+  # 技能范围坐标编写时，请按角色位于[0,0]且朝右方向设置
+  #  （向右为x正方向，向下为y正方向）
+  #   比如角色面前一格，写成 [1,0]，角色面朝x正方向，面前一格就是[1,0]
+  #   比如角色左手边一格，写成 [0,-1]
   #--------------------------------------------------------------------------
   def self.range_xys(*params)
-    if params.size == 2
+    if params.size == 2  # (chara_id, arr)
       chara_id = params[0]
       chara = get_chara(chara_id)
       x = chara.x
       y = chara.y
-      d = chara.direction
+      if $imported["EAGLE-PixelMove"]
+        x = chara.rgss_x
+        y = chara.rgss_y
+      end
+      dir = chara.direction
       arr = params[1]
-    elsif params.size == 4
+    elsif params.size == 4  # (x, y, dir, arr)
       x = params[0]
       y = params[1]
-      d = params[2]
+      dir = params[2]
       arr = params[3]
     else
       p "ESAS.range_xys 参数数目错误！"
       return []
     end
     arr.collect do |dxy|
-      _dxy = range_convert_to(dxy, d)
+      _dxy = range_convert_to(dxy, dir)
       _x = x + _dxy[0]
       _y = y + _dxy[1]
       [_x, _y]
@@ -1295,6 +1437,55 @@ module ESAS
       range_all(type).each do |e|
         next if e.esas_empty?
         es.push(e) if e.pos?(xy[0], xy[1])
+      end
+    end
+    es.collect { |e| e.id }
+  end
+  #--------------------------------------------------------------------------
+  # ● 依据技能范围数组，获取实际地图坐标的数组
+  # 注意：此方法为使用了【像素级移动 by老鹰】，格子大小与人物的碰撞矩形相同
+  #--------------------------------------------------------------------------
+  def self.range_xys_pixel(*params)
+    if !$imported["EAGLE-PixelMove"]
+      p "ESAS.range_xys_pixel 方法错误！没有使用【像素级移动 by老鹰】"
+      return []
+    end
+    if params.size == 2  # (chara_id, arr)
+      chara_id = params[0]
+      chara = get_chara(chara_id)
+      _rect = chara.get_collision_rect(false)
+      dir = chara.direction
+      arr = params[1]
+    elsif params.size == 6 # (x,y,w,h, dir, arr)
+      x = params[0]
+      y = params[1]
+      w = params[2]
+      h = params[3]
+      dir = params[4]
+      arr = params[5]
+      _rect = Rect.new(x, y, w, h)
+    else
+      p "ESAS.range_xys_pixel 参数数目错误！"
+      return []
+    end
+    arr.collect do |dxy|
+      _dxy = range_convert_to(dxy, dir)
+      r = _rect.clone
+      r.x = r.x + _dxy[0] * _rect.width
+      r.y = r.y + _dxy[1] * _rect.height
+      r
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 索引指定地图坐标内的事件ID数组
+  # 注意：此方法为使用了【像素级移动 by老鹰】，格子大小与人物的碰撞矩形相同
+  #--------------------------------------------------------------------------
+  def self.range_ids_pixel(arr_rect, type = :enemy)
+    es = []
+    arr_rect.each do |xy|
+      range_all(type).each do |e|
+        next if e.esas_empty?
+        es.push(e) if e.pos_rect?(xy)
       end
     end
     es.collect { |e| e.id }

@@ -2,7 +2,7 @@
 # ■ Add-On 粒子四散连线 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【粒子发射器V2 by老鹰】与【组件-形状绘制 by老鹰】之下
 #==============================================================================
-# - 2021.10.24.11
+# - 2021.11.29.19
 #==============================================================================
 # - 本插件新增了四散移动、自动连线的粒子模板
 #----------------------------------------------------------------------------
@@ -23,6 +23,8 @@
 #
 #    快捷功能界面 by 老鹰
 #
+#    能力学习系统 by 老鹰
+#
 #==============================================================================
 
 module PARTICLE
@@ -34,8 +36,8 @@ module PARTICLE
   # ○ 参数
   #--------------------------------------------------------------------------
   TEMPLATE_UI_BG_PARAMS = {
-  # 点的位图
-    :bitmap => Bitmap.new(3, 3),
+  # 点的位图的宽高
+    :bitmap_wh => 3,
   # 点的颜色
     :color => Color.new(60,60,60,150),
   # 点的总数目
@@ -65,6 +67,7 @@ class << PARTICLE
     #  全屏随机显示细小方块，并且相互连线
     f = ParticleTemplate_DrawLines.new
     ps = PARTICLE::TEMPLATE_UI_BG_PARAMS
+    ps[:bitmap] = Bitmap.new(ps[:bitmap_wh], ps[:bitmap_wh])
 
     # 绘制点
     ps[:bitmap].fill_rect(ps[:bitmap].rect, ps[:color])
@@ -260,6 +263,30 @@ class << TOOLBAR
   alias eagle_particle_ui_bg_ui_dispose ui_dispose
   def ui_dispose
     eagle_particle_ui_bg_ui_dispose
+    PARTICLE.ui_bg_finish
+  end
+end
+end
+
+#===============================================================================
+# □ 能力学习系统
+#===============================================================================
+if $imported["EAGLE-AbilityLearn"]
+class << ABILITY_LEARN
+  #--------------------------------------------------------------------------
+  # ● UI-初始化
+  #--------------------------------------------------------------------------
+  alias eagle_particle_ui_bg_init_ui init_ui
+  def init_ui
+    eagle_particle_ui_bg_init_ui
+    PARTICLE.ui_bg_start(@sprite_bg.z + 1)
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-释放
+  #--------------------------------------------------------------------------
+  alias eagle_particle_ui_bg_dispose_ui dispose_ui
+  def dispose_ui
+    eagle_particle_ui_bg_dispose_ui
     PARTICLE.ui_bg_finish
   end
 end
