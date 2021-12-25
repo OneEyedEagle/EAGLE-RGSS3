@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-DrawTextEX"] = true
 #==============================================================================
-# - 2021.10.30.12 新增\ln转义符
+# - 2021.12.6.20 新增:ali文字对齐方式
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #-----------------------------------------------------------------------------
@@ -47,6 +47,7 @@ class Process_DrawTextEX
   #   :w → 规定最大行宽，若超出则会进行自动换行
   #   :lhd → 在换行时，与下一行的间隔距离
   #   :trans → 是否半透明
+  #   :ali → 行内对齐方式（0左对齐，1居中，2右对齐）
   #--------------------------------------------------------------------------
   def initialize(text, params = {}, bitmap = nil)
     @text = convert_escape_characters(text)
@@ -59,6 +60,8 @@ class Process_DrawTextEX
     @params[:w] ||= nil
     @params[:lhd] ||= 0
     @params[:trans] ||= false
+    @params[:ali] ||= 0
+
     @info = {}
     @info[:w] ||= [] # line_index => width
     @info[:h] ||= [] # line_index => height
@@ -73,13 +76,20 @@ class Process_DrawTextEX
     @bitmap = bitmap
   end
   #--------------------------------------------------------------------------
-  # ● 获取总占用宽度
+  # ● 获取预设文字宽度
+  #--------------------------------------------------------------------------
+  def width_pre
+    return @params[:w] if @params[:w]
+    return self.width
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取文字总占用宽度
   #--------------------------------------------------------------------------
   def width
     @info[:w].max
   end
   #--------------------------------------------------------------------------
-  # ● 获取总占用高度
+  # ● 获取文字总占用高度
   #--------------------------------------------------------------------------
   def height
     r = @info[:h].inject(0) { |s, v| s += v }
@@ -141,9 +151,14 @@ class Process_DrawTextEX
     pos[:y0] += @params[:lhd] if pos[:line] > 0
     pos[:y] = pos[:y0]
     if pos[:flag_draw]
-      pos[:w] = @info[:w][pos[:line]]
+      pos[:w] = @info[:w][pos[:line]]  # 提取下一行的宽高
       pos[:h] = @info[:h][pos[:line]]
-    else
+      if @params[:ali] == 1     # 居中
+        pos[:x] += (self.width_pre - pos[:w]) / 2
+      elsif @params[:ali] == 2  # 右对齐
+        pos[:x] += (self.width_pre - pos[:w])
+      end
+    else  # 预绘制时，计算每一行的宽高
       pos[:w] = 0
       pos[:h] = 0
       @info[:w][pos[:line]] = 0
@@ -154,7 +169,7 @@ class Process_DrawTextEX
   # ● 处理自动换行
   #--------------------------------------------------------------------------
   def process_auto_new_line(pos, w)
-    if @params[:w] && pos[:x] + w > @params[:w]
+    if @params[:w] && pos[:x] + w > pos[:x0] + @params[:w]
       process_new_line(pos)
       pos[:h] = 0
     end

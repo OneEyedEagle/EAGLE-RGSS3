@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-EventLog"] = true
 #==============================================================================
-# - 2021.9.30.15 name可以使用转义符
+# - 2021.12.6.21 修复文字过长时，自动换行失败的bug
 #==============================================================================
 # - 本插件新增了通过脚本写入的事件日志
 #------------------------------------------------------------------------------
@@ -172,7 +172,7 @@ module EVENT_LOG
     def draw(s)
       # 绘制主体文本（位于中心偏右位置）
       params = { :font_size => LOG_FONT_SIZE, :x0 => LINE_X + 20, :lhd => 2 }
-      params[:w] = Graphics.width - OFFSET_X * 2
+      params[:w] = Graphics.width - OFFSET_X * 2 - params[:x0]
       height_add = 0 # 额外增加的高度
 
       d = EVENT_LOG_DrawTextEX.new(@text, params)

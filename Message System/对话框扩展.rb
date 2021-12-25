@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.10.27.19 修复输入等待时，同时按多个方向键，滚动速度骤变的bug
+# - 2021.12.3.22 移出时，对话框宽高可以正常减小了
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -1913,6 +1913,20 @@ module MESSAGE_EX
     @window_clone_env ||= Window_EagleMessage_CloneEnv.new(game_message)
     @window_clone_env.set_game_message(game_message, text)
   end
+  #--------------------------------------------------------------------------
+  # ● 计算最小包围盒
+  #--------------------------------------------------------------------------
+  def self.get_smallest_box(rects)
+    return Rect.new if rects.empty?
+    r = rects.pop
+    rects.each do |r2|
+      r.width = [r.x + r.width, r2.x + r2.width].max - [r.x, r2.x].min
+      r.height = [r.y + r.height, r2.y + r2.height].max - [r.y, r2.y].min
+      r.x = r2.x if r2.x < r.x  # 新矩形在现有矩形的左外侧，更新x位置
+      r.y = r2.y if r2.y < r.y  # 新矩形在现有矩形的上外侧，更新y位置
+    end
+    return r
+  end
 end # end of MESSAGE_EX
 
 #==============================================================================
@@ -2755,7 +2769,10 @@ class Window_EagleMessage < Window_Base
       c = eagle_take_out_a_chara
       ensure_character_visible(c)
       c.move_out # 已经交由文字池进行后续更新释放
-      win_params[:cwo].times { Fiber.yield } unless @eagle_force_close
+      if !@eagle_force_close
+        eagle_recalc_charas_wh_when_out
+        win_params[:cwo].times { Fiber.yield }
+      end
     end
     @eagle_chara_sets.clear
   end
@@ -2770,6 +2787,16 @@ class Window_EagleMessage < Window_Base
       i = rand(@eagle_chara_sprites.size)
       return @eagle_chara_sprites.delete_at(i)
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 取出一个文字精灵后，重新计算宽高
+  #--------------------------------------------------------------------------
+  def eagle_recalc_charas_wh_when_out
+    rects = @eagle_chara_sprites.collect { |s| s.screen_rect }
+    r = MESSAGE_EX.get_smallest_box(rects)
+    @eagle_charas_w = r.width
+    @eagle_charas_h = r.height
+    eagle_set_wh({:ins => true})
   end
 
   #--------------------------------------------------------------------------
@@ -5646,6 +5673,17 @@ class Sprite_EagleCharacter < Sprite
     bind_window(window_bind)
     bind_font(font_bind)
     reset(x, y, w, h)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取文字在屏幕上的碰撞矩形（计算了绑定的viewport的位置）
+  #--------------------------------------------------------------------------
+  def screen_rect
+    r = Rect.new(self.x - self.ox, self.y - self.oy, self.width, self.height)
+    if self.viewport
+      r.x += self.viewport.rect.x
+      r.y += self.viewport.rect.y
+    end
+    r
   end
   #--------------------------------------------------------------------------
   # ● 文字中心点是否在视图内部？
