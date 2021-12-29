@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-ChoiceEX"] = true
 #=============================================================================
-# - 2021.10.4.1 修复en{}失效的bug
+# - 2021.12.28.21 嵌入时，会自动滚动文字来强行嵌入了
 #==============================================================================
 #------------------------------------------------------------------------------
 # 【优化】
@@ -525,13 +525,17 @@ class Window_EagleChoiceList < Window_Command
       else # 宽度 = 文字区域宽度
         new_w = win_w + standard_padding * 2
       end
-      win_h = @message_window.height - @message_window.eagle_charas_h
-      d = self.height - win_h
-      d += standard_padding if @message_window.eagle_charas_h > 0
-      if d > 0
-        if @message_window.eagle_add_h_by_child_window?
+      win_h = @message_window.height - standard_padding * 2
+      charas_h = @message_window.eagle_charas_h - @message_window.eagle_charas_oy
+      choice_h = self.height - (charas_h > 0 ? 1 : 2) * standard_padding
+      d = choice_h - (win_h - charas_h)
+      if d > 0  # 对话框剩余高度不足，没法直接嵌入
+        if @message_window.eagle_add_h_by_child_window?  # 可以增加对话框高度？
           $game_message.child_window_h_des = d # 扩展对话框的高度
-        else
+        elsif win_h > choice_h  # 可以通过滚动文字获得足够高度？
+          d_empty = win_h - charas_h
+          @message_window.oy += (choice_h - d_empty)
+        else  # 没法了，别嵌入了
           @flag_in_msg_window = false
         end
       end
@@ -563,8 +567,9 @@ class Window_EagleChoiceList < Window_Command
       if d_o == 0 # 嵌入对话框
         if @flag_in_msg_window
           self.x = @message_window.eagle_charas_x0 - standard_padding
-          self.y = @message_window.eagle_charas_y0 + @message_window.eagle_charas_h
-          self.y -= standard_padding if @message_window.eagle_charas_h == 0
+          charas_h = @message_window.eagle_charas_h - @message_window.eagle_charas_oy
+          self.y = @message_window.eagle_charas_y0 + charas_h
+          self.y -= standard_padding if charas_h == 0
           o = 7
         end
       else
