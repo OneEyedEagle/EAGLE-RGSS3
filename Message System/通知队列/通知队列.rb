@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageHint"] = true
 #==============================================================================
-# - 2021.12.29.21
+# - 2021.12.29.23 截图时自动隐藏
 #==============================================================================
 # - 本插件新增了并行显示的竖直排列的通知队列
 #------------------------------------------------------------------------------
@@ -338,6 +338,28 @@ module MESSAGE_HINT
     return if @data[id] == nil
     @data[id].clear
   end
+  #--------------------------------------------------------------------------
+  # ● 显示
+  #--------------------------------------------------------------------------
+  def self.show(id = nil)
+    if id == nil
+      @data.each { |id, d| d.show }
+      return
+    end
+    return if @data[id] == nil
+    @data[id].show
+  end
+  #--------------------------------------------------------------------------
+  # ● 隐藏
+  #--------------------------------------------------------------------------
+  def self.hide(id = nil)
+    if id == nil
+      @data.each { |id, d| d.hide }
+      return
+    end
+    return if @data[id] == nil
+    @data[id].hide
+  end
 end
 #===============================================================================
 # ○ Scene_Base
@@ -350,6 +372,17 @@ class Scene_Base
   def update_basic
     eagle_message_hint_update_basic
     MESSAGE_HINT.update
+  end
+end
+#===============================================================================
+# ○ SceneManager
+#===============================================================================
+class << SceneManager
+  alias eagle_message_hint_snapshot_for_background snapshot_for_background
+  def snapshot_for_background
+    MESSAGE_HINT.hide
+    eagle_message_hint_snapshot_for_background
+    MESSAGE_HINT.show
   end
 end
 #===============================================================================
@@ -419,12 +452,13 @@ class Spriteset_EagleHint
     if @params["VIEWPORT_RECT"]
       @viewport = Viewport.new(@params["VIEWPORT_RECT"])
     else
-      @viewport = Viewport.new
+      @viewport = nil
     end
     @data = []    # 待生成的数据
     @sprites = [] # 当前正在显示的精灵
     @num_out = 0  # 需要移出的精灵数量
     @count = 0    # 移出计数
+    @visible = true # 是否显示ing
   end
   #--------------------------------------------------------------------------
   # ● 重新读取参数
@@ -453,6 +487,7 @@ class Spriteset_EagleHint
   # ● 更新
   #--------------------------------------------------------------------------
   def update
+    return if @visible == false
     f = false
     @sprites.each { |s|
       s.update
@@ -553,7 +588,21 @@ class Spriteset_EagleHint
   # ● 清空
   #--------------------------------------------------------------------------
   def clear
-    @num_out = 999
+    @num_out = @sprites.size
+  end
+  #--------------------------------------------------------------------------
+  # ● 显示
+  #--------------------------------------------------------------------------
+  def show
+    @visible = true
+    @sprites.each { |_s| _s.visible = true }
+  end
+  #--------------------------------------------------------------------------
+  # ● 隐藏
+  #--------------------------------------------------------------------------
+  def hide
+    @visible = false
+    @sprites.each { |_s| _s.visible = false }
   end
 end
 #===============================================================================
