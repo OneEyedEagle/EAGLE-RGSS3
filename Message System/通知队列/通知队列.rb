@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageHint"] = true
 #==============================================================================
-# - 2021.12.29.23 截图时自动隐藏
+# - 2021.12.31.20 新增底部冗余高度
 #==============================================================================
 # - 本插件新增了并行显示的竖直排列的通知队列
 #------------------------------------------------------------------------------
@@ -189,6 +189,9 @@ module MESSAGE_HINT
     #----------------------------------------------------------------------
     # - 通知文本的右侧的额外留白宽度
     "HINT_TEXT_W_ADD_R" => 0,
+    #----------------------------------------------------------------------
+    # - 通知文本的下侧的额外留白宽度
+    "HINT_TEXT_H_ADD_D" => 0,
 
     #----------------------------------------------------------------------
     # 【位置相关】
@@ -658,6 +661,7 @@ class Sprite_EagleHint < Sprite
     w += @spriteset.params["HINT_TEXT_W_ADD_L"]
     w += @spriteset.params["HINT_TEXT_W_ADD_R"]
     h = params[:text_h] + @spriteset.params["HINT_TEXT_Y"]
+    h += @spriteset.params["HINT_TEXT_H_ADD_D"]
     params[:text_ps][:x0] = @spriteset.params["HINT_TEXT_X"] + \
       @spriteset.params["HINT_TEXT_W_ADD_L"]
     params[:text_ps][:y0] = @spriteset.params["HINT_TEXT_Y"]
