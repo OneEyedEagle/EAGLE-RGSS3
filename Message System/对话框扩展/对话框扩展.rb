@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = true
 #=============================================================================
-# - 2021.12.27.22 修复hold转义符报错的问题
+# - 2022.1.8.22 新增文字破碎绘制
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -313,7 +313,9 @@ TEXT_COLORS["gold"] = Color.new(255,215,0)
 #    d → 是否绘制删除线
 #    dc → 删除线的颜色索引号
 #    u → 是否绘制下划线
-#    uc → 下划线的颜色索引号#
+#    uc → 下划线的颜色索引号
+#    k → 是否生成文字破碎效果（参考：http://www.whiteflute.org/wfrgss/）
+#    kv → 单个像素的破碎概率（百分数，数字越大，文字破碎效果越明显）
 #
 # 【常量设置：参数预设值】
 FONT_PARAMS_INIT = {
@@ -338,6 +340,8 @@ FONT_PARAMS_INIT = {
   :dc => 0, # 删除线颜色index
   :u => 0, # 下划线
   :uc => 0, # 下划线颜色index
+  :k => 0, # 文字破碎
+  :kv => 50, # 像素破碎概率
 }
 #
 # 【常量设置：序号映射到字体名称】
@@ -1798,6 +1802,8 @@ module MESSAGE_EX
     ps[:dc] ||= 0
     ps[:u] = MESSAGE_EX.check_bool(ps[:u])
     ps[:uc] ||= 0
+    ps[:k] = MESSAGE_EX.check_bool(ps[:k])
+    ps[:kv] ||= 50
   end
   #--------------------------------------------------------------------------
   # ● 重置指定精灵的显示原点
@@ -5568,6 +5574,7 @@ class Font_EagleCharacter
       bitmap.draw_text(x, y, w*2, h, c, ali)
     end
     draw_param_m(bitmap, x, y, w, h) if @params[:m]
+    draw_param_k(bitmap, x, y, w, h) if @params[:k]
     draw_param_d(bitmap) if @params[:d]
     draw_param_u(bitmap) if @params[:u]
   end
@@ -5581,6 +5588,7 @@ class Font_EagleCharacter
     rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
     bitmap.blt(x, y, _bitmap, rect, 255)
     draw_param_m(bitmap, x, y, 24, 24) if @params[:m]
+    draw_param_k(bitmap, x, y, 24, 24) if @params[:k]
     draw_param_d(bitmap) if @params[:d]
     draw_param_u(bitmap) if @params[:u]
   end
@@ -5646,6 +5654,23 @@ class Font_EagleCharacter
       end
     end
     bitmap.font.color = color
+  end
+  #--------------------------------------------------------------------------
+  # ● 文字破碎
+  #--------------------------------------------------------------------------
+  def draw_param_k(bitmap, x, y, w, h)
+    v = @params[:kv]
+    if v >= 100
+      bitmap.clear_rect(x, y, w, h)
+      return
+    end
+    for xi in x...(x + w)
+      for yi in y...(y + h)
+        c = bitmap.get_pixel(xi, yi)
+        next if c.alpha == 0
+        bitmap.set_pixel(xi, yi, Color.new(255,255,255, 0)) if rand(100) < v
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● 执行图片绘制
