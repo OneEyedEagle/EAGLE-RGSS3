@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-EventCopy"] = true
 #=============================================================================
-# - 2021.10.4.1 修复拷贝事件复用时ID为0的bug
+# - 2022.1.15.18 新增临时保存
 #=============================================================================
 # - 原始创意：Yanfly Engine Ace - Spawn Event
 # - 本插件新增了拷贝事件的方法
@@ -70,12 +70,20 @@ MODE_VX = false # 如果要在RPG Maker VX中使用，请修改为 true
 #
 # 【注意】
 #
-#   ·本插件只临时增加新事件，并不会将其保存在数据库/存档内，
-#     在重新读取地图时，将不会复原全部因拷贝而产生的事件
-#
 #   ·当未指定拷贝后的事件ID时，拷贝事件的ID是动态增加的，
 #     因此推荐不要在事件内部使用独立开关，
 #     独立开关是全局存储，且只与地图ID/事件ID/开关名称相关，易发生冲突
+#
+#-----------------------------------------------------------------------------
+# 【拷贝事件的保存】
+#
+# - 在任意地方（事件脚本、全局脚本）调用 $game_map.save_copy
+#    来保存当前地图的拷贝事件，至下一次返回该地图时
+#
+# - 每一次切换地图时，该开关默认置为关闭，即不复原上一次的拷贝事件，
+#    如果想继续使当前地图也能复原拷贝事件，请再次调用
+#
+# - 只保存基本信息，下一次读取时，本质依然是从原始地图拷贝一份到保存的位置
 #
 #-----------------------------------------------------------------------------
 # 【事件的临时变量】
@@ -97,12 +105,13 @@ MODE_VX = false # 如果要在RPG Maker VX中使用，请修改为 true
 #-----------------------------------------------------------------------------
 # 【回收】
 #
-# - 利用脚本回收拷贝事件（节约空间并减少精灵）
+# - 若拷贝事件已经不再需要，可将其回收，用于下一次同事件的复制：
+#
+#  1. 利用 事件脚本 回收
 #
 #     event.copy_finish
 #
-#  - 若拷贝事件已经不再需要，调用该方法将其回收，以用于下一次同事件的复制，
-#    同时该操作将调用 暂时消除事件 指令，所以不需要重复调用。
+#  2. 利用 事件指令-暂时消除事件 回收
 #
 #=============================================================================
 # - 特别感谢：葱兔
@@ -141,14 +150,52 @@ end
 #=============================================================================
 class Game_Map
   attr_reader  :events_tmp
+  @@copy_log = {}
   #--------------------------------------------------------------------------
   # ● 设置
   #--------------------------------------------------------------------------
   alias eagle_copy_event_setup setup
   def setup(map_id)
+    copy_save_all(map_id)
     eagle_copy_event_setup(map_id)
     @events_tmp = {} # 临时新增的事件id => 事件
     @events_copy = {} # 原始事件所在地图id, 原始事件id => 拷贝事件id的数组
+    process_copy_log(map_id)
+  end
+  #--------------------------------------------------------------------------
+  # ● 保存当前地图的全部拷贝事件
+  #--------------------------------------------------------------------------
+  def copy_save_all(map_id)
+    return if map_id == @map_id
+    @@copy_log[@map_id] ||= {}
+    a = []
+    @events.each do |i, e|
+      next if e.flag_copy == false
+      next if e.flag_copy_restore == true  # 已经
+      # [origin_mid, origin_eid, x, y, id]
+      a.push([e.copy_origin[0],e.copy_origin[1], e.x, e.y, e.id])
+    end
+    @@copy_log[@map_id][:data] = a
+    @@copy_log[@map_id][:flag] = @flag_save_copy
+    @flag_save_copy = false  # 当为 true 时，下一次回到当前地图时，拷贝事件将复原
+  end
+  #--------------------------------------------------------------------------
+  # ● 地图导入前，处理上一次保存的拷贝
+  #--------------------------------------------------------------------------
+  def process_copy_log(map_id)
+    # map_id => { :data => [copy_params], :flag => false  }
+    @@copy_log[map_id] ||= {}
+    @@copy_log[map_id][:data] ||= []
+    @@copy_log[map_id][:flag] = false if @@copy_log[map_id][:flag].nil?
+    if @@copy_log[map_id][:flag] == true
+      @@copy_log[map_id][:data].each { |a| self.send(:copy_event, *a) }
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ●【外部调用】保存当前地图的拷贝事件
+  #--------------------------------------------------------------------------
+  def save_copy
+    @flag_save_copy = true
   end
   #--------------------------------------------------------------------------
   # ● 更新事件
@@ -162,24 +209,31 @@ class Game_Map
   # ● 预定拷贝事件
   #--------------------------------------------------------------------------
   def copy_event(map_id, event_id, x, y, id_want = nil)
+    # 确定原始事件的所在地图
     map_id = @map_id if map_id == 0
+    # 初始化
     @events_copy[map_id] ||= {}
     @events_copy[map_id][event_id] ||= []
+    # 获取原始事件
     if !@events_copy[map_id][event_id].empty?
       id = nil
+      # 寻找一个已经拷贝的，并且使用完毕的事件
       @events_copy[map_id][event_id].each do |eid|
         break id = eid if @events[eid].flag_copy_restore
       end
-      if id
+      if id # 找到一个空闲的，直接进行重置并返回使用
         @events[id].copy_reset(id, x, y)
         return @events[id]
       end
+      # 没找到，依据已经复制的事件进行再次的复制与生成
       id = @events_copy[map_id][event_id][0]
       event = @events[id].event.dup
     else
+      # 从原始地图中拷贝
       map = get_map_data(map_id)
       event = map.events[event_id] rescue return
     end
+    # 获取拷贝后的ID
     if id_want
       id = id_want
     else
@@ -188,13 +242,12 @@ class Game_Map
       id = [id, 100].max # 直接增大事件ID，尽可能确保不产生冲突
       id += 1
     end
+    # 实际生成一个事件
     cloned_event = Marshal.load(Marshal.dump(event))
 	  cloned_event.id = id
     @events_tmp[id] = Game_Event.new(@map_id, cloned_event)
-    if id_want == nil
-      @events_tmp[id].flag_copy = true
-      @events_tmp[id].copy_origin = [map_id, event_id]
-    end
+    @events_tmp[id].flag_copy = true
+    @events_tmp[id].copy_origin = [map_id, event_id]
     @events_tmp[id].moveto(x, y)
     @events_tmp[id]
   end
@@ -251,6 +304,13 @@ class Game_Event < Game_Character
   #--------------------------------------------------------------------------
   def copy_finish
     erase
+  end
+  #--------------------------------------------------------------------------
+  # ● 暂时消除
+  #--------------------------------------------------------------------------
+  alias eagle_copy_event_erase erase
+  def erase
+    eagle_copy_event_erase
     return if !@flag_copy
     @flag_copy_restore = true
   end
