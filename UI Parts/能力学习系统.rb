@@ -8,7 +8,7 @@
 $imported ||= {}
 $imported["EAGLE-AbilityLearn"] = true
 #==============================================================================
-# - 2021.12.11.18 新增一些背景的设置
+# - 2022.1.15.22 新增等价装备武器/护甲
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
 #------------------------------------------------------------------------------
@@ -45,37 +45,34 @@ ACTORS[0] = {  # 不要漏了花括号
     :pos => [1, 1],
   #------------------------------------------------------------------------
   # -【可选】如果这个能力为一个技能，可以绑定它的ID
-  #  （覆盖 :icon 与 :pic）
     :skill => 1,
   #------------------------------------------------------------------------
-  # -【可选】也可以不和技能相关，直接设定一个图标ID进行显示
-  #  （覆盖 :pic）
-    :icon => 1,
+  # -【可选】如果这个能力等价一件武器或护甲，可以绑定它的ID
+  #  （不影响平时的装备，只是把对应武器的基础能力和特性进行了提取）
+    :weapon => 0,
+    :armor => 0,
+  #------------------------------------------------------------------------
+  # -【可选】也可以直接设定一个图标ID进行显示
+  #  （图标优先级为 :pic > :icon > :skill > :weapon > :armor）
+    :icon => 0,
   #------------------------------------------------------------------------
   # -【可选】还可以指定为 Graphics\System 路径下的一张图片进行显示
+  #  （只会显示在解锁界面，不会显示在帮助窗口里）
     :pic => "",
-  #------------------------------------------------------------------------
-  # -【可选】可以绑定一个开关，设置这个开关的ID
-  #  （当能力解锁时，开关将赋值为 true，重置时，开关将赋值为 false）
-  #  （只在能力解锁或重置时进行一次赋值，不会实时监控开关状态！请注意不要冲突了！）
-    :sid => 1,
-  #------------------------------------------------------------------------
-  # -【可选】学习一次这个能力，需要消耗的AP点数
-  #  （如果不写或写0，则默认激活，:level固定1，:skill与:params与:eval_off无效）
-    :ap => 1,
   #------------------------------------------------------------------------
   # -【可选】设置这个能力学习一次后，角色增加的基础属性值
   #  （编写 属性=数字 的字符串，用空格分隔不同属性，
   #    角色八维属性依次是 mhp mmp atk def mat mdf agi luk
   #    比如 "mhp=1" 为最大生命值增加1，
   #         "atk=1 mat=1"为物理攻击+1且魔法攻击+1）
+  #  （如果该能力能够被反复学习，该属性也会反复增加多次）
     :params => "",
   #------------------------------------------------------------------------
-  # -【可选】界面中显示的这个能力的名称
-  #  （如果设置了 :skill，则该项无效；如果未设置该项，则取一开始设置的脚本中名称）
+  # -【可选】帮助窗口中这个能力的名称
+  #  （名称优先级为 :name > :skill > :weapon > :armor > 脚本中的能力标识符）
     :name => "",
   #------------------------------------------------------------------------
-  # -【可选】设置追加显示的说明文本
+  # -【可选】帮助窗口中追加显示的说明文本
   #  （显示在UI界面的能力帮助窗口中，显示在技能说明、属性说明的后面）
   #  （可以使用默认的扩展转义符，记得用 \\ 代替 \，比如 \\i[1] 显示1号图标）
     :help => "",
@@ -83,6 +80,15 @@ ACTORS[0] = {  # 不要漏了花括号
   # -【可选】设置这个能力的最大层数，也就是可重复学习的最大次数
   #  （若不设置，默认为1）
     :level => 1,
+  #------------------------------------------------------------------------
+  # -【可选】学习一次这个能力，需要消耗的AP点数
+  #  （如果不写或写0，则默认激活，:level固定1，:skill与:params与:eval_off无效）
+    :ap => 1,
+  #------------------------------------------------------------------------
+  # -【可选】可以绑定一个开关，设置这个开关的ID
+  #  （当能力解锁时，开关将赋值为 true，重置时，开关将赋值为 false）
+  #  （只在能力解锁或重置时进行一次赋值，不会实时监控开关状态！请注意不要冲突了！）
+    :sid => 1,
   #------------------------------------------------------------------------
   # -【可选】设置这个能力的学习前置要求
   #  （为一个数组，其中填写其他能力的脚本中名称，比如 [1,2,3] 或 [1,1, "1"]）
@@ -338,6 +344,22 @@ module ABILITY_LEARN
     ps[:skill] || nil
   end
   #--------------------------------------------------------------------------
+  # ● 获取指定id的武器的数据
+  #--------------------------------------------------------------------------
+  def self.get_token_weapon(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    return ps[:weapon] if ps[:weapon] && ps[:weapon] > 0
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定id的护甲的数据
+  #--------------------------------------------------------------------------
+  def self.get_token_armor(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    return ps[:armor] if ps[:armor] && ps[:armor] > 0
+    return nil
+  end
+  #--------------------------------------------------------------------------
   # ● 获取指定id的绑定开关
   #--------------------------------------------------------------------------
   def self.get_token_sid(actor_id, token_id)
@@ -349,18 +371,38 @@ module ABILITY_LEARN
   #--------------------------------------------------------------------------
   def self.get_token_name(actor_id, token_id)
     ps = get_token(actor_id, token_id)
-    if ps[:skill]
-      return $data_skills[ps[:skill]].name || ""
+    return ps[:name] if ps[:name] && ps[:name] != ""
+    if ps[:skill] && ps[:skill] > 0
+      return $data_skills[ps[:skill]].name
     end
-    ps[:name] || token_id.to_s
+    if ps[:weapon] && ps[:weapon] > 0
+      return $data_weapons[ps[:weapon]].name
+    end
+    if ps[:armor] && ps[:armor] > 0
+      return $data_armors[ps[:armor]].name
+    end
+    token_id.to_s
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的对应图标/图片bitmap
+  # ● 获取指定id的对应图标
   #--------------------------------------------------------------------------
   def self.get_token_icon(actor_id, token_id)
     ps = get_token(actor_id, token_id)
-    ps[:icon] || nil
+    return ps[:icon] if ps[:icon] && ps[:icon] > 0
+    if ps[:skill] && ps[:skill] > 0
+      return $data_skills[ps[:skill]].icon_index
+    end
+    if ps[:weapon] && ps[:weapon] > 0
+      return $data_weapons[ps[:weapon]].icon_index
+    end
+    if ps[:armor] && ps[:armor] > 0
+      return $data_armors[ps[:armor]].icon_index
+    end
+    return 0
   end
+  #--------------------------------------------------------------------------
+  # ● 获取指定id的对应图片bitmap
+  #--------------------------------------------------------------------------
   def self.get_token_pic(actor_id, token_id)
     ps = get_token(actor_id, token_id)
     b = Cache.system(ps[:pic]) rescue nil
@@ -435,8 +477,9 @@ module ABILITY_LEARN
         elsif type == :run
         elsif type == :text
           name = self.get_token_name(actor_id, id2)
-          return "不可习得 #{name}" if v < 0
-          return "#{name} lv.#{v}" if v > 0
+          icon = self.get_token_icon(actor_id, id2)
+          return "不可习得 \\i[#{icon}]#{name}" if v < 0
+          return "\\i[#{icon}]#{name} lv.#{v}" if v > 0
         end
       when :lv
         if type == :cond
@@ -481,18 +524,31 @@ module ABILITY_LEARN
     t = ""
 
     skill_id = get_token_skill(actor_id, token_id)
-    if skill_id
+    weapon_id = get_token_weapon(actor_id, token_id)
+    armor_id = get_token_armor(actor_id, token_id)
+    icon = get_token_icon(actor_id, token_id)
+    t += "\\i[#{icon}]" if icon > 0
+    name = get_token_name(actor_id, token_id)
+    t += "#{name} "
+    if skill_id && skill_id > 0
       skill = $data_skills[skill_id]
       stype = $data_system.skill_types[skill.stype_id]
-      t += "\\i[#{skill.icon_index}]#{skill.name} \\c[8]#{stype}\\c[0]\n"
+      t += "\\c[8]#{stype}\\c[0]\n"
       _t = " >> " + skill.description.gsub("\r\n") { "\n    " }
-      t += _t + "\\ln"
+      t += _t
+    elsif weapon_id && weapon_id > 0
+      weapon = $data_weapons[weapon_id]
+      t += "\n"
+      _t = " >> " + weapon.description.gsub("\r\n") { "\n    " }
+      t += _t
+    elsif armor_id && armor_id > 0
+      armor = $data_armors[armor_id]
+      t += "\n"
+      _t = " >> " + armor.description.gsub("\r\n") { "\n    " }
+      t += _t
     else
-      icon = get_token_icon(actor_id, token_id)
-      t += "\\i[#{icon}]" if icon
-      name = get_token_name(actor_id, token_id)
-      t += "#{name}\\ln"
     end
+    t += "\\ln"
 
     params_hash = get_token_params(actor_id, token_id)
     if !params_hash.empty?
@@ -668,8 +724,8 @@ class << ABILITY_LEARN
   #--------------------------------------------------------------------------
   def call
     @flag_ui = true
-    init_ui
     begin
+      init_ui
       update_ui
     rescue
       p $!
@@ -752,7 +808,7 @@ class << ABILITY_LEARN
     @params_player = { :last_input => nil, :last_input_c => 0, :d => 1 }
 
     # 全部能力
-    @sprites_token ||= {}
+    @sprites_token = {}
 
     # 角色信息文本
     @sprite_actor_info = Sprite_AbilityLearn_ActorInfo.new
@@ -761,6 +817,10 @@ class << ABILITY_LEARN
     # 说明文本
     @sprite_help = Sprite_AbilityLearn_TokenHelp.new
     @sprite_help.z = @sprite_hint.z + 2
+
+    # 角色背景图片
+    @sprite_actor_bg = Sprite.new(@viewport_bg)
+    @sprite_actor_bg.z = 1
 
     # 重置当前角色
     @actor = $game_party.menu_actor
@@ -835,8 +895,6 @@ class << ABILITY_LEARN
   def check_params
     ps = ABILITY_LEARN.get_params(@actor_id)
 
-    @sprite_actor_bg ||= Sprite.new(@viewport_bg)
-    @sprite_actor_bg.z = 1
     if ps[:bg]
       @sprite_actor_bg.bitmap = Cache.system(ps[:bg]) rescue Cache.empty_bitmap
       @sprite_actor_bg.visible = true
@@ -976,6 +1034,7 @@ class << ABILITY_LEARN
         break @selected_token = st if st.overlap?(s)
       end
       if @selected_token # 选中
+        Sound.play_cursor
         @sprite_help.redraw(@selected_token)
         redraw_hint(@sprite_hint)
       elsif @sprite_help.visible  # 从选中变成没有选中任何能力
@@ -992,6 +1051,7 @@ class << ABILITY_LEARN
       data = $game_actors[@actor_id].eagle_ability_data
       id = @selected_token.id
       if data.can_unlock?(id)
+        Sound.play_ok
         data.unlock(id)
         refresh
       else
@@ -1179,12 +1239,10 @@ class Sprite_AbilityLearn_Token < Sprite
   # ● 重设位图
   #--------------------------------------------------------------------------
   def reset_bitmap
-    skill_id = ABILITY_LEARN.get_token_skill(@actor_id, @id)
-    return redraw($data_skills[skill_id].icon_index) if skill_id
-    icon = ABILITY_LEARN.get_token_icon(@actor_id, @id)
-    return redraw(icon) if icon
     pic_bitmap = ABILITY_LEARN.get_token_pic(@actor_id, @id)
     return redraw(nil, pic_bitmap) if pic_bitmap
+    icon = ABILITY_LEARN.get_token_icon(@actor_id, @id)
+    return redraw(icon) if icon && icon > 0
     redraw(1)
   end
   #--------------------------------------------------------------------------
@@ -1304,6 +1362,8 @@ class Data_AbilityLearn
     @ap_max = 0  # 全部能力点数目（用于重置）
     @skill_ids = []  # 已经解锁的技能的ID
     @param_plus = [0] * 8  # 8维属性的增量
+    @weapon_ids = []  # 等价的武器
+    @armor_ids = []  # 等价的护甲
   end
   #--------------------------------------------------------------------------
   # ● 增加ap
@@ -1323,6 +1383,9 @@ class Data_AbilityLearn
     @skill_ids.clear
     # 清空附加属性
     @param_plus = [0] * 8
+    # 清空武器护甲
+    @weapon_ids = []
+    @armor_ids = []
     # 对每个已解锁的，进行额外处理
     @unlocks.each do |token_id|
       # 绑定开关
@@ -1351,13 +1414,18 @@ class Data_AbilityLearn
       @ap -= ABILITY_LEARN.get_token_ap(@actor_id, token_id)
       # 习得技能
       skill_id = ABILITY_LEARN.get_token_skill(@actor_id, token_id)
-      @skill_ids.push(skill_id) if skill_id
+      @skill_ids.push(skill_id) if skill_id && skill_id > 0
       # 增加属性
       hash = ABILITY_LEARN.get_token_params(@actor_id, token_id)
       hash.each do |sym, v|
         param_id = ABILITY_LEARN::PARAMS_TO_ID[sym]
         @param_plus[param_id] += v.to_i
       end
+      # 增加武器护甲
+      wid = ABILITY_LEARN.get_token_weapon(@actor_id, token_id)
+      @weapon_ids.push(wid) if wid && wid > 0
+      aid = ABILITY_LEARN.get_token_armor(@actor_id, token_id)
+      @armor_ids.push(aid) if aid && aid > 0
       # 绑定开关
       sid = ABILITY_LEARN.get_token_sid(@actor_id, token_id)
       $game_switches[sid] = true if sid
@@ -1415,16 +1483,34 @@ class Data_AbilityLearn
     @unlocks.count(token_id)
   end
   #--------------------------------------------------------------------------
-  # ● 获取已经学习的技能
+  # ● 获取已经学习的技能（技能ID的数组）
   #--------------------------------------------------------------------------
   def skills
     @skill_ids
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取等价的武器/护甲（装备ID的数组）
+  #--------------------------------------------------------------------------
+  def weapons
+    @weapon_ids.collect { |e| $data_weapons[e] }
+  end
+  def armors
+    @armor_ids.collect { |e| $data_armors[e] }
+  end
+  def equips
+    weapons + armors
   end
   #--------------------------------------------------------------------------
   # ● 获取已经学习的附加属性
   #--------------------------------------------------------------------------
   def param_plus(param_id)
     @param_plus[param_id]
+  end
+  #--------------------------------------------------------------------------
+  # ● 以数组方式获取拥有特性所有实例
+  #--------------------------------------------------------------------------
+  def feature_objects
+    weapons + armors
   end
 end
 
@@ -1433,6 +1519,13 @@ end
 #==============================================================================
 class Game_Actor
   attr_reader :eagle_ability_data
+  #--------------------------------------------------------------------------
+  # ● 以数组方式获取拥有特性所有实例
+  #--------------------------------------------------------------------------
+  alias eagle_ability_learn_feature_objects feature_objects
+  def feature_objects
+    eagle_ability_learn_feature_objects + @eagle_ability_data.feature_objects
+  end
   #--------------------------------------------------------------------------
   # ● 增加AP
   #--------------------------------------------------------------------------
@@ -1459,7 +1552,10 @@ class Game_Actor
   alias eagle_ability_learn_param_plus param_plus
   def param_plus(param_id)
     v = eagle_ability_learn_param_plus(param_id)
-    v + @eagle_ability_data.param_plus(param_id)
+    v += @eagle_ability_data.param_plus(param_id)
+    v += @eagle_ability_data.equips.compact.inject(0) { |r, item|
+      r += item.params[param_id] }
+    v
   end
   #--------------------------------------------------------------------------
   # ● 等级上升
