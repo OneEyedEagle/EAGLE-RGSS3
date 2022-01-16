@@ -8,7 +8,7 @@
 $imported ||= {}
 $imported["EAGLE-AbilityLearn"] = true
 #==============================================================================
-# - 2022.1.15.22 新增等价装备武器/护甲
+# - 2022.1.16.11 新增等价装备武器/护甲
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
 #------------------------------------------------------------------------------
@@ -578,11 +578,12 @@ module ABILITY_LEARN
         # 处理前置需求
         pres.each do |id2|
           name = get_token_name(actor_id, id2)
+          icon = get_token_icon(actor_id, id2)
           l = pres_all.count(id2)
           lv = level(id2)
           t += (lv >= l ? " #{HELP_TEXT_COND_OK} " : \
                 "\\c[#{HELP_TEXT_COLOR_NOT}] #{HELP_TEXT_COND_NO} ")
-          t += "#{name} lv.#{l}\\c[0]\n"
+          t += "\\i[#{icon}]#{name} lv.#{l}\\c[0]\n"
         end
         # 处理扩展的前置需求
         pres_ex = get_token_pre_ex(actor_id, token_id)
