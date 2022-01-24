@@ -1,12 +1,13 @@
 #==============================================================================
 # ■ 技能多段伤害（计时版本） by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
-# - 2021.8.15.23 计时版本，更好地兼容 SideView
+# - 2022.1.22.23 计时版本，更好地兼容 SideView
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-SkillDamageEX"] = true
 #==============================================================================
 # - 本插件新增独立的伤害结算，可以指定在技能后的某一帧结算指定技能公式
+# - 本插件已经完全兼容 SideView，但对于其它战斗系统可能存在较多问题
 #----------------------------------------------------------------------------
 # ● 设置
 #----------------------------------------------------------------------------
@@ -249,20 +250,12 @@ class Scene_Battle < Scene_Base
     #abs_wait(15)
   end
   #--------------------------------------------------------------------------
-  # ● 使用物品
-  #--------------------------------------------------------------------------
-  alias eagle_skill_damage_ex_use_item use_item
-  def use_item
-    eagle_skill_damage_ex_use_item
-    #eagle_wait_for_animation
-  end
-  #--------------------------------------------------------------------------
   # ● 发动技能／物品
   #--------------------------------------------------------------------------
   alias eagle_skill_damage_ex_invoke_item invoke_item
   def invoke_item(target, item)
     eagle_skill_damage_ex_invoke_item(target, item)
-    #eagle_wait_for_animation # 兼容sideview，增加额外的等待
+    eagle_wait_for_animation
   end
   #--------------------------------------------------------------------------
   # ●（覆盖）处理攻击动画
@@ -311,16 +304,25 @@ class Scene_Battle < Scene_Base
     @subject = _subject
   end
   end
+end
+#==============================================================================
+# ○ SideView
+#==============================================================================
+if defined?(SideView)
+class SideView
   #--------------------------------------------------------------------------
-  # ● 飛ばしアニメ処理
+  # ● ダメージアニメ
   #--------------------------------------------------------------------------
-  if defined?(SideView)
-  alias eagle_skill_damage_ex_sideview_set_move_anime set_move_anime
-  def set_move_anime(item)
-    eagle_skill_damage_ex_sideview_set_move_anime(item)
-    eagle_wait_for_animation
+  def damage_anime(delay_time = 12)
+    anim_id = N03.get_attack_anime_id(-3, @battler)
+    wait_count =  N03.get_anime_time(anim_id) - 2 # 记录一下动画的帧数
+    anime(anim_id, wait = false)  # 不再等待，确保伤害处理也能同步进行
+    action_play
+    @full_action.unshift("#{wait_count}")  # 第二、增加等待动画
+    @full_action.unshift("eval('@damage_anime_data = []
+    @set_damage = true')")  # 优先、开启伤害处理
   end
-  end
+end
 end
 
 #==============================================================================
