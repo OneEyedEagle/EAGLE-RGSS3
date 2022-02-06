@@ -1,12 +1,16 @@
 #==============================================================================
 # ■ 并行式对话 by 老鹰（http://oneeyedeagle.lofter.com/）
-# ※ 本插件需要放置在
+# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】与
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-MessagePara2"] = true
 #==============================================================================
-# - 2022.1.17.22 修复F12崩溃的BUG
+# - 2022.2.4.22
+#==============================================================================
+if $imported["EAGLE-CommonMethods"] == nil
+  p "警告：没有放在【组件-通用方法汇总 by老鹰】之下，继续使用一定会报错！"
+end
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -315,58 +319,9 @@ class Spriteset_Battle; attr_reader :viewport1; end
 class Scene_Battle; attr_reader :spriteset; end
 
 #===============================================================================
-# ○ EAGLE
-#===============================================================================
-module EAGLE
-  #--------------------------------------------------------------------------
-  # ● 解析tags文本
-  #--------------------------------------------------------------------------
-  def self.parse_tags(_t)
-    # 脚本替换
-    _evals = {}; _eval_i = -1
-    _t.gsub!(/{(.*?)}/) { _eval_i += 1; _evals[_eval_i] = $1; "<#{_eval_i}>" }
-    # 处理等号左右的空格
-    _t.gsub!( / *= */ ) { '=' }
-    # tag 拆分
-    _ts = _t.split(/ | /)
-    # tag 解析
-    _hash = {}
-    _ts.each do |_tag|  # _tag = "xxx=xxx"
-      _tags = _tag.split('=')
-      _k = _tags[0].downcase
-      _v = _tags[1]
-      _hash[_k.to_sym] = _v
-    end
-    # 脚本替换
-    _hash.keys.each do |k|
-      _hash[k] = _hash[k].gsub(/<(\d+)>/) { _evals[$1.to_i] }
-    end
-    return _hash
-  end
-end
-
-#===============================================================================
 # ○ 通用
 #===============================================================================
 module MESSAGE_PARA2
-  #--------------------------------------------------------------------------
-  # ● 绘制角色肖像图
-  #--------------------------------------------------------------------------
-  def self.draw_face(bitmap, face_name, face_index, x, y, flag_draw=true)
-    _bitmap = Cache.face(face_name)
-    face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
-    num_line = $1 ? $1.to_i : 2
-    num_col = $2 ? $2.to_i : 4
-    sole_w = _bitmap.width / num_col
-    sole_h = _bitmap.height / num_line
-
-    if flag_draw
-      rect = Rect.new(face_index % 4 * sole_w, face_index / 4 * sole_h, sole_w, sole_h)
-      des_rect = Rect.new(x, y, sole_w, sole_h)
-      bitmap.stretch_blt(des_rect, _bitmap, rect)
-    end
-    return sole_w, sole_h
-  end
   #--------------------------------------------------------------------------
   # ● 获取窗口皮肤名称
   #--------------------------------------------------------------------------
@@ -374,55 +329,6 @@ module MESSAGE_PARA2
     return ID_TO_SKIN[sym] if ID_TO_SKIN.has_key?(sym)
     return ID_TO_SKIN[sym.to_i] if ID_TO_SKIN.has_key?(sym.to_i)
     return sym
-  end
-  #--------------------------------------------------------------------------
-  # ● 重置指定精灵的显示原点
-  #  如果 restore 传入 true，则代表屏幕显示位置将保持不变，即自动调整xy的值，以适配新的oxy
-  #--------------------------------------------------------------------------
-  def self.reset_sprite_oxy(obj, o, restore = true)
-    case o
-    when 1,4,7; obj.ox = 0
-    when 2,5,8; obj.ox = obj.width / 2
-    when 3,6,9; obj.ox = obj.width
-    end
-    case o
-    when 1,2,3; obj.oy = obj.height
-    when 4,5,6; obj.oy = obj.height / 2
-    when 7,8,9; obj.oy = 0
-    end
-    if restore
-      obj.x += obj.ox
-      obj.y += obj.oy
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 重置指定对象依位置
-  #  obj 的 o位置 将与 obj2 的 o2位置 相重合
-  #  假定 obj 与 obj2 目前均是左上角为显示原点，即若其有oxy属性，则值为0
-  #--------------------------------------------------------------------------
-  def self.reset_xy(obj, o, obj2, o2)
-    # 先把 obj 的左上角放置于目的地
-    case o2
-    when 0,1,4,7; obj.x = obj2.x
-    when 2,5,8; obj.x = obj2.x + obj2.width / 2
-    when 3,6,9; obj.x = obj2.x + obj2.width
-    end
-    case o2
-    when 0,1,2,3; obj.y = obj2.y + obj2.height
-    when 4,5,6; obj.y = obj2.y + obj2.height / 2
-    when 7,8,9; obj.y = obj2.y
-    end
-    # 再应用obj的o调整
-    case o
-    when 1,4,7;
-    when 2,5,8; obj.x = obj.x - obj.width / 2
-    when 3,6,9; obj.x = obj.x - obj.width
-    end
-    case o
-    when 1,2,3; obj.y = obj.y - obj.height
-    when 4,5,6; obj.y = obj.y - obj.height / 2
-    when 7,8,9;
-    end
   end
   #--------------------------------------------------------------------------
   # ● 脚本执行
@@ -497,7 +403,7 @@ class Sprite_EagleMsg < Sprite
     params[:face_w] = 0
     params[:face_h] = 0
     if params[:face_name] != ""
-      params[:face_w], params[:face_h] = MESSAGE_PARA2.draw_face(self.bitmap,
+      params[:face_w], params[:face_h] = EAGLE_COMMON.draw_face(self.bitmap,
         params[:face_name],params[:face_index], 0, 0, false)
     end
 
@@ -546,7 +452,7 @@ class Sprite_EagleMsg < Sprite
     if params[:face_name] != ""
       face_x = TEXT_BORDER_WIDTH
       face_y = TEXT_BORDER_WIDTH
-      MESSAGE_PARA2.draw_face(self.bitmap, params[:face_name],
+      EAGLE_COMMON.draw_face(self.bitmap, params[:face_name],
         params[:face_index], face_x, face_y, true)
     end
 
@@ -675,8 +581,8 @@ class Sprite_EagleMsg < Sprite
       # 修改为图像的左上角坐标
       r.set(_x, _y, h[:obj_w], h[:obj_h])
     end
-    MESSAGE_PARA2.reset_xy(self, h[:o], r, h[:o2])
-    MESSAGE_PARA2.reset_sprite_oxy(self, h[:o])
+    EAGLE_COMMON.reset_xy(self, h[:o], r, h[:o2])
+    EAGLE_COMMON.reset_sprite_oxy(self, h[:o])
     if h[:fix] == 1 # 保证显示在屏幕内
       _x = self.x - self.ox
       _y = self.y - self.oy
@@ -893,7 +799,7 @@ class Game_Interpreter
     # 设置位置 当前对话框的o处，与 w/m/e 的o处相重合
     text.gsub!( /<pos:? ?(.*?)>/im ) {
       # "o=? wx=? wy=? mx=? my=? e=? o2=? dx=? dy=? fix=?"
-      params[:pos] = EAGLE.parse_tags($1)
+      params[:pos] = EAGLE_COMMON.parse_tags($1)
       ""
     }
     # 提取位于开头的姓名

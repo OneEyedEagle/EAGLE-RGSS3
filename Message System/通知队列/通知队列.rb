@@ -1,11 +1,16 @@
 #==============================================================================
 # ■ 通知队列 by 老鹰（http://oneeyedeagle.lofter.com/）
-# ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
+# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】与
+#   【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-MessageHint"] = true
 #==============================================================================
-# - 2022.1.17.22 修复F12崩溃的BUG
+# - 2022.2.4.22
+#==============================================================================
+if $imported["EAGLE-CommonMethods"] == nil
+  p "警告：没有放在【组件-通用方法汇总 by老鹰】之下，继续使用一定会报错！"
+end
 #==============================================================================
 # - 本插件新增了并行显示的竖直排列的通知队列
 #------------------------------------------------------------------------------
@@ -403,54 +408,6 @@ class << DataManager
   end
 end
 #===============================================================================
-# ○ 通用
-#===============================================================================
-module MESSAGE_HINT
-  #--------------------------------------------------------------------------
-  # ● 解析tags文本
-  #--------------------------------------------------------------------------
-  def self.parse_tags(_t)
-    # 脚本替换
-    _evals = {}; _eval_i = -1
-    _t.gsub!(/{(.*?)}/) { _eval_i += 1; _evals[_eval_i] = $1; "<#{_eval_i}>" }
-    # 处理等号左右的空格
-    _t.gsub!( / *= */ ) { '=' }
-    # tag 拆分
-    _ts = _t.split(/ | /)
-    # tag 解析
-    _hash = {}
-    _ts.each do |_tag|  # _tag = "xxx=xxx"
-      _tags = _tag.split('=')
-      _k = _tags[0].downcase
-      _v = _tags[1]
-      _hash[_k.to_sym] = _v
-    end
-    # 脚本替换
-    _hash.keys.each do |k|
-      _hash[k] = _hash[k].gsub(/<(\d+)>/) { _evals[$1.to_i] }
-    end
-    return _hash
-  end
-  #--------------------------------------------------------------------------
-  # ● 依据原点类型（九宫格），将b2位图拷贝到b1位图对应位置
-  # 需确保 b1 的宽高均大于 b2
-  #--------------------------------------------------------------------------
-  def self.bitmap_copy_do(b1, b2, o)
-    x = y = 0
-    case o
-    when 1,4,7; x = 0
-    when 2,5,8; x = b1.width / 2 - b2.width / 2
-    when 3,6,9; x = b1.width - b2.width
-    end
-    case o
-    when 1,2,3; y = b1.height - b2.height
-    when 4,5,6; y = b1.height / 2 - b2.height / 2
-    when 7,8,9; y = 0
-    end
-    b1.blt(x, y, b2, b2.rect)
-  end
-end
-#===============================================================================
 # ○ Spriteset_EagleHint
 #===============================================================================
 class Spriteset_EagleHint
@@ -725,7 +682,7 @@ class Sprite_EagleHint < Sprite
       if _b
         self.bitmap = Bitmap.new([w, _b.width].max, [h, _b.height].max)
         o = params[:bgo] || @spriteset.params["HINT_BGPIC_O"]
-        MESSAGE_HINT.bitmap_copy_do(self.bitmap, _b, o.to_i)
+        EAGLE_COMMON.bitmap_copy_do(self.bitmap, _b, o.to_i)
       else
         self.bitmap = Bitmap.new(w, h)
       end
@@ -879,7 +836,7 @@ class Game_Interpreter
     t = @comments.inject { |t, v| t = t + "\n" + v }
     t.scan(MESSAGE_HINT::COMMENT_MESSAGE_HINT).each do |v|
       ps = v[0].lstrip.rstrip  # tags string  # 去除前后空格
-      ps = MESSAGE_HINT.parse_tags(ps)
+      ps = EAGLE_COMMON.parse_tags(ps)
       ps[:text] = v[1]  # text
       ps[:id] ||= "default"
       MESSAGE_HINT.add(ps, ps[:id])

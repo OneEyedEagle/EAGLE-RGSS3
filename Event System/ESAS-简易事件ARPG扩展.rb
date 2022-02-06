@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-ESAS"] = true
 #==============================================================================
-# - 2021.11.27.14
+# - 2022.2.4.22
 #==============================================================================
 # - 本插件新增一系列方便事件脚本调用的方法，用于创作简易ARPG
 #--------------------------------------------------------------------------
@@ -791,7 +791,7 @@ class Game_Character < Game_CharacterBase
       return if !@esas_event.abort # 不可以强制中止，就取消当前事件的执行
     end
     if params.is_a?(String) && $imported["EAGLE-EventInteractEX"]
-      params = EAGLE.parse_tags(params)
+      params = EAGLE_COMMON.parse_tags(params)
       params[:mid] = params[:mid].to_i if params[:mid]
       params[:eid] = params[:eid].to_i
       params[:pid] = params[:pid].to_i if params[:pid]
@@ -916,7 +916,7 @@ class Game_Player < Game_Character
   #--------------------------------------------------------------------------
   def set_key(key, params)
     if params.is_a?(String) && $imported["EAGLE-EventInteractEX"]
-      params = EAGLE.parse_tags(params)
+      params = EAGLE_COMMON.parse_tags(params)
       params[:mid] = params[:mid].to_i if params[:mid]
       params[:eid] = params[:eid].to_i
       params[:pid] = params[:pid].to_i if params[:pid]
@@ -1038,7 +1038,7 @@ class Game_Event < Game_Character
         ps[:eid] = $2.to_i
         ps[:pid] = $3.to_i
       elsif $imported["EAGLE-EventInteractEX"]
-        _params = EAGLE.parse_tags(_t)
+        _params = EAGLE_COMMON.parse_tags(_t)
         ps[:mid] = _params[:mid].to_i if _params[:mid]
         ps[:eid] = _params[:eid].to_i
         ps[:pid] = _params[:pid].to_i if _params[:pid]
@@ -1727,7 +1727,7 @@ module ESAS
     # :size => 字体大小
     # :color => 字体颜色
     if params.is_a?(String) && $imported["EAGLE-EventInteractEX"]
-      params = EAGLE.parse_tags(params)
+      params = EAGLE_COMMON.parse_tags(params)
       params[:cid] = params[:cid].to_i
       params[:type] = params[:type].to_sym if params[:type]
       params[:w] = params[:w].to_i if params[:w]

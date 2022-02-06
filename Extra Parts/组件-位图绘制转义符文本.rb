@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-DrawTextEX"] = true
 #==============================================================================
-# - 2021.12.6.20 新增:ali文字对齐方式
+# - 2022.1.30.23
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #-----------------------------------------------------------------------------
@@ -65,6 +65,7 @@ class Process_DrawTextEX
     @info = {}
     @info[:w] ||= [] # line_index => width
     @info[:h] ||= [] # line_index => height
+    @info[:rects] ||= [] # line_index => rect范围
     @escapes = {}
     run(false)
   end
@@ -163,6 +164,8 @@ class Process_DrawTextEX
       pos[:h] = 0
       @info[:w][pos[:line]] = 0
       @info[:h][pos[:line]] = 0
+      # 存储当前行的矩形
+      @info[:rects][pos[:line]] = Rect.new(pos[:x], pos[:y], pos[:w], pos[:h])
     end
   end
   #--------------------------------------------------------------------------
@@ -219,6 +222,8 @@ class Process_DrawTextEX
     if !pos[:flag_draw]
       @info[:w][pos[:line]] = pos[:w]
       @info[:h][pos[:line]] = pos[:h]
+      @info[:rects][pos[:line]].width = pos[:w]
+      @info[:rects][pos[:line]].height = pos[:h]
     end
   end
   #--------------------------------------------------------------------------

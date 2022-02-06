@@ -1,10 +1,15 @@
 #==============================================================================
 # ■ 事件互动扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-EventInteractEX"] = true
 #==============================================================================
-# - 2021.10.25.23 优化注释
+# - 2022.2.4.22
+#==============================================================================
+if $imported["EAGLE-CommonMethods"] == nil
+  p "警告：没有放在【组件-通用方法汇总 by老鹰】之下，继续使用一定会报错！"
+end
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型；事件触发事件
 #------------------------------------------------------------------------------
@@ -264,18 +269,6 @@ end
 #=============================================================================
 module EAGLE
   #--------------------------------------------------------------------------
-  # ● 读取事件页开头的注释组
-  #--------------------------------------------------------------------------
-  def self.event_comment_head(command_list)
-    return "" if command_list.nil? || command_list.empty?
-    t = ""; index = 0
-    while command_list[index].code == 108 || command_list[index].code == 408
-      t += command_list[index].parameters[0]
-      index += 1
-    end
-    t
-  end
-  #--------------------------------------------------------------------------
   # ● 判定e2是否在e1的dirs位置上 或 在e1的dirs位置上的事件的名字是否含e2.to_s
   #  dirs 为 wasd 的排列组合字符串，若为空，则判定是否坐标一致
   #       其中 w 代表面前一格，s 代表后退一格，a 代表左手边一格，d 代表右手边一格
@@ -292,7 +285,7 @@ module EAGLE
       if e2_id == 0
         e2 = e2_  # 字符串：名称含有e2的事件
       else
-        e2 = EAGLE.get_chara(self, e2_id)  # 数字：指定序号的事件
+        e2 = EAGLE_COMMON.get_chara(self, e2_id)  # 数字：指定序号的事件
       end
       # 提取目标位置
       dirs.split('|').each do |cs|
@@ -372,49 +365,6 @@ module EAGLE
     return e2 if e2.x == _x && e2.y == _y
     return nil
   end
-  #--------------------------------------------------------------------------
-  # ● 获取事件对象
-  #--------------------------------------------------------------------------
-  def self.get_chara(event, id)
-    if id == 0 # 当前事件
-      return $game_map.events[event.id]
-    elsif id > 0 # 第id号事件
-      chara = $game_map.events[id]
-      chara ||= $game_map.events[event.id]
-      return chara
-    elsif id < 0 # 队伍中数据库id号角色（不存在则取队长）
-      id = id.abs
-      $game_player.followers.each do |f|
-        return f if f.actor && f.actor.actor.id == id
-      end
-      return $game_player
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 解析tags文本
-  #--------------------------------------------------------------------------
-  def self.parse_tags(_t)
-    # 脚本替换
-    _evals = {}; _eval_i = -1
-    _t.gsub!(/{(.*?)}/) { _eval_i += 1; _evals[_eval_i] = $1; "<#{_eval_i}>" }
-    # 处理等号左右的空格
-    _t.gsub!( / *= */ ) { '=' }
-    # tag 拆分
-    _ts = _t.split(/ | /)
-    # tag 解析
-    _hash = {}
-    _ts.each do |_tag|  # _tag = "xxx=xxx"
-      _tags = _tag.split('=')
-      _k = _tags[0].downcase
-      _v = _tags[1]
-      _hash[_k.to_sym] = _v
-    end
-    # 脚本替换
-    _hash.keys.each do |k|
-      _hash[k] = _hash[k].gsub(/<(\d+)>/) { _evals[$1.to_i] }
-    end
-    return _hash
-  end
 end
 #=============================================================================
 # ■ 读取部分
@@ -426,7 +376,7 @@ module EVENT_INTERACT
   #--------------------------------------------------------------------------
   def self.extract_syms(event)
     syms = []
-    t = EAGLE.event_comment_head(event.list)
+    t = EAGLE_COMMON.event_comment_head(event.list)
     t.scan(/【(.*?)】/mi).each do |ps|
       _t = ps[0]
       _t.gsub!(/ *(?i:if){(.*?)} */) { "" }
@@ -441,9 +391,9 @@ module EVENT_INTERACT
   #--------------------------------------------------------------------------
   def self.extract_tags(event, sym = "auto")
     syms = []
-    t = EAGLE.event_comment_head(event.list)
+    t = EAGLE_COMMON.event_comment_head(event.list)
     t.scan(/<#{sym}:? *(.*?)>/mi).each do |ps|
-      _hash = EAGLE.parse_tags(ps[0])
+      _hash = EAGLE_COMMON.parse_tags(ps[0])
       _hash[:t] ||= 0
       _hash[:t] = _hash[:t].to_i
       _hash[:tc] = 0
@@ -458,7 +408,7 @@ module EVENT_INTERACT
     syms = []
     t = item.note
     t.scan(/<#{sym}:? *(.*?)>/mi).each do |ps|
-      _hash = EAGLE.parse_tags(ps[0])
+      _hash = EAGLE_COMMON.parse_tags(ps[0])
       syms.push(_hash)
     end
     return syms

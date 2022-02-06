@@ -1,10 +1,15 @@
 #==============================================================================
 # ■ 简易合成分解系统 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-ItemEX"] = true
 #==============================================================================
-# - 2021.11.17.18
+# - 2022.2.4.22
+#==============================================================================
+if $imported["EAGLE-CommonMethods"] == nil
+  p "警告：没有放在【组件-通用方法汇总 by老鹰】之下，继续使用一定会报错！"
+end
 #==============================================================================
 # - 本插件新增在菜单物品栏中触发的物品分解与合成系统
 #--------------------------------------------------------------------------
@@ -140,7 +145,7 @@ module ITEM_EX
         result = parse_item_list_str(params[1])
         rules[ sort_item_array(array) ] = result
       end
-      n.times { inputs.push(get_item_str(item)) }
+      n.times { inputs.push(EAGLE_COMMON.get_item_str(item)) }
     end
     # inputs = [ "i1", "i1", "i1" ] # 其中数量拆开
     return rules[ sort_item_array(inputs) ] # { item => num } or nil
@@ -160,44 +165,15 @@ module ITEM_EX
       s =~ /(\d+)?([iwa])?(\d+)/i
       num = $1.nil? ? 1 : $1.to_i
       type = $2.nil? ? 'i' : $2
-      obj = get_item_obj(type, $3.to_i)
+      obj = EAGLE_COMMON.get_item_obj(type, $3.to_i)
       if output_hash
         items[obj] ||= 0
         items[obj] += num
       else
-        num.times { items.push(get_item_str(obj, 1)) }
+        num.times { items.push(EAGLE_COMMON.get_item_str(obj, 1)) }
       end
     end
     return items
-  end
-#==============================================================================
-# ○ 通用
-#==============================================================================
-  #--------------------------------------------------------------------------
-  # ● 由物品标志字符获取指定对象
-  #--------------------------------------------------------------------------
-  def self.get_item_obj(type, id)
-    case type
-    when 's'; obj = $data_skills[id]
-    when 'i'; obj = $data_items[id]
-    when 'w'; obj = $data_weapons[id]
-    when 'a'; obj = $data_armors[id]
-    end
-    return obj
-  end
-  #--------------------------------------------------------------------------
-  # ● 由指定对象获取物品标志字符
-  #--------------------------------------------------------------------------
-  def self.get_item_str(item, num = 1)
-    _type = ""
-    c = item.class
-    _type += "s" if c == RPG::Skill
-    _type += "i" if c == RPG::Item
-    _type += "w" if c == RPG::Weapon
-    _type += 'a' if c == RPG::Armor
-    t = _type + item.id.to_s
-    t = num.to_s + t if num != 1
-    return t
   end
 #==============================================================================
 # ○ Scene
