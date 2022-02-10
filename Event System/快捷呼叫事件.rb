@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-EventBar"] = true
 #==============================================================================
-# - 2022.2.4.22
+# - 2022.2.8.20
 #==============================================================================
 if $imported["EAGLE-CommonMethods"] == nil
   p "警告：没有放在【组件-通用方法汇总 by老鹰】之下，继续使用一定会报错！"
@@ -328,7 +328,7 @@ module EVENTBAR
     end
     # 地图上的事件
     if h[:mid] != $game_map.map_id
-      map = EAGLE.get_map_data(h[:mid])
+      map = EAGLE_COMMON.get_map_data(h[:mid])
       event_data = map.events[h[:eid]] rescue return
       event = Game_Event.new(h[:mid], event_data)
     else
@@ -448,34 +448,6 @@ module EVENTBAR
     item[1][:c] = item[1][:t] if item[1][:t] > 0
     Sound.play_ok
     return true
-  end
-end
-#=============================================================================
-# ○ EAGLE - Cache
-#=============================================================================
-module EAGLE
-  #--------------------------------------------------------------------------
-  # ● 读取地图
-  #--------------------------------------------------------------------------
-  def self.cache_load_map(map_id)
-    @cache_map ||= {}
-    return @cache_map[map_id] if @cache_map[map_id]
-    @cache_map[map_id] = load_data(sprintf("Data/Map%03d.rvdata2", map_id))
-    @cache_map[map_id]
-  end
-  #--------------------------------------------------------------------------
-  # ● 清空缓存
-  #--------------------------------------------------------------------------
-  def self.cache_clear
-    @cache_map ||= {}
-    @cache_map.clear
-    GC.start
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取地图数据
-  #--------------------------------------------------------------------------
-  def self.get_map_data(map_id)
-    EAGLE.cache_load_map(map_id)
   end
 end
 #===============================================================================

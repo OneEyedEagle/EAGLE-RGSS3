@@ -2,9 +2,9 @@
 # ■ 组件-通用方法汇总 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.0.0"
+$imported["EAGLE-CommonMethods"] = "1.0.3"
 #==============================================================================
-# - 2022.2.5.23
+# - 2022.2.10.22
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #===============================================================================
@@ -50,18 +50,14 @@ end
 #===============================================================================
 module EAGLE_COMMON
   #--------------------------------------------------------------------------
-  # ● 执行文本
-  #--------------------------------------------------------------------------
-  def self.eagle_eval(t)
-    s = $game_switches; v = $game_variables
-    es = $game_map.events
-    eval(t)
-  end
-  #--------------------------------------------------------------------------
   # ● 解析tags文本
+  #  其中 {{str}} 将作为脚本，被替换为运行的结果
+  #  其中 {str} 将被完全保留，需要之后在实际调用时自己进行eval
   #--------------------------------------------------------------------------
   def self.parse_tags(_t)
     # 脚本替换
+    _t.gsub!(/{{(.*?)}}/) { eagle_eval($1) }
+    # 内容替换
     _evals = {}; _eval_i = -1
     _t.gsub!(/{(.*?)}/) { _eval_i += 1; _evals[_eval_i] = $1; "<#{_eval_i}>" }
     # 处理等号左右的空格
@@ -81,6 +77,24 @@ module EAGLE_COMMON
       _hash[k] = _hash[k].gsub(/<(\d+)>/) { _evals[$1.to_i] }
     end
     return _hash
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行文本
+  #--------------------------------------------------------------------------
+  def self.eagle_eval(t)
+    s = $game_switches; v = $game_variables
+    es = $game_map.events
+    eval(t)
+  end
+  #--------------------------------------------------------------------------
+  # ● 判断字符串的真假
+  #--------------------------------------------------------------------------
+  def self.check_bool(str, default=false)
+    return default if str.nil?
+    v = eagle_eval(str)
+    return true if v == true || v == 1
+    return false if v == false || v == 0
+    return default
   end
 end
 
@@ -177,6 +191,22 @@ module EAGLE_COMMON
       return $game_player
     end
   end
+  #--------------------------------------------------------------------------
+  # ● 获取事件精灵
+  #--------------------------------------------------------------------------
+  def self.get_chara_sprite(id)
+    return if !SceneManager.scene_is?(Scene_Map)
+    charas_s = SceneManager.scene.spriteset.character_sprites
+    chara = get_chara(nil, id)
+    charas_s.each { |s| return s if s.character == chara }
+    return nil
+  end
+end
+class Spriteset_Map
+  attr_reader  :character_sprites
+end
+class Scene_Map
+  attr_reader  :spriteset
 end
 
 #==============================================================================

@@ -2,9 +2,9 @@
 # ■ 事件拷贝 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventCopy"] = true
+$imported["EAGLE-EventCopy"] = "1.2.0"
 #=============================================================================
-# - 2022.1.16.22 新增临时保存
+# - 2022.2.8.20
 #=============================================================================
 # - 原始创意：Yanfly Engine Ace - Spawn Event
 # - 本插件新增了拷贝事件的方法
@@ -95,9 +95,13 @@ MODE_VX = false # 如果要在RPG Maker VX中使用，请修改为 true
 #
 #  1. 利用 事件脚本 回收
 #
-#     event.copy_finish
+#       copy_finish
 #
-#  2. 利用 事件指令-暂时消除事件 回收
+#  2. 利用 全局脚本 回收
+#
+#       event.copy_finish
+#
+# - 如果不进行回收，则使用完成的事件的精灵也将尝试复用于其它拷贝，无须担心浪费
 #
 #-----------------------------------------------------------------------------
 # 【事件的临时变量】
@@ -178,10 +182,8 @@ class Game_Map
     @@copy_log[@map_id] ||= {}
     a = []
     @events.each do |i, e|
-      next if e.flag_copy == false
-      next if e.flag_copy_restore == true  # 已经
       # [origin_mid, origin_eid, x, y, id]
-      a.push([e.copy_origin[0],e.copy_origin[1], e.x, e.y, e.id])
+      a.push([e.copy_origin[0],e.copy_origin[1], e.x, e.y, e.id]) if e.flag_copy
     end
     @@copy_log[@map_id][:data] = a
     @@copy_log[@map_id][:flag] = @flag_save_copy
@@ -222,25 +224,17 @@ class Game_Map
     # 初始化
     @events_copy[map_id] ||= {}
     @events_copy[map_id][event_id] ||= []
-    # 获取原始事件
-    if !@events_copy[map_id][event_id].empty?
-      id = nil
-      # 寻找一个已经拷贝的，并且使用完毕的事件
-      @events_copy[map_id][event_id].each do |eid|
-        break id = eid if @events[eid].flag_copy_restore
-      end
-      if id # 找到一个空闲的，直接进行重置并返回使用
-        @events[id].copy_reset(id, x, y)
-        return @events[id]
-      end
-      # 没找到，依据已经复制的事件进行再次的复制与生成
-      id = @events_copy[map_id][event_id][0]
-      event = @events[id].event.dup
-    else
-      # 从原始地图中拷贝
-      map = get_map_data(map_id)
-      event = map.events[event_id] rescue return
+    # 对于不指定ID的，寻找一个已经使用完毕的拷贝的事件
+    if id_want == nil && !@events_copy[map_id][event_id].empty?
+      id = @events_copy[map_id][event_id].shift
+      # 直接重置并返回使用
+      @events[id].copy_reset(id, x, y)
+      @events[id].id_want_copy = nil
+      return @events[id]
     end
+    # 从原始地图中获取原始事件
+    map = get_map_data(map_id)
+    event = map.events[event_id] rescue return
     # 获取拷贝后的ID
     if id_want
       id = id_want
@@ -255,6 +249,7 @@ class Game_Map
 	  cloned_event.id = id
     @events_tmp[id] = Game_Event.new(@map_id, cloned_event)
     @events_tmp[id].flag_copy = true
+    @events_tmp[id].id_want_copy = id_want
     @events_tmp[id].copy_origin = [map_id, event_id]
     @events_tmp[id].moveto(x, y)
     @events_tmp[id]
@@ -263,16 +258,22 @@ class Game_Map
   # ● 更新拷贝事件
   #--------------------------------------------------------------------------
   def update_copy_events
-    @events_tmp.each do |id, e|
-      e.update
-      @events_copy[e.copy_origin[0]][e.copy_origin[1]].push(id) if e.flag_copy
-    end
+    @events_tmp.each { |id, e| e.update }
     s = get_cur_scene
     return if !s.respond_to?(:spriteset)
     s.spriteset.add_characters_tmp
     @events.merge!(@events_tmp)
     @events_tmp.clear
     $game_map.need_refresh = true
+  end
+  #--------------------------------------------------------------------------
+  # ● 将已经完成的拷贝事件存入备份池
+  #--------------------------------------------------------------------------
+  def restore_copy_event(id)
+    e = @events[id]
+    return if e.flag_copy == nil
+    @events_copy[e.copy_origin[0]][e.copy_origin[1]].push(id)
+    e.flag_copy = nil  # 回收了，等待下一次使用，不会被清理
   end
   #--------------------------------------------------------------------------
   # ● 获取地图数据
@@ -293,7 +294,7 @@ end
 class Game_Event < Game_Character
   attr_reader    :event
   attr_reader    :tmp
-  attr_accessor  :flag_copy, :flag_copy_restore
+  attr_accessor  :flag_copy, :id_want_copy
   attr_accessor  :copy_origin # [原始地图id, 原始事件id]
   #--------------------------------------------------------------------------
   # ● 初始化公有成员变量
@@ -304,7 +305,8 @@ class Game_Event < Game_Character
   alias eagle_copy_event_init_public_members init_public_members
   def init_public_members
     eagle_copy_event_init_public_members
-    @flag_copy = false
+    @flag_copy = nil   # nil 代表非拷贝事件，true 代表正在使用，false 代表使用完毕
+    @id_want_copy = nil  # 如果拷贝时指定了ID，则需要赋值
     @tmp = {}
   end
   #--------------------------------------------------------------------------
@@ -312,6 +314,7 @@ class Game_Event < Game_Character
   #--------------------------------------------------------------------------
   def copy_finish
     erase
+    $game_map.restore_copy_event(@id)
   end
   #--------------------------------------------------------------------------
   # ● 暂时消除
@@ -319,8 +322,7 @@ class Game_Event < Game_Character
   alias eagle_copy_event_erase erase
   def erase
     eagle_copy_event_erase
-    return if !@flag_copy
-    @flag_copy_restore = true
+    @flag_copy = false if @flag_copy
   end
   #--------------------------------------------------------------------------
   # ● 重置拷贝事件
@@ -330,7 +332,6 @@ class Game_Event < Game_Character
     init_private_members
     @id = id
     @flag_copy = true # 若为copy的事件，置为true
-    @flag_copy_restore = false # 若copy事件已经可以回收，置为true
     moveto(x, y)
     refresh
   end
@@ -357,14 +358,26 @@ class Spriteset_Map
   #--------------------------------------------------------------------------
   def add_characters_tmp
     $game_map.events_tmp.values.each do |event|
-      if event.flag_copy == false  # 指定了ID的拷贝事件，检查是否已经有精灵存在
+      if event.id_want_copy  # 指定了ID的拷贝事件，检查是否已经有精灵存在
         s = nil
         @character_sprites.each do |a|
-          s = a if a.character.is_a?(Game_Event) && a.character.id == event.id
+          c = a.character
+          break s = a if c.is_a?(Game_Event) && c.id == event.id
         end
         next s.rebind_character(event) if s
       end
-      # 需要新增的拷贝事件的精灵
+      # 找找有没有使用完的拷贝事件的精灵
+      s = nil
+      @character_sprites.each do |a|
+        c = a.character
+        break s = a if c.is_a?(Game_Event) && c.flag_copy == false
+      end
+      if s
+        # 可以删除 game_map 中用完的拷贝事件数据了
+        $game_map.events.delete(s.character.id)
+        next s.rebind_character(event)
+      end
+      # 需要新增拷贝事件的精灵
       s = Sprite_Character.new(@viewport1, event)
       @character_sprites.push(s)
     end
@@ -443,6 +456,15 @@ class Game_Interpreter
         $game_map.copy_event(eval(ps1[0]).to_i, eval(ps1[1]).to_i,
           eval(ps2[0]).to_i, eval(ps2[1]).to_i, ps2[2] ? eval(ps2[2]).to_i : nil)
       end
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 回收事件
+  #--------------------------------------------------------------------------
+  def copy_finish
+    if same_map? && @event_id > 0
+      e = $game_map.events[@event_id]
+      e.copy_finish
     end
   end
 end
