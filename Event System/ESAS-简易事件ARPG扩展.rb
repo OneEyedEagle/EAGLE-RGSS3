@@ -1,10 +1,11 @@
 #==============================================================================
-# ■ 简易事件ARPG扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 简易事件ARPG扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
+# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ESAS"] = true
+$imported["EAGLE-ESAS"] = "1.1.4"
 #==============================================================================
-# - 2022.2.4.22
+# - 2022.2.12.16
 #==============================================================================
 # - 本插件新增一系列方便事件脚本调用的方法，用于创作简易ARPG
 #--------------------------------------------------------------------------
@@ -37,6 +38,7 @@ $imported["EAGLE-ESAS"] = true
 #         （具体见 Process_Event_Data 类）
 #
 #  在ESAS事件脚本中，新增了下列可读取的数据：
+#    event     获取当前解释器绑定的事件Game_Event实例
 #    @esas.mid 获取当前执行事件页所在的地图ID
 #    @esas.eid 获取当前执行事件页所在的事件ID
 #    @esas.pid 获取当前执行事件页的页码ID
@@ -154,7 +156,7 @@ $imported["EAGLE-ESAS"] = true
 #    可以指定该事件页符合条件并显示时，同步开始并行执行的事件页，
 #      其中的【本事件】全部被替换为当前事件。
 #
-#    若使用了【事件互动扩展 by老鹰】，则可以编写tags字符串，并新增sym设置：
+#    也可以编写tags字符串，并新增sym设置：
 #       <esas mid=1 eid=2 pid=0 sym=互动>
 #      来便捷编写所绑定的事件页，或者具体设置所触发的事件页中的互动。
 #
@@ -309,7 +311,7 @@ $imported["EAGLE-ESAS"] = true
 #--------------------------------------------------------------------------
 #  esas_iter(ids)
 #
-#  【事件】开始对角色ID数组中的事件迭代，之后事件指令的【本事件】将替换为被迭代事件
+#  【事件】开始对角色ID数组中的事件迭代，事件指令的【本事件】将替换为被迭代事件
 #
 #  esas_iter_end
 #
@@ -342,18 +344,21 @@ $imported["EAGLE-ESAS"] = true
 #     params → 各种参数的Hash
 #        :text => 需要绘制的文本（单行，不可含转义符）
 #        :cid => 绑定显示的角色ID（-1为玩家，正数为事件）
-#        :type => 显示模式（:zoom 放大并淡出，:bounce 弹跳并淡出）
+#        :type => 显示模式（:float 浮起，:zoom 放大并淡出，:bounce 弹跳并淡出）
 #        :w / :h => 精灵宽度、高度
 #        :size => 字体大小
-#        :color => 字体颜色的索引号
+#        :c => 字体颜色的索引号
+#        :shadow => 字体启用阴影？（true 或 1 代表启用，false 或 0 代表关闭，默认true）
+#        :outline => 字体启用描边？（true 或 1 代表启用，false 或 0 代表关闭，默认false）
+#        :screen => 传入 1 时代表绑定到屏幕上，否则默认绑定到地图上
 #
 # - 示例：
 #    在玩家行走图上显示 10 的文本
 #      ESAS.new_pop( {:cid => -1, :text => "10"} )
 #
-# - 若使用了【事件互动扩展 by老鹰】，则可以编写tags字符串进行设置：
+# - 也可以编写tags字符串进行设置：
 #
-#      ESAS.new_pop( "text=miss cid=-1 color=17" )
+#      ESAS.new_pop( "text=miss cid=-1 c=17" )
 #
 #--------------------------------------------------------------------------
 #
@@ -472,46 +477,7 @@ module ESAS
   # ● 获取地图数据
   #--------------------------------------------------------------------------
   def self.get_map_data(map_id)
-    EAGLE.cache_load_map(map_id)
-  end
-end
-#=============================================================================
-# ○ EAGLE - Cache
-#=============================================================================
-module EAGLE
-  #--------------------------------------------------------------------------
-  # ● 读取地图
-  #--------------------------------------------------------------------------
-  def self.cache_load_map(map_id)
-    @cache_map ||= {}
-    return @cache_map[map_id] if @cache_map[map_id]
-    @cache_map[map_id] = load_data(sprintf("Data/Map%03d.rvdata2", map_id))
-    @cache_map[map_id]
-  end
-  #--------------------------------------------------------------------------
-  # ● 清空缓存
-  #--------------------------------------------------------------------------
-  def self.cache_clear
-    @cache_map ||= {}
-    @cache_map.clear
-    GC.start
-  end
-end
-#==============================================================================
-# ■ 【读取部分】
-#==============================================================================
-module EAGLE
-  #--------------------------------------------------------------------------
-  # ● 读取事件页开头的注释组
-  #--------------------------------------------------------------------------
-  def self.event_comment_head(command_list)
-    return "" if command_list.nil? || command_list.empty?
-    t = ""; index = 0
-    while command_list[index].code == 108 || command_list[index].code == 408
-      t += command_list[index].parameters[0]
-      index += 1
-    end
-    t
+    EAGLE_COMMON.cache_load_map(map_id)
   end
 end
 
@@ -655,6 +621,7 @@ class Game_Interpreter
   #--------------------------------------------------------------------------
   alias eagle_esas_command_355 command_355
   def command_355
+    event = $game_map.events[self.event_id]
     begin
       eagle_esas_command_355
     rescue
@@ -978,7 +945,7 @@ class Game_Event < Game_Character
   # ● 获取当前事件页的头部注释
   #--------------------------------------------------------------------------
   def note
-    EAGLE.event_comment_head(@list)
+    EAGLE_COMMON.event_comment_head(@list)
   end
   #--------------------------------------------------------------------------
   # ● 冻结
@@ -1029,7 +996,7 @@ class Game_Event < Game_Character
   alias eagle_esas_event_setup_page_settings setup_page_settings
   def setup_page_settings
     eagle_esas_event_setup_page_settings
-    t = EAGLE.event_comment_head(@list)
+    t = EAGLE_COMMON.event_comment_head(@list)
     ps = { :repeat => true }
     t.scan( /<esas ?(.*?)>/ ).each do |params|
       _t = params[0]
@@ -1115,8 +1082,7 @@ module ESAS
   def self.anim_event(anim_id, chara_id, params = {})
     return if !SceneManager.scene_is?(Scene_Map)
     s = empty_anim_sprite
-    c = ESAS.get_chara(chara_id)
-    s.bind_character(c)
+    s.bind_character_by_id(chara_id)
     s.bind_params(params)
     s.eagle_start_animation(anim_id)
     s
@@ -1174,8 +1140,9 @@ class Sprite_EagleBase < Sprite_Base
   #--------------------------------------------------------------------------
   # ● 绑定显示在事件上
   #--------------------------------------------------------------------------
-  def bind_character(character)
-    @character = character
+  def bind_character_by_id(chara_id)
+    @chara_id = chara_id
+    @character = ESAS.get_chara(chara_id)
     update_position
   end
   #--------------------------------------------------------------------------
@@ -1382,6 +1349,33 @@ class Sprite_EagleBase < Sprite_Base
       sprite.y = @ani_oy + sprite.dy
     end
   end
+  #--------------------------------------------------------------------------
+  # ● 声效(SE)和闪烁时机的处理
+  #     timing : 时机（RPG::Animation::Timing）
+  #--------------------------------------------------------------------------
+  def animation_process_timing(timing)
+    timing.se.play unless @ani_duplicated
+    case timing.flash_scope
+    when 1
+      if @character
+        s = ESAS.get_chara_sprite(@chara_id)
+        s.flash(timing.flash_color, timing.flash_duration * @ani_rate)
+      else
+        self.flash(timing.flash_color, timing.flash_duration * @ani_rate)
+      end
+    when 2
+      if viewport && !@ani_duplicated
+        viewport.flash(timing.flash_color, timing.flash_duration * @ani_rate)
+      end
+    when 3
+      if @character
+        s = ESAS.get_chara_sprite(@chara_id)
+        s.flash(nil, timing.flash_duration * @ani_rate)
+      else
+        self.flash(nil, timing.flash_duration * @ani_rate)
+      end
+    end
+  end
 end
 
 class Sprite_EagleAnimFrame < Sprite
@@ -1443,7 +1437,7 @@ module ESAS
   end
   #--------------------------------------------------------------------------
   # ● 依据技能范围数组，获取实际地图坐标的数组
-  # 注意：此方法为使用了【像素级移动 by老鹰】，格子大小与人物的碰撞矩形相同
+  # 注意：此方法为使用了【像素级移动 by老鹰】，实际返回Rect的数组
   #--------------------------------------------------------------------------
   def self.range_xys_pixel(*params)
     if !$imported["EAGLE-PixelMove"]
@@ -1478,7 +1472,7 @@ module ESAS
   end
   #--------------------------------------------------------------------------
   # ● 索引指定地图坐标内的事件ID数组
-  # 注意：此方法为使用了【像素级移动 by老鹰】，格子大小与人物的碰撞矩形相同
+  # 注意：此方法为使用了【像素级移动 by老鹰】，arr_rect 为Rect的数组
   #--------------------------------------------------------------------------
   def self.range_ids_pixel(arr_rect, type = :enemy)
     es = []
@@ -1723,17 +1717,15 @@ module ESAS
     # :text => 绘制文本
     # :cid => 绑定角色的ID
     # :type => 显示模式
+    # :screen => 1 时绑定到屏幕上，否则绑定到地图上
     # :w / :h => 精灵宽度高度
     # :size => 字体大小
-    # :color => 字体颜色
-    if params.is_a?(String) && $imported["EAGLE-EventInteractEX"]
+    # :c => 字体颜色
+    if params.is_a?(String)
       params = EAGLE_COMMON.parse_tags(params)
-      params[:cid] = params[:cid].to_i
+      a = [:cid, :w, :h, :size, :c, :screen]
+      a.each { |sym| params[sym] = params[sym].to_i if params[sym] }
       params[:type] = params[:type].to_sym if params[:type]
-      params[:w] = params[:w].to_i if params[:w]
-      params[:h] = params[:h].to_i if params[:h]
-      params[:size] = params[:size].to_i if params[:size]
-      params[:color] = params[:color].to_i if params[:color]
     end
     s = Sprite_Pop.new(params)
     s.reset
@@ -1749,6 +1741,7 @@ module ESAS
     #--------------------------------------------------------------------------
     def initialize(params)
       super(nil)
+      @x0 = @y0 = @dx = @dy = 0
       @params = params
       process_params
       @fiber = Fiber.new { run }
@@ -1758,9 +1751,15 @@ module ESAS
     # ● 处理参数
     #--------------------------------------------------------------------------
     def process_params
-      @params[:type] ||= :bounce
+      @params[:type] ||= :float
       @params[:chara] = ESAS.get_chara(@params[:cid])
       @params[:chara_s] = ESAS.get_chara_sprite(@params[:cid])
+    end
+    #--------------------------------------------------------------------------
+    # ● 绑定到地图上？
+    #--------------------------------------------------------------------------
+    def map?
+      @params[:screen] != 1
     end
     #--------------------------------------------------------------------------
     # ● 释放
@@ -1773,6 +1772,7 @@ module ESAS
     # ● 重置
     #--------------------------------------------------------------------------
     def reset
+      self.visible = false
       self.bitmap.dispose if self.bitmap
       w = @params[:w] || 64
       h = @params[:h] || 18
@@ -1785,8 +1785,11 @@ module ESAS
     #--------------------------------------------------------------------------
     def redraw
       t = @params[:text]
+      #self.bitmap.font.name =
       self.bitmap.font.size = @params[:size] || @params[:h] || 18
-      self.bitmap.font.color = text_color( @params[:color] || 0 )
+      self.bitmap.font.color = text_color( @params[:c] || 0 )
+      self.bitmap.font.shadow = EAGLE_COMMON.check_bool(@params[:shadow], true)
+      self.bitmap.font.outline = EAGLE_COMMON.check_bool(@params[:outline], false)
       self.bitmap.draw_text(0,0,self.width,self.height, t, 1)
     end
     #--------------------------------------------------------------------------
@@ -1802,17 +1805,22 @@ module ESAS
     def reset_position
       self.ox = self.width / 2
       self.oy = self.height / 2
-      if c = @params[:chara]
-        self.x = c.screen_x
-        self.y = c.screen_y
+      # 初始位置为行走图中心
+      if c = @params[:chara]  # 该位置为行走图底部中点
+        @x0 = c.screen_x
+        @y0 = c.screen_y
       end
-      @y0_bounce = self.y
-      if s = @params[:chara_s]
-        self.y -= s.ch/2
+      if s = @params[:chara_s] # 上移行走图的一半高度
+        @y0 -= s.ch / 2
       else
-        self.y -= 16
+        @y0 -= 16
       end
       self.z = 300
+      # 如果绑定到地图上，就存储当前的地图xy
+      if map?
+        @x0_map = $game_map.display_x
+        @y0_map = $game_map.display_y
+      end
     end
     #--------------------------------------------------------------------------
     # ● 每帧更新
@@ -1820,65 +1828,118 @@ module ESAS
     def update
       super
       @fiber.resume if @fiber
+      update_position
+    end
+    #--------------------------------------------------------------------------
+    # ● 更新位置
+    #--------------------------------------------------------------------------
+    def update_position
+      _x = _y = 0
+      if map?
+        _x = (@x0_map - $game_map.display_x) * 32
+        _y = (@y0_map - $game_map.display_y) * 32
+      end
+      self.x = @x0 + _x + @dx
+      self.y = @y0 + _y + @dy
+      self.visible = true
     end
     #--------------------------------------------------------------------------
     # ● 开始
     #--------------------------------------------------------------------------
     def run
-      Fiber.yield
       begin
         self.method("run_#{@params[:type]}").call
       rescue
         p "使用ESAS的POP时发生错误！"
         p "- 报错信息：#{$!}"
         p "- 请检查 :type 参数是否正确！已经用默认弹跳默认进行替换"
-        run_bounce
+        run_float
       end
       self.opacity = 0
       @finish = true
     end
     #--------------------------------------------------------------------------
-    # ● 开始 - 缩放弹出
+    # ● 开始 - 浮现
     #--------------------------------------------------------------------------
-    def run_zoom
-      y0 = self.y + 16
-      y1 = self.y - 16
-      def easeOutBack(v)
-        return 0 if v == 0
-        return 1 if v == 1
-        c1 = 1.70158
-        c3 = c1 + 1
-        return 1 + c3 * (v - 1)**3 + c1 * (v - 1)**2
+    def run_float
+      dy0 = 0
+      dy1 = -24
+      d = (@params[:chara_s] ? @params[:chara_s].ch / 2 - 16 : 0)
+      t = 30
+      t.times do |i|
+        per = easeSimple(i * 1.0 / t)
+        @dy = -d + dy0 + (dy1 - dy0) * per
+        Fiber.yield
       end
+      20.times { |i| Fiber.yield }
+      30.times { self.opacity -= 7; Fiber.yield }
+    end
+    def easeSimple(v)
+      1 - 2**(-10 * v)
+    end
+    #--------------------------------------------------------------------------
+    # ● 开始 - 缩小上浮
+    #--------------------------------------------------------------------------
+    def run_zoom1
+      d = (@params[:chara_s] ? @params[:chara_s].ch / 2 - 16 : 0)
+      @dy = -24 - d
+      update_position
       t = 30
       t.times do |i|
         per = easeOutBack(i * 1.0 / t)
-        self.zoom_x = self.zoom_y = 0.5 + (1.0 - 0.5) * per
-        self.y = y0 + (y1 - y0) * per
+        self.zoom_x = self.zoom_y = 2.0 + (1.0 - 2.0) * per
         Fiber.yield
       end
+      20.times { Fiber.yield }
+      10.times { @dy -= 1; self.opacity -= 7; Fiber.yield }
+      20.times { self.opacity -= 7; Fiber.yield }
+    end
+    #--------------------------------------------------------------------------
+    # ● 开始 - 上浮放大
+    #--------------------------------------------------------------------------
+    def run_zoom2
+      dy0 = 24
+      dy1 = -24
+      d = (@params[:chara_s] ? @params[:chara_s].ch / 2 - 16 : 0)
+      t = 30
+      t.times do |i|
+        per = easeOutBack(i * 1.0 / t)
+        self.zoom_x = self.zoom_y = 0 + (1.0 - 0) * per
+        @dy = -d + dy0 + (dy1 - dy0) * per
+        Fiber.yield
+      end
+      20.times { Fiber.yield }
       30.times { self.opacity -= 7; Fiber.yield }
+    end
+    def easeOutBack(v)
+      return 0 if v == 0
+      return 1 if v == 1
+      c1 = 1.70158
+      c3 = c1 + 1
+      return 1 + c3 * (v - 1)**3 + c1 * (v - 1)**2
     end
     #--------------------------------------------------------------------------
     # ● 开始 - 弹跳
     #--------------------------------------------------------------------------
     def run_bounce
-      vx = rand * 2 - 1; _x = self.x
+      vx = rand * 2 - 1
       vy = -2 - rand(2)
       f = false
-      100.times do |i|
-        _x += vx; self.x = _x
-        self.y += vy
+      # 反弹线的y值
+      zero_line = @params[:chara_s] ? @params[:chara_s].ch / 2 : 16
+      90.times do |i|
+        @dx += vx
+        @dy += vy
         vy += 1 if i % 4 == 0
-        if (self.y >= @y0_bounce) && f == false
+        Fiber.yield
+        if (@dy >= zero_line) && f == false
           vy = (-vy * 0.5).to_i
           f = true
         end
         if (vy == 0)
           f = false
-          vx = 0 if self.y >= @y0_bounce
+          vx = 0 if @dy >= zero_line
         end
-        Fiber.yield
       end
       30.times { self.opacity -= 7; Fiber.yield }
     end
@@ -1886,7 +1947,7 @@ module ESAS
 end
 
 #=============================================================================
-# ○ HP血条
+# ○ 其它
 #=============================================================================
 class Game_CharacterBase
   attr_accessor  :hp
@@ -1919,10 +1980,10 @@ class Sprite_Character < Sprite_Base
       @eagle_sprite_hp.y = self.y
       @eagle_sprite_hp.z = self.z + 1
       if @character.tmp[:hp_draw] != @character.hp
+        @eagle_sprite_hp.opacity = 200
         redraw_eagle_hp
       end
-      @eagle_sprite_hp.opacity = 0 if @character.hp == @character.tmp[:hp_max]
-      if @character.hp <= 0
+      if @character.hp <= 0 || @character.esas_empty?
         @character.hp = nil
         dispose_eagle_hp
       end
@@ -1931,32 +1992,52 @@ class Sprite_Character < Sprite_Base
   def start_eagle_hp
     @character.hp = @character.hp.to_i
     @character.tmp[:hp_max] = @character.hp if @character.tmp[:hp_max].nil?
-    @character.tmp[:hp_draw] = 0
+    @character.tmp[:hp_draw] = @character.hp
     @eagle_sprite_hp = ::Sprite.new(viewport)
-    @eagle_sprite_hp.bitmap = Bitmap.new(32, 4)
-    @eagle_sprite_hp.ox = 16
+    @eagle_sprite_hp.bitmap = Bitmap.new(@cw, 4)
+    @eagle_sprite_hp.ox = @eagle_sprite_hp.width / 2
     @eagle_sprite_hp.oy = 0
+    @eagle_sprite_hp.opacity = 0
     redraw_eagle_hp
   end
   def redraw_eagle_hp
-    @eagle_sprite_hp.opacity = 200
     b = @eagle_sprite_hp.bitmap
     d = @character.hp - @character.tmp[:hp_draw]
     @character.tmp[:hp_draw] += (d > 0 ? 1 : -1) if d != 0
 
     b.clear
+    # 该数组有多少个，就支持多少条HP
+    c_hp = [
+      Color.new(220,20,20,255),
+      Color.new(255,165,0,255),
+      Color.new(255,255,0,255),
+      Color.new(20,220,20,255),
+      Color.new(0,127,255,255),
+      Color.new(20,20,220,255),
+      Color.new(139,0,255,255)
+    ]
     # 绘制边框
-    b.fill_rect(0, 0, b.width, b.height, Color.new(0,0,0,255))
-    # 绘制动态损失hp
-    if d < 0
-      hp_rate = @character.tmp[:hp_draw] * 1.0 / @character.tmp[:hp_max]
-      w = (b.width-2) * hp_rate
-      b.fill_rect(1, 1, w, b.height-2, Color.new(150,150,150,255))
-    end
-    # 绘制当前hp
+    b.fill_rect(0, 0, b.width, b.height, Color.new(0,0,0,200))
+    # 检查有多少条hp
     hp_rate = @character.hp * 1.0 / @character.tmp[:hp_max]
+    c_hp_i = hp_rate.to_i
+    if c_hp_i > 0
+      # 绘制一个底色
+      c = c_hp[c_hp_i - 1] || c_hp[0]
+      b.fill_rect(1, 1, b.width-2, b.height-2, c)
+    end
+    # 绘制动态损失
+    if d < 0
+      hp_rate_old = @character.tmp[:hp_draw] * 1.0 / @character.tmp[:hp_max]
+      loop { break if hp_rate_old < 1.0; hp_rate_old -= 1 }
+      w = (b.width-2) * hp_rate_old
+      b.fill_rect(1, 1, w, b.height-2, Color.new(220,220,220,255))
+    end
+    # 绘制最后一条hp
+    c = c_hp[c_hp_i] || c_hp[-1]
+    loop { break if hp_rate < 1.0; hp_rate -= 1 }
     w = (b.width-2) * hp_rate
-    b.fill_rect(1, 1, w, b.height-2, Color.new(255,0,0,255))
+    b.fill_rect(1, 1, w, b.height-2, c)
   end
   def dispose_eagle_hp
     if @eagle_sprite_hp

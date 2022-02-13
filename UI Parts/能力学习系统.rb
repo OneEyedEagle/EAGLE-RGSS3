@@ -1,14 +1,14 @@
 #==============================================================================
-# ■ 能力学习系统 by 老鹰（http://oneeyedeagle.lofter.com/）
-# ※ 本插件需要放置在
+# ■ 能力学习系统 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
+# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】与
 #  【组件-位图绘制转义符文本 by老鹰】与
 #  【组件-位图绘制窗口皮肤 by老鹰】与
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = true
+$imported["EAGLE-AbilityLearn"] = "1.2.0"
 #==============================================================================
-# - 2022.1.16.11 新增等价装备武器/护甲
+# - 2022.2.12.10 新增调整帮助窗口位置
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
 #------------------------------------------------------------------------------
@@ -288,6 +288,27 @@ module ABILITY_LEARN
   #--------------------------------------------------------------------------
   HELP_TEXT_COLOR_NOT = 10
   #--------------------------------------------------------------------------
+  # ○【常量】帮助窗口的位置类型
+  # 0 时代表随光标移动，1 代表使用固定值，-1~-9代表屏幕上的位置
+  #  如 -1 代表屏幕左下角，-9 代表屏幕右上角
+  #--------------------------------------------------------------------------
+  HELP_TEXT_POS = 0
+  #--------------------------------------------------------------------------
+  # ○【常量】帮助窗口的显示位置
+  #  HELP_TEXT_POS为 1 时生效，
+  #  先设置显示原点（九宫格小键盘），如 5 代表中点，7 代表左上角，2 代表底部中点
+  #  再设置屏幕坐标
+  #--------------------------------------------------------------------------
+  HELP_TEXT_POS1_O = 2
+  HELP_TEXT_POS1_X = Graphics.width / 2
+  HELP_TEXT_POS1_Y = Graphics.height - 30 - 64
+  #--------------------------------------------------------------------------
+  # ○【常量】帮助窗口的显示位置
+  #  HELP_TEXT_POS为 -1~-9 时生效，
+  #  设置显示原点（九宫格小键盘），再放到屏幕上对应位置
+  #--------------------------------------------------------------------------
+  HELP_TEXT_POS_1_O = 5
+  #--------------------------------------------------------------------------
   # ○【常量】底部角色信息中文本的字体大小
   #--------------------------------------------------------------------------
   INFO_TEXT_FONT_SIZE = 20
@@ -415,7 +436,7 @@ module ABILITY_LEARN
     ps = get_token(actor_id, token_id)
     str = ps[:params]
     if str
-      hash = ABILITY_LEARN.parse_params(str)
+      hash = EAGLE_COMMON.parse_tags(str)
       return hash
     end
     return {}
@@ -612,69 +633,6 @@ module ABILITY_LEARN
     return t
   end
 #==============================================================================
-# ■ 工具方法
-#==============================================================================
-  #--------------------------------------------------------------------------
-  # ● 解析tags文本
-  #--------------------------------------------------------------------------
-  def self.parse_params(_t)
-    # 处理等号左右的空格
-    _t.gsub!( / *= */ ) { '=' }
-    # tag 拆分
-    _ts = _t.split(/ | /)
-    # tag 解析
-    _hash = {}
-    _ts.each do |_tag|  # _tag = "xxx=xxx"
-      _tags = _tag.split('=')
-      _k = _tags[0].downcase
-      _v = _tags[1]
-      _hash[_k.to_sym] = _v
-    end
-    return _hash
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制图标
-  #--------------------------------------------------------------------------
-  def self.draw_icon(bitmap, icon, x, y, w=24, h=24)
-    _bitmap = Cache.system("Iconset")
-    rect = Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24)
-    bitmap.blt(x+w/2-12, y+h/2-12, _bitmap, rect, 255)
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制人物行走图
-  #  (x, y) 为行走图放置位置的底部左顶点的位置
-  #--------------------------------------------------------------------------
-  def self.draw_character(bitmap, character_name, character_index, x, y)
-    return unless character_name
-    _bitmap = Cache.character(character_name)
-    sign = character_name[/^[\!\$]./]
-    if sign && sign.include?('$')
-      cw = _bitmap.width / 3
-      ch = _bitmap.height / 4
-    else
-      cw = _bitmap.width / 12
-      ch = _bitmap.height / 8
-    end
-    n = character_index
-    src_rect = Rect.new((n%4*3+1)*cw, (n/4*4)*ch, cw, ch)
-    bitmap.blt(x, y - ch, _bitmap, src_rect)
-    return cw, ch
-  end
-  #--------------------------------------------------------------------------
-  # ● eval
-  #--------------------------------------------------------------------------
-  def self.eagle_eval(str, actor_id = nil)
-    s = $game_switches
-    v = $game_variables
-    actor_id ||= @actor_id
-    actor = $game_actors[actor_id] rescue nil
-    begin
-      eval(str)
-    rescue
-      p $!
-    end
-  end
-#==============================================================================
 # ■ 便捷使用（仅UI内）
 #==============================================================================
   #--------------------------------------------------------------------------
@@ -713,6 +671,14 @@ module ABILITY_LEARN
   #--------------------------------------------------------------------------
   def self.level(token_id)
     return $game_actors[@actor_id].eagle_ability_data.level(token_id)
+  end
+  #--------------------------------------------------------------------------
+  # ● eval
+  #--------------------------------------------------------------------------
+  def self.eagle_eval(str, actor_id = nil)
+    actor_id ||= @actor_id
+    actor = $game_actors[actor_id] rescue nil
+    EAGLE_COMMON.eagle_eval(str)
   end
 end
 
@@ -1169,7 +1135,7 @@ class Sprite_AbilityLearn_ActorInfo < Sprite
     _x += _w_key
     actors.each do |actor|
       # 绘制行走图
-      cw, ch = ABILITY_LEARN.draw_character(self.bitmap, actor.character_name,
+      cw, ch = EAGLE_COMMON.draw_character(self.bitmap, actor.character_name,
         actor.character_index, _x, self.height - 2)
       _x += cw
       # 绘制信息
@@ -1257,7 +1223,7 @@ class Sprite_AbilityLearn_Token < Sprite
       end
       self.bitmap ||= Bitmap.new(GRID_W, GRID_H)
       self.bitmap.clear
-      ABILITY_LEARN.draw_icon(self.bitmap, icon, 0, 0, self.width, self.height)
+      EAGLE_COMMON.draw_icon(self.bitmap, icon, 0, 0, self.width, self.height)
       return
     end
     if pic_bitmap
@@ -1335,15 +1301,30 @@ class Sprite_AbilityLearn_TokenHelp < Sprite
     d.bind_bitmap(self.bitmap)
     d.run(true)
 
+    # 设置位置
     self.visible = true
-    self.ox = self.width / 2
-    self.x = Graphics.width / 2
-    if s.y - s.viewport.oy > Graphics.height / 2
-      self.oy = 0
-      self.y = 30
-    else
-      self.oy = self.height
-      self.y = Graphics.height - 30 - INFO_TEXT_HEIGHT
+    case HELP_TEXT_POS
+    when 0
+      if s.x + s.width / 2 + self.width > Graphics.width
+        # 显示在左侧
+        self.x = s.x - s.width / 2 - self.width
+      else
+        # 显示在右侧
+        self.x = s.x + s.width / 2
+      end
+      self.y = s.y - s.height / 2
+      d = self.y + self.height - Graphics.height
+      if d > 0
+        self.y -= d
+        self.y = [self.y, 0].max
+      end
+    when 1
+      EAGLE_COMMON.reset_sprite_oxy(self, HELP_TEXT_POS1_O)
+      self.x = HELP_TEXT_POS1_X
+      self.y = HELP_TEXT_POS1_Y
+    when -9..-1
+      EAGLE_COMMON.reset_sprite_oxy(self, HELP_TEXT_POS_1_O)
+      EAGLE_COMMON.reset_xy_dorigin(self, nil, HELP_TEXT_POS)
     end
   end
 end

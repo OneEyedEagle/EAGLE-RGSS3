@@ -1,10 +1,11 @@
 #==============================================================================
-# ■ 像素级移动 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 像素级移动 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
+# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PixelMove"] = true
+$imported["EAGLE-PixelMove"] = "1.3.0"
 #=============================================================================
-# - 2021.11.27.13
+# - 2022.2.12.13 兼容astar寻路
 #=============================================================================
 # - 本插件对默认移动方式进行了修改，将默认32x32像素的格子进行了细分
 #-----------------------------------------------------------------------------
@@ -255,6 +256,15 @@ module PIXEL_MOVE
     y_, e = unit2rgss(y, -31)
     return x_, y_
   end
+  #--------------------------------------------------------------------------
+  # ● rgss编辑器中网格转换为移动单位坐标下的矩形
+  #--------------------------------------------------------------------------
+  def self.rgssGrid2unitRect(x, y)
+    x_p, e = rgss2unit(x)
+    y_p, e = rgss2unit(y)
+    w_p = pixel2unit(32)
+    return Rect.new(x_p, y_p, w_p, w_p)
+  end
 #==============================================================================
 # ■ 字符串解析
 #==============================================================================
@@ -379,23 +389,6 @@ module PIXEL_MOVE
       return false
     end
     return true
-  end
-end
-#==============================================================================
-# ■ 【读取部分】
-#==============================================================================
-module EAGLE
-  #--------------------------------------------------------------------------
-  # ● 读取事件页开头的注释组
-  #--------------------------------------------------------------------------
-  def self.event_comment_head(command_list)
-    return "" if command_list.nil? || command_list.empty?
-    t = ""; index = 0
-    while command_list[index].code == 108 || command_list[index].code == 408
-      t += command_list[index].parameters[0]
-      index += 1
-    end
-    t
   end
 end
 #==============================================================================
@@ -753,7 +746,7 @@ class Game_CharacterBase
     return rect
   end
   #--------------------------------------------------------------------------
-  # ○ 获取实际坐标的碰撞矩形
+  # ○ 获取当前显示位置的碰撞矩形
   #--------------------------------------------------------------------------
   def get_collision_rectR
     rect = @collision_rect.dup
@@ -796,10 +789,11 @@ class Game_CharacterBase
   # ○ 更新编辑器中坐标
   #--------------------------------------------------------------------------
   def update_rgss_xy
-    @rgss_x, e = PIXEL_MOVE.unit2rgss(@x)
-    @rgss_x += 1 if e > 0
-    @rgss_y, e = PIXEL_MOVE.unit2rgss(@y)
-    @rgss_y += 1 if e > 0
+    @rgss_x, e = PIXEL_MOVE.unit2rgss(@x, @collision_rect.width / 2)
+    @rgss_y, e = PIXEL_MOVE.unit2rgss(@y, -@collision_rect.height / 2)
+    #if self == $game_player
+    #  p "x #{@x} | y #{@y} | rgss_x #{@rgss_x} | rgss_y #{@rgss_y}"
+    #end
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）坐标一致判定
@@ -809,7 +803,7 @@ class Game_CharacterBase
     return PIXEL_MOVE.in_rect?(x - @x, y - @y, rect)
   end
   #--------------------------------------------------------------------------
-  # ○ 实际坐标一致判定
+  # ○ 当前显示位置一致判定
   #  IN: unitXY
   #--------------------------------------------------------------------------
   def real_pos?(x, y, rect = @collision_rect)
@@ -824,7 +818,7 @@ class Game_CharacterBase
   end
   #--------------------------------------------------------------------------
   # ○ 矩形碰撞判断
-  #  IN: 实际坐标的碰撞矩形（左上角点的xy与wh）
+  #  IN: 当前显示位置的碰撞矩形（左上角点的xy与wh）
   #--------------------------------------------------------------------------
   def pos_rectR?(rect)
     return PIXEL_MOVE.rect_collide_rect?(rect, get_collision_rectR)
@@ -887,6 +881,7 @@ class Game_CharacterBase
   #     d : 方向（2,4,6,8）
   #  IN: unitXY
   #--------------------------------------------------------------------------
+  alias eagle_old_passable? passable?
   def passable?(x, y, d)
     pos = PIXEL_MOVE.get_rect_border(d)
     pos.each do |p_|
@@ -948,6 +943,28 @@ class Game_CharacterBase
       end
     end
     return false
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）判定是否与事件碰撞
+  #  IN: rgssXY
+  # 修改为：与该格的矩形是否相交
+  #--------------------------------------------------------------------------
+  def collide_with_events?(x, y)
+    rect = PIXEL_MOVE.rgssGrid2unitRect(x, y)
+    $game_map.events.each do |id, event|
+      next if self == event || !event.normal_priority? || event.through
+      return true if event.pos_rect?(rect)
+    end
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）判定是否与载具碰撞
+  #  IN: rgssXY
+  # 修改为：与该格的矩形是否相交
+  #--------------------------------------------------------------------------
+  def collide_with_vehicles?(x, y)
+    rect = PIXEL_MOVE.rgssGrid2unitRect(x, y)
+    $game_map.boat.pos_rect?(rect) || $game_map.ship.pos_rect?(rect)
   end
   #--------------------------------------------------------------------------
   # ● （覆盖）判定面前的事件是否被启动
@@ -1260,11 +1277,29 @@ class Game_Player < Game_Character
     end
     @vehicle_getting_off
   end
+  #--------------------------------------------------------------------------
+  # ● 判定是否碰撞（包含跟随角色）
+  #  IN: rgssXY
+  # 修改为：玩家与该格的矩形是否相交
+  #--------------------------------------------------------------------------
+  def collide?(x, y)
+    rect = PIXEL_MOVE.rgssGrid2unitRect(x, y)
+    !@through && (pos_rect?(rect) || followers.collide?(x, y))
+  end
 end
 #==============================================================================
 # ■ Game_Follower
 #==============================================================================
 class Game_Follower < Game_Character
+  #--------------------------------------------------------------------------
+  # ● 碰撞的判定
+  #  IN: rgssXY
+  # 修改为：玩家与该格的矩形是否相交
+  #--------------------------------------------------------------------------
+  def collide?(x, y)
+    rect = PIXEL_MOVE.rgssGrid2unitRect(x, y)
+    visible_folloers.any? {|follower| follower.pos_rect?(rect) }
+  end
   #--------------------------------------------------------------------------
   # ● （覆盖）追随带队角色
   #--------------------------------------------------------------------------
@@ -1358,7 +1393,7 @@ class Game_Event < Game_Character
   alias eagle_pixel_move_setup_page setup_page
   def setup_page(new_page)
     eagle_pixel_move_setup_page(new_page)
-    t = EAGLE.event_comment_head(@list)
+    t = EAGLE_COMMON.event_comment_head(@list)
     # 检查碰撞矩形
     x, y, w, h = PIXEL_MOVE.parse_collision_xywh_str(t)
     set_collision_xywh(x, y, w, h)

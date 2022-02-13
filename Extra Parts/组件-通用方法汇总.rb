@@ -1,10 +1,10 @@
 #==============================================================================
-# ■ 组件-通用方法汇总 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 组件-通用方法汇总 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.0.3"
+$imported["EAGLE-CommonMethods"] = "1.0.6"
 #==============================================================================
-# - 2022.2.10.22
+# - 2022.2.12.10
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #===============================================================================
@@ -15,6 +15,8 @@ $imported["EAGLE-CommonMethods"] = "1.0.3"
 module EAGLE_COMMON
   #--------------------------------------------------------------------------
   # ● 获取脚本的版本号
+  #    name = "EAGLE-CommonMethods"
+  #   如版本为 "1.0.2"，返回 [1, 0, 2]
   #--------------------------------------------------------------------------
   def self.get_version(name)
     if $imported[name]
@@ -53,6 +55,8 @@ module EAGLE_COMMON
   # ● 解析tags文本
   #  其中 {{str}} 将作为脚本，被替换为运行的结果
   #  其中 {str} 将被完全保留，需要之后在实际调用时自己进行eval
+  #   _t = "v=5, s={{v[1]}} t=测试"
+  #   返回 { :v => "5", :s => "0", :t => "测试" }
   #--------------------------------------------------------------------------
   def self.parse_tags(_t)
     # 脚本替换
@@ -84,10 +88,21 @@ module EAGLE_COMMON
   def self.eagle_eval(t)
     s = $game_switches; v = $game_variables
     es = $game_map.events
-    eval(t)
+    gp = $game_player
+    begin
+      eval(t)
+    rescue
+      p $!
+    end
   end
   #--------------------------------------------------------------------------
   # ● 判断字符串的真假
+  #  str = "1" 或 "true" 或 1 或 true
+  #  返回 true
+  #  str = "2", default=false
+  #  返回 false
+  #  str = "2", default=true
+  #  返回 true
   #--------------------------------------------------------------------------
   def self.check_bool(str, default=false)
     return default if str.nil?
@@ -104,7 +119,8 @@ end
 module EAGLE_COMMON
   #--------------------------------------------------------------------------
   # ● 依据原点类型（九宫格），将b2位图拷贝到b1位图对应位置
-  # 需确保 b1 的宽高均大于 b2
+  # （需确保 b1 的宽高均大于 b2）
+  # 如 o 为 2 时，将 b2 与 b1 底部中点对齐，再进行拷贝
   #--------------------------------------------------------------------------
   def self.bitmap_copy_do(b1, b2, o)
     x = y = 0
@@ -119,6 +135,14 @@ module EAGLE_COMMON
     when 7,8,9; y = 0
     end
     b1.blt(x, y, b2, b2.rect)
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制图标
+  #--------------------------------------------------------------------------
+  def self.draw_icon(bitmap, icon, x, y, w=24, h=24)
+    _bitmap = Cache.system("Iconset")
+    rect = Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24)
+    bitmap.blt(x+w/2-12, y+h/2-12, _bitmap, rect, 255)
   end
   #--------------------------------------------------------------------------
   # ● 绘制角色肖像图
@@ -137,6 +161,26 @@ module EAGLE_COMMON
       bitmap.stretch_blt(des_rect, _bitmap, rect)
     end
     return sole_w, sole_h
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制人物行走图
+  #  (x, y) 为行走图放置位置的底部左顶点的位置
+  #--------------------------------------------------------------------------
+  def self.draw_character(bitmap, character_name, character_index, x, y)
+    return unless character_name
+    _bitmap = Cache.character(character_name)
+    sign = character_name[/^[\!\$]./]
+    if sign && sign.include?('$')
+      cw = _bitmap.width / 3
+      ch = _bitmap.height / 4
+    else
+      cw = _bitmap.width / 12
+      ch = _bitmap.height / 8
+    end
+    n = character_index
+    src_rect = Rect.new((n%4*3+1)*cw, (n/4*4)*ch, cw, ch)
+    bitmap.blt(x, y - ch, _bitmap, src_rect)
+    return cw, ch
   end
 end
 
@@ -249,6 +293,25 @@ module EAGLE_COMMON
     if restore
       obj.x += obj.ox
       obj.y += obj.oy
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置指定对象依据另一对象小键盘位置的新位置
+  #--------------------------------------------------------------------------
+  def self.reset_xy_dorigin(obj, obj2, o) # 左上角和左上角对齐
+    if o < 0 # o小于0时，将obj2重置为全屏
+      obj2 = Rect.new(0,0,Graphics.width,Graphics.height)
+      o = o.abs
+    end
+    case o
+    when 1,4,7; obj.x = obj2.x
+    when 2,5,8; obj.x = obj2.x + obj2.width / 2
+    when 3,6,9; obj.x = obj2.x + obj2.width
+    end
+    case o
+    when 1,2,3; obj.y = obj2.y + obj2.height
+    when 4,5,6; obj.y = obj2.y + obj2.height / 2
+    when 7,8,9; obj.y = obj2.y
     end
   end
   #--------------------------------------------------------------------------

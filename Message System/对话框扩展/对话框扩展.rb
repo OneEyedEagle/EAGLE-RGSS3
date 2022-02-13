@@ -1,10 +1,10 @@
 #=============================================================================
-# ■ 对话框扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = true
+$imported["EAGLE-MessageEX"] = "1.5.0"
 #=============================================================================
-# - 2022.1.21.22 文字未显示时，不再更新特效
+# - 2022.2.11.0 重写自动播放UI，现在与跳过对话的UI一致
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -515,15 +515,33 @@ INDEX_TO_SE = {
 # 【功能】
 #    等待按键时，设置文本自动继续
 #
-# 【注意】
-#    若使用了【组件-形状绘制 by老鹰】，则会在对话框右下角绘制简单的倒计时UI
-#
 # 【参数】
 #    t → 在t帧后自动结束按键等待，并继续事件处理（默认nil，不自动继续）
 #
 # 【常量设置：参数预设值】
 # 当未调用 \auto[t] 进行设置，或其值为 nil 时，读取此处的值
 WIN_AUTO_T = nil
+#
+# 【常量设置：提示文本】
+# 自动播放的UI中显示的文本
+WIN_AUTO_TEXT = "自动播放"
+#
+# 【常量设置：UI的宽高】
+WIN_AUTO_W = 100
+WIN_AUTO_H = 40
+#
+# 【常量设置：UI的原点】
+# 九宫格小键盘，如 5 代表中点为原点，9 代表右上角为原点
+WIN_AUTO_O  = 9
+#
+# 【常量设置：UI的位置】
+# 九宫格小键盘，如 3 代表绑定到对话框的右下角，5 代表绑定到对话框的中心
+#  -2 代表绑定到屏幕的底部中点，-9 代表绑定到屏幕的右上角
+WIN_AUTO_DO = -9
+#
+# 【常量设置：UI的坐标偏移值】
+WIN_AUTO_DX = 0
+WIN_AUTO_DY = 0
 #
 # 【示例】
 #   - 对话编写
@@ -5018,8 +5036,8 @@ class Sprite_EaglePauseTag < Sprite
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    @sprite_auto_countdown.bitmap.dispose if @sprite_auto_countdown.bitmap
-    @sprite_auto_countdown.dispose
+    @sprite_auto.bitmap.dispose if @sprite_auto.bitmap
+    @sprite_auto.dispose
     @s_bitmap.dispose
     self.bitmap.dispose
     super
@@ -5112,7 +5130,7 @@ class Sprite_EaglePauseTag < Sprite
   def show
     return if params[:v] == 0
     reset_position
-    @sprite_auto_countdown.visible = true
+    @sprite_auto.visible = true
     self.visible = true
     self
   end
@@ -5120,7 +5138,7 @@ class Sprite_EaglePauseTag < Sprite
   # ● 隐藏
   #--------------------------------------------------------------------------
   def hide
-    @sprite_auto_countdown.visible = false
+    @sprite_auto.visible = false
     self.visible = false
     self
   end
@@ -5128,31 +5146,47 @@ class Sprite_EaglePauseTag < Sprite
   # ● 初始化自动倒计时
   #--------------------------------------------------------------------------
   def init_auto_countdown
-    @sprite_auto_countdown = Sprite.new
-    @sprite_auto_countdown.bitmap = Bitmap.new(13, 13)
+    @sprite_auto = Sprite.new
+    @sprite_auto.bitmap = Bitmap.new(MESSAGE_EX::WIN_AUTO_W,
+      MESSAGE_EX::WIN_AUTO_H)
+    @sprite_auto.bitmap.font.color = Color.new(0,0,0,255)
+    @sprite_auto.bitmap.font.shadow = false
+    @sprite_auto.bitmap.font.outline = false
+    # 用于复制的白色文字
+    @auto_temp_bitmap = Bitmap.new(@sprite_auto.width, @sprite_auto.height)
+    @auto_temp_bitmap.font.color = Color.new(255,255,255,150)
+    @auto_temp_bitmap.font.shadow = false
+    @auto_temp_bitmap.font.outline = false
+    t = MESSAGE_EX::WIN_AUTO_TEXT
+    @auto_temp_bitmap.draw_text(0, 0, @sprite_auto.width, @sprite_auto.height, t, 1)
   end
   #--------------------------------------------------------------------------
   # ● 重置自动倒计时
   #--------------------------------------------------------------------------
   def reset_auto_countdown_position
-    MESSAGE_EX.reset_xy_dorigin(@sprite_auto_countdown, @window_bind, 3)
-    @sprite_auto_countdown.x -= @sprite_auto_countdown.width
-    @sprite_auto_countdown.y -= @sprite_auto_countdown.height
-    @sprite_auto_countdown.z = self.z + 1
+    MESSAGE_EX.reset_sprite_oxy(@sprite_auto, MESSAGE_EX::WIN_AUTO_O)
+    MESSAGE_EX.reset_xy_dorigin(@sprite_auto, @window_bind, MESSAGE_EX::WIN_AUTO_DO)
+    @sprite_auto.x += MESSAGE_EX::WIN_AUTO_DX
+    @sprite_auto.y += MESSAGE_EX::WIN_AUTO_DY
+    @sprite_auto.z = self.z + 1
   end
   #--------------------------------------------------------------------------
   # ● 重绘自动倒计时
   #--------------------------------------------------------------------------
   def redraw_auto_countdown(cd)
-    return if !$imported["EAGLE-UtilsDrawing"]
-    @sprite_auto_countdown.bitmap.clear
-    a2 = 360 - (360.0 * cd / @window_bind.win_params[:auto_t]).to_i
-    [[4,4],[5,5],[6,6],[5,7],[4,8],
-     [6,3],[7,4],[8,5],[9,6],[8,7],[7,8],[6,9]].each do |xy|
-      @sprite_auto_countdown.bitmap.set_pixel(xy[0], xy[1], Color.new(255,255,255))
-    end
-    r = 6
-    EAGLE.Arc(@sprite_auto_countdown.bitmap,r,r, r, 0,a2,false,Color.new(255,255,255,250))
+    count_rate = cd * 1.0 / @window_bind.win_params[:auto_t]
+    b = @sprite_auto.bitmap
+    b.clear
+    b.fill_rect(0, 0, b.width, b.height, Color.new(255,255,255,150))
+    _x = (b.width-2) * (1-count_rate)
+    r = Rect.new(1+_x, 1, b.width-2-_x, b.height-2)
+    b.fill_rect(r, Color.new(0,0,0,150))
+    # 绘制黑色文字
+    t = MESSAGE_EX::WIN_AUTO_TEXT
+    b.draw_text(0, 0, b.width, b.height, t, 1)
+    # 绘制白色文字
+    r2 = Rect.new(_x, 0, b.width, b.height)
+    b.blt(_x, 0, @auto_temp_bitmap, r2)
   end
 end
 

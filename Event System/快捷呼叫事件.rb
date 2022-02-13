@@ -1,16 +1,12 @@
 #==============================================================================
-# ■ 快捷呼叫事件 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 快捷呼叫事件 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】与
 #  【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
 $imported["EAGLE-EventBar"] = true
 #==============================================================================
-# - 2022.2.8.20
-#==============================================================================
-if $imported["EAGLE-CommonMethods"] == nil
-  p "警告：没有放在【组件-通用方法汇总 by老鹰】之下，继续使用一定会报错！"
-end
+# - 2022.2.12.14
 #==============================================================================
 # - 本插件新增了在地图上时，显示在玩家头顶的呼叫指定事件页的UI
 #---------------------------------------------------------------------------
@@ -190,7 +186,7 @@ module EVENTBAR
   # ● 【常量】更新指令的提示文本
   # 其中 <name> 将被替换为名称
   #--------------------------------------------------------------------------
-  LOG_TEXT_UPD = "更新：<name>"
+  LOG_TEXT_UPD = "指令更新：<name>"
   #--------------------------------------------------------------------------
   # ● 【常量】提示文本的持续显示时间
   #--------------------------------------------------------------------------
@@ -295,6 +291,11 @@ module EVENTBAR
       t = LOG_TEXT_DEL.gsub(/<name>/) { name }
     when :update
       t = LOG_TEXT_UPD.gsub(/<name>/) { name }
+    end
+    if $imported["EAGLE-MessageHint"]
+      ps = { :text => t }
+      MESSAGE_HINT.add(ps, "居中偏上")
+      return
     end
     @logs.push(t) if t
   end
@@ -801,10 +802,13 @@ class Spriteset_EventBar
     return if @count_hint < HINT_SHOW_TIME
     @sprite_hint.opacity += 15
     @sprite_hint.ox = @sprite_hint.width / 2
-    @sprite_hint.oy = 0
-    @sprite_hint.x = $game_player.screen_x
-    @sprite_hint.y = $game_player.screen_y + 4
-    @sprite_hint.y = Graphics.height if @sprite_hint.y > Graphics.height
+    @sprite_hint.oy = @sprite_hint.height
+    @sprite_hint.x = Graphics.width / 2
+    @sprite_hint.y = Graphics.height - 24
+    #@sprite_hint.oy = 0
+    #@sprite_hint.x = $game_player.screen_x
+    #@sprite_hint.y = $game_player.screen_y + 4
+    #@sprite_hint.y = Graphics.height if @sprite_hint.y > Graphics.height
   end
 
   #--------------------------------------------------------------------------
@@ -852,9 +856,7 @@ class Spriteset_EventBar
     @sprite_log.oy = @sprite_log.height
     @sprite_log.x = $game_player.screen_x
     @sprite_log.y = $game_player.screen_y - 36
-    if $game_system.eagle_eventbar_active
-      @sprite_log.y -= 36
-    end
+    @sprite_log.y -= 36 if $game_system.eagle_eventbar_active
   end
 end
 

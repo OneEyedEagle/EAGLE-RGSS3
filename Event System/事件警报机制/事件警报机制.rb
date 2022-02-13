@@ -1,11 +1,12 @@
 #==============================================================================
-# ■ 事件警报机制 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ 事件警报机制 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 # 【此插件兼容VX和VX Ace】
+# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventAlert"] = true
+$imported["EAGLE-EventAlert"] = "1.1.0"
 #==============================================================================
-# - 2021.9.25.10 新增条件从满足变为不满足时，需要执行的脚本
+# - 2022.2.11.23
 #==============================================================================
 # - 本插件新增警报机制，以并行判定并执行简单脚本
 #--------------------------------------------------------------------------
@@ -31,6 +32,7 @@ $imported["EAGLE-EventAlert"] = true
 #           如 sv[ [map_id, a.id, 1] ] = 2 为当前事件的1号独立变量赋值 2
 #      可用 a 代表当前事件，b 代表目标对象（若不存在则为 nil）
 #           dx 与 dy 为当前事件与目标对象间的坐标差的绝对值
+#      可用 es 代表当前地图的事件组，如 es[1] 代表1号事件Game_Event对象
 #
 #   其中 <eval>.. 中的 .. 替换为条件满足时需要执行的脚本
 #
@@ -44,6 +46,7 @@ $imported["EAGLE-EventAlert"] = true
 # ○ 注意
 #--------------------------------------------------------------------------
 # - 当事件正在执行时，其预设的警报不会被触发
+#
 # - 当存在预定调用的公共事件时，如使用物品调用公共事件，事件的全部警报不会被触发
 #
 #==============================================================================
@@ -78,23 +81,6 @@ module EVENT_ALERT
   def self.get_target(t_id)
     return $game_player if t_id == 0
     return $game_map.events[t_id] rescue nil
-  end
-end
-#==============================================================================
-# ■ 【读取部分】
-#==============================================================================
-module EAGLE
-  #--------------------------------------------------------------------------
-  # ● 读取事件页开头的注释组
-  #--------------------------------------------------------------------------
-  def self.event_comment_head(command_list)
-    return "" if command_list.nil? || command_list.empty?
-    t = ""; index = 0
-    while command_list[index].code == 108 || command_list[index].code == 408
-      t += command_list[index].parameters[0]
-      index += 1
-    end
-    t
   end
 end
 
@@ -158,7 +144,7 @@ class Game_Event
   alias eagle_event_alert_trigger_setup_page_settings setup_page_settings
   def setup_page_settings
     eagle_event_alert_trigger_setup_page_settings
-    t = EAGLE.event_comment_head(@list)
+    t = EAGLE_COMMON.event_comment_head(@list)
     @eagle_alerts = EVENT_ALERT.parse_note(t)
   end
   #--------------------------------------------------------------------------
@@ -183,7 +169,10 @@ class Game_Event
   def update_alert_triggers?
     return false if @eagle_alerts.empty?
     return false if $game_map.is_event_running?(self.id)
-    return false if !$game_switches[EVENT_ALERT::S_ID_COMMON] && $game_map.is_common_event_running?
+    if !$game_switches[EVENT_ALERT::S_ID_COMMON] &&
+       $game_map.is_common_event_running?
+      return false
+    end
     return true
   end
   #--------------------------------------------------------------------------
@@ -197,6 +186,7 @@ class Game_Event
       s = $game_switches; v = $game_variables
       ss = $game_self_switches
       sv = $game_self_variables if $imported["EAGLE-EventCondEX"]
+      es = $game_map.events
       if b
         dx = (a.x - b.x).abs
         dy = (a.y - b.y).abs

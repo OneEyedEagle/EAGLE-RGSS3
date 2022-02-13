@@ -1,10 +1,10 @@
 #==============================================================================
-# ■ AStar寻路扩展 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ AStar寻路扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AStar"] = true
+$imported["EAGLE-AStar"] = "1.2.1"
 #==============================================================================
-# - 2021.8.15.11 优化注释
+# - 2022.2.13.15 重新兼容【像素级移动 by老鹰】，新增强制终止寻路
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -24,8 +24,11 @@ $imported["EAGLE-AStar"] = true
 #     astar_goto(-1, 12,1)       → 玩家寻路移动至(12,1)处，等待移动结束
 #
 # - 注意：
-#     当寻路失败时（被其他事件挡住所有通路；目的地周围不可通行），
+#
+#   1. 当寻路失败时（被其他事件挡住所有通路；目的地周围不可通行），
 #      将强制等待 WAIT_WHEN_FAIL_ASTAR 帧，以保证不会重复多次寻路造成卡顿
+#
+#   2. 当事件页发生切换时，将强制终止事件已有的寻路
 #
 #-----------------------------------------------------------------------------
 # 【使用：替换默认的接近】
@@ -51,6 +54,8 @@ $imported["EAGLE-AStar"] = true
 #
 #     astar_moving          → 若在寻路中，则返回 true
 #
+#     astar_stop            → 强制终止寻路
+#
 # - 示例：
 #
 #    事件-自主移动-自定义 中编写
@@ -60,7 +65,7 @@ $imported["EAGLE-AStar"] = true
 #-----------------------------------------------------------------------------
 # 【兼容】
 #
-# - 若使用了【像素级移动 by老鹰】，将依然按照原始网格进行搜索寻路
+# - 若使用了【像素级移动 by老鹰】需 1.3.0 以上，将依然按照原始网格进行搜索寻路
 #
 #=============================================================================
 
@@ -94,7 +99,8 @@ class Process
     if $imported["EAGLE-PixelMove"]
       des_xp, des_yp = PIXEL_MOVE.event_rgss2unit(@des_x, @des_y)
       return true if @chara.pos?(des_xp, des_yp)
-      x_init, y_init = PIXEL_MOVE.event_unit2rgss(x_init, y_init)
+      x_init = @chara.rgss_x
+      y_init = @chara.rgss_y
     else
       return true if @chara.pos?(@des_x, @des_y)
     end
@@ -165,7 +171,9 @@ class Process
   # ● 可从(x,y)朝dir方向通行？
   #--------------------------------------------------------------------------
   def passable?(chara, x, y, dir)
-    return chara.passable_pixel?(x, y, dir) if $imported["EAGLE-PixelMove"]
+    if $imported["EAGLE-PixelMove"]
+      return chara.eagle_old_passable?(x, y, dir)
+    end
     chara.passable?(x, y, dir)
   end
   #--------------------------------------------------------------------------
@@ -184,61 +192,6 @@ class Process
     path
   end
 end # end of class
-end
-
-if $imported["EAGLE-PixelMove"]
-class Game_Character
-  #--------------------------------------------------------------------------
-  # ● 可以通行？
-  #  IN: rgssXY
-  #--------------------------------------------------------------------------
-  def passable_pixel?(x, y, dir)
-    x2 = $game_map.round_x_with_direction(x, dir)
-    y2 = $game_map.round_y_with_direction(y, dir)
-    return false unless $game_map.valid?(x2, y2)
-    return true if @through || debug_through?
-    return false unless map_passable?(x, y, dir)
-    return false unless map_passable?(x2, y2, reverse_dir(dir))
-    return false if self != $game_player && collide_with_player_pixel?(x2, y2)
-    return false if collide_with_events_pixel?(x2, y2)
-    return false if collide_with_vehicles_pixel?(x2, y2)
-    return true
-  end
-  #--------------------------------------------------------------------------
-  # ● 判定是否与玩家碰撞
-  #  IN: rgssXY
-  #--------------------------------------------------------------------------
-  def collide_with_player_pixel?(x, y)
-    x_p, e = PIXEL_MOVE.rgss2unit(x)
-    y_p, e = PIXEL_MOVE.rgss2unit(y)
-    r = Rect.new(x_p, y_p, PIXEL_MOVE.pixel2unit(32), PIXEL_MOVE.pixel2unit(32))
-    $game_player.pos_rect?(r)
-  end
-  #--------------------------------------------------------------------------
-  # ● 判定是否与事件碰撞
-  #  IN: rgssXY
-  #--------------------------------------------------------------------------
-  def collide_with_events_pixel?(x, y)
-    x_p, e = PIXEL_MOVE.rgss2unit(x)
-    y_p, e = PIXEL_MOVE.rgss2unit(y)
-    r = Rect.new(x_p, y_p, PIXEL_MOVE.pixel2unit(32), PIXEL_MOVE.pixel2unit(32))
-    $game_map.events.each do |id, event|
-      next if event == self || !event.normal_priority? || event.through
-      return true if event.pos_rect?(r)
-    end
-    return false
-  end
-  #--------------------------------------------------------------------------
-  # ● 判定是否与载具碰撞
-  #  IN: rgssXY
-  #--------------------------------------------------------------------------
-  def collide_with_vehicles_pixel?(x, y)
-    x_p, e = PIXEL_MOVE.rgss2unit(x)
-    y_p, e = PIXEL_MOVE.rgss2unit(y)
-    r = Rect.new(x_p, y_p, PIXEL_MOVE.pixel2unit(32), PIXEL_MOVE.pixel2unit(32))
-    $game_map.boat.pos_rect_nt?(r) || $game_map.ship.pos_rect_nt?(r)
-  end
-end
 end
 
 class Game_Character
@@ -316,7 +269,7 @@ class Game_Character
     end
     f = astar_one_step(@astar_des_x, @astar_des_y)
     @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR if f == false
-    set_direction(f)
+    set_direction(f) if f.is_a?(Integer)
     return false
   end
   #--------------------------------------------------------------------------
@@ -354,6 +307,13 @@ class Game_Character
     @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR if !r
     return r
   end
+  #--------------------------------------------------------------------------
+  # ● 强制终止寻路
+  #--------------------------------------------------------------------------
+  def astar_stop
+    @astar_moving = false
+    @astar_moving_self = false
+  end
 end
 
 class Game_Event
@@ -373,6 +333,14 @@ class Game_Event
   def move_type_custom
     return if @astar_moving_self && !update_astar_move
     update_routine_move
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置事件页
+  #--------------------------------------------------------------------------
+  alias eagle_astar_move_trigger_setup_page setup_page
+  def setup_page(new_page)
+    eagle_astar_move_trigger_setup_page(new_page)
+    astar_stop
   end
 end
 
