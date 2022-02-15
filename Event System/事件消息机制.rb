@@ -2,9 +2,9 @@
 # ■ 事件消息机制 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventMsg"] = "1.2.0"
+$imported["EAGLE-EventMsg"] = "1.3.0"
 #==============================================================================
-# - 2022.2.13.16 新增强制终止
+# - 2022.2.16.0 事件消息不再阻止事件的正常触发
 #==============================================================================
 # - 本插件新增消息机制，以直接触发事件中的指令
 #-----------------------------------------------------------------------------
@@ -52,22 +52,32 @@ $imported["EAGLE-EventMsg"] = "1.2.0"
 #   1. 为了保证事件的等待指令有意义，并且不出现明显的操作延时感，
 #      若消息未执行完，此时再传入同一消息，将不会重复执行，但依然返回 true
 #
-#   2. 为了确保并行，当事件在执行消息时，不再执行其 start 方法
-#
-#   3. 对于事件消息中的【标签跳转】，将在本消息的初始查找范围内进行跳转，
+#   2. 对于事件消息中的【标签跳转】，将在本消息的初始查找范围内进行跳转，
 #      随后终止原本消息，开始执行跳转后的内容
 #
-#   4. 事件触发了 暂时消除 后，其当前的全部消息都将终止执行
+#   3. 事件触发了 暂时消除 后，其当前的全部消息都将终止执行
 #
-#   5. 事件切换页面后，仅在当前页查找的全部消息将终止执行
+#   4. 事件切换页面后，仅在当前页查找的全部消息将终止执行
 #
 # 【高级】
 #
-#    event.msg?  → 当指定事件存在任意正在执行的消息时，返回true
+#    event.msg?(LABEL=nil) → 当指定事件正在执行LABEL消息时，返回true
+#                         若 LABEL 传入 nil，任一消息正在执行，则返回 true
 #
-#    event.msg?(LABEL) → 当指定事件正在执行 LABEL 编号的消息时，返回true
+#    event.msg_fin(LABEL=nil) → 强制终止某事件的指定消息
+#                         若 LABEL 传入 nil，则终止全部消息
 #
-#    event.msg_abort(LABEL)  → 强制终止某事件的指定消息，若不传入LABEL则终止全部
+#    event.msg_halt(LABEL=nil, t=nil) → 暂时停止LABEL消息的执行，t为定时
+#                                    若 LABEL 传入 nil，则为事件的全部消息
+#           注意：暂停的消息，依然被视作正在执行。
+#
+#    event.msg_continue(LABEL=nil) → 继续执行LABEL消息
+#                                    若 LABEL 传入 nil，则为事件的全部消息
+#
+# 【事件脚本】
+#
+#    msg(LABEL, wait=false) → 调用当前页的LABEL消息，
+#                          若wait传入true，则会等待消息结束，否则继续执行当前事件
 #
 #-----------------------------------------------------------------------------
 # ○ 地图的事件：在特定时机自动触发的消息
@@ -76,8 +86,8 @@ $imported["EAGLE-EventMsg"] = "1.2.0"
 #   本插件新增了如下的特定时机，及自动执行的消息。
 #   如果没有设置对应标签的话，那就无事发生。
 #
-# 1. 当事件页符合条件显示时，将自动触发一次“初始化”消息
-#    等价于 event.msg("初始化")
+# 1. 当事件页符合条件显示时，将自动触发一次当前页中的“初始化”消息
+#    等价于 event.msg("初始化", true)
 #
 #    需要在当前事件页里编写以下指令：
 #
@@ -85,8 +95,9 @@ $imported["EAGLE-EventMsg"] = "1.2.0"
 #      |    ...
 #      |-标签：END
 #
-# 2. 当事件位置发生变化时，将自动触发一次“位置变化”消息
-#    等价于 event.msg("位置变化")
+# 2. 当事件位置发生变化时，将自动触发一次当前页中的“位置变化”消息
+#    等价于 event.msg("位置变化", true)
+#
 #
 # - 注意，在调用前会先强制终止本事件已在执行的同名消息！
 #
@@ -236,27 +247,52 @@ module INTO_CLASS
     return false
   end
   #--------------------------------------------------------------------------
-  # ● 强制中止指定消息
+  # ● 暂停执行消息
   #--------------------------------------------------------------------------
-  def msg_abort(label = nil)
+  def msg_halt(label = nil, t = nil)
     if label == nil
-      @eagle_interpreters.each { |i| i.abort }
+      @eagle_interpreters.each { |i| i.halt = true; i.halt_t = t }
     else
       inters = @eagle_interpreters.select { |i| label == i.eagle_label }
-      inters.each { |i| i.abort }
+      inters.each { |i| i.halt = true; i.halt_t = t }
     end
   end
+  #--------------------------------------------------------------------------
+  # ● 继续执行消息
+  #--------------------------------------------------------------------------
+  def msg_continue(label = nil)
+    if label == nil
+      @eagle_interpreters.each { |i| i.halt = false }
+    else
+      inters = @eagle_interpreters.select { |i| label == i.eagle_label }
+      inters.each { |i| i.halt = false }
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 强制中止指定消息
+  #--------------------------------------------------------------------------
+  def msg_fin(label = nil)
+    if label == nil
+      @eagle_interpreters.each { |i| i.finish }
+    else
+      inters = @eagle_interpreters.select { |i| label == i.eagle_label }
+      inters.each { |i| i.finish }
+    end
+  end
+  def msg_abort(label = nil); msg_fin(label); end
 end # end of INTO_CLASS
 #==============================================================================
 # ■ Game_Interpreter_EagleMsg
 #==============================================================================
 class Game_Interpreter_EagleMsg < Game_Interpreter
-  attr_accessor  :eagle_label
+  attr_accessor  :eagle_label, :halt, :halt_t
   #--------------------------------------------------------------------------
   # ● 设置事件
   #--------------------------------------------------------------------------
   def setup(list, event_id = 0, lists = nil)
     @lists = lists  # 保存原本的全部指令列表，用于做跳转
+    @halt = false
+    @halt_t = nil
     super(list, event_id)
   end
   #--------------------------------------------------------------------------
@@ -264,6 +300,19 @@ class Game_Interpreter_EagleMsg < Game_Interpreter
   #--------------------------------------------------------------------------
   def lists_only_one?
     @lists.size == 1
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    if @halt
+      if @halt_t && @halt_t > 0
+        @halt_t -= 1
+        @halt = false if @halt_t == 0
+      end
+      return
+    end
+    super
   end
   #--------------------------------------------------------------------------
   # ● 执行
@@ -278,7 +327,7 @@ class Game_Interpreter_EagleMsg < Game_Interpreter
   #--------------------------------------------------------------------------
   # ● 强制停止
   #--------------------------------------------------------------------------
-  def abort
+  def finish
     @fiber = nil
   end
   #--------------------------------------------------------------------------
@@ -302,6 +351,20 @@ class Game_Interpreter_EagleMsg < Game_Interpreter
   end
 end # end of Game_Interpreter_EagleMsg
 end # end of EVENT_MSG
+#==============================================================================
+# ■ Scene_ItemBase
+#==============================================================================
+class Scene_ItemBase < Scene_MenuBase
+  #--------------------------------------------------------------------------
+  # ● 公共事件预定判定
+  #    如果预约了事件的调用，则切换到地图画面。
+  #--------------------------------------------------------------------------
+  alias eagle_event_msg_trigger_check_common_event check_common_event
+  def check_common_event
+    $game_temp.last_menu_item = item
+    eagle_event_msg_trigger_check_common_event
+  end
+end
 #==============================================================================
 # ■ Game_Temp
 #==============================================================================
@@ -430,15 +493,7 @@ class Game_Event
     msg_trigger_update_position
     eagle_event_msg_trigger_update
     msg_trigger_update
-    msg_trigger_update_abort
-  end
-  #--------------------------------------------------------------------------
-  # ● 事件启动
-  #--------------------------------------------------------------------------
-  alias eagle_event_msg_trigger_start start
-  def start
-    return if msg? # 如果当前事件有消息，则自身不再触发
-    eagle_event_msg_trigger_start
+    msg_trigger_update_finish
   end
   #--------------------------------------------------------------------------
   # ● 设置事件页
@@ -446,10 +501,10 @@ class Game_Event
   alias eagle_event_msg_trigger_setup_page setup_page
   def setup_page(new_page)
     # 终止全部当前页的消息
-    @eagle_interpreters.each { |i| i.abort if i.lists_only_one? }
+    @eagle_interpreters.each { |i| i.finish if i.lists_only_one? }
     eagle_event_msg_trigger_setup_page(new_page)
     @eagle_msg_cur_event_id = @event.id
-    msg_abort(EVENT_MSG::PAGE_AUTO_INIT)
+    msg_fin(EVENT_MSG::PAGE_AUTO_INIT)
     msg(EVENT_MSG::PAGE_AUTO_INIT, true)
   end
   #--------------------------------------------------------------------------
@@ -458,7 +513,7 @@ class Game_Event
   def msg_trigger_update_position
     if (@eagle_last_x && @eagle_last_x != @real_x) ||
        (@eagle_last_y && @eagle_last_y != @real_y)
-      #msg_abort(EVENT_MSG::PAGE_AUTO_POS)  # 1帧可能判定不完，别强行停止了
+      #msg_fin(EVENT_MSG::PAGE_AUTO_POS)  # 1帧内可能判定不完，别强行停止了
       msg(EVENT_MSG::PAGE_AUTO_POS, true)
     end
     @eagle_last_x = @real_x
@@ -467,21 +522,24 @@ class Game_Event
   #--------------------------------------------------------------------------
   # ● 更新强制停止
   #--------------------------------------------------------------------------
-  def msg_trigger_update_abort
-    msg_abort(nil) if @erased
+  def msg_trigger_update_finish
+    msg_fin(nil) if @erased
   end
 end
 #==============================================================================
-# ■ Scene_ItemBase
+# ■ Game_Interpreter
 #==============================================================================
-class Scene_ItemBase < Scene_MenuBase
+class Game_Interpreter
   #--------------------------------------------------------------------------
-  # ● 公共事件预定判定
-  #    如果预约了事件的调用，则切换到地图画面。
+  # ● 事件脚本-调用当前页的消息
   #--------------------------------------------------------------------------
-  alias eagle_event_msg_trigger_check_common_event check_common_event
-  def check_common_event
-    $game_temp.last_menu_item = item
-    eagle_event_msg_trigger_check_common_event
+  def msg(label, wait = false)
+    e = $game_map.events[@event_id]
+    return if e == nil
+    e.msg(label, true)
+    while e.msg?(label)
+      break if wait == false
+      Fiber.yield
+    end
   end
 end
