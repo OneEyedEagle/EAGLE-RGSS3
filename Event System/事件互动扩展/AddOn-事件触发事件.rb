@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【事件互动扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventTriggerEvent"] = "1.0.0"
+$imported["EAGLE-EventTriggerEvent"] = "1.1.0"
 #==============================================================================
-# - 2022.2.19.21
+# - 2022.2.20.15 新增 玩家靠近事件
 #==============================================================================
 # - 本插件新增了事件之间的接触触发
 #------------------------------------------------------------------------------
@@ -76,6 +76,35 @@ $imported["EAGLE-EventTriggerEvent"] = "1.0.0"
 # - 如果想绑定多个事件，方法同【事件触发事件（主动式）】
 #
 #---------------------------------------------------------------------------
+# 【使用 - 玩家靠近事件】
+#
+# - 在事件页中，编写下述的指令，来设置【玩家靠近事件一定距离】后，触发自己的内容
+#
+#    |-标签：玩家靠近 d
+#    |
+#    |-...其余事件指令...
+#    |
+#    |-标签：END
+#
+#   其中 玩家靠近 为识别文本，可通过 E2E_BY_PLAYER_REGEXP 进行修改，不可缺少
+#   其中 d 为玩家与自身之间的距离小于等于该值，在被 eval 后取整数
+#
+#      距离的计算：玩家与事件之间 x 的差值的绝对值 + y 的差值的绝对值
+#
+#      如编写标签“玩家靠近 3”，即当玩家与事件距离小于等于3时，
+#         触发本事件的该互动，从“玩家靠近 3”执行到“END”为止
+#
+#      如编写标签“玩家靠近 v[1]”，即当玩家与事件距离小于等于1号变量的值时，
+#         触发本事件的该互动，从“玩家靠近 v[1]”执行到“END”为止
+#
+# - 注意：
+#
+#  1. 如果使用了【像素级移动 by老鹰】，则距离计算使用 rgss_x 与 rgss_y，
+#     即依然为地图编辑器中的格子位置
+#
+#  2. 当距离值小于等于 0 时，无效
+#
+#---------------------------------------------------------------------------
 # 【联动】
 #
 # - 由于本插件使用了与【事件消息机制 by老鹰】中的同样格式，
@@ -85,9 +114,15 @@ $imported["EAGLE-EventTriggerEvent"] = "1.0.0"
 #
 #    【事件触发事件（被动式）】中编写的标签修改为 被事件接触p id
 #
+#    【玩家靠近事件】中编写的标签修改为 玩家靠近p d
+#
 #   其它内容与上述介绍一致
 #
-# - 在使用事件消息进行执行时，不再挂起玩家的移动
+# - 注意：
+#
+#  1. 在使用事件消息进行执行时，不再挂起玩家的移动
+#
+#  2. 为了与事件互动保持统一，事件消息也只会检索当前页中的标签
 #
 #---------------------------------------------------------------------------
 # 【兼容】
@@ -108,6 +143,12 @@ module EVENT_INTERACT
   # 当自己被目标事件接触时，自己触发的互动
   #--------------------------------------------------------------------------
   E2E_BY_OTHERS_REGEXP = /^被事件接触(p?) *(.*)/
+
+  #--------------------------------------------------------------------------
+  # ● 【常量】定义事件指令-标签中的正则表达式
+  # 当玩家靠近自己时，自己触发的互动
+  #--------------------------------------------------------------------------
+  E2E_BY_PLAYER_REGEXP = /^玩家靠近(p?) *(.*)/
 
 end
 #=============================================================================
@@ -131,6 +172,8 @@ class Game_Event
     @eagle_e2e_triggers1 = []
     # 被接触时，触发自己的指定label
     @eagle_e2e_triggers2 = []
+    # 玩家靠近时，触发自己的指定label [ [label, d, para] ]
+    @eagle_e2e_triggers3 = []
   end
   #--------------------------------------------------------------------------
   # ● 设置事件页的设置
@@ -153,6 +196,14 @@ class Game_Event
         v = [label, get_value.call($2), false]
         v[2] = true if $1 == "p"
         @eagle_e2e_triggers2.push(v)
+        next
+      end
+      if label =~ EVENT_INTERACT::E2E_BY_PLAYER_REGEXP
+        d = EAGLE_COMMON.eagle_eval($2).to_i rescue 0
+        next if d <= 0
+        a = [label, d, false]
+        a[2] = true if $1 == "p"
+        @eagle_e2e_triggers3.push(a)
         next
       end
     end
@@ -204,7 +255,7 @@ class Game_Event
       if (e.is_a?(Integer) && event2.id == e) ||
           (e.is_a?(String) && event2.name.include?(e))
         if v[2] && $imported["EAGLE-EventMsg"]
-          msg(label)
+          msg(label, true)
           return true
         end
         start_ex(label)
@@ -223,12 +274,42 @@ class Game_Event
       if (e.is_a?(Integer) && self.id == e) ||
           (e.is_a?(String) && self.name.include?(e))
         if v[2] && $imported["EAGLE-EventMsg"]
-          event2.msg(label)
+          event2.msg(label, true)
           return true
         end
         event2.start_ex(label)
         return true
       end
+    end
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # ● 自动事件的启动判定
+  #--------------------------------------------------------------------------
+  alias eagle_event2event_check_event_trigger_auto check_event_trigger_auto
+  def check_event_trigger_auto
+    eagle_event2event_check_event_trigger_auto
+    eagle_check_trigger3
+  end
+  #--------------------------------------------------------------------------
+  # ● 玩家靠近事件后，触发label
+  #--------------------------------------------------------------------------
+  def eagle_check_trigger3
+    @eagle_e2e_triggers3.each do |v|
+      label = v[0]
+      d = v[1]
+      d_cur = ($game_player.x - self.x).abs + ($game_player.y - self.y).abs
+      if $imported["EAGLE-PixelMove"]
+        d_cur = ($game_player.rgss_x - self.rgss_x).abs
+        d_cur += ($game_player.rgss_y - self.rgss_y).abs
+      end
+      next if d_cur > d
+      if v[2] && $imported["EAGLE-EventMsg"]
+        msg(label, true)
+        return true
+      end
+      start_ex(label)
+      return true
     end
     return false
   end
