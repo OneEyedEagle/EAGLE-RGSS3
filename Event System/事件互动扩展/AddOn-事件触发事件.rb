@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【事件互动扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventTriggerEvent"] = "1.1.0"
+$imported["EAGLE-EventTriggerEvent"] = "1.2.0"
 #==============================================================================
-# - 2022.2.20.15 新增 玩家靠近事件
+# - 2022.2.27.20 新增 事件碰撞事件时存入target变量
 #==============================================================================
 # - 本插件新增了事件之间的接触触发
 #------------------------------------------------------------------------------
@@ -36,7 +36,13 @@ $imported["EAGLE-EventTriggerEvent"] = "1.1.0"
 #      如编写标签“接触事件 NPC”，即为监测本事件是否与名称含有“NPC”的事件接触，
 #         如果接触，则触发本事件的该互动，从“接触事件 NPC”执行到“END”为止
 #
-# - 注意：触发时，同样会挂起玩家的操作，即与玩家主动触发保持一致效果
+# - 注意：
+#
+#     1. 触发时，同样会挂起玩家的操作，即与玩家主动触发保持一致效果
+#
+#     2. 此处的碰撞为广义的：
+#          若事件不可穿透，在移动失败后判定面前一格的同层事件
+#          若事件允许穿透，在移动成功后判定自身当前格的任意层事件
 #
 # - 如果想绑定多个事件，可以通过以下方式：
 #
@@ -51,6 +57,16 @@ $imported["EAGLE-EventTriggerEvent"] = "1.1.0"
 #   这是因为利用标签进行跳转执行时，不会受到其它标签的影响，
 #     而只有遇到第一个END时才结束执行，
 #     也因此，可以通过重复填写的方式，来制作与多个事件的接触判定
+#
+# - 高级：
+#
+#    在成功触发时，Game_Event 类的event对象中，会在 @target 变量存储碰撞事件的对象
+#
+#    如 3 号事件设置了标签“接触事件 5”，且与 5 号事件碰撞了，
+#      则 3 号事件 $game_map.events[3].target 的值为 $game_map.events[5]
+#
+#    如 9 号事件设置了标签“接触事件 NPC”，且与名称为“NPC 1号”的 7 号事件碰撞，
+#      则 9 号事件 $game_map.events[9].target 的值为 $game_map.events[7]
 #
 #---------------------------------------------------------------------------
 # 【使用 - 事件触发事件（被动式）】
@@ -102,7 +118,7 @@ $imported["EAGLE-EventTriggerEvent"] = "1.1.0"
 #  1. 如果使用了【像素级移动 by老鹰】，则距离计算使用 rgss_x 与 rgss_y，
 #     即依然为地图编辑器中的格子位置
 #
-#  2. 当距离值小于等于 0 时，无效
+#  2. 当距离值等于 0 时表示重合，小于 0 时无效
 #
 #---------------------------------------------------------------------------
 # 【联动】
@@ -123,6 +139,9 @@ $imported["EAGLE-EventTriggerEvent"] = "1.1.0"
 #  1. 在使用事件消息进行执行时，不再挂起玩家的移动
 #
 #  2. 为了与事件互动保持统一，事件消息也只会检索当前页中的标签
+#
+#  3. 任意时刻下，只会由此途径触发一次消息，执行完成后才能再次触发同一消息
+#     但不同消息之间互不干扰
 #
 #---------------------------------------------------------------------------
 # 【兼容】
@@ -155,12 +174,19 @@ end
 # ■ Game_Event
 #=============================================================================
 class Game_Event
-  attr_reader  :priority_type,  :eagle_e2e_triggers2
+  attr_reader    :priority_type,  :eagle_e2e_triggers2
+  attr_accessor  :through,  :target
   #--------------------------------------------------------------------------
   # ● 获取事件名称
   #--------------------------------------------------------------------------
   def name
     @event.name
+  end
+  #--------------------------------------------------------------------------
+  # ● 已经结束了的事件
+  #--------------------------------------------------------------------------
+  def finish?
+    empty? || @erased == true
   end
   #--------------------------------------------------------------------------
   # ● 初始化私有成员变量
@@ -174,6 +200,8 @@ class Game_Event
     @eagle_e2e_triggers2 = []
     # 玩家靠近时，触发自己的指定label [ [label, d, para] ]
     @eagle_e2e_triggers3 = []
+    # 接触/被接触时，另一个事件对象
+    @target = nil
   end
   #--------------------------------------------------------------------------
   # ● 设置事件页的设置
@@ -199,8 +227,8 @@ class Game_Event
         next
       end
       if label =~ EVENT_INTERACT::E2E_BY_PLAYER_REGEXP
-        d = EAGLE_COMMON.eagle_eval($2).to_i rescue 0
-        next if d <= 0
+        d = EAGLE_COMMON.eagle_eval($2).to_i rescue -1
+        next if d < 0
         a = [label, d, false]
         a[2] = true if $1 == "p"
         @eagle_e2e_triggers3.push(a)
@@ -209,17 +237,36 @@ class Game_Event
     end
   end
   #--------------------------------------------------------------------------
-  # ● 判定面前的事件是否被启动
+  # ● （移动成功时）增加步数
+  #--------------------------------------------------------------------------
+  def increase_steps
+    super
+    eagle_check_e2e_triggers_current  # 新增事件触发事件的判定
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查当前格的事件的接触触发
+  #--------------------------------------------------------------------------
+  def eagle_check_e2e_triggers_current
+    x = @x; y = @y
+    if $imported["EAGLE-PixelMove"]
+      _x, _y = PIXEL_MOVE.get_rect_xy(@collision_rect, 5)
+      x += _x
+      y += _y
+    end
+    eagle_trigger_event_pos(x, y, false)
+  end
+  #--------------------------------------------------------------------------
+  # ● （移动失败时）判定面前的事件是否被启动
   #--------------------------------------------------------------------------
   def check_event_trigger_touch_front
     super
-    return eagle_check_e2e_triggers_pixel if $imported["EAGLE-PixelMove"]
-    eagle_check_e2e_triggers
+    eagle_check_e2e_triggers_front
   end
   #--------------------------------------------------------------------------
   # ● 检查面前一格的事件的接触触发
   #--------------------------------------------------------------------------
-  def eagle_check_e2e_triggers
+  def eagle_check_e2e_triggers_front
+    return eagle_check_e2e_triggers_pixel if $imported["EAGLE-PixelMove"]
     x2 = $game_map.round_x_with_direction(@x, @direction)
     y2 = $game_map.round_y_with_direction(@y, @direction)
     eagle_trigger_event_pos(x2, y2)
@@ -227,10 +274,10 @@ class Game_Event
   #--------------------------------------------------------------------------
   # ● 判断是否与事件接触
   #--------------------------------------------------------------------------
-  def eagle_trigger_event_pos(x, y)
+  def eagle_trigger_event_pos(x, y, same_priority = true)
     $game_map.events.each do |eid, event|
-      next if event.empty? || !event.pos?(x, y)
-      next if event.priority_type != @priority_type
+      next if event.finish? || !event.pos?(x, y)
+      next if same_priority && event.priority_type != @priority_type
       f = eagle_check_trigger1(event)
       f = f || eagle_check_trigger2(event)
       return if f
@@ -253,11 +300,15 @@ class Game_Event
       label = v[0]
       e = v[1]
       if (e.is_a?(Integer) && event2.id == e) ||
-          (e.is_a?(String) && event2.name.include?(e))
+        (e.is_a?(String) && event2.name.include?(e))
         if v[2] && $imported["EAGLE-EventMsg"]
-          msg(label, true)
+          if !msg?(label)
+            self.target = event2
+            msg(label, true)
+          end
           return true
         end
+        self.target = event2
         start_ex(label)
         return true
       end
@@ -274,9 +325,13 @@ class Game_Event
       if (e.is_a?(Integer) && self.id == e) ||
           (e.is_a?(String) && self.name.include?(e))
         if v[2] && $imported["EAGLE-EventMsg"]
-          event2.msg(label, true)
+          if !event2.msg?(label)
+            event2.target = self
+            event2.msg(label, true)
+          end
           return true
         end
+        event2.target = self
         event2.start_ex(label)
         return true
       end
@@ -304,6 +359,7 @@ class Game_Event
         d_cur += ($game_player.rgss_y - self.rgss_y).abs
       end
       next if d_cur > d
+      self.target = nil
       if v[2] && $imported["EAGLE-EventMsg"]
         msg(label, true)
         return true
