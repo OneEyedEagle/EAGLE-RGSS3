@@ -41,7 +41,7 @@ end
 _a = A.new
 _a.a # => 1
 def _a.a # 单件方法
-  A.instance_method(:a).bind(self).call
+  p A.instance_method(:a).bind(self).call
   p 2
 end
 _a.a # => 1\n2
