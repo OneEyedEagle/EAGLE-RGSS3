@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ItemChoiceEX"] = true
+$imported["EAGLE-ItemChoiceEX"] = "1.1.0"
 #=============================================================================
-# - 2021.7.15.9 追加一个帮助窗口
+# - 2022.5.6.20 随对话框的姓名框嵌入而更新
 #==============================================================================
 # - 在对话框中利用 \keyitem[param] 对物品选择框进行部分参数设置：
 #     type → 【默认】物品选择范围的类型index（见 index → 物品种类的符号数组 的映射）
@@ -213,9 +213,11 @@ class Window_EagleKeyItem < Window_ItemList
       else # 宽度 = 文字区域宽度
         new_w = win_w + standard_padding * 2
       end
-      win_h = @message_window.height - @message_window.eagle_charas_h
-      d = self.height - win_h
-      d += standard_padding if @message_window.eagle_charas_h > 0
+      win_h = @message_window.height - standard_padding * 2
+      charas_h = @message_window.eagle_charas_y0 - @message_window.y - standard_padding +
+        @message_window.eagle_charas_h - @message_window.eagle_charas_oy
+      self_h = self.height - (charas_h > 0 ? 1 : 2) * standard_padding
+      d = self_h - (win_h - charas_h)
       if d > 0
         if @message_window.eagle_add_h_by_child_window?
           $game_message.child_window_h_des = d # 扩展对话框的高度
@@ -317,6 +319,7 @@ class Window_EagleKeyItem
       else
         @help_window.y = 0
       end
+      @help_window.windowskin = self.windowskin
       @help_window.open
     end
     super

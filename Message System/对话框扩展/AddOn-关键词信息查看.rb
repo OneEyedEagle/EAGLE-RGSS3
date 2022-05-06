@@ -4,9 +4,9 @@
 # ※ 推荐同时使用【组件-位图绘制转义符文本 by老鹰】以获得更好的文本绘制效果
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MsgKeywordInfo"] = true
+$imported["EAGLE-MsgKeywordInfo"] = "1.1.0"
 #==============================================================================
-# - 2022.2.22.0 确保当前选中的关键词显示在对话框内部
+# - 2022.5.6.19 优化显示方式，现在可以随着文字移动而移动
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细信息
 #------------------------------------------------------------------------------
@@ -254,6 +254,14 @@ class Window_EagleMessage
       @eagle_window_keyword_info.add_keyword(text, @eagle_chara_sprites[-1])
     end
   end
+  #--------------------------------------------------------------------------
+  # ● 处理输入等待
+  #--------------------------------------------------------------------------
+  alias eagle_keyword_info_input_pause input_pause
+  def input_pause
+    eagle_keyword_info_input_pause
+    @eagle_window_keyword_info.reset
+  end
 end
 
 #=============================================================================
@@ -353,8 +361,8 @@ class Window_Keyword_Info < Window_Base
     super()
     self.openness -= 1  # 保证tag精灵不会被再次显示
     @sprite_tag.visible = false
-    @state_hint = :hide
     @count_hint = 0
+    hide_hint
   end
   #--------------------------------------------------------------------------
   # ● 重置清除
@@ -494,6 +502,7 @@ class Window_Keyword_Info < Window_Base
   def update_key
     return if !MESSAGE_EX.keyword_trigger?
     return if @keywords.empty?
+    hide_hint
     return open if self.openness < 255
     move_left
   end
@@ -513,17 +522,22 @@ class Window_Keyword_Info < Window_Base
     case @state_hint
     when :init
       return if @keywords.size == 0
+      @index_show = nil
+      @dy = 0
+
       i = @index || @keywords.size - 1
       if self.openness > 0
         i_old = i
         i = (i - 1 + @keywords.size) % @keywords.size
         return if i == i_old
       end
-      _x, @_y = get_keyword_xy(i)
+      @index_show = i
+      _x, _y = get_keyword_xy(@index_show)
       @sprite_hint.x = _x
-      @sprite_hint.y = @_y
+      @sprite_hint.y = _y
       @sprite_hint.z = @message_window.z + 99
       @sprite_hint.opacity = 0
+      @sprite_hint.visible = true
       @count_hint = 0
       @state_hint = :show
     when :show
@@ -539,8 +553,7 @@ class Window_Keyword_Info < Window_Base
       t = @count_hint % 60
       if t <= 10
         h = 15
-        y1 = (t-5)**2 * h * 1.0/25 - h
-        @sprite_hint.y = @_y + y1
+        @dy = (t-5)**2 * h * 1.0/25 - h
       end
       if @count_hint > 150
         @count_hint = 0
@@ -558,6 +571,19 @@ class Window_Keyword_Info < Window_Base
         @state_hint = :init
       end
     end
+    if @index_show
+      _x, _y = get_keyword_xy(@index_show)
+      @sprite_hint.x = _x
+      @sprite_hint.y = _y + @dy
+    end
     @count_hint += 1
+  end
+  #--------------------------------------------------------------------------
+  # ● 隐藏提示按键
+  #--------------------------------------------------------------------------
+  def hide_hint
+    @state_hint = :fin
+    @index_show = nil
+    @sprite_hint.visible = false
   end
 end

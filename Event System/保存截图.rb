@@ -4,9 +4,9 @@
 # ※ 本插件需要放置在【组件-位图Marshal化（VX/VA）】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SaveScreenshot"] = "1.0.0"
+$imported["EAGLE-SaveScreenshot"] = "1.0.1"
 #==============================================================================
-# - 2022.5.4.23
+# - 2022.5.6.13 修复旧存档报错的bug
 #==============================================================================
 # - 本插件新增了截图的保存，并且可以利用事件指令-显示图片来调用这些截图
 #--------------------------------------------------------------------------
@@ -77,8 +77,12 @@ class Scene_File
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_do_load do_load
   def do_load
-    File.open(make_filename_memory(@index), "rb") do |file|
-      SAVE_MEMORY.data = Marshal.load(file)
+    begin
+      File.open(make_filename_memory(@index), "rb") do |file|
+        SAVE_MEMORY.data = Marshal.load(file)
+      end
+    rescue
+      p $!
     end
     eagle_save_screenshot_do_load
   end
@@ -109,8 +113,12 @@ class << DataManager
   alias eagle_save_screenshot_load_game_without_rescue load_game_without_rescue
   def load_game_without_rescue(index)
     eagle_save_screenshot_load_game_without_rescue(load)
-    File.open(make_filename_memory(index), "rb") do |file|
-      SAVE_MEMORY.data = Marshal.load(file)
+    begin
+      File.open(make_filename_memory(index), "rb") do |file|
+        SAVE_MEMORY.data = Marshal.load(file)
+      end
+    rescue
+      p $!
     end
     return true
   end

@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = true
+$imported["EAGLE-ChoiceEX"] = "1.1.0"
 #=============================================================================
-# - 2021.12.28.21 嵌入时，会自动滚动文字来强行嵌入了
+# - 2022.5.6.20 随对话框的姓名框嵌入而更新
 #==============================================================================
 #------------------------------------------------------------------------------
 # 【优化】
@@ -526,9 +526,10 @@ class Window_EagleChoiceList < Window_Command
         new_w = win_w + standard_padding * 2
       end
       win_h = @message_window.height - standard_padding * 2
-      charas_h = @message_window.eagle_charas_h - @message_window.eagle_charas_oy
-      choice_h = self.height - (charas_h > 0 ? 1 : 2) * standard_padding
-      d = choice_h - (win_h - charas_h)
+      charas_h = @message_window.eagle_charas_y0 - @message_window.y - standard_padding +
+        @message_window.eagle_charas_h - @message_window.eagle_charas_oy
+      self_h = self.height - (charas_h > 0 ? 1 : 2) * standard_padding
+      d = self_h - (win_h - charas_h)
       if d > 0  # 对话框剩余高度不足，没法直接嵌入
         if @message_window.eagle_add_h_by_child_window?  # 可以增加对话框高度？
           $game_message.child_window_h_des = d # 扩展对话框的高度

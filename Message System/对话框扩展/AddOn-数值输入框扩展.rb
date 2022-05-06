@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-NumberInputEX"] = true
+$imported["EAGLE-NumberInputEX"] = "1.1.0"
 #=============================================================================
-# - 2021.2.15.19 初始文字颜色与对话框保持一致
+# - 2022.5.6.20 随对话框的姓名框嵌入而更新
 #==============================================================================
 # - 在对话框中利用 \numinput[param] 对数值输入框进行部分参数设置：
 #     o → 数值输入框的显示原点类型（九宫格小键盘）（默认7）（嵌入时固定为7）
@@ -227,9 +227,11 @@ class Window_EagleNumberInput < Window_Base
       else # 宽度 = 文字区域宽度
         new_w = win_w + standard_padding * 2
       end
-      win_h = @message_window.height - @message_window.eagle_charas_h
-      d = self.height - win_h
-      d += standard_padding if @message_window.eagle_charas_h > 0
+      win_h = @message_window.height - standard_padding * 2
+      charas_h = @message_window.eagle_charas_y0 - @message_window.y - standard_padding +
+        @message_window.eagle_charas_h - @message_window.eagle_charas_oy
+      self_h = self.height - (charas_h > 0 ? 1 : 2) * standard_padding
+      d = self_h - (win_h - charas_h)
       if d > 0
         if @message_window.eagle_add_h_by_child_window?
           $game_message.child_window_h_des = d # 扩展对话框的高度

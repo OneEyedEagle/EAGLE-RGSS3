@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.5.0"
+$imported["EAGLE-MessageEX"] = "1.6.0"
 #=============================================================================
-# - 2022.2.11.0 重写自动播放UI，现在与跳过对话的UI一致
+# - 2022.5.6.12 新增姓名框嵌入对话框
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -660,6 +660,15 @@ WINDOWSKIN_TO_WINDOWTAG = {
 #    lt → 自动循环播放时，每两帧之间的等待间隔帧数
 #    lw → 自动循环播放时，每一次loop结束时的等待帧数（nil代表不再循环）
 #
+#
+# 【高级】
+#  - 本对话框的宽高可以动态变化，脸图不影响对话框高度，
+#      也因此本对话框允许脸图超出范围，这样方便显示更大规格的脸图（立绘）。
+#    但一般大家都使用默认 96x96 规格的脸图，且默认的脸图恰好显示在默认对话框内，
+#      此时如果不把脸图包裹住的话比较难看，因此增加该项设置：
+#      开启时，当使用默认规格脸图，将强制对话框内容高度大于等于脸图高度
+FORCE_WIN_H_BIGGER_THAN_DEFAULT_FACE = true
+#
 # 【常量设置：参数预设值】
 FACE_PARAMS_INIT = {
 # \face[]
@@ -742,16 +751,18 @@ FACE_PARAMS_INIT = {
 # 【参数】
 #    param → 变量参数字符串
 # （变量一览）
-#    o → 姓名框的显示原点的类型（对应九宫格小键盘）（默认左上角7）
-#    do → 基于对话框的九宫格位置，姓名框的显示原点所在位置（默认左上角7）
-#    dx/dy → x、y坐标的补足偏移量
+#    o → 姓名框的显示原点（对应九宫格小键盘）（默认7，姓名框左上角为显示原点）
+#    do → 基于对话框的九宫格位置，姓名框的显示原点的实际位置
+#       （默认7，位于对话框左上角7）（0时为嵌入对话框中，且o自动设为7）
+#    dx/dy → 姓名框x、y坐标的额外偏移量
 #    opa → 姓名框背景的不透明度（默认255）（文字的不透明度锁定为255）
 #    skin → 姓名框所用皮肤的index（默认nil，同win中设置）
 #    size → 姓名框文字大小（默认nil，取Font默认值）
 #    bg → 姓名框背景图片的index（按常量设置进行 index → 图片名称 映射）
 #        （若读取成功，将不显示窗口皮肤；若读取失败，仍绘制窗口皮肤）
 #    bgo → 姓名框背景图片与姓名框的对齐原点（对应九宫格小键盘）
-#        （默认背景图片的左上角与姓名框左上角对齐7）
+#        （默认7，背景图片的左上角与姓名框左上角对齐）
+#    cx/cy → 姓名框的文字起始绘制位置（默认为0,0）
 #
 # 【高级】
 #  - 由于姓名框可能遮挡脸图，因此本对话框新增了自动调整，确保姓名框不遮挡脸图
@@ -762,15 +773,17 @@ DEFAULT_NO_OVERLAP_FACE = true
 # 【常量设置：参数预设值】
 NAME_PARAMS_INIT = {
 # \name[]
-  :o => 1, # 自身的显示原点位置
-  :do => 7, # 相较于对话框的显示原点位置
-  :dx => 0, # 位置的偏移增量
+  :o => 0, # 自身的显示原点位置
+  :do => 0, # 相较于对话框的显示原点位置
+  :dx => 0, # 姓名框整体的偏移增量（如果为嵌入，则会自动增加占位的宽高）
   :dy => 0,
   :opa => 255, # 背景不透明度
   :skin => nil, # 姓名框所用windowskin的类型（nil为与对话框一致）
   :size => nil, # 姓名框文字大小
   :bg => nil, # 姓名框背景所用图片index（覆盖窗口皮肤）
-  :bgo => 7,  # 姓名框背景图片与姓名框的对齐原点
+  :bgo => 1,  # 姓名框背景图片与姓名框的对齐原点
+  :cx => 0,   # 姓名框内部，绘制姓名时的初始位置
+  :cy => 0,
 }
 #
 # 【常量设置：全部姓名前统一增加的字符串】
@@ -2834,7 +2847,7 @@ class Window_EagleMessage < Window_Base
     eagle_after_set_xywh(_p)
   end
   #--------------------------------------------------------------------------
-  # ● 进行对话框进行位置大小更新前的处理
+  # ● 对话框位置大小更新前的处理
   #--------------------------------------------------------------------------
   def eagle_before_set_xywh(_p)
     eagle_win_update # 确保对话框的xy为移动的目的地
@@ -2973,30 +2986,46 @@ class Window_EagleMessage < Window_Base
   # ● 获取窗口的实际宽度高度
   #--------------------------------------------------------------------------
   def eagle_window_width
-    if game_message.pop? && pop_params[:w] > 0
-      return pop_params[:w] + standard_padding * 2
+    w = eagle_window_charas_width
+    if w
+      w = [w, eagle_name_width].max  # 确保姓名框的嵌入
+      w += eagle_face_width          # 确保脸图有地方显示
+      w += standard_padding * 2      # 增加边框
+      return w
     end
-    if win_params[:w] > 0
-      return win_params[:w] + standard_padding * 2
+    return window_width
+  end
+  def eagle_window_height
+    h = eagle_window_charas_height
+    if h
+      h += eagle_name_height         # 确保姓名框的嵌入
+      h = [h, eagle_face_height].max if eagle_face_in_window? # 确保脸图完整显示
+      h += standard_padding * 2      # 增加边框
+      return h
     end
+    return window_height
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取窗口的文字的宽度高度
+  #--------------------------------------------------------------------------
+  def eagle_window_charas_width
+    return pop_params[:w] if game_message.pop? && pop_params[:w] > 0
+    return win_params[:w] if win_params[:w] > 0
     w = nil
     w = @eagle_charas_w       if eagle_dynamic_w?
     w = @eagle_charas_w_final if eagle_dyn_fit_w?
     if w
       w = win_params[:wmin] if win_params[:wmin] > 0 && w < win_params[:wmin]
       w = win_params[:wmax] if win_params[:wmax] > 0 && w > win_params[:wmax]
-      w += standard_padding * 2
-      w += eagle_face_width
-      return w
     end
-    window_width
+    return w
   end
-  def eagle_window_height
+  def eagle_window_charas_height
     if game_message.pop? && pop_params[:h] > 0
-      return eagle_check_param_h(pop_params[:h]) + standard_padding * 2
+      return eagle_check_param_h(pop_params[:h])
     end
     if win_params[:h] > 0
-      return eagle_check_param_h(win_params[:h]) + standard_padding * 2
+      return eagle_check_param_h(win_params[:h])
     end
     h = nil
     h = @eagle_charas_h       if eagle_dynamic_h?
@@ -3004,10 +3033,8 @@ class Window_EagleMessage < Window_Base
     if h
       h = win_params[:hmin] if win_params[:hmin] > 0 && h < win_params[:hmin]
       h = win_params[:hmax] if win_params[:hmax] > 0 && h > win_params[:hmax]
-      h += standard_padding * 2
-      return h
     end
-    window_height
+    return h
   end
   #--------------------------------------------------------------------------
   # ● 检查内容高度参数
@@ -3222,15 +3249,23 @@ class Window_EagleMessage < Window_Base
   # ● 更新name参数组（随win/pop参数组更新）
   #--------------------------------------------------------------------------
   def eagle_name_update
-    MESSAGE_EX.reset_xy_dorigin(@eagle_window_name, self, name_params[:do])
-    MESSAGE_EX.reset_xy_origin(@eagle_window_name, name_params[:o])
-    # 若姓名框遮挡了脸图，则移动到不遮挡的地方
-    if game_message.no_name_overlap_face && eagle_face_width > 0
-      lx = self.x + eagle_face_left_width
-      rx = self.x + self.width - eagle_face_right_width
-      w = @eagle_window_name.width
-      @eagle_window_name.x = lx if @eagle_window_name.x < lx
-      @eagle_window_name.x = rx-w if @eagle_window_name.x+w > rx
+    if name_params[:do] == 0  # 嵌入
+      # 考虑到姓名框自己也有边框，此处 standard_padding 一加一减抵消了
+      @eagle_window_name.x = self.x - standard_padding + \
+        @eagle_window_name.rect_real.x + eagle_face_left_width
+      @eagle_window_name.y = self.y +  \
+        @eagle_window_name.rect_real.y
+    else
+      MESSAGE_EX.reset_xy_dorigin(@eagle_window_name, self, name_params[:do])
+      MESSAGE_EX.reset_xy_origin(@eagle_window_name, name_params[:o])
+      # 若姓名框遮挡了脸图，则移动到不遮挡的地方
+      if game_message.no_name_overlap_face && eagle_face_width > 0
+        lx = self.x + eagle_face_left_width
+        rx = self.x + self.width - eagle_face_right_width
+        w = @eagle_window_name.width
+        @eagle_window_name.x = lx if @eagle_window_name.x < lx
+        @eagle_window_name.x = rx-w if @eagle_window_name.x+w > rx
+      end
     end
     @eagle_window_name.x += name_params[:dx]  # 坐标的补足偏移量
     @eagle_window_name.y += name_params[:dy]
@@ -3491,6 +3526,8 @@ class Window_EagleMessage < Window_Base
   # ● 翻页处理（删去了翻页功能）
   #--------------------------------------------------------------------------
   def new_page(text, pos)
+    @eagle_force_close = false  # 重置强制关闭
+
     pos[:x] = 0; pos[:y] = 0
     pos[:new_x] = 0; pos[:height] = line_height
 
@@ -3561,16 +3598,16 @@ class Window_EagleMessage < Window_Base
     self.x + standard_padding + eagle_face_left_width + win_params[:cdx]
   end
   def eagle_charas_y0
-    self.y + standard_padding + win_params[:cdy]
+    self.y + standard_padding + eagle_name_height + win_params[:cdy]
   end
   #--------------------------------------------------------------------------
   # ● 计算文字显示区域的宽度和高度
   #--------------------------------------------------------------------------
   def eagle_charas_max_w
-    self.width - standard_padding * 2 - eagle_face_width - eagle_window_w_empty
+    self.width - standard_padding*2 - eagle_face_width - eagle_window_w_empty
   end
   def eagle_charas_max_h
-    self.height - standard_padding * 2 - eagle_window_h_empty
+    self.height - standard_padding*2 - eagle_name_height - eagle_window_h_empty
   end
   #--------------------------------------------------------------------------
   # ● 文字显示区域的显示原点
@@ -3990,6 +4027,26 @@ class Window_EagleMessage < Window_Base
   def process_draw_name
     @eagle_window_name.reset if @eagle_window_name
   end
+  #--------------------------------------------------------------------------
+  # ● 姓名框占用的宽度
+  #--------------------------------------------------------------------------
+  def eagle_name_width
+    return 0 if !game_message.name?
+    return 0 if name_params[:do] != 0  # 不是嵌入，则不占用
+    return @eagle_window_name.contents.width + \
+      @eagle_window_name.rect_real.x + @eagle_window_name.rect_real.width + \
+      name_params[:dx]
+  end
+  #--------------------------------------------------------------------------
+  # ● 姓名框占用的高度
+  #--------------------------------------------------------------------------
+  def eagle_name_height
+    return 0 if !game_message.name?
+    return 0 if name_params[:do] != 0  # 不是嵌入，则不占用
+    return @eagle_window_name.contents.height + \
+      @eagle_window_name.rect_real.y + @eagle_window_name.rect_real.height + \
+      name_params[:dy]
+  end
 
   #--------------------------------------------------------------------------
   # ● 控制符的处理
@@ -4317,6 +4374,20 @@ class Window_EagleMessage < Window_Base
     return 0 if !face_params[:dir] # 显示在左侧时
     v = eagle_face_width - face_params[:dx]
     [v, 0].max
+  end
+  #--------------------------------------------------------------------------
+  # ● 脸图占用的高度
+  #--------------------------------------------------------------------------
+  def eagle_face_height
+    face_params[:height]
+  end
+  #--------------------------------------------------------------------------
+  # ● 保证脸图完全显示在对话框内？
+  #--------------------------------------------------------------------------
+  def eagle_face_in_window?
+    return false if @eagle_sprite_face == nil
+    return MESSAGE_EX::FORCE_WIN_H_BIGGER_THAN_DEFAULT_FACE &&
+      @eagle_sprite_face.face_default_size?
   end
 
   #--------------------------------------------------------------------------
@@ -4838,6 +4909,7 @@ end
 # ○ 姓名框窗口
 #=============================================================================
 class Window_EagleMsgName < Window_Base
+  attr_reader  :rect_real
   #--------------------------------------------------------------------------
   # ● 获取文字颜色
   #     n : 文字颜色编号（0..31）
@@ -4855,6 +4927,8 @@ class Window_EagleMsgName < Window_Base
     @back_sprite = Sprite.new
     @flag_use_back_sprite = false
     @params = {}
+    # 在背景图片的影响下，姓名框四个方向的增加量
+    @rect_real = Rect.new(0, 0, 0, 0)
   end
   def bind_window(window); @window_msg = window; end
   def name_params; @window_msg.name_params; end
@@ -4905,7 +4979,12 @@ class Window_EagleMsgName < Window_Base
       @back_sprite.visible = false
       self.opacity = name_params[:opa]
       self.back_opacity = name_params[:opa]
+      if name_params[:do] == 0  # 嵌入时，隐藏背景框
+        self.opacity = 0
+        self.back_opacity = 0
+      end
     end
+    reset_rect_real
     @back_sprite.z = self.z - 1
     self.contents_opacity = 255
     open
@@ -4917,6 +4996,8 @@ class Window_EagleMsgName < Window_Base
     reset_font_settings
     w, h = MESSAGE_EX.calculate_text_wh(contents, t)
     h = [h, contents.font.size].max
+    w = w + name_params[:cx]
+    h = h + name_params[:cy]
     move(0, 0, w + standard_padding * 2, h + standard_padding * 2)
     create_contents
   end
@@ -4926,7 +5007,7 @@ class Window_EagleMsgName < Window_Base
   def redraw(t)
     change_color(text_color(@window_msg.font_params[:c]))
     MESSAGE_EX.apply_font_params(contents.font, @window_msg.font_params)
-    draw_text_ex(0, 0, t)
+    draw_text_ex(name_params[:cx], name_params[:cy], t)
   end
   #--------------------------------------------------------------------------
   # ● 重置字体设置
@@ -4971,6 +5052,29 @@ class Window_EagleMsgName < Window_Base
   def update_back_sprite
     MESSAGE_EX.reset_xy_dorigin(@back_sprite, self, name_params[:bgo])
     MESSAGE_EX.reset_sprite_oxy(@back_sprite, name_params[:bgo])
+    @back_sprite.z = self.z - 1
+  end
+  #--------------------------------------------------------------------------
+  # ● 计算四方向上的增量（因为背景图片可能大于文字区域）
+  #--------------------------------------------------------------------------
+  def reset_rect_real
+    if @flag_use_back_sprite
+      update_back_sprite
+      xw = self.x + standard_padding; ww = self.width - standard_padding * 2
+      yw = self.y + standard_padding; hw = self.height - standard_padding * 2
+      xp = @back_sprite.x - @back_sprite.ox
+      yp = @back_sprite.y - @back_sprite.oy
+      @rect_real.x = 0
+      @rect_real.x = xw - xp if xp < xw
+      @rect_real.y = 0
+      @rect_real.y = yw - yp if yp < yw
+      t = xp + @back_sprite.width - xw - ww
+      @rect_real.width = 0
+      @rect_real.width = t if t > 0
+      t = yp + @back_sprite.height - yw - hw
+      @rect_real.height = 0
+      @rect_real.height = t if t > 0
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新（在 eagle_win_update 中调用）
@@ -5007,7 +5111,7 @@ class Window_EagleMsgName < Window_Base
     super
     if @flag_use_back_sprite
       @back_sprite.opacity = self.openness
-      @back_sprite.opacity = self.contents_opacity if self.contents_opacity < 255
+      @back_sprite.opacity = 0 if self.openness < 255 || self.contents_opacity < 255
     end
   end
 end
@@ -5130,7 +5234,6 @@ class Sprite_EaglePauseTag < Sprite
   def show
     return if params[:v] == 0
     reset_position
-    @sprite_auto.visible = true
     self.visible = true
     self
   end
@@ -5161,7 +5264,7 @@ class Sprite_EaglePauseTag < Sprite
     @auto_temp_bitmap.draw_text(0, 0, @sprite_auto.width, @sprite_auto.height, t, 1)
   end
   #--------------------------------------------------------------------------
-  # ● 重置自动倒计时
+  # ● 重置自动倒计时的位置
   #--------------------------------------------------------------------------
   def reset_auto_countdown_position
     MESSAGE_EX.reset_sprite_oxy(@sprite_auto, MESSAGE_EX::WIN_AUTO_O)
@@ -5169,6 +5272,7 @@ class Sprite_EaglePauseTag < Sprite
     @sprite_auto.x += MESSAGE_EX::WIN_AUTO_DX
     @sprite_auto.y += MESSAGE_EX::WIN_AUTO_DY
     @sprite_auto.z = self.z + 1
+    @sprite_auto.visible = @window_bind.win_params[:auto_t] != nil
   end
   #--------------------------------------------------------------------------
   # ● 重绘自动倒计时
@@ -5367,8 +5471,9 @@ class Sprite_EagleFace < Sprite
     @params[:num] = @params[:num_line] * @params[:num_col]
     @params[:sole_w] = self.bitmap.width / @params[:num_col]
     @params[:sole_h] = self.bitmap.height / @params[:num_line]
-    # 传出脸图宽度，用于对话框中文字位移
+    # 传出脸图宽高，用于对话框中的文字位移
     face_params[:width] = @params[:sole_w]
+    face_params[:height] = @params[:sole_h]
     # 脸图以底部中心为显示原点
     self.ox = @params[:sole_w] / 2
     self.oy = @params[:sole_h]
@@ -5378,6 +5483,12 @@ class Sprite_EagleFace < Sprite
   #--------------------------------------------------------------------------
   def face_default_line; 2; end
   def face_default_col;  4; end
+  #--------------------------------------------------------------------------
+  # ● 默认大小的脸图？
+  #--------------------------------------------------------------------------
+  def face_default_size?
+    @params[:sole_w] == 96 && @params[:sole_h] == 96
+  end
   #--------------------------------------------------------------------------
   # ● 导入face参数
   #--------------------------------------------------------------------------
