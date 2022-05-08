@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageBox"] = true
+$imported["EAGLE-MessageBox"] = "1.1.0"
 #=============================================================================
-# - 2021.6.24.11 修改注释
+# - 2022.5.8.1 优化文字滚动的方式
 #==============================================================================
 # - 本插件新增的大文本框，有以下几个新特性：
 #
@@ -738,18 +738,37 @@ class Window_EagleMessage_Box < Window_Base
   #--------------------------------------------------------------------------
   # ● 确保最后绘制完成的文字在视图内
   #--------------------------------------------------------------------------
-  def ensure_character_visible(c)
+  def ensure_character_visible(c, no_anim = false)
     return if c.nil?
-    _ox = self.ox
-    _oy = self.oy
-    self.ox = 0 if c._x < self.ox
-    d = c._x + c.width - @eagle_chara_viewport.rect.width
-    self.ox = d if d > 0
-    self.oy = 0 if c._y < self.oy
-    d = c._y + c.height - @eagle_chara_viewport.rect.height
-    self.oy = d if d > 0
-    # 移动全部（正在移入移出）文字所存储的窗口oxy，保证它们一起移动
-    update_moving_charas_oxy if _ox != self.ox || _oy != self.oy
+    ox_1 = self.ox
+    ox_d = 0
+    ox_d = c._x - self.ox if c._x < self.ox
+    d = c._x + c.width - @eagle_chara_viewport.rect.width - self.ox
+    ox_d = d if d > 0
+
+    oy_1 = self.oy
+    oy_d = 0
+    oy_d = c._y - self.oy if c._y < self.oy
+    d = c._y + c.height - @eagle_chara_viewport.rect.height - self.oy
+    oy_d = d if d > 0
+
+    if !no_anim && (ox_d != 0 || oy_d != 0)
+      # 因为是在新行的首字符绘制完成后调用该方法，因此先把这个字符隐藏了
+      c.visible = false
+      t = MESSAGE_EX::CHARAS_SCROLL_OUT_FRAME
+      (t+1).times do |i|
+        per = i * 1.0 / t
+        per = MESSAGE_EX.ease_value(:msg_xywh, per)
+        self.ox = ox_1 + ox_d * per if ox_d != 0
+        self.oy = oy_1 + oy_d * per if oy_d != 0
+        update_moving_charas_oxy
+        Fiber.yield
+      end
+      c.visible = true
+    end
+    self.ox = ox_1 + ox_d
+    self.oy = oy_1 + oy_d
+    update_moving_charas_oxy # 保证文字跟着contents一起移动
   end
   #--------------------------------------------------------------------------
   # ● 换行文字的处理

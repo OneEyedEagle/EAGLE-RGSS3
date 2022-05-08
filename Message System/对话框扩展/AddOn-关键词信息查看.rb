@@ -4,9 +4,9 @@
 # ※ 推荐同时使用【组件-位图绘制转义符文本 by老鹰】以获得更好的文本绘制效果
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MsgKeywordInfo"] = "1.1.0"
+$imported["EAGLE-MsgKeywordInfo"] = "1.1.2"
 #==============================================================================
-# - 2022.5.6.19 优化显示方式，现在可以随着文字移动而移动
+# - 2022.5.8.1 限制按键提示的位置，确保在文字区域内；兼容对话框扩展V1.7.0
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细信息
 #------------------------------------------------------------------------------
@@ -457,7 +457,7 @@ class Window_Keyword_Info < Window_Base
   def reposition
     # 提前确保目标关键词的首字符在对话框的显示范围内
     s_c = @keywords[@index][1]
-    @message_window.ensure_character_visible(s_c)
+    @message_window.ensure_character_visible(s_c, true)
 
     _x, _y = get_keyword_xy(@index)
     self.x = _x - self.width/2
@@ -573,8 +573,9 @@ class Window_Keyword_Info < Window_Base
     end
     if @index_show
       _x, _y = get_keyword_xy(@index_show)
-      @sprite_hint.x = _x
-      @sprite_hint.y = _y + @dy
+      r = @message_window.eagle_chara_viewport.rect
+      @sprite_hint.x = [[_x, r.x-8].max, r.x + r.width+8].min
+      @sprite_hint.y = [[_y, r.y-8].max, r.y + r.height+8].min + @dy
     end
     @count_hint += 1
   end

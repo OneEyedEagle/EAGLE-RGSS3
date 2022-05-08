@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.6.0"
+$imported["EAGLE-MessageEX"] = "1.7.0"
 #=============================================================================
-# - 2022.5.6.12 新增姓名框嵌入对话框
+# - 2022.5.8.0 新增\clc转义符
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -104,6 +104,7 @@ module MESSAGE_EX
 #    \hold   保留当前对话框
 #    \close  当前对话框必定处理关闭
 #    \next   当前对话框不关闭，下一次的事件文本在该对话框后面继续显示
+#    \clc    向上移出隐藏全部文字，在新一行里继续绘制之后的文字
 #
 # （文字特效类）
 #    \cin    文字移入
@@ -910,6 +911,20 @@ NO_DEFAULT_PAUSE = true
 #    当前对话框不处理按键继续，且不会关闭，
 #    在处理下一条事件指令-显示文本时，文本将继续显示在该对话框内。
 #    （中途可以调用其它事件指令，对话框将一直保持开启状态。）
+#
+#
+#----------------------------------------------------------------------------
+#  \clc
+#----------------------------------------------------------------------------
+# 【功能】
+#    将当前全部已经绘制的文字上移，直至移出对话框的显示范围，
+#    然后在新的一行中继续绘制剩余文字。
+#    （在输入等待时，依然可以通过方向键进行滚动，以浏览之前移出显示范围的文字）
+#    （最好先固定对话框的显示高度，再使用本功能，否则下侧可能出现较多的空白区域，
+#       因为在动态高度情况下，对话框高度由全部文字的高度和决定，与这些移动无关）
+#
+# 【常量设置：文字移出的所用帧数】
+CLC_CHARAS_OUT_FRAME = 20
 
 #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # ○ 文字特效类
@@ -1583,6 +1598,11 @@ EX_PARAMS_INIT = {
 # ○ 新游戏开始时，对话框预定将要显示的文本
 # （由于解析问题，请将 "\" 替换成 "\\"）
 ESCAPE_STRING_INIT = ""
+
+#----------------------------------------------------------------------------
+# ○ 当文字绘制超出对话框区域，导致内容滚动时，新增了一个缓动动画来获得新的空行
+#  该项设置缓动动画的持续帧数
+CHARAS_SCROLL_OUT_FRAME = 12
 
 #----------------------------------------------------------------------------
 # ○ 当对话框内容无需滚动浏览时，若该常量设置为 true，则使用方向键也可以继续对话
@@ -3586,6 +3606,7 @@ class Window_EagleMessage < Window_Base
     before_input_pause unless @pause_skip # 此处追加对pause精灵占用宽度的处理
     @eagle_charas_w = last_c_w
     @eagle_charas_h = last_c_h # 复原当前文字区域宽高
+    self.ox = self.oy = 0
     game_message.load_env(game_message.env) # 复原转义符环境
     game_message.clear_applys
     @flag_draw = true
@@ -3809,18 +3830,37 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   # ● 确保指定文字在视图内
   #--------------------------------------------------------------------------
-  def ensure_character_visible(c)
+  def ensure_character_visible(c, no_anim = false)
     return if c.nil?
-    _ox = self.ox
-    _oy = self.oy
-    self.ox = 0 if c._x < self.ox
-    d = c._x + c.width - @eagle_chara_viewport.rect.width
-    self.ox = d if d > 0
-    self.oy = 0 if c._y < self.oy
-    d = c._y + c.height - @eagle_chara_viewport.rect.height
-    self.oy = d if d > 0
-    # 移动全部（正在移入移出）文字所存储的窗口oxy，保证它们一起移动
-    update_moving_charas_oxy if _ox != self.ox || _oy != self.oy
+    ox_1 = self.ox
+    ox_d = 0
+    ox_d = c._x - self.ox if c._x < self.ox
+    d = c._x + c.width - @eagle_chara_viewport.rect.width - self.ox
+    ox_d = d if d > 0
+
+    oy_1 = self.oy
+    oy_d = 0
+    oy_d = c._y - self.oy if c._y < self.oy
+    d = c._y + c.height - @eagle_chara_viewport.rect.height - self.oy
+    oy_d = d if d > 0
+
+    if !no_anim && @flag_draw && !@flag_open_close && (ox_d != 0 || oy_d != 0)
+      # 因为是在新行的首字符绘制完成后调用该方法，因此先把这个字符隐藏了
+      c.visible = false
+      t = MESSAGE_EX::CHARAS_SCROLL_OUT_FRAME
+      (t+1).times do |i|
+        per = i * 1.0 / t
+        per = MESSAGE_EX.ease_value(:msg_xywh, per)
+        self.ox = ox_1 + ox_d * per if ox_d != 0
+        self.oy = oy_1 + oy_d * per if oy_d != 0
+        update_moving_charas_oxy
+        Fiber.yield
+      end
+      c.visible = true
+    end
+    self.ox = ox_1 + ox_d
+    self.oy = oy_1 + oy_d
+    update_moving_charas_oxy # 保证文字跟着contents一起移动
   end
   #--------------------------------------------------------------------------
   # ● 处于快进显示？
@@ -4112,6 +4152,10 @@ class Window_EagleMessage < Window_Base
       process_draw_pic(text, pos)
       return true
     end
+    if c == "CLC"
+      process_pos_clc(text, pos)
+      return true
+    end
     return false
   end
   #--------------------------------------------------------------------------
@@ -4131,6 +4175,28 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_chara_effect_clear(code_sym)
     game_message.chara_params.delete(code_sym)
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置\clc清屏效果
+  #--------------------------------------------------------------------------
+  def process_pos_clc(text, pos)
+    text[0] = '' if text[0] == "\n"
+    process_new_line(text, pos)
+
+    oy_1 = self.oy
+    oy_d = pos[:y]
+    if @flag_draw
+      t = MESSAGE_EX::CLC_CHARAS_OUT_FRAME
+      (t+1).times do |i|
+        per = i * 1.0 / t
+        per = MESSAGE_EX.ease_value(:msg_xywh, per)
+        self.oy = oy_1 + oy_d * per
+        update_moving_charas_oxy
+        Fiber.yield
+      end
+    end
+    self.oy = oy_1 + oy_d
+    update_moving_charas_oxy
   end
 
   #--------------------------------------------------------------------------
