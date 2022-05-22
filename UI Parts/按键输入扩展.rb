@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-InputEX"] = true
 #=============================================================================
-# - 2020.2.20.11 优化
+# - 2022.5.21.23 修复在 Input.update 前调用会报错的bug
 #=============================================================================
 # - 本插件新增了一系列按键判定方法，但不修改默认模块
 #-----------------------------------------------------------------------------
@@ -80,6 +80,7 @@ module Input_EX
   #--------------------------------------------------------------------------
   def self.trigger?(key)
     keycode = get_keycode(key)
+    return false if @keys_state[keycode] == nil
     @keys_last_state[keycode] == 0 && @keys_state[keycode] > 1
   end
   #--------------------------------------------------------------------------
@@ -87,6 +88,7 @@ module Input_EX
   #--------------------------------------------------------------------------
   def self.up?(key)
     keycode = get_keycode(key)
+    return false if @keys_state[keycode] == nil
     @keys_last_state[keycode] > 0 && @keys_state[keycode] <= 1
   end
   #--------------------------------------------------------------------------
@@ -101,6 +103,7 @@ module Input_EX
   #--------------------------------------------------------------------------
   def self.press?(key)
     keycode = get_keycode(key)
+    return false if @keys_state[keycode] == nil
     @keys_last_state[keycode] > 1 && @keys_state[keycode] > 1
   end
 
@@ -137,6 +140,16 @@ class << Input
   def update
     eagle_input_ex_update
     Input_EX.update
+  end
+end
+class << DataManager
+  #--------------------------------------------------------------------------
+  # ● 初始化模块
+  #--------------------------------------------------------------------------
+  alias eagle_input_ex_init init
+  def init
+    Input_EX.init
+    eagle_input_ex_init
   end
 end
 

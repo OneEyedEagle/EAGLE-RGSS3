@@ -2,9 +2,9 @@
 # ■ 组件-形状绘制 by 老鹰（http://oneeyedeagle.lofter.com/）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-UtilsDrawing"] = true
+$imported["EAGLE-UtilsDrawing"] = "1.0.1"
 #=============================================================================
-# - 2020.9.29.19 兼容VX
+# - 2021.5.19.0 修复绘制线时，传入float型坐标报错的bug
 #=============================================================================
 # - 本插件提供了一部分全局通用的关于形状绘制的脚本工具
 # - 本插件已经兼容RPG Maker VX
@@ -64,7 +64,7 @@ module EAGLE
     dx = x1 - x0; dy = y1 - y0; x = x0; y = y0; t = 0; s = type.size
     epsl = (dx.abs > dy.abs ? dx.abs : dy.abs) # 取坐标中更大的差值为基准
     xIncre = dx * 1.0 / epsl; yIncre = dy * 1.0 / epsl # 计算坐标单次增量
-    epsl.times do
+    (epsl.to_i).times do
       t = (t + 1) % s
       if type[t] != '0' # 0代表当前点不进行绘制
         if(y0 - y1 <= 0)

@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【通知队列 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageHint-GetItem"] = "1.0.1"
+$imported["EAGLE-MessageHint-GetItem"] = "1.0.2"
 #==============================================================================
-# - 2022.2.27.17
+# - 2022.5.15.18
 #==============================================================================
 # - 本插件基于【通知队列】，新增了自动处理的物品得失提示。
 #   具体设置请见【通知队列】脚本中的注释。
@@ -43,21 +43,48 @@ module MESSAGE_HINT
     "HINT_DY_OUT" => 0,
   }
   #--------------------------------------------------------------------------
-  # 【常量】当该开关开启时，启用物品得失提示
+  # 【常量】当该ID号的全局开关开启时，启用物品得失提示
   # 若为 0，则为一直开启状态
   #--------------------------------------------------------------------------
   DEF_FUNC_ITEM = 0
   #--------------------------------------------------------------------------
-  # 【常量】当该开关开启时，启用金钱得失提示
+  # ●【常量】当启用物品得失提示时，所显示的提示文本
+  # 其中 <icon> 将替换为对应物品的图标id，<name> 将替换为对应物品的名称
+  #      <v> 将替换为获得/失去的数量
+  #--------------------------------------------------------------------------
+  # 获得物品时
+  ITEM_GAIN_TEXT = "获得 \\i[<icon>]<name> x <v>"
+  # 失去物品时
+  ITEM_LOSE_TEXT = "失去 \\i[<icon>]<name> x <v>"
+  #--------------------------------------------------------------------------
+  # 【常量】当该ID号的全局开关开启时，启用金钱得失提示
   # 若为 0，则为一直开启状态
   #--------------------------------------------------------------------------
   DEF_FUNC_GOLD = 0
   #--------------------------------------------------------------------------
-  # 【常量】当该开关开启时，启用入队离队提示
+  # ●【常量】当启用金钱得失提示时，所显示的提示文本
+  # 其中 <G> 将替换为数据库-用语中设置的金钱的货币单位
+  #      <v> 将替换为获得/失去的数量
+  #--------------------------------------------------------------------------
+  # 获得金钱时
+  GOLD_GAIN_TEXT = "获得 <v> <G>"
+  # 失去金钱时
+  GOLD_LOSE_TEXT = "失去 <v> <G>"
+  #--------------------------------------------------------------------------
+  # 【常量】当该ID号的全局开关开启时，启用入队离队提示
   # 若为 0，则为一直开启状态
   #--------------------------------------------------------------------------
   DEF_FUNC_PARTY = 0
-end
+  #--------------------------------------------------------------------------
+  # ●【常量】当启用入队离队提示时，所显示的提示文本
+  # 其中 <name> 将替换为对应角色的姓名
+  #--------------------------------------------------------------------------
+  # 角色入队时
+  PARTY_IN_TEXT  = "<name> 入队"
+  # 角色离队时
+  PARTY_OUT_TEXT = "<name> 离队"
+
+end  # 不要删
 #===============================================================================
 # ○ Game_Party
 #===============================================================================
@@ -73,7 +100,9 @@ class Game_Party < Game_Unit
     if sid == 0 || $game_switches[sid] == true
       ps = {}
       actor = $data_actors[actor_id]
-      ps[:text] = "#{actor.name} 入队"
+      t = MESSAGE_HINT::PARTY_IN_TEXT.dup
+      t.gsub! ( /<name>/ ) { actor.name }
+      ps[:text] = t
       MESSAGE_HINT.add(ps, MESSAGE_HINT::DEF_FUNC_ID)
     end
   end
@@ -88,7 +117,9 @@ class Game_Party < Game_Unit
     if sid == 0 || $game_switches[sid] == true
       ps = {}
       actor = $data_actors[actor_id]
-      ps[:text] = "#{actor.name} 离队"
+      t = MESSAGE_HINT::PARTY_OUT_TEXT.dup
+      t.gsub! ( /<name>/ ) { actor.name }
+      ps[:text] = t
       MESSAGE_HINT.add(ps, MESSAGE_HINT::DEF_FUNC_ID)
     end
   end
@@ -102,8 +133,11 @@ class Game_Party < Game_Unit
     sid = MESSAGE_HINT::DEF_FUNC_GOLD
     if sid == 0 || $game_switches[sid] == true
       ps = {}
-      t = amount > 0 ? "获得" : "失去"
-      ps[:text] = "#{t} #{amount.abs}#{Vocab.currency_unit}"
+      t = amount>0 ? MESSAGE_HINT::GOLD_GAIN_TEXT : MESSAGE_HINT::GOLD_LOSE_TEXT
+      t = t.dup
+      t.gsub! ( /<v>/ ) { amount.abs }
+      t.gsub! ( /<G>/ ) { Vocab.currency_unit }
+      ps[:text] = t
       MESSAGE_HINT.add(ps, MESSAGE_HINT::DEF_FUNC_ID)
     end
   end
@@ -120,8 +154,12 @@ class Game_Party < Game_Unit
     sid = MESSAGE_HINT::DEF_FUNC_ITEM
     if sid == 0 || $game_switches[sid] == true
       ps = {}
-      t = amount > 0 ? "获得" : "失去"
-      ps[:text] = "#{t} \\i[#{item.icon_index}]#{item.name} x #{amount.abs}"
+      t = amount>0 ? MESSAGE_HINT::ITEM_GAIN_TEXT : MESSAGE_HINT::ITEM_LOSE_TEXT
+      t = t.dup
+      t.gsub! ( /<icon>/ ) { item.icon_index }
+      t.gsub! ( /<name>/ ) { item.name }
+      t.gsub! ( /<v>/ )    { amount.abs }
+      ps[:text] = t
       MESSAGE_HINT.add(ps, MESSAGE_HINT::DEF_FUNC_ID)
     end
   end
