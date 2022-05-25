@@ -1,831 +1,415 @@
 #==============================================================================
-# ■ 思维云图 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
-# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】、
-#     【组件-位图绘制转义符文本 by老鹰】、【组件-形状绘制 by老鹰】之下
-# ※ 本插件推荐与【事件互动扩展 by老鹰】共同使用
+# ■ 组件-通用方法汇总 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ThinkBar"] = "1.0.0"
+$imported["EAGLE-CommonMethods"] = "1.0.7"
 #==============================================================================
-# - 2022.5.21.23
+# - 2022.3.7.22
 #==============================================================================
-# - 本插件新增了效仿《十三机兵防卫圈》的思维云图系统（简化版）
-#------------------------------------------------------------------------------
-# 【UI】
-#
-# - 在地图上时，当 THINKBAR.call? 返回 true 时（默认为按下 SHIFT 键），
-#     （如果使用了【按键输入扩展 by老鹰】，则改为 TAB 键）
-#     将打开 思维云图 界面，此时地图不会暂停，其余事件正常更新
-#
-# - 按下确定键触发思考词时，将执行对应绑定的事件，执行方式与 玩家按键触发 一致，
-#     即挂起玩家移动、等待执行结束
-#
-#------------------------------------------------------------------------------
-# 【新增思考词：执行事件指令-注释】
-#
-# - 在事件指令-注释中，编写该样式文本（需作为行首）
-#
-#       思考|tag字符串|文本
-#
-#    其中 思考 为固定的识别文本，不可缺少
-#    其中 tag字符串 可以为以下类型文本的任意组合，用空格分隔（也可不写）：
-#
-#       eid=触发该思考词时，执行的事件的id（若不填或填入0，则取当前事件）
-#          （执行方式与 玩家按键触发 一致，即只执行满足触发条件的最大序号的页）
-#
-#       mid=所执行事件的所在地图ID（若不填，则取当前地图）
-#          （当执行其它地图上的事件时，指令的 本事件 都会变成当前地图的同ID事件！）
-#
-#       sym=当使用【事件互动扩展 by老鹰】时，
-#           触发思考词时，将在eid号事件的当前页中搜索sym互动类型并执行
-#
-#       bind=数字（在UI中会将该思考词与该数字序号的事件连线）
-#          （当数字为 0 时，代表在UI中会把eid号事件与该思考词连线）
-#
-#    其中 文本 为思考词的文本，可以用 \n 来进行换行
-#       需要保证同一时间各个思考词不完全相同
-#
-# 【注意】
-#
-# - 若 EventInteractEX_WORD_AS_SYM 为 true 且不填写 sym= 项，则把思考词作为互动类型
-#
-# - 所有思考词都会与玩家连线，而 bind=数字 可以额外设置一个事件与其连线
-#
-# - 当思考词被执行过一次后，将自动删除
-#
-# 【示例】
-#
-#    思考||自我反省
-#       → 新增一条“自我反省”的思考，执行该思考时将触发该注释的所在事件
-#
-#
-#    思考|eid=5 bind=5 sym=反省|帮他反省
-#       → 新增一条“帮他反省”的思考，UI里与5号事件连线，
-#          执行该思考时，将触发5号事件当前页中的“反省”互动
-#          （若未使用【事件互动扩展 by老鹰】，则依然为触发5号事件）
-#
-#------------------------------------------------------------------------------
-# 【新增思考词：玩家附近的事件-首行注释】
-#
-# - 当事件页的第一条指令为注释，且其中包含下述类型的文本时，
-#   将在玩家开启 思维云图 界面时，自动追加绑定在该事件上的思考
-#
-#      <思考 tag字符串>
-#
-#    其中 思考 为固定的识别文本，不可缺少
-#    其中 tag字符串 与【新增思考词：执行事件指令-注释】中一致
-#       但新增下列参数：
-#
-#       t=思考词文本【必须】（若不填，则不会增加思考词）
-#
-# 【注意】
-#
-# - 该方式新增的思考词会自动绑定所在事件，当然你也可以覆盖设置eid=数字和bind=数字
-#
-# - 当玩家与事件的距离小于等于指定值时，才会查找事件是否设置了思考词
-#
-# 【示例】
-#
-#    <思考 t=自我反省>
-#       → 当玩家与该事件距离小于指定值时，玩家开启UI时新增一条“自我反省”的思考，
-#            执行该思考时将触发该事件
-#
+# - 本插件提供了一系列通用方法，广泛应用于各种插件中
+#===============================================================================
+
 #==============================================================================
-module THINKBAR
-#=============================================================================
-# ■ 常量设置
-#=============================================================================
+# □ 脚本版本判定
+#===============================================================================
+module EAGLE_COMMON
   #--------------------------------------------------------------------------
-  # ● 开启UI
+  # ● 获取脚本的版本号
+  #    name = "EAGLE-CommonMethods"
+  #   如版本为 "1.0.2"，返回 [1, 0, 2]
   #--------------------------------------------------------------------------
-  def self.call?
-    if $imported["EAGLE-InputEX"]
-      return Input_EX.trigger?(:TAB)
+  def self.get_version(name)
+    if $imported[name]
+      if $imported[name] == true
+        return [1, 0, 0]
+      elsif $imported[name].is_a?(String)
+        s = $imported[name]
+        ss = s.split(/\./)
+        return ss.collect { |e| e.to_i }
+      end
     end
-    Input.trigger?(:A)
-  end
-
-  #--------------------------------------------------------------------------
-  # ○【常量】事件指令-注释 中新增思考的文本
-  #--------------------------------------------------------------------------
-  COMMENT_THINKBAR = /^思考 *?\| *?(.*?) *?\| *?(.*)/mi
-  #--------------------------------------------------------------------------
-  # ○【常量】事件页首行注释中，用于检索是否存在思考词的匹配
-  #--------------------------------------------------------------------------
-  COMMENT_THINKBAR_EVENT = /<思考 *(.*?)>/m
-
-  #--------------------------------------------------------------------------
-  # ○【常量】（使用了【事件互动扩展 by老鹰】时）
-  # 若为 true，则将思考词作为互动类型查找，若当前页未找到对应互动，则不执行任何内容
-  # 若为 false，则指定 sym=0 时，才会查找与思考词一致的互动，否则执行整页
-  # 注意：若指定 sym=任意文本，则仅会查找 任意文本 的互动类型并执行
-  #--------------------------------------------------------------------------
-  EventInteractEX_WORD_AS_SYM = true
-  #--------------------------------------------------------------------------
-  # ○【常量】检测半径
-  #--------------------------------------------------------------------------
-  # 当玩家与事件距离小于等于该值时，检索事件页中设置的思考词
-  #--------------------------------------------------------------------------
-  SEARCH_RANGE = 3
-  #--------------------------------------------------------------------------
-  # 如果不想把激活距离设置为固定值，可以修改该项为变量序号
-  #   该序号的变量的值如果大于0，则会被读取作为距离值
-  #   该序号设置为 0 时，依然取 SEARCH_RANGE 设置的固定值
-  #--------------------------------------------------------------------------
-  V_ID_SEARCH_RANGE = 0
-
-  #--------------------------------------------------------------------------
-  # ● 设置增加思考时的提示（t 为思考词文本）
-  # （仅利用注释、全局脚本增加思考词时出现，自动索引事件时不会提示）
-  #--------------------------------------------------------------------------
-  def self.show_hint(t)
-    if $imported["EAGLE-MessageHint"]
-      ps = { :text => "新增思考 | #{t}" }
-      MESSAGE_HINT.add(ps, "居中偏上")
-      return
-    end
-  end
-
-#=============================================================================
-# ■ UI绘制部分
-#=============================================================================
-  #--------------------------------------------------------------------------
-  # ○【常量】玩家与思考词连线的颜色
-  #--------------------------------------------------------------------------
-  COLOR_LINE_PLAYER = Color.new(200,100,100, 160)
-  #--------------------------------------------------------------------------
-  # ○【常量】事件与思考词连线的颜色
-  #--------------------------------------------------------------------------
-  COLOR_LINE_EVENT = Color.new(200,200,200, 160)
-  #--------------------------------------------------------------------------
-  # ○【常量】提示文本的字体大小
-  #--------------------------------------------------------------------------
-  HINT_FONT_SIZE = 14
-
-  #--------------------------------------------------------------------------
-  # ● 设置背景精灵
-  #--------------------------------------------------------------------------
-  def self.set_sprite_bg(sprite)
-    sprite.bitmap = Bitmap.new(Graphics.width, Graphics.height)
-    sprite.bitmap.fill_rect(0, 0, sprite.width, sprite.height,
-      Color.new(0,0,0,200))
+    return [0, 0, 0]
   end
   #--------------------------------------------------------------------------
-  # ● 设置LOG标题精灵
+  # ● 判定指定脚本是否大于指定版本
+  #  v1 为大版本，一般出现较大的变动，且使用方法也会发生变化
+  #  v2 为功能更新，一般新增或删除了部分功能
+  #  v3 为BUG修复，可以直接复制并覆盖
   #--------------------------------------------------------------------------
-  def self.set_sprite_info(sprite)
-    sprite.zoom_x = sprite.zoom_y = 3.0
-    sprite.bitmap = Bitmap.new(Graphics.height, Graphics.height)
-    sprite.bitmap.font.size = 64
-    sprite.bitmap.font.color = Color.new(255,255,255,10)
-    sprite.bitmap.draw_text(0,0,sprite.width,64, "THINK", 0)
-    sprite.angle = -90
-    sprite.x = Graphics.width + 48
-    sprite.y = 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 设置按键提示精灵
-  #--------------------------------------------------------------------------
-  def self.set_sprite_hint(sprite)
-    sprite.bitmap = Bitmap.new(Graphics.width, 24)
-    sprite.bitmap.font.size = HINT_FONT_SIZE
-
-    sprite.bitmap.draw_text(0, 2, sprite.width, sprite.height,
-      "左/右方向键 - 切换 | 确定键 - 执行 | 取消键 - 退出", 1)
-    sprite.bitmap.fill_rect(0, 0, sprite.width, 1,
-      Color.new(255,255,255,120))
-
-    sprite.oy = sprite.height
-    sprite.y = Graphics.height
-  end
-
-#=============================================================================
-# ■ 控制部分
-#=============================================================================
-  #--------------------------------------------------------------------------
-  # ● 初始化（在 spriteset 里调用）
-  #--------------------------------------------------------------------------
-  def self.init
-    @flag_active = false
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新（在 spriteset 里调用）
-  #--------------------------------------------------------------------------
-  def self.update
-    if active?
-      deactivate if $game_map.interpreter.running?
-      return
-    end
-    return if $game_map.interpreter.running?
-    @flag_active = true if call?
-  end
-  #--------------------------------------------------------------------------
-  # ● 开启中？
-  #--------------------------------------------------------------------------
-  def self.active?
-    @flag_active == true
-  end
-  #--------------------------------------------------------------------------
-  # ● 关闭
-  #--------------------------------------------------------------------------
-  def self.deactivate
-    @flag_active = false
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取检测半径
-  #--------------------------------------------------------------------------
-  def self.get_search_range
-    v = $game_variables[V_ID_SEARCH_RANGE]
-    return v if v > 0
-    return SEARCH_RANGE
-  end
-  #--------------------------------------------------------------------------
-  # ● 判定事件是否可以提取思考词
-  #--------------------------------------------------------------------------
-  def self.check_event_near(event)
-    d = (event.x - $game_player.x).abs + (event.y - $game_player.y).abs
-    if $imported["EAGLE-PixelMove"]
-      d = (event.rgss_x - $game_player.rgss_x).abs + \
-        (event.rgss_y - $game_player.rgss_y).abs
-    end
-    return [] if d > THINKBAR.get_search_range  # 查询的范围
-
-    t = EAGLE_COMMON.event_comment_head(event.list)
-    rs = []
-    t.scan(THINKBAR::COMMENT_THINKBAR_EVENT).each do |ps|
-      h = EAGLE_COMMON.parse_tags(ps[0].lstrip)
-      next if h[:t] == nil
-      h[:mid] ||= $game_map.map_id
-      h[:eid] ||= event.id
-      h[:bind] ||= event.id
-      rs.push(h)
-    end
-    return rs
+  def self.check_version(name, v1, v2=nil, v3=nil)
+    v = get_version(name)
+    f = true
+    f = false if v[0] < v1.to_i
+    f = false if v2 && v[1] < v2.to_i
+    f = false if v3 && v[2] < v3.to_i
+    p "【警告】在进行前置检测时，发现老鹰的 #{name} 版本过低！" if !f
+    return f
   end
 end
-#=============================================================================
-# ■ Spriteset_ThinkBar
-#=============================================================================
-class Spriteset_ThinkBar
-  #--------------------------------------------------------------------------
-  # ● 初始化
-  #--------------------------------------------------------------------------
-  def initialize
-    THINKBAR.init
-    @sprites = []
-    @fiber = nil
-  end
-  #--------------------------------------------------------------------------
-  # ● 释放
-  #--------------------------------------------------------------------------
-  def dispose
-    @sprites.each { |s| s.dispose }
-    @sprites = []
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    @sprites.each { |s| s.update }
-    THINKBAR.update
-    @fiber.resume if @fiber
-    return if !THINKBAR.active?
-    activate if @fiber == nil
-  end
 
+#==============================================================================
+# □ 文本相关
+#===============================================================================
+module EAGLE_COMMON
   #--------------------------------------------------------------------------
-  # ● UI-初始化精灵
+  # ● 解析tags文本
+  #  其中 {{str}} 将作为脚本，被替换为运行的结果
+  #  其中 {str} 将被完全保留，需要之后在实际调用时自己进行eval
+  #   _t = "v=5, s={{v[1]}} t=测试"
+  #   返回 { :v => "5", :s => "0", :t => "测试" }
   #--------------------------------------------------------------------------
-  def ui_init_sprites
-    @sprite_bg = Sprite.new
-    @sprite_bg.z = 250
-    THINKBAR.set_sprite_bg(@sprite_bg)
-
-    @sprite_bg_info = Sprite.new
-    @sprite_bg_info.z = @sprite_bg.z + 1
-    THINKBAR.set_sprite_info(@sprite_bg_info)
-
-    @sprite_hint = Sprite.new
-    @sprite_hint.z = @sprite_bg.z + 20
-    THINKBAR.set_sprite_hint(@sprite_hint)
-
-    @sprite_lines = Sprite.new
-    @sprite_lines.z = @sprite_bg.z + 5
-    @sprite_lines.bitmap = Bitmap.new(Graphics.width, Graphics.height)
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-释放
-  #--------------------------------------------------------------------------
-  def ui_dispose
-    instance_variables.each do |varname|
-      ivar = instance_variable_get(varname)
-      if ivar.is_a?(Sprite)
-        ivar.bitmap.dispose if ivar.bitmap
-        ivar.dispose
-      end
+  def self.parse_tags(_t)
+    # 脚本替换
+    _t.gsub!(/{{(.*?)}}/) { eagle_eval($1) }
+    # 内容替换
+    _evals = {}; _eval_i = -1
+    _t.gsub!(/{(.*?)}/) { _eval_i += 1; _evals[_eval_i] = $1; "<#{_eval_i}>" }
+    # 处理等号左右的空格
+    _t.gsub!( / *= */ ) { '=' }
+    # tag 拆分
+    _ts = _t.split(/ | /)
+    # tag 解析
+    _hash = {}
+    _ts.each do |_tag|  # _tag = "xxx=xxx"
+      _tags = _tag.split('=')
+      _k = _tags[0].downcase
+      _v = _tags[1]
+      _hash[_k.to_sym] = _v
     end
-  end
-
-  #--------------------------------------------------------------------------
-  # ● 开启
-  #--------------------------------------------------------------------------
-  def activate
-    @fiber = Fiber.new { fiber_main }
-  end
-  #--------------------------------------------------------------------------
-  # ● 主线程
-  #--------------------------------------------------------------------------
-  def fiber_main
-    @flag_break = false
-    ui_init_sprites
-    init_words
-    init_sprites
-    move_in
-    update_selection(1)
-    loop do
-      break if @flag_break == true
-      Fiber.yield
-      break if !THINKBAR.active?
-      update_key
+    # 脚本替换
+    _hash.keys.each do |k|
+      _hash[k] = _hash[k].gsub(/<(\d+)>/) { _evals[$1.to_i] }
     end
-    move_out
-    ui_dispose
-    @fiber = nil
+    return _hash
   end
-
   #--------------------------------------------------------------------------
-  # ● 初始化思考词
+  # ● 执行文本
   #--------------------------------------------------------------------------
-  def init_words
-    @words = $game_player.eagle_words.dup
-    # 增加此刻玩家周围的事件的词语
-    $game_map.events.each do |id, e|
-      words_params = THINKBAR.check_event_near(e)
-      words_params.each do |_ps|
-        next if _ps[:t] == nil
-        @words[_ps[:t]] = _ps
-      end
-    end
-    # 如果没有词语，则关闭
-    if @words.size == 0
-      THINKBAR.deactivate
-      @flag_break = true
+  def self.eagle_eval(t, ps = {})
+    s = $game_switches; v = $game_variables
+    es = $game_map.events
+    gp = $game_player
+    event = ps[:event] || nil
+    begin
+      eval(t)
+    rescue
+      p $!
     end
   end
   #--------------------------------------------------------------------------
-  # ● 初始化精灵
+  # ● 判断字符串的真假
+  #  str = "1" 或 "true" 或 1 或 true
+  #  返回 true
+  #  str = "2", default=false
+  #  返回 false
+  #  str = "2", default=true
+  #  返回 true
   #--------------------------------------------------------------------------
-  def init_sprites
-    @sprites.each { |s| s.dispose }
-    @sprites.clear
-    id = 0
-    @words.each do |w, ps|
-      s = Sprite_ThinkBar_Word.new(nil, w, id, ps)
-      s.z = @sprite_bg.z + 10
-      s.opacity = 120
-      @sprites.push(s)
-      id += 1
-    end
-    @index = -1
-  end
-  #--------------------------------------------------------------------------
-  # ● 等待精灵移动结束
-  #--------------------------------------------------------------------------
-  def wait_for_move
-    Fiber.yield while @sprites.any? { |s| s.moving? }
-  end
-  #--------------------------------------------------------------------------
-  # ● 移入
-  #--------------------------------------------------------------------------
-  def move_in
-    @sprites.each do |s|
-      x2, y2 = rand_point_in_screen(s)
-      x1, y1 = calc_point_out_of_screen(x2, y2)
-      s.set_xy(x1, y1)
-      s.goto(x2, y2)
-    end
-    wait_for_move
-  end
-  #--------------------------------------------------------------------------
-  # ● 移出
-  #--------------------------------------------------------------------------
-  def move_out
-    20.times do
-      @sprites.each do |s|
-        s.opacity -= 15
-      end
-      @sprite_bg.opacity -= 15
-      @sprite_bg_info.opacity -= 15
-      @sprite_hint.opacity -= 15
-      @sprite_lines.opacity -= 15
-      Fiber.yield
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 获得一个屏幕里的随机位置
-  #--------------------------------------------------------------------------
-  def rand_point_in_screen(s)
-    x0 = Graphics.width / 2 # $game_player.screen_x
-    y0 = Graphics.height / 2 + 32 # $game_player.screen_y
-    n = @sprites.size
-    r = 80 + n * 5
-    angle = (360.0 * s.id / n - 90) / 180 * Math::PI
-    x2 = x0 + r * Math.cos(angle)
-    y2 = y0 + r * Math.sin(angle)
-    return x2, y2
-  end
-  #--------------------------------------------------------------------------
-  # ● 计算一个屏幕外的随机位置
-  #--------------------------------------------------------------------------
-  def calc_point_out_of_screen(x_in_screen, y_in_screen)
-    x1 = 0
-    if x_in_screen < Graphics.width / 2
-      x1 = 0 - rand(200)
-    else
-      x1 = rand(200) + Graphics.width
-    end
-    y1 = 0
-    if y_in_screen < Graphics.height / 2
-      y1 = 0 - rand(200)
-    else
-      y1 = rand(200) + Graphics.height
-    end
-    return x1, y1
-  end
-
-  #--------------------------------------------------------------------------
-  # ● 更新按键
-  #--------------------------------------------------------------------------
-  def update_key
-    update_next
-    update_prev
-    update_confirm
-    update_cancel
-  end
-  #--------------------------------------------------------------------------
-  # ● 下一个
-  #--------------------------------------------------------------------------
-  def update_next
-    update_selection(1) if Input.trigger?(:RIGHT)
-  end
-  #--------------------------------------------------------------------------
-  # ● 上一个
-  #--------------------------------------------------------------------------
-  def update_prev
-    update_selection(-1)  if Input.trigger?(:LEFT)
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新选择
-  #--------------------------------------------------------------------------
-  def update_selection(d = 0)
-    return if @sprites.size == 0
-    last_index = @index
-    @index = @index + d
-    @index = 0 if @index >= @sprites.size
-    @index = @sprites.size - 1 if @index < 0
-    return if last_index == @index
-    @sprite_lines.bitmap.clear
-    if @index >= 0  # 当前选中的
-      s = @sprites[@index]
-      s.opacity = 255
-      x0 = s.x; y0 = s.y - s.oy / 2
-
-      # 连接玩家
-      x2 = $game_player.screen_x
-      y2 = $game_player.screen_y - 16
-      c = THINKBAR::COLOR_LINE_PLAYER
-      EAGLE.DDALine(@sprite_lines.bitmap, x0, y0, x2, y2, 3, "0011", c)
-
-      # 连接绑定的事件
-      if s.bind_eid && e = $game_map.events[s.bind_eid]
-        c = THINKBAR::COLOR_LINE_EVENT
-        EAGLE.DDALine(@sprite_lines.bitmap, x0, y0, e.screen_x, e.screen_y-16,
-          3, "0011", c )
-      end
-
-      # 绘制背景的圆
-      c = THINKBAR::COLOR_LINE_PLAYER
-      EAGLE.Circle(@sprite_lines.bitmap, x0, y0, 50, false, c)
-    end
-    if last_index >= 0  # 上一个被选中的
-      s = @sprites[last_index]
-      s.opacity = 120
-    end
-    wait_for_move
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新确定
-  #--------------------------------------------------------------------------
-  def update_confirm
-    return if !Input.trigger?(:C)
-    return Sound.play_buzzer if @index < 0
-    Input.update
-    THINKBAR.deactivate
-    @flag_break = true
-
-    s = @sprites[@index]
-    ps = @words[s.t]
-
-    mid = ps[:mid].to_i
-    eid = ps[:eid].to_i
-    pid = ps[:pid] ? ps[:pid].to_i : nil
-
-    # 读取其它地图中的
-    if mid != $game_map.map_id
-      map = EAGLE_COMMON.get_map_data(mid)
-      event_data = map.events[eid] rescue return
-      event = Game_Event.new(mid, event_data)
-      page = nil
-      if pid == nil || pid == 0
-        page = event.find_proper_page
-      else
-        page = event.event.pages[pid-1] rescue return
-      end
-      $game_player.eagle_delete_word(s.t)
-      $game_map.eagle_thinkbar_run(page.list, eid, s.sym)
-      return
-    end
-
-    # 读取本地图中的
-    $game_player.eagle_delete_word(s.t)
-    e = $game_map.events[eid]
-    return e.start_ex(s.sym) if s.sym
-    e.start
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新取消
-  #--------------------------------------------------------------------------
-  def update_cancel
-    return if !Input.trigger?(:B)
-    Input.update
-    THINKBAR.deactivate
-    @flag_break = true
+  def self.check_bool(str, default=false)
+    return default if str.nil?
+    v = eagle_eval(str)
+    return true if v == true || v == 1
+    return false if v == false || v == 0
+    return default
   end
 end
-#=============================================================================
-# ■ Sprite_ThinkBar_Word
-#=============================================================================
-class Sprite_ThinkBar_Word < Sprite
-  attr_reader  :id, :t, :bind_eid, :sym
+
+#==============================================================================
+# □ 位图相关
+#===============================================================================
+module EAGLE_COMMON
   #--------------------------------------------------------------------------
-  # ●【常量】背景字母
+  # ● 依据原点类型（九宫格），将b2位图拷贝到b1位图对应位置
+  # （需确保 b1 的宽高均大于 b2）
+  # 如 o 为 2 时，将 b2 与 b1 底部中点对齐，再进行拷贝
   #--------------------------------------------------------------------------
-  CS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-  #--------------------------------------------------------------------------
-  # ● 初始化
-  #--------------------------------------------------------------------------
-  def initialize(viewport, t, id, params)
-    super(viewport)
-    @t = t
-    @id = id
-    @bind_eid = params[:bind].to_i || nil
-    @sym = get_sym(params)
-
-    # 位图的最小宽高
-    w = 96
-    h = 96
-    # 文字周围的留白
-    padding = 4
-
-    # 创建位图，此时确保了位图宽高一定大于文字区域
-    ps = { :x0 => 0, :y0 => 0 }
-    d = Process_DrawTextEX.new(t.dup, ps)
-    w = [w, d.width + padding * 2].max
-    h = [h, d.height + padding * 2].max
-    self.bitmap = Bitmap.new(w, h)
-
-    # 绘制背景的字母
-    _size = self.bitmap.font.size
-    self.bitmap.font.size = 96
-    self.bitmap.font.color.alpha = 50
-    self.bitmap.font.outline = false
-    self.bitmap.font.shadow = false
-    self.bitmap.draw_text(0, 0, w, h, CS[id], 1)
-    self.bitmap.font.size = _size
-    self.bitmap.font.color.alpha = 255
-    self.bitmap.font.outline = true
-    self.bitmap.font.shadow = true
-
-    # 绘制背景的矩形
-    y0 = (h - d.height) / 2
-    self.bitmap.fill_rect(Rect.new(0,y0-padding,w,d.height+padding*2),
-      Color.new(0,0,0,80))
-
-    # 绘制思考词
-    d.bind_bitmap(self.bitmap)
-    ps[:x0] = (w - d.width) / 2
-    ps[:y0] = y0
-    d.run
-
-    # 为了方便后续处理，确保底部中点为显示原点
-    self.ox = self.width / 2
-    self.oy = self.height
-    init_params
+  def self.bitmap_copy_do(b1, b2, o)
+    x = y = 0
+    case o
+    when 1,4,7; x = 0
+    when 2,5,8; x = b1.width / 2 - b2.width / 2
+    when 3,6,9; x = b1.width - b2.width
+    end
+    case o
+    when 1,2,3; y = b1.height - b2.height
+    when 4,5,6; y = b1.height / 2 - b2.height / 2
+    when 7,8,9; y = 0
+    end
+    b1.blt(x, y, b2, b2.rect)
   end
   #--------------------------------------------------------------------------
-  # ● 获得实际的互动类型
+  # ● 绘制图标
   #--------------------------------------------------------------------------
-  def get_sym(ps)
-    return nil if !$imported["EAGLE-EventInteractEX"]
-    sym = nil
-    if THINKBAR::EventInteractEX_WORD_AS_SYM
-      sym = @t
-      sym = ps[:sym] if ps[:sym]
-      return sym
+  def self.draw_icon(bitmap, icon, x, y, w=24, h=24)
+    _bitmap = Cache.system("Iconset")
+    rect = Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24)
+    bitmap.blt(x+w/2-12, y+h/2-12, _bitmap, rect, 255)
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制角色肖像图
+  #--------------------------------------------------------------------------
+  def self.draw_face(bitmap, face_name, face_index, x, y, flag_draw=true)
+    _bitmap = Cache.face(face_name)
+    face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
+    num_line = $1 ? $1.to_i : 2
+    num_col = $2 ? $2.to_i : 4
+    sole_w = _bitmap.width / num_col
+    sole_h = _bitmap.height / num_line
+
+    if flag_draw
+      rect = Rect.new(face_index % 4 * sole_w, face_index / 4 * sole_h, sole_w, sole_h)
+      des_rect = Rect.new(x, y, sole_w, sole_h)
+      bitmap.stretch_blt(des_rect, _bitmap, rect)
+    end
+    return sole_w, sole_h
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制人物行走图
+  #  (x, y) 为行走图放置位置的底部左顶点的位置
+  #--------------------------------------------------------------------------
+  def self.draw_character(bitmap, character_name, character_index, x, y)
+    return unless character_name
+    _bitmap = Cache.character(character_name)
+    sign = character_name[/^[\!\$]./]
+    if sign && sign.include?('$')
+      cw = _bitmap.width / 3
+      ch = _bitmap.height / 4
     else
-      sym = ps[:sym] if ps[:sym]
-      sym = @t if ps[:sym] == "0"
+      cw = _bitmap.width / 12
+      ch = _bitmap.height / 8
     end
-    return sym
-  end
-  #--------------------------------------------------------------------------
-  # ● 释放
-  #--------------------------------------------------------------------------
-  def dispose
-    self.bitmap.dispose
-    super
-  end
-  #--------------------------------------------------------------------------
-  # ● 初始化参数
-  #--------------------------------------------------------------------------
-  def init_params
-    @type = :wait
-    @x0 = @dx = 0
-    @y0 = @dy = 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    super
-    case @type
-    when :goto
-      if @ps_move[:i] > @ps_move[:t]
-        @type = :wait
-        return
-      end
-      v = ease_value(@ps_move[:i] * 1.0 / @ps_move[:t])
-      @x0 = @ps_move[:x0] + @ps_move[:dx] * v
-      @y0 = @ps_move[:y0] + @ps_move[:dy] * v
-      @ps_move[:i] += 1
-    when :wait
-    end
-    self.x = @x0 + @dx
-    self.y = @y0 + @dy
-  end
-  #--------------------------------------------------------------------------
-  # ● 直接指定位置
-  #--------------------------------------------------------------------------
-  def set_xy(_x, _y)
-    @x0 = _x if _x
-    @y0 = _y if _y
-  end
-  #--------------------------------------------------------------------------
-  # ● 指定目标移动位置
-  #--------------------------------------------------------------------------
-  def goto(des_x, des_y)
-    @ps_move = {}
-    @ps_move[:x0] = @x0
-    @ps_move[:x1] = des_x
-    @ps_move[:dx] = @ps_move[:x1] - @ps_move[:x0]
-    @ps_move[:y0] = @y0
-    @ps_move[:y1] = des_y
-    @ps_move[:dy] = @ps_move[:y1] - @ps_move[:y0]
-    @ps_move[:i] = 0
-    @ps_move[:t] = 20
-    @type = :goto
-  end
-  #--------------------------------------------------------------------------
-  # ● 缓动函数
-  #--------------------------------------------------------------------------
-  def ease_value(v)
-    1 - 2**(-10 * v)
-  end
-  #--------------------------------------------------------------------------
-  # ● 正在移动？
-  #--------------------------------------------------------------------------
-  def moving?
-    @type != :wait
+    n = character_index
+    src_rect = Rect.new((n%4*3+1)*cw, (n/4*4)*ch, cw, ch)
+    bitmap.blt(x, y - ch, _bitmap, src_rect)
+    return cw, ch
   end
 end
-#=============================================================================
-# ■ Spriteset_Map
-#=============================================================================
+
+#==============================================================================
+# □ 地图数据相关
+#===============================================================================
+module EAGLE_COMMON
+  #--------------------------------------------------------------------------
+  # ● 读取地图
+  #--------------------------------------------------------------------------
+  def self.cache_load_map(map_id)
+    @cache_map ||= {}
+    return @cache_map[map_id] if @cache_map[map_id]
+    @cache_map[map_id] = load_data(sprintf("Data/Map%03d.rvdata2", map_id))
+    @cache_map[map_id]
+  end
+  #--------------------------------------------------------------------------
+  # ● 清空缓存
+  #--------------------------------------------------------------------------
+  def self.cache_clear
+    @cache_map ||= {}
+    @cache_map.clear
+    GC.start
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取地图数据
+  #--------------------------------------------------------------------------
+  def self.get_map_data(map_id)
+    EAGLE_COMMON.cache_load_map(map_id)
+  end
+end
+
+#==============================================================================
+# □ 事件相关
+#===============================================================================
+module EAGLE_COMMON
+  #--------------------------------------------------------------------------
+  # ● 获取事件对象
+  #--------------------------------------------------------------------------
+  def self.get_chara(event, id)
+    if id == 0 # 当前事件
+      return $game_map.events[event.id]
+    elsif id > 0 # 第id号事件
+      chara = $game_map.events[id]
+      chara ||= $game_map.events[event.id]
+      return chara
+    elsif id < 0 # 队伍中数据库id号角色（不存在则取队长）
+      id = id.abs
+      $game_player.followers.each do |f|
+        return f if f.actor && f.actor.actor.id == id
+      end
+      return $game_player
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取事件精灵
+  #--------------------------------------------------------------------------
+  def self.get_chara_sprite(id)
+    return if !SceneManager.scene_is?(Scene_Map)
+    charas_s = SceneManager.scene.spriteset.character_sprites
+    chara = get_chara(nil, id)
+    charas_s.each { |s| return s if s.character == chara }
+    return nil
+  end
+end
 class Spriteset_Map
-  #--------------------------------------------------------------------------
-  # ● 生成人物精灵
-  #--------------------------------------------------------------------------
-  alias eagle_thinkbar_create_characters create_characters
-  def create_characters
-    eagle_thinkbar_create_characters
-    @spriteset_thinkbar = Spriteset_ThinkBar.new
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新人物精灵
-  #--------------------------------------------------------------------------
-  alias eagle_thinkbar_update_characters update_characters
-  def update_characters
-    eagle_thinkbar_update_characters
-    @spriteset_thinkbar.update
-  end
-  #--------------------------------------------------------------------------
-  # ● 释放人物精灵
-  #--------------------------------------------------------------------------
-  alias eagle_thinkbar_dispose_characters dispose_characters
-  def dispose_characters
-    eagle_thinkbar_dispose_characters
-    @spriteset_thinkbar.dispose
-  end
+  attr_reader  :character_sprites
 end
-#=============================================================================
-# ■ Game_Map
-#=============================================================================
-class Game_Map
-  #--------------------------------------------------------------------------
-  # ● 执行思考词的特殊事件
-  #--------------------------------------------------------------------------
-  def eagle_thinkbar_run(list, event_id, sym = nil)
-    @interpreter.setup(list, event_id)
-    if $imported["EAGLE-EventInteractEX"]
-      @interpreter.event_interact_search(sym) if sym
-    end
-  end
-end
-#=============================================================================
-# ■ Scene_Map
-#=============================================================================
 class Scene_Map
-  #--------------------------------------------------------------------------
-  # ● 监听取消键的按下。如果菜单可用且地图上没有事件在运行，则打开菜单界面。
-  #--------------------------------------------------------------------------
-  alias eagle_thinkbar_update_call_menu update_call_menu
-  def update_call_menu
-    return if THINKBAR.active?
-    eagle_thinkbar_update_call_menu
-  end
+  attr_reader  :spriteset
 end
-#=============================================================================
-# ■ Game_Player
-#=============================================================================
-class Game_Player
-  #--------------------------------------------------------------------------
-  # ● 初始化对象
-  #--------------------------------------------------------------------------
-  alias eagle_thinkbar_initialize initialize
-  def initialize
-    eagle_thinkbar_initialize
-    @eagle_think_words = {}
-    # word => { :mid => v, :eid => v, :sym=> "", :cond => "" }
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取当前全部思考词
-  #--------------------------------------------------------------------------
-  def eagle_words
-    @eagle_think_words
-  end
-  #--------------------------------------------------------------------------
-  # ● 增加思考词
-  #--------------------------------------------------------------------------
-  def eagle_add_word(t, ps)
-    @eagle_think_words[t] = ps
-    THINKBAR.show_hint(t)
-  end
-  #--------------------------------------------------------------------------
-  # ● 删去思考词
-  #--------------------------------------------------------------------------
-  def eagle_delete_word(t)
-    @eagle_think_words.delete(t)
-  end
-  #--------------------------------------------------------------------------
-  # ● 判定是否可以移动
-  #--------------------------------------------------------------------------
-  alias eagle_thinkbar_movable? movable?
-  def movable?
-    return false if THINKBAR.active?
-    eagle_thinkbar_movable?
-  end
-end
+
+#==============================================================================
+# □ 事件页相关
 #===============================================================================
-# ○ Game_Interpreter
-#===============================================================================
-class Game_Interpreter
+module EAGLE_COMMON
   #--------------------------------------------------------------------------
-  # ● 添加注释
+  # ● 读取事件页开头的注释组
   #--------------------------------------------------------------------------
-  alias eagle_thinkbar_command_108 command_108
-  def command_108
-    eagle_thinkbar_command_108
-    t = @comments.inject { |t, v| t = t + "\n" + v }
-    t.scan(THINKBAR::COMMENT_THINKBAR).each do |v|
-      ps = v[0].lstrip.rstrip  # tags string  # 去除前后空格
-      ps = EAGLE_COMMON.parse_tags(ps)
-      t = v[1]
-      ps[:t] = t
-      ps[:mid] ||= @map_id
-      ps[:eid] ||= @event_id
-      ps[:eid] = @event_id if ps[:eid] == "0"
-      ps[:bind] = ps[:eid] if ps[:bind] == "0"
-      $game_player.eagle_add_word(t, ps)
+  def self.event_comment_head(command_list)
+    return "" if command_list.nil? || command_list.empty?
+    t = ""; index = 0
+    while command_list[index].code == 108 || command_list[index].code == 408
+      t += command_list[index].parameters[0]
+      index += 1
     end
+    t
+  end
+end
+
+#==============================================================================
+# □ 精灵相关
+#===============================================================================
+module EAGLE_COMMON
+  #--------------------------------------------------------------------------
+  # ● 重置指定精灵的显示原点
+  #  如果 restore 传入 true，则代表屏幕显示位置将保持不变，即自动调整xy的值，以适配新的oxy
+  #--------------------------------------------------------------------------
+  def self.reset_sprite_oxy(obj, o, restore = true)
+    case o
+    when 1,4,7; obj.ox = 0
+    when 2,5,8; obj.ox = obj.width / 2
+    when 3,6,9; obj.ox = obj.width
+    end
+    case o
+    when 1,2,3; obj.oy = obj.height
+    when 4,5,6; obj.oy = obj.height / 2
+    when 7,8,9; obj.oy = 0
+    end
+    if restore
+      obj.x += obj.ox
+      obj.y += obj.oy
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置指定对象依据另一对象小键盘位置的新位置
+  #--------------------------------------------------------------------------
+  def self.reset_xy_dorigin(obj, obj2, o) # 左上角和左上角对齐
+    if o < 0 # o小于0时，将obj2重置为全屏
+      obj2 = Rect.new(0,0,Graphics.width,Graphics.height)
+      o = o.abs
+    end
+    case o
+    when 1,4,7; obj.x = obj2.x
+    when 2,5,8; obj.x = obj2.x + obj2.width / 2
+    when 3,6,9; obj.x = obj2.x + obj2.width
+    end
+    case o
+    when 1,2,3; obj.y = obj2.y + obj2.height
+    when 4,5,6; obj.y = obj2.y + obj2.height / 2
+    when 7,8,9; obj.y = obj2.y
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置指定对象依位置
+  #  obj 的 o位置 将与 obj2 的 o2位置 相重合
+  #  假定 obj 与 obj2 目前均是左上角为显示原点，即若其有oxy属性，则值为0
+  #--------------------------------------------------------------------------
+  def self.reset_xy(obj, o, obj2, o2)
+    # 先把 obj 的左上角放置于目的地
+    case o2
+    when 0,1,4,7; obj.x = obj2.x
+    when 2,5,8; obj.x = obj2.x + obj2.width / 2
+    when 3,6,9; obj.x = obj2.x + obj2.width
+    end
+    case o2
+    when 0,1,2,3; obj.y = obj2.y + obj2.height
+    when 4,5,6; obj.y = obj2.y + obj2.height / 2
+    when 7,8,9; obj.y = obj2.y
+    end
+    # 再应用obj的o调整
+    case o
+    when 1,4,7;
+    when 2,5,8; obj.x = obj.x - obj.width / 2
+    when 3,6,9; obj.x = obj.x - obj.width
+    end
+    case o
+    when 1,2,3; obj.y = obj.y - obj.height
+    when 4,5,6; obj.y = obj.y - obj.height / 2
+    when 7,8,9;
+    end
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 精灵位于屏幕外？
+  #--------------------------------------------------------------------------
+  def self.out_of_screen?(s)
+    s.x - s.ox + s.width < 0 || s.y - s.oy + s.height < 0 ||
+    s.x - s.ox > Graphics.width || s.y - s.oy > Graphics.height
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取精灵实际占用矩形
+  #--------------------------------------------------------------------------
+  def self.get_rect(s)
+    x = s.x - s.ox * s.zoom_x; y = s.y - s.oy * s.zoom_y
+    w = s.width * s.zoom_x; h = s.height * s.zoom_y
+    Rect.new(x, y, w, h)
+  end
+  #--------------------------------------------------------------------------
+  # ● 矩形之间碰撞？
+  #--------------------------------------------------------------------------
+  def self.rect_collide_rect?(rect1, rect2)
+    if((rect1.x > rect2.x && rect1.x > rect2.x + rect2.width-1) ||
+       (rect1.x < rect2.x && rect1.x + rect1.width-1 < rect2.x) ||
+       (rect1.y > rect2.y && rect1.y > rect2.y + rect2.height-1) ||
+       (rect1.y < rect2.y && rect1.y + rect1.height-1 < rect2.y))
+      return false
+    end
+    return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 精灵重叠？
+  #--------------------------------------------------------------------------
+  def self.sprite_on_sprite?(s1, s2)
+    r1 = get_rect(s1)
+    r2 = get_rect(s2)
+    rect_collide_rect?(r1, r2)
+  end
+end
+
+#==============================================================================
+# □ 数据库相关
+#===============================================================================
+module EAGLE_COMMON
+  #--------------------------------------------------------------------------
+  # ● 由物品标志字符获取指定对象
+  #--------------------------------------------------------------------------
+  def self.get_item_obj(type, id)
+    case type
+    when 's'; obj = $data_skills[id]
+    when 'i'; obj = $data_items[id]
+    when 'w'; obj = $data_weapons[id]
+    when 'a'; obj = $data_armors[id]
+    end
+    return obj
+  end
+  #--------------------------------------------------------------------------
+  # ● 由指定对象获取物品标志字符
+  #--------------------------------------------------------------------------
+  def self.get_item_str(item, num = 1)
+    _type = ""
+    c = item.class
+    _type += "s" if c == RPG::Skill
+    _type += "i" if c == RPG::Item
+    _type += "w" if c == RPG::Weapon
+    _type += 'a' if c == RPG::Armor
+    t = _type + item.id.to_s
+    t = num.to_s + t if num != 1
+    return t
   end
 end
