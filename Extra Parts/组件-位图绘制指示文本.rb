@@ -4,9 +4,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-DrawHintText"] = "1.0.0"
+$imported["EAGLE-DrawHintText"] = "1.0.2"
 #==============================================================================
-# - 2022.5.24.23
+# - 2022.5.26.23 新增文字的纯色背景
 #==============================================================================
 # - 本插件提供了在位图上绘制指示型文本的方法
 # - 指示型文本示例：
@@ -49,8 +49,11 @@ module EAGLE
   #   :dx 和 :dy → 文字底部横线 与 指示圆点 连线的一端的偏移坐标（以指示点坐标为始）
   #   :line      → 连线的宽度
   #   :padding   → 位图四周的留空像素值
-  #   :dlr       → 文字区域的左右留空像素值
-  #   :dud       → 文字区域的上下留空像素值
+  #   :dl        → 文字区域的左留空像素值
+  #   :dr        → 文字区域的右留空像素值
+  #   :du        → 文字区域的上留空像素值
+  #   :dd        → 文字区域的下留空像素值
+  #   :dc        → 文字区域的背景颜色（若不传入，则为透明，否则应该为Color.new）
   #
   #  params2  # 文字绘制
   #   :font_size → 绘制初始的文字大小
@@ -65,69 +68,97 @@ module EAGLE
     params2 = params2
 
     params1[:x] ||= 0
+    params1[:x] = params1[:x].to_i
     params1[:y] ||= 0
+    params1[:y] = params1[:y].to_i
     params1[:dx] ||= 0
+    params1[:dx] = params1[:dx].to_i
     params1[:dy] ||= 0
-    params1[:line] ||= 2
-    params1[:padding] ||= 4
-    params1[:dlr] ||= 4
-    params1[:dud] ||= 2
+    params1[:dy] = params1[:dy].to_i
+    params1[:line] ||= 2   # 线宽度
+    params1[:line] = params1[:line].to_i
+    params1[:padding] ||= 4  # 位图四周的留空
+    params1[:padding] = params1[:padding].to_i
+    params1[:dl] ||= 12    # 文字区域的左留空
+    params1[:dl] = params1[:dl].to_i
+    params1[:dr] ||= 8    # 文字区域的右留空
+    params1[:dr] = params1[:dr].to_i
+    params1[:du] ||= 8    # 文字区域的上留空
+    params1[:du] = params1[:du].to_i
+    params1[:dd] ||= 4    # 文字区域的下留空
+    params1[:dd] = params1[:dd].to_i
 
     proc_draw_text = Process_DrawTextEX.new(text, params2)
     params1[:text_w] = proc_draw_text.width  # 文字的宽高
     params1[:text_h] = proc_draw_text.height
-
-    line = params1[:line]  # 线宽度
-    border = params1[:padding]  # 位图四周的留空
-    border_text_lr = params1[:dlr]  # 文字区域的左右留空
-    border_text_ud = params1[:dud]  # 文字区域的上下留空
     dw = params1[:dx].abs  # 斜线占据的宽高
     dh = params1[:dy].abs
+
+    w_text = params1[:dl] + params1[:text_w] + params1[:dr] # 文字和留空的宽度
+    h_text = params1[:du] + params1[:text_h] + params1[:dd] # 文字和留空的高度
 
     x0 = y0 = 0  # 文字的起始绘制位置
     x_p0 = y_p0 = 0  # 指示点在位图里的位置
     x_p2 = y_p2 = 0  # 直线远端的坐标偏移量
     # 计算位图宽高，各个绘制的位置
-    w = border * 2 + dw + border_text_lr * 2 + params1[:text_w]
+    w = params1[:padding] * 2 + dw + w_text
     if params1[:dx] >= 0  # 文字显示在右侧
-      x0 = border + dw + border_text_lr
-      x_p0 = border
-      x_p2 = border_text_lr * 2 + params1[:text_w]
+      x0 = params1[:padding] + dw + params1[:dl]
+      x_p0 = params1[:padding]
+      x_p2 = w_text
     else  # 文字显示在左侧
-      x0 = border + border_text_lr
-      x_p0 = w - border
-      x_p2 = - (border_text_lr * 2 + params1[:text_w] )
+      x0 = params1[:padding] + params1[:dl]
+      x_p0 = w - params1[:padding]
+      x_p2 = -w_text
     end
     h = 0
     if params1[:dy] >= 0  # 文字显示在下侧
-      h = border * 2 + [dh, border_text_ud * 2 + params1[:text_h]].max
-      y0 = border + [(dh - border_text_ud * 2 - params1[:text_h]), 0].max
-      y_p0 = border
+      h = params1[:padding] * 2 + [dh, h_text].max
+      if dh > h_text
+        y0 = params1[:padding] + (dh - h_text) + params1[:du]
+        y_p0 = params1[:padding]
+      else
+        y0 = params1[:padding] + params1[:du]
+        y_p0 = params1[:padding] + (h_text - dh)
+      end
     else  # 文字显示在上侧
-      h = border * 2 + dh + border_text_ud * 2 + params1[:text_h]
-      y0 = border + border_text_ud
-      y_p0 = h - border
+      h = params1[:padding] * 2 + dh + h_text
+      y0 = params1[:padding] + params1[:du]
+      y_p0 = h - params1[:padding]
+    end
+
+    # 创建位图
+    sprite.bitmap = Bitmap.new(w, h)
+
+    # 绘制文本的背景
+    if params1[:dc] && params1[:dc].is_a?(Color)
+      sprite.bitmap.fill_rect(x0-params1[:dl], y0-params1[:du],
+        w_text, h_text,
+        params1[:dc])
+      #sprite.bitmap.blur
     end
 
     # 绘制文本
-    sprite.bitmap = Bitmap.new(w, h)
     params2[:x0] = x0
     params2[:y0] = y0
     proc_draw_text.bind_bitmap(sprite.bitmap)
     proc_draw_text.run
 
     # 绘制指示点处的圆
-    EAGLE.Circle(sprite.bitmap, x_p0, y_p0, line, true, Color.new(255,255,255))
+    EAGLE.Circle(sprite.bitmap, x_p0, y_p0, params1[:line], true,
+      Color.new(255,255,255))
 
     # 绘制指示点与文本底部线的连线
     x_p1 = x_p0 + params1[:dx]
     y_p1 = y_p0 + params1[:dy]
-    EAGLE.DDALine(sprite.bitmap, x_p0, y_p0, x_p1, y_p1, line, "1", Color.new(255,255,255))
+    EAGLE.DDALine(sprite.bitmap, x_p0, y_p0, x_p1, y_p1, params1[:line],
+      "1", Color.new(255,255,255))
 
     # 绘制文字底部的横线
     x_p2 += x_p1
     y_p2 += y_p1
-    EAGLE.DDALine(sprite.bitmap, x_p1, y_p1, x_p2, y_p2, line, "1", Color.new(255,255,255))
+    EAGLE.DDALine(sprite.bitmap, x_p1, y_p1, x_p2, y_p2, params1[:line],
+      "1", Color.new(255,255,255))
 
     # 调整位置
     sprite.x = params1[:x]
