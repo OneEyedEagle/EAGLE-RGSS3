@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventInteractEX"] = "1.1.3"
+$imported["EAGLE-EventInteractEX"] = "1.2.0"
 #==============================================================================
-# - 2022.3.7.22 修复if报错的bug
+# - 2022.5.31.23 新增换行
 #==============================================================================
 # - 本插件新增了事件页的按空格键触发的互动类型
 #------------------------------------------------------------------------------
@@ -135,6 +135,11 @@ module EVENT_INTERACT
   #--------------------------------------------------------------------------
   SYM_FONT_SIZE = 16
   #--------------------------------------------------------------------------
+  # ● 【常量】每一行的最大互动数量
+  #  若为 nil，则为不换行
+  #--------------------------------------------------------------------------
+  SYM_EACH_LINE_MAX = nil
+  #--------------------------------------------------------------------------
   # ● 当返回true时，切换到下一个互动类型
   #--------------------------------------------------------------------------
   def self.next_sym?
@@ -253,6 +258,14 @@ module EVENT_INTERACT
     icon_wh = 28
     # 两个互动文本之间的间隔值
     sym_offset = 0
+    # 每行最大数量
+    max_each_line = SYM_EACH_LINE_MAX
+    # 行间距
+    offset_line = 2
+    # 左右的留空
+    padding = 3
+    # 上下的留空
+    padding_ud = 2
 
     # 预计算每个互动文本的宽度
     ws = []
@@ -260,10 +273,30 @@ module EVENT_INTERACT
     _b.font.size = sym_font_size
     syms.each { |t| r = _b.text_size(t); ws.push(r.width) }
 
-    # 总的宽度 = 最大互动文本的宽度 + 图标数目*图标宽度
-    w = syms.size * (icon_wh + sym_offset) + ws.max + 6 # 增加两侧边界
-    # 假定：文本高度 小于 图标的高度
-    h = 2 + icon_wh + 2  # 增加上下边界
+    # 计算互动文本占据的宽高
+    w = h = 0
+    # 存在分行
+    if max_each_line
+      ws_line = ws.each_slice(max_each_line).to_a
+      # 计算每一行的最大宽度
+      _ws_max = []
+      ws_line.each { |_ws|
+        _w = _ws.size * (icon_wh + sym_offset) + _ws.max + padding * 2
+        _ws_max.push( _w )
+      }
+      # 计算全部的最大宽度
+      w = _ws_max.max + padding * 2
+      # 计算总体高度
+      h = icon_wh * ws_line.size + offset_line * (ws_line.size - 1)
+      h += padding_ud * 2
+    end
+    # 只有一行
+    if max_each_line == nil
+      # 总的宽度 = 最大互动文本的宽度 + 图标数目*图标宽度
+      w = syms.size * (icon_wh + sym_offset) + ws.max + padding * 2
+      # 假定：文本高度 小于 图标的高度
+      h = padding_ud + icon_wh + padding_ud
+    end
     h += 12 if flag_draw_hint
 
     # 重设位图
@@ -316,6 +349,13 @@ module EVENT_INTERACT
         _x -= sym_offset
         sprite.bitmap.draw_text(_x, _y, ws[i]+2, icon_wh, t, 1)
         _x += ws[i]+sym_offset
+      end
+      # 处理换行
+      if max_each_line
+        if i != (syms.size - 1) && (i + 1) % max_each_line == 0
+          _x = 2
+          _y += icon_wh + offset_line
+        end
       end
     end
     _y += icon_wh
