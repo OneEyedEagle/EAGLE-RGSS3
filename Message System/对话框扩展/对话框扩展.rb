@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.7.0"
+$imported["EAGLE-MessageEX"] = "1.7.1"
 #=============================================================================
-# - 2022.5.8.0 新增\clc转义符
+# - 2022.6.6.0 新增\cshake2转义符
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -115,6 +115,7 @@ module MESSAGE_EX
 #    \cswing 文字左右摇摆
 #    \czoom  文字缩放
 #    \cshake 文字抖动
+#    \cshake2 文字抖动（高频率版本）
 #    \cflash 文字闪烁
 #    \cmirror 文字镜像
 #    \cu     文字间歇消散
@@ -1202,6 +1203,27 @@ CSHAKE_PARAMS_INIT = {
 }
 #
 #----------------------------------------------------------------------------
+#  \cshake2[param]
+#----------------------------------------------------------------------------
+# 【功能】
+#    开启抖动特效（频率更大的震动）
+#
+# 【参数】
+#    param → 变量参数字符串
+# （变量一览）
+#    dx → 往左或往右的最大震动距离
+#    dy → 往上或往下的最大震动距离
+#    l → 震动幅度
+#
+# 【常量设置：参数预设值】
+CSHAKE2_PARAMS_INIT = {
+# \cshake[]
+  :dx => 4,
+  :dy => 4,
+  :l  => 3,
+}
+#
+#----------------------------------------------------------------------------
 #  \cflash[param] 【叠加】
 #----------------------------------------------------------------------------
 # 【功能】
@@ -2001,6 +2023,7 @@ module MESSAGE_EX::CHARA_EFFECTS
   def eagle_chara_effect_cswing(param = ''); end
   def eagle_chara_effect_czoom(param = ''); end
   def eagle_chara_effect_cshake(param = ''); end
+  def eagle_chara_effect_cshake2(param = ''); end
   def eagle_chara_effect_cflash(param = ''); end
   def eagle_chara_effect_cmirror(param = ''); end
   def eagle_chara_effect_ctog(param = ''); end
@@ -6381,6 +6404,16 @@ class Sprite_EagleCharacter < Sprite
       @dy += params[:vy]
       params[:vy] *= -1 if @dy < -params[:u] || @dy > params[:d]
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 抖动特效2
+  #--------------------------------------------------------------------------
+  def start_effect_cshake2(params, param_s)
+    parse_param(params, param_s)
+  end
+  def update_effect_cshake2(params)
+    @dx = (-1.0 + params[:l] * rand()) * params[:dx]
+    @dy = (-1.0 + params[:l] * rand()) * params[:dy]
   end
   #--------------------------------------------------------------------------
   # ● 摇摆特效
