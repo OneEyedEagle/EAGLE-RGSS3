@@ -2,22 +2,23 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.7.1"
+$imported["EAGLE-MessageEX"] = "1.7.3"
 #=============================================================================
-# - 2022.6.6.0 新增\cshake2转义符
+# - 2022.6.12.8 修改注释
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
 #
-#     若此常量被设为 true，则本对话框不再覆盖其他对话框
-#        在事件脚本中调用 $game_message.eagle_message = true 则
-#         本对话框将变更为当前使用的对话框；
-#        调用 $game_message.eagle_message = false 则可切回之前的对话框
+#     若此常量被设为 true，则本对话框不再覆盖其他对话框：
+#        而在事件脚本中调用 $game_message.eagle_message = true 后，
+#         本对话框将被激活，变更为正在使用的对话框；
+#        调用 $game_message.eagle_message = false 则可切回之前的原有对话框。
 #
-#     若此常量被设为 false，则本对话框将完全替代默认对话框
+#     若此常量被设为 false，则本对话框将完全替代默认对话框。
 #
-# - 由于对话框存在动态的开启关闭特效，若对话框切换后，旧的对话框仍然显示在地图上，
-#   请在对话框切换的事件脚本前后添加【等待10帧】，来保证旧对话框顺利完成关闭
+# - 由于对话框存在动态的开启关闭特效，若对话框切换后，旧对话框仍然显示在地图上，
+#   则请在切换对话框的事件脚本前后添加【等待10帧】，来保证旧对话框有时间顺利完成关闭。
+#
 EAGLE_MSG_EX_COMPAT_MODE = false
 
 module MESSAGE_EX
@@ -44,12 +45,12 @@ module MESSAGE_EX
 #     下述列举出的各类转义符（英文、数字的组合）
 #
 # - param “变量参数字符串”解析：
-#     由 变量名（字母组合）+ 参数值（整数或nil（用$代表传入nil））重复构成
-#       其中可以增加无意义的空格，用于在视觉上区分不同变量
-#       其中 变量名 和 参数值 之间可以添加 = 符号，用于美观展现赋值
-#      当传入 无变量名 的 参数值 时，将存入其【默认】变量
-#      对于没有传入值的 变量 ，将读取上一次设置所存储的值
-#     （带有【重置】的变量，将在每一次设置转义符时，重置为脚本中的预设值）
+#    · 由 变量名（字母组合）+ 参数值（整数或nil（用$符号代表传入的为nil））重复构成
+#       - 字符串中可以增加无意义的空格，用于在视觉上区分不同变量
+#       - 字符串中 变量名 和 参数值 之间可以添加 = 符号，增强阅读性
+#    · 当传入 无变量名 的 参数值 时，将存入其【默认】变量
+#    · 对于没有传入值的 变量 ，将读取上一次设置所存储的值
+#    · 带有【重置】的变量，将在每一次设置转义符时，重置为脚本中的预设值
 #
 # - 示例：
 #    某个转义符的帮助：
@@ -60,6 +61,8 @@ module MESSAGE_EX
 #
 #    在对话中编写：
 #      对话文本\foo[1 b=-1 tc=0 d$]，其他对话文本
+#
+#    实际产生的效果：
 #    → 调用 foo 的功能，同时给它的所有变量传入预设值
 #      再给 a 变量传入值 1，b 变量传入值 -1，tc 变量传入值 0，d 变量传入值 nil
 #      （转义符的帮助中并没有写 tc 和 d 两个变量，
@@ -69,8 +72,8 @@ module MESSAGE_EX
 #    · 若没有明确说明，则转义符\code[param]不会被绘制、显示
 #    · “指令名”和“变量参数字符串”的大小写差异不会造成影响
 #    · 转义符会在对话文本逐字显示到它时生效
-#      但若有【预先】，则会在绘制开始前生效（绘制中途不会再次生效）
-#      但若有【结尾】，则会在全部文字绘制完成后生效
+#        但若有【预先】，则会在绘制开始前生效（绘制中途不会再次生效）
+#        但若有【结尾】，则会在全部文字绘制完成后生效
 
 #=============================================================================
 # ● 扩展转义符列表
@@ -794,11 +797,11 @@ NAME_PARAMS_INIT = {
 ESCAPE_STRING_NAME_PREFIX = "\ec<9>"
 #
 # 【常量设置：序号映射到姓名框背景图片文件名】
-# （图片的左上角会与对话框的左上角对齐）
-# （其中 index 必须为整数）
+# （如果 bgo 为 7，则图片左上角会与姓名框左上角对齐）
+# （其中 序号 必须为整数）
 # （图片存储于 Graphics/System 目录下）
 INDEX_TO_NAME_BG = { # 姓名框背景
-  # 数字 => " 背景图片名称"
+  # 序号数字 => " 背景图片名称"
 }
 #
 # 【示例】
@@ -868,6 +871,7 @@ NO_DEFAULT_PAUSE = true
 #    p → 震动的强度（默认5）
 #    s → 震动的速度（默认5）
 #    t → 【默认】震动的持续帧数（将补足平滑结束的帧数）（默认40）
+#    y → 是否由 x 方向的震动修改为 y 方向的震动（默认0，即false，依然为x方向）
 #
 # 【示例】
 #   - 对话编写
@@ -1401,13 +1405,13 @@ CJUMP_PARAMS_INIT = {
 # ○ 变量环境
 #    此处放置环境处理，效仿python的conda，将对话框的设置状态进行打包存储与读取
 #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-#【关于环境】
+# 【关于环境】
 #    由于对话框可设置的变量众多，
 #    当需要不同情况使用不同样式的对话框时，不得不编写一大串的转义符进行设置；
 #    而转义符的设置在默认情况下是跨对话框的，想要改回之前的又要写一大串，非常不便。
 #    因此引入了该类别的转义符，以简化不同设置间切换所需的操作。
 #
-#    环境本质上是 Game_Message 类的不同拷贝。
+#    环境本质上是 Game_Message 类实例的拷贝。
 #
 #----------------------------------------------------------------------------
 #  \env[sym] 【预先】
@@ -1426,7 +1430,7 @@ CJUMP_PARAMS_INIT = {
 #       \env[测试]这是测试用对话。
 #   - 实际对话
 #      （进入 "测试" 对应的环境，之后的转义符修改都将只修改 "测试" 环境中的设置）
-#      （若不存在 "测试" 环境，则将之前的环境存储为 "测试"）
+#      （若不存在 "测试" 环境，则将当前的环境存储为 "测试"）
 #
 # 【常量设置：环境预设】
 # （此处环境的初始状态为脚本中预设的全部值，之后再依据此处设置进行覆盖）
@@ -1443,23 +1447,24 @@ DEFAULT_ENVS = {
 #  \env[sym|save] 【结尾】
 #----------------------------------------------------------------------------
 # 【功能】
-#    将当前对话框绘制完成时的环境，保存为 sym 名称
-#    当前环境被设置为 sym
+#    将当前对话框绘制完成时的环境，保存为 sym
+#    同时当前环境设置为 sym
 #
 # 【注意】
-#    - 在每一次对话框开启前，env生效并切换环境后，都将更新存储一次当前环境
+#    - 在每一次对话框开启前，以及env生效并切换环境后，都会更新一次当前环境
 #
 # 【示例】
 #   - 对话编写
 #       \env[底部对话|save]\win[o2do-2dy-30]这是测试用对话。
 #   - 实际对话
-#      （将当前对话框的环境存为 "底部对话" ，若已经存在则覆盖，并且进入 "底部对话" 的环境）
+#      （将当前对话框的环境存为 "底部对话" ，若环境已经存在则覆盖，
+#        之后进入 "底部对话" 的环境）
 #
 #----------------------------------------------------------------------------
 #  \temp 【结尾】
 #----------------------------------------------------------------------------
 # 【功能】
-#    当前对话框结束时，将应用对话框开启前的环境
+#    当前对话框结束时，将环境重置回对话框开启前的环境
 #
 # 【注意】
 #   - 在当前对话框结束前，转义符参数的修改仍然生效
@@ -1553,7 +1558,7 @@ FUNC_PARAMS_INIT = {
 #
 # 【高级】
 #    Window_EagleMessage 类新增方法 chara_set(sym) { |s| do_something }
-#     该方法能够用于对 sym 分组中的文字精灵进行逐个操作，
+#     该方法能够用于对 sym 分组中的文字精灵s进行逐个操作，
 #     若 不传入sym 或 传入 0 或 传入 '0' 或传入 ""，则转为对全部文字精灵进行操作
 #
 # 【示例】
@@ -1566,7 +1571,7 @@ FUNC_PARAMS_INIT = {
 #  \setm[sym|effect|param]
 #----------------------------------------------------------------------------
 # 【功能】
-#    对sym分组中的文字精灵，执行effect特效，传入param变量参数字符串
+#    对sym分组中的文字精灵，执行effect特效，并传入param变量参数字符串作为特效的参数
 #
 # 【参数】
 #    sym → 分组的唯一标识符，同 \set 中的注释
@@ -1576,15 +1581,16 @@ FUNC_PARAMS_INIT = {
 #
 # 【示例】
 #   - 对话编写
-#       \ctog[1]这是测试用\ctog[0]对话。\setm[0|ctog|0]
+#       \ctog[1]这是测试用\ctog[0]对话。\wait[60]\setm[0|ctog|0]
 #   - 实际对话
-#      （关闭全部文字精灵的ctog特效，“这是测试用”的ctog特效在对话结尾时被关闭）
+#      （文本显示完的1s后，关闭全部文字精灵的ctog特效）
+#      （“这是测试用” 的 ctog 特效在对话结尾处被关闭）
 #
 # 【示例】
 #   - 对话编写
-#       \set[1]\ctog[1]测试用文字\ctog[0]\set[0]，\!第二句话。\setm[1|ctog|0]
+#       \set[1]\ctog[1]测试用文字\set[0]，\!第二句话。\setm[1|ctog|0]
 #   - 实际对话
-#      （在对话结尾时，关闭 1 号组 “测试用文字” 的 ctog 特效）
+#      （在对话结尾时，仅关闭 1 分组中 “测试用文字” 的 ctog 特效）
 #
 
 #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -1621,16 +1627,6 @@ EX_PARAMS_INIT = {
 # （由于解析问题，请将 "\" 替换成 "\\"）
 ESCAPE_STRING_INIT = ""
 
-#----------------------------------------------------------------------------
-# ○ 当文字绘制超出对话框区域，导致内容滚动时，新增了一个缓动动画来获得新的空行
-#  该项设置缓动动画的持续帧数
-CHARAS_SCROLL_OUT_FRAME = 12
-
-#----------------------------------------------------------------------------
-# ○ 当对话框内容无需滚动浏览时，若该常量设置为 true，则使用方向键也可以继续对话
-# 如果设置为 false，则无改变（仍然需要按确定键或取消键继续对话）
-INPUT_NEXT_WITH_DIR4 = true
-
 #--------------------------------------------------------------------------
 # ○ 切换显示/隐藏
 # （每帧判定，返回 true 时，会切换对话框的显示/隐藏）
@@ -1646,6 +1642,16 @@ end
 #     若所绘制的文字超出对话框范围，将自动开启内容滚动效果
 #
 # - 当进入 等待按键 状态时，按住 方向键 即可朝对应方向滚动浏览对话框全部内容
+
+#----------------------------------------------------------------------------
+# ○ 当文字绘制超出对话框区域，导致内容需要滚动时，新增了一个缓动动画来获得空行
+#  该项设置缓动动画的持续帧数
+CHARAS_SCROLL_OUT_FRAME = 12
+
+#----------------------------------------------------------------------------
+# ○ 当对话框内容无需滚动浏览时，若该常量设置为 true，则使用方向键也可以继续对话
+# 如果设置为 false，则无改变（仍然需要按确定键或取消键继续对话）
+INPUT_NEXT_WITH_DIR4 = true
 
 #----------------------------------------------------------------------------
 # ○ 预定绘制文本
@@ -1667,6 +1673,7 @@ end
 #   · 当存在多条预定文本，将按照预定时间的先后顺序，依次放入下一次对话框的开头
 #   · 预定的字符串只会被放入对话框一次
 #   · 不会去除 param_string 中的非转义符文本
+#
 
 #=============================================================================
 # ● 特别感谢
@@ -2005,6 +2012,18 @@ module MESSAGE_EX
       r.y = r2.y if r2.y < r.y  # 新矩形在现有矩形的上外侧，更新y位置
     end
     return r
+  end
+  #--------------------------------------------------------------------------
+  # ● 矩形之间碰撞？
+  #--------------------------------------------------------------------------
+  def self.rect_collide_rect?(rect1, rect2)
+    if((rect1.x > rect2.x && rect1.x > rect2.x + rect2.width-1) ||
+       (rect1.x < rect2.x && rect1.x + rect1.width-1 < rect2.x) ||
+       (rect1.y > rect2.y && rect1.y > rect2.y + rect2.height-1) ||
+       (rect1.y < rect2.y && rect1.y + rect1.height-1 < rect2.y))
+      return false
+    end
+    return true
   end
 end # end of MESSAGE_EX
 
@@ -2551,6 +2570,7 @@ class Window_EagleMessage < Window_Base
   # ● 移出全部组件
   #--------------------------------------------------------------------------
   def eagle_move_out_assets
+    pop_params[:with_tag] = false
     @eagle_sprite_pop_tag.visible = false # 隐藏pop的tag
     @eagle_sprite_pause.visible = false # 隐藏pause精灵
     face_params[:name] = "" # 移出显示的脸图
@@ -2564,7 +2584,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def update_assets_opacity(opa)
     @eagle_chara_sprites.each { |c| c.opacity = opa }
-    if game_message.pop? && game_message.pop_tag?
+    if game_message.pop? && pop_params[:with_tag]
       @eagle_sprite_pop_tag.opacity = opa
     end
     @eagle_sprite_face.opa = opa if @eagle_sprite_face
@@ -2592,7 +2612,7 @@ class Window_EagleMessage < Window_Base
     self.visible = true
     @back_sprite.visible = true if self.opacity == 0
     @eagle_chara_sprites.each { |s| s.move_in }
-    if game_message.pop? && game_message.pop_tag?
+    if game_message.pop? && pop_params[:with_tag]
       @eagle_sprite_pop_tag.visible = true
     end
     @eagle_sprite_face.visible = true if @eagle_sprite_face
@@ -3193,6 +3213,9 @@ class Window_EagleMessage < Window_Base
   def eagle_after_update_xy
     eagle_set_charas_viewport
     eagle_name_update if game_message.name?
+    if game_message.pop? && pop_params[:with_tag]
+      eagle_pop_tag_fix_position  # 可能修改了对话框位置，检查下tag要不要显示
+    end
   end
   #--------------------------------------------------------------------------
   # ● 设置文字显示区域的矩形（屏幕坐标）
@@ -3226,10 +3249,7 @@ class Window_EagleMessage < Window_Base
     eagle_pop_tag_update  # 更新pop的tag的位置
     self.x += pop_params[:dx]  # 坐标的补足偏移量
     self.y += pop_params[:dy]
-    if pop_params[:fix]
-      eagle_fix_position
-      eagle_pop_tag_fix_position  # 由于fix了对话框位置，此处再看下tag要不要显示
-    end
+    eagle_fix_position if pop_params[:fix]
     eagle_after_update_xy
   end
   #--------------------------------------------------------------------------
@@ -3256,7 +3276,7 @@ class Window_EagleMessage < Window_Base
   # ● 更新pop的tag
   #--------------------------------------------------------------------------
   def eagle_pop_tag_update
-    return if !@eagle_sprite_pop_tag.visible
+    return if !pop_params[:with_tag]
     i = 10 - pop_params[:do] # tag的显示帧恰好与pop对话框的do值相对
     # tag的显示原点，是pop对话框的do，即目标物体的九宫格位置
     o = pop_params[:do]
@@ -3281,12 +3301,14 @@ class Window_EagleMessage < Window_Base
   def eagle_pop_tag_fix_position
     # 若tag因为对话框的fix position而位于对话框内，则隐藏
     s = @eagle_sprite_pop_tag
-    return if !s.visible
-    return if s.x + pop_params[:td] >= self.x + self.width
-    return if s.x + s.width - pop_params[:td] <= self.x
-    return if s.y + pop_params[:td] >= self.y + self.height
-    return if s.y + s.height - pop_params[:td] <= self.y
-    @eagle_sprite_pop_tag.visible = false
+    return if !pop_params[:with_tag]
+    s.visible = true
+    d = pop_params[:td]
+    rect1 = Rect.new(s.x+d, s.y+d, s.width-2*d, s.height-2*d)
+    rect2 = Rect.new(self.x, self.y, self.width, self.height)
+    if MESSAGE_EX.rect_collide_rect?(rect1, rect2)
+      s.visible = false
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新name参数组（随win/pop参数组更新）
@@ -4301,7 +4323,8 @@ class Window_EagleMessage < Window_Base
     pop_params[:dh] = MESSAGE_EX.check_bool(pop_params[:dh])
     pop_params[:fh] = MESSAGE_EX.check_bool(pop_params[:fh])
     pop_params[:fix] = MESSAGE_EX.check_bool(pop_params[:fix])
-    @eagle_sprite_pop_tag.visible = show_pop_tag? # 设置pop的tag
+    pop_params[:with_tag] = show_pop_tag? # 设置pop的tag
+    @eagle_sprite_pop_tag.visible = pop_params[:with_tag]
     eagle_reset_pop_tag_bitmap if @eagle_sprite_pop_tag.visible
     eagle_pop_update
   end
@@ -4517,6 +4540,7 @@ class Window_EagleMessage < Window_Base
     h[:p] = 5 # shake power
     h[:s] = 5 # shake speed
     h[:t] = 40 # shake duration
+    h[:y] = 0 # 震动方向
     parse_param(h, param, :t)
     # 等待震动至结束
     shake = 0 # 对话框的偏移值
@@ -4527,7 +4551,11 @@ class Window_EagleMessage < Window_Base
       shake_direction = -1 if shake > h[:p] * 2
       shake_direction = 1 if shake < - h[:p] * 2
       h[:t] -= 1
-      self.x += shake
+      if h[:y] == 0
+        self.x += shake
+      else
+        self.y += shake
+      end
       eagle_after_update_xy
       Fiber.yield
     end
@@ -4535,7 +4563,11 @@ class Window_EagleMessage < Window_Base
     d = shake > 0 ? -1 : 1
     while shake != 0
       shake += d
-      self.x += shake
+      if h[:y] == 0
+        self.x += shake
+      else
+        self.y += shake
+      end
       eagle_after_update_xy
       Fiber.yield
     end

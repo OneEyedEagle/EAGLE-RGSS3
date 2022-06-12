@@ -2,9 +2,9 @@
 # ■ 角色头顶显示图标 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventPopIcon"] = "1.1.0"
+$imported["EAGLE-EventPopIcon"] = "1.2.0"
 #==============================================================================
-# - 2022.4.6.20 参数扩展
+# - 2022.6.12.21 参数扩展
 #==============================================================================
 # - 本插件新增了在地图上角色头顶显示指定图标的功能（仿气泡）
 #--------------------------------------------------------------------------
@@ -22,10 +22,18 @@ $imported["EAGLE-EventPopIcon"] = "1.1.0"
 #                     数字为 1 时，图标显示在行走图下方
 #                     数字为 2 时，图标显示在行走图中央
 #
-#     :dir => 数字 → 数字为 2 时，图标先下移，再上移
+#     :type => 数字 → 设置移动的类型
+#                     当数字为 1 时（默认值），将浮动显示，依据 :dir 决定运动方向
+#                     当数字为 2 时，将震动显示，震动幅度为 :l 的值
+#                     当数字为 3 时，将弹跳显示
+#
+#     :dir => 数字 → （:type 值为 1 时生效）数字为 2 时，图标先下移，再上移
 #                     数字为 4 时，图标先左移，再右移
 #                     数字为 6 时，图标先右移，再左移
 #                     数字为 8 时（默认值），图标先上移，再下移
+#
+#     :l => 数字 → （:type 值为 2 时生效）该项用于设置震动幅度
+#                    数字越大，则震动越强烈，越偏移初始位置
 #
 #     :opa => 数字 → 数字为 0 时（默认值），关闭显隐特效；为 1 时，开启显隐
 #
@@ -95,6 +103,7 @@ module POP_ICON
       sprite_icon.y = sprite_chara.y - sprite_icon.height / 2
     end
 
+    if ps[:type] == 1
     case ps[:dir]
     when 2 # 先下移，再上移
       case frame
@@ -123,6 +132,19 @@ module POP_ICON
         sprite_icon.y -= (frame/4)
       when 30..59
         sprite_icon.y -= ((29-(frame-29))/4)
+      end
+    end
+
+    elsif ps[:type] == 2
+      sprite_icon.x += (-1.0 + ps[:l] * rand()) * 2
+      sprite_icon.y += (-1.0 + ps[:l] * rand()) * 2
+
+    elsif ps[:type] == 3
+      case frame
+      when 1..40
+        dy = 12 - (frame - 20) ** 2 * 0.03
+        sprite_icon.y -= dy
+      when 41..59
       end
     end
 
@@ -160,7 +182,8 @@ class Game_Character
   alias eagle_popicon_init initialize
   def initialize
     @pop_icon = 0
-    @pop_icon_params = { :pos => 0, :dx => 0, :dy => 0, :dir => 8, :opa => 0 }
+    @pop_icon_params = { :pos => 0, :dx => 0, :dy => 0,
+      :type => 1, :dir => 8, :l => 2, :opa => 0 }
     eagle_popicon_init
   end
   #--------------------------------------------------------------------------
@@ -168,7 +191,9 @@ class Game_Character
   #--------------------------------------------------------------------------
   def get_popicon_params
     @pop_icon_params[:pos] = @pop_icon_params[:pos].to_i
+    @pop_icon_params[:type] = @pop_icon_params[:type].to_i
     @pop_icon_params[:dir] = @pop_icon_params[:dir].to_i
+    @pop_icon_params[:l] = @pop_icon_params[:l].to_i
     return @pop_icon_params
   end
 end
