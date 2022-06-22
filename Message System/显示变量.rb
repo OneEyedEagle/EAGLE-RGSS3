@@ -4,9 +4,9 @@
 #   【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ShowVariable"] = "1.0.1"
+$imported["EAGLE-ShowVariable"] = "1.0.2"
 #==============================================================================
-# - 2022.5.5.23 优化注释
+# - 2022.6.20.21 优化注释
 #==============================================================================
 # - 本插件提供了在屏幕上显示变量的便捷方法
 # - 在地图上时，指定的文本将显示于屏幕指定位置，当变量值变更时将自动重绘
@@ -207,7 +207,7 @@ module VAR
   def self.add(v_id, params = {})
     params[:refresh] = true # 需要刷新的标志
     params[:visible] = true # 是否显示
-    vars = [ :t, :x, :y, :z, :ox, :oy, :w, :size, :x0, :y0 ]
+    vars = [ :t, :x, :y, :z, :ox, :oy, :w, :size, :x0, :y0, :padding ]
     vars.each { |v| params[v] = params[v].to_i if params[v] }
     vars = [ :color, :bg1 ]
     vars.each { |v| params[v] = eval(params[v]) if params[v] }

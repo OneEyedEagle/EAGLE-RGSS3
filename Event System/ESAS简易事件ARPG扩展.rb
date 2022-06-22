@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ESAS"] = "1.1.4"
+$imported["EAGLE-ESAS"] = "1.1.6"
 #==============================================================================
-# - 2022.2.12.16
+# - 2022.6.20.23
 #==============================================================================
 # - 本插件新增一系列方便事件脚本调用的方法，用于创作简易ARPG
 #--------------------------------------------------------------------------
@@ -344,7 +344,8 @@ $imported["EAGLE-ESAS"] = "1.1.4"
 #     params → 各种参数的Hash
 #        :text => 需要绘制的文本（单行，不可含转义符）
 #        :cid => 绑定显示的角色ID（-1为玩家，正数为事件）
-#        :type => 显示模式（:float 浮起，:zoom 放大并淡出，:bounce 弹跳并淡出）
+#        :type => 显示模式
+#            （:float 浮起，:zoom1 缩小上浮，:zoom2 上浮放大，:bounce 弹跳并淡出）
 #        :w / :h => 精灵宽度、高度
 #        :size => 字体大小
 #        :c => 字体颜色的索引号
@@ -377,8 +378,8 @@ $imported["EAGLE-ESAS"] = "1.1.4"
 #    （注意，并不包含POP，请自己增加POP的事件脚本）
 #
 # - 示例：
-#    事件脚本：chara.hp = 10 # 初始化HP为 10
-#    事件脚本：chara.hp -= 5 # 减少 5 点HP
+#    事件脚本： event.hp = 10 # 初始化HP为 10
+#    事件脚本： event.hp -= 5 # 减少 5 点HP
 #
 # - 高级：
 #     chara.tmp[:hp_max] 存储了初始化时的HP值，并且将被作为HP上限进行绘制
@@ -610,6 +611,12 @@ end
 
 class Game_Interpreter
   attr_reader :esas, :event_id
+  #--------------------------------------------------------------------------
+  # ● 绑定的事件
+  #--------------------------------------------------------------------------
+  def event
+    $game_map.events[@event_id]
+  end
   #--------------------------------------------------------------------------
   # ● 绑定信息类
   #--------------------------------------------------------------------------
@@ -1106,8 +1113,6 @@ class Sprite_EagleBase < Sprite_Base
   #--------------------------------------------------------------------------
   def initialize(viewport = nil)
     super(viewport)
-    self.ox = 16
-    self.oy = 32
     reset
   end
   #--------------------------------------------------------------------------
@@ -1135,6 +1140,8 @@ class Sprite_EagleBase < Sprite_Base
   def bind_screen(x, y)
     self.x = x
     self.y = y
+    self.ox = 0
+    self.oy = 0
     update_position
   end
   #--------------------------------------------------------------------------
@@ -1143,6 +1150,11 @@ class Sprite_EagleBase < Sprite_Base
   def bind_character_by_id(chara_id)
     @chara_id = chara_id
     @character = ESAS.get_chara(chara_id)
+    sprite = ESAS.get_chara_sprite(chara_id)
+    if sprite
+      self.ox = sprite.ox
+      self.oy = sprite.oy
+    end
     update_position
   end
   #--------------------------------------------------------------------------
@@ -1151,6 +1163,8 @@ class Sprite_EagleBase < Sprite_Base
   def bind_map(map_x, map_y)
     @map_x = map_x
     @map_y = map_y
+    self.ox = 16
+    self.oy = 32
     update_position
   end
   #--------------------------------------------------------------------------
@@ -1159,6 +1173,8 @@ class Sprite_EagleBase < Sprite_Base
   def bind_map_pixel(px, py)
     @px = px
     @py = py
+    self.ox = 16
+    self.oy = 32
     update_position
   end
   #--------------------------------------------------------------------------
@@ -1331,12 +1347,12 @@ class Sprite_EagleBase < Sprite_Base
         @ani_oy = viewport.rect.height / 2
       end
     else
-      @ani_ox = x - ox + width / 2
-      @ani_oy = y - oy + height / 2
+      @ani_ox = x + width / 2
+      @ani_oy = y - oy/2 + height / 2
       if @animation.position == 0
-        @ani_oy -= height / 2
+        @ani_oy -= oy / 2
       elsif @animation.position == 2
-        @ani_oy += height / 2
+        @ani_oy += oy / 2
       end
     end
   end
