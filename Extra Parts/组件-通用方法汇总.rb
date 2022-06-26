@@ -2,11 +2,136 @@
 # ■ 组件-通用方法汇总 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.0.8"
+$imported["EAGLE-CommonMethods"] = "1.1.0"
 #==============================================================================
-# - 2022.5.25.21
+# - 2022.6.26.0
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
+#---------------------------------------------------------------------------
+# 【脚本版本判定】
+#
+#  EAGLE_COMMON.get_version(name)
+#   → 获得 name 脚本的版本号数组，如[1, 0, 0]
+#
+#  EAGLE_COMMON.check_version(name, v1, v2=nil, v3=nil)
+#   → 检查 name 脚本的版本号是否大于 v1.v2.v3 （v2和v3若未传入，则取0）
+#
+#---------------------------------------------------------------------------
+# 【字符串解析】
+#
+#  EAGLE_COMMON.parse_tags(t)
+#   → 解析 tags 字符串
+#    （其中 {{a}} 在生成时被替换为eval后结果；{a} 将原样保留，需自己后续手动eval）
+#     比如传入 "a=5 b=-1 c=测试"，返回 { :a => "5", :b => "-1", :c => "测试" }
+#     请注意需要自己去执行 .to_i 来获得数字值
+#
+#  EAGLE_COMMON.eagle_eval(t, ps = {})
+#   → 扩展的执行字符串t
+#     （其中 s = $game_switches; v = $game_variables
+#       es = $game_map.events; gp = $game_player）
+#     如果 ps 中存在 ps[:event] 的值，则可用 event 代表它
+#
+#  EAGLE_COMMON.check_bool(str, default=false)
+#   → 检查字符串被eval后的真假
+#     只有当字符串为 "1" 或 "true" 或 1 或 true 时，返回 true
+#     只有当字符串为 "0" 或 "false" 或 0 或 false 时，返回 false
+#     字符串为其它情况时，将返回传入的 default 的值
+#
+#---------------------------------------------------------------------------
+# 【位图相关】
+#
+#  EAGLE_COMMON.bitmap_copy_do(b1, b2, o)
+#   → 将b2位图拷贝到b1位图的对应位置
+#     其中 o 为九宫格小键盘类型，
+#       比如7代表 b1和b2的左上角对齐，5代表b1和b2中点对齐，6代表b1和b2的右边中点对齐
+#
+#  EAGLE_COMMON.draw_icon(bitmap, icon, x, y, w=24, h=24)
+#   → 在bitmap位图的(x,y)位置绘制第icon号图标（该位置为绘制后图标的左上角）
+#     其中w和h传入预留的可供绘制区域的宽高，用于保证能够居中绘制图标
+#
+#  EAGLE_COMMON.draw_face(bitmap, face_name, face_index, x, y, flag_draw=true)
+#   → 在bitmap位图的(x,y)位置绘制文件名为face_name的第face_index号脸图
+#     （该位置为绘制后脸图的左上角）
+#     如果 face_name 中含有 _数字x数字，则为自定义的行数x列数（默认为2行4列）
+#     如果 flag_draw 传入 false，则不会进行绘制，可以只用于获取脸图宽高
+#     返回绘制脸图的宽和高两个数字
+#
+#  EAGLE_COMMON.draw_character(bitmap, character_name, character_index, x, y)
+#   → 在bitmap位图的(x,y)位置绘制文件名为character_name的第character_index号行走图
+#     （如果文件名带有 $，则 character_index 只有 0 有效）
+#     （该位置为绘制行走图后的底部左端点的位置）
+#     （绘制的为方向朝下的静止时的行走图）
+#     返回行走图的单个图像的宽和高两个数字
+#
+#---------------------------------------------------------------------------
+# 【精灵相关】
+#
+#  EAGLE_COMMON.reset_sprite_oxy(obj, o, restore = true)
+#   → 将 obj（精灵）的显示原点设置为 o 指定的类型
+#      o 为九宫格小键盘类型，
+#         比如 7 代表左上角设为原点，5 代表中点设为原点
+#     若 restore 设置为 true，则不改变当前的显示位置，即自动修改x、y以适应新的原点
+#
+#  EAGLE_COMMON.reset_xy_dorigin(obj, obj2, o)
+#   → 将 obj（精灵）的显示位置设置为 obj2 的指定位置
+#     比如 o 为 7，则表示把 obj 的当前xy设置为 obj2 的左上角处
+#     比如 o 为 3，则表示把 obj 的当前xy设置为 obj2 的右下角处
+#     （如果 o 为负数，则表示 obj2 为当前屏幕，传入的obj2无效）
+#
+#  EAGLE_COMMON.reset_xy(obj, o, obj2, o2)
+#   → 将 obj（精灵）的o位置 放置到 obj2 的o2位置
+#     比如 o 为 7，o2 为 5，就是把 obj 的左上角放置到 obj2 的中点处
+#
+#  EAGLE_COMMON.rect_collide_rect?(rect1, rect2)
+#   → 判定 rect1 （由RECT.new获得）是否与 rect2 碰撞（边界重叠也算碰撞）
+#
+#  EAGLE_COMMON.sprite_on_sprite?(s1, s2)
+#   → 判定 精灵s1 是否与 精灵s2 存在重叠（依据实际占据屏幕的大小）
+#
+#---------------------------------------------------------------------------
+# 【地图相关】
+#
+#  EAGLE_COMMON.get_map_data(map_id)
+#   → 获取map_id号地图的数据，返回 RPG::Map 的实例map
+#     之后可以用 event = map.events[event_id] 获取指定序号的 RPG::Event 实例
+#
+#---------------------------------------------------------------------------
+# 【事件相关】
+#
+#  EAGLE_COMMON.get_chara(event, id)
+#   → 获取id号的Game_Character对象，
+#       传入的 event 为当前事件（当id号对象不存在时，将取当前事件）
+#     若 id 为 0，则返回当前事件，若当前事件为nil，则返回玩家$game_player
+#     若 id 为正整数，则返回地图上对应id号事件，若不存在，则返回当前事件
+#     若 id 为负整数，则返回玩家队伍中对应数据库中 |id| 号的角色，若不存在，则为队首
+#
+#  EAGLE_COMMON.get_chara_sprite(id)
+#   → 获取id号的Game_Character对象所对应的Sprite_Charactor精灵对象
+#     若未找到，则返回 nil
+#
+#---------------------------------------------------------------------------
+# 【事件页相关】
+#
+#  EAGLE_COMMON.event_comment_head(command_list)
+#   → 获取事件页指令列表中开头的注释指令（可能包含多个连续的注释指令）
+#     command_list 为事件页page的list属性，即RPG::Event::Page中的指令数组@list
+#
+#---------------------------------------------------------------------------
+# 【数据库相关】
+#
+#  EAGLE_COMMON.get_item_obj(type, id)
+#   → 由标志字符与id，获得指定对象
+#      type 为's'代表技能，'i'代表物品，'w'代表武器，'a'代表呼叫
+#     比如 get_item_obj("i", 1) 将返回 $data_items[1]
+#     比如 get_item_obj("w", 10) 将返回 $data_weapons[10]
+#
+#  EAGLE_COMMON.get_item_str(item, num = 1)
+#   → 由指定对象，获取标志字符
+#     比如 get_item_str($data_items[10]) 将返回 "i10"
+#     比如 get_item_str($data_armors[1], 5) 将返回 "5a1"
+#
+#==============================================================================
+
 #===============================================================================
 # □ 脚本版本判定
 #===============================================================================
@@ -46,7 +171,7 @@ module EAGLE_COMMON
 end
 
 #==============================================================================
-# □ 文本相关
+# □ 字符串解析
 #===============================================================================
 module EAGLE_COMMON
   #--------------------------------------------------------------------------
@@ -89,7 +214,7 @@ module EAGLE_COMMON
     gp = $game_player
     event = ps[:event] || nil
     begin
-      eval(t)
+      eval(t.to_s)
     rescue
       p $!
     end
@@ -180,94 +305,6 @@ module EAGLE_COMMON
     src_rect = Rect.new((n%4*3+1)*cw, (n/4*4)*ch, cw, ch)
     bitmap.blt(x, y - ch, _bitmap, src_rect)
     return cw, ch
-  end
-end
-
-#==============================================================================
-# □ 地图数据相关
-#===============================================================================
-module EAGLE_COMMON
-  #--------------------------------------------------------------------------
-  # ● 读取地图
-  #--------------------------------------------------------------------------
-  def self.cache_load_map(map_id)
-    @cache_map ||= {}
-    return @cache_map[map_id] if @cache_map[map_id]
-    @cache_map[map_id] = load_data(sprintf("Data/Map%03d.rvdata2", map_id))
-    @cache_map[map_id]
-  end
-  #--------------------------------------------------------------------------
-  # ● 清空缓存
-  #--------------------------------------------------------------------------
-  def self.cache_clear
-    @cache_map ||= {}
-    @cache_map.clear
-    GC.start
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取地图数据
-  #--------------------------------------------------------------------------
-  def self.get_map_data(map_id)
-    EAGLE_COMMON.cache_load_map(map_id)
-  end
-end
-
-#==============================================================================
-# □ 事件相关
-#===============================================================================
-module EAGLE_COMMON
-  #--------------------------------------------------------------------------
-  # ● 获取事件对象
-  #--------------------------------------------------------------------------
-  def self.get_chara(event, id)
-    if id == 0 # 当前事件
-      return nil if event == nil
-      return $game_map.events[event.id]
-    elsif id > 0 # 第id号事件
-      chara = $game_map.events[id]
-      chara ||= $game_map.events[event.id]
-      return chara
-    elsif id < 0 # 队伍中数据库id号角色（不存在则取队长）
-      id = id.abs
-      $game_player.followers.each do |f|
-        return f if f.actor && f.actor.actor.id == id
-      end
-      return $game_player
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取事件精灵
-  #--------------------------------------------------------------------------
-  def self.get_chara_sprite(id)
-    return if !SceneManager.scene_is?(Scene_Map)
-    charas_s = SceneManager.scene.spriteset.character_sprites
-    chara = get_chara(nil, id)
-    charas_s.each { |s| return s if s.character == chara }
-    return nil
-  end
-end
-class Spriteset_Map
-  attr_reader  :character_sprites
-end
-class Scene_Map
-  attr_reader  :spriteset
-end
-
-#==============================================================================
-# □ 事件页相关
-#===============================================================================
-module EAGLE_COMMON
-  #--------------------------------------------------------------------------
-  # ● 读取事件页开头的注释组
-  #--------------------------------------------------------------------------
-  def self.event_comment_head(command_list)
-    return "" if command_list.nil? || command_list.empty?
-    t = ""; index = 0
-    while command_list[index].code == 108 || command_list[index].code == 408
-      t += command_list[index].parameters[0]
-      index += 1
-    end
-    t
   end
 end
 
@@ -379,6 +416,94 @@ module EAGLE_COMMON
     r1 = get_rect(s1)
     r2 = get_rect(s2)
     rect_collide_rect?(r1, r2)
+  end
+end
+
+#==============================================================================
+# □ 地图数据相关
+#===============================================================================
+module EAGLE_COMMON
+  #--------------------------------------------------------------------------
+  # ● 读取地图
+  #--------------------------------------------------------------------------
+  def self.cache_load_map(map_id)
+    @cache_map ||= {}
+    return @cache_map[map_id] if @cache_map[map_id]
+    @cache_map[map_id] = load_data(sprintf("Data/Map%03d.rvdata2", map_id))
+    @cache_map[map_id]
+  end
+  #--------------------------------------------------------------------------
+  # ● 清空缓存
+  #--------------------------------------------------------------------------
+  def self.cache_clear
+    @cache_map ||= {}
+    @cache_map.clear
+    GC.start
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取地图数据
+  #--------------------------------------------------------------------------
+  def self.get_map_data(map_id)
+    EAGLE_COMMON.cache_load_map(map_id)
+  end
+end
+
+#==============================================================================
+# □ 事件相关
+#===============================================================================
+module EAGLE_COMMON
+  #--------------------------------------------------------------------------
+  # ● 获取事件对象
+  #--------------------------------------------------------------------------
+  def self.get_chara(event, id)
+    if id == 0 # 当前事件
+      return nil if event == nil
+      return $game_map.events[event.id]
+    elsif id > 0 # 第id号事件
+      chara = $game_map.events[id]
+      chara ||= $game_map.events[event.id]
+      return chara
+    elsif id < 0 # 队伍中数据库id号角色（不存在则取队长）
+      id = id.abs
+      $game_player.followers.each do |f|
+        return f if f.actor && f.actor.actor.id == id
+      end
+      return $game_player
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取事件精灵
+  #--------------------------------------------------------------------------
+  def self.get_chara_sprite(id)
+    return if !SceneManager.scene_is?(Scene_Map)
+    charas_s = SceneManager.scene.spriteset.character_sprites
+    chara = get_chara(nil, id)
+    charas_s.each { |s| return s if s.character == chara }
+    return nil
+  end
+end
+class Spriteset_Map
+  attr_reader  :character_sprites
+end
+class Scene_Map
+  attr_reader  :spriteset
+end
+
+#==============================================================================
+# □ 事件页相关
+#===============================================================================
+module EAGLE_COMMON
+  #--------------------------------------------------------------------------
+  # ● 读取事件页开头的注释组
+  #--------------------------------------------------------------------------
+  def self.event_comment_head(command_list)
+    return "" if command_list.nil? || command_list.empty?
+    t = ""; index = 0
+    while command_list[index].code == 108 || command_list[index].code == 408
+      t += command_list[index].parameters[0]
+      index += 1
+    end
+    t
   end
 end
 
