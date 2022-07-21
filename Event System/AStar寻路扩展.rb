@@ -2,9 +2,9 @@
 # ■ AStar寻路扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AStar"] = "1.3.0"
+$imported["EAGLE-AStar"] = "1.4.0"
 #==============================================================================
-# - 2022.2.16.0
+# - 2022.7.12.0 新增d参数，用于设置移动完成后与目的地之间的距离
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -13,11 +13,13 @@ $imported["EAGLE-AStar"] = "1.3.0"
 #
 # - 在事件脚本中，使用该脚本将指定事件寻路移动到目的地
 #
-#        astar_goto(chara_id, x, y[, wait])
+#        astar_goto(chara_id, x, y[, wait, d])
 #
 #     其中 chara_id 为 -1 是玩家、0 是本事件、正数 是指定的事件ID
 #     其中 (x,y) 为移动目的地，与地图编辑器中的坐标一致
-#     其中 wait 为是否等待移动结束，默认true等待移动结束
+#     其中 wait 为是否等待移动结束，默认true，即等待移动结束
+#     其中 d 为移动的实际目的地与(x,y)之间的最小距离，默认d=0，即要到达(x,y)
+#          可以设置比如 d=1，则事件移动到目的地附近1格时即移动完成
 #
 # - 示例：
 #     astar_goto(0, 5,5, false)  → 当前事件寻路移动至(5,5)处，当前事件继续执行
@@ -47,16 +49,17 @@ $imported["EAGLE-AStar"] = "1.3.0"
 #
 #     astar_one_step(x, y)  → 朝(x,y)寻路前进一步
 #
-#     astar_toward(chara_id)→ 朝 chara_id 的事件寻路前进一步
+#     astar_toward(chara_id) → 朝 chara_id 的事件寻路前进一步
 #
-#     astar_until(x, y)     → 朝(x,y)寻路直至到达（不考虑事件移动频率）
+#     astar_until(x, y, d=0) → 朝(x,y)寻路直至距离小于等于d（不考虑事件移动频率）
+#                             （默认d为0，即为到达目的地）
 #
-#     astar_until_self(x, y)→ 朝(x,y)寻路直至到达
+#     astar_until_self(x, y, d=0) → 朝(x,y)寻路直至距离小于等于d
 #                            （事件-自主移动-自定义中使用，以契合事件的移动频率）
 #
-#     astar_moving          → 若在寻路中，则返回 true
+#     astar_moving           → 若在寻路中，则返回 true
 #
-#     astar_stop            → 强制终止寻路
+#     astar_stop             → 强制终止寻路
 #
 # - 示例：
 #
@@ -236,18 +239,19 @@ class Game_Character
   #--------------------------------------------------------------------------
   # ● 强制移动路径
   #--------------------------------------------------------------------------
-  def astar_until(x, y)
+  def astar_until(x, y, d = 0)
     @astar_moving = true
     @astar_des_x = x
     @astar_des_y = y
+    @astar_des_d = d
     @astar_wait = 1
     update_astar_move
   end
   #--------------------------------------------------------------------------
   # ● 强制移动路径（自主移动）
   #--------------------------------------------------------------------------
-  def astar_until_self(x, y)
-    astar_until(x, y)
+  def astar_until_self(x, y, d = 0)
+    astar_until(x, y, d)
     @astar_moving = false
     @astar_moving_self = true
   end
@@ -278,10 +282,13 @@ class Game_Character
   # ● 到达目的地？
   #--------------------------------------------------------------------------
   def astar_reach?
+    _x = self.x
+    _y = self.y
     if $imported["EAGLE-PixelMove"]
-      return @astar_des_x == self.rgss_x && @astar_des_y == self.rgss_y
+      _x= self.rgss_x
+      _y= self.rgss_y
     end
-    @astar_des_x == self.x && @astar_des_y == self.y
+    (@astar_des_x - _x).abs + (@astar_des_y - _y).abs <= @astar_des_d
   end
   #--------------------------------------------------------------------------
   # ● 到达目的地时的处理
@@ -359,11 +366,11 @@ class Game_Interpreter
   # ● 寻路
   #     chara_id : -1 则玩家、0 则本事件、其他 则是指定的事件ID
   #--------------------------------------------------------------------------
-  def astar_goto(chara_id, x, y, wait = true)
+  def astar_goto(chara_id, x, y, wait = true, d = 0)
     $game_map.refresh if $game_map.need_refresh
     character = get_character(chara_id)
     return if character.nil?
-    character.astar_until(x, y)
+    character.astar_until(x, y, d)
     Fiber.yield while character.astar_moving if wait
   end
 end

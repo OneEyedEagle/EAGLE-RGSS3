@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.7.3"
+$imported["EAGLE-MessageEX"] = "1.7.6"
 #=============================================================================
-# - 2022.6.12.8 修改注释
+# - 2022.7.21.23 修复逐个移出文字、对话框不关闭时，动态宽度会出现瞬间变化的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2088,6 +2088,7 @@ class Game_Message
     eagle_message_ex_init
     check_flags
     set_default_params
+    reset_child_window_wh_add
   end
   #--------------------------------------------------------------------------
   # ● 检查flags
@@ -2147,11 +2148,16 @@ class Game_Message
     eagle_message_ex_clear
     @eagle_text = ""
     @event_id = 0 # 存储当前执行的Game_Interpreter的事件ID
-    @child_window_w_des = 0 # 因子窗口嵌入而额外增加的宽高
-    @child_window_h_des = 0
     if EAGLE_MSG_EX_COMPAT_MODE == false # 如果不处于兼容模式，确保变量恒为true
       @eagle_message = true
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置额外增加的宽高（开始显示时调用）
+  #--------------------------------------------------------------------------
+  def reset_child_window_wh_add
+    @child_window_w_des = 0 # 因子窗口嵌入而额外增加的宽高
+    @child_window_h_des = 0
   end
   #--------------------------------------------------------------------------
   # ● 下一次对话时要解析的转义符
@@ -2547,10 +2553,10 @@ class Window_EagleMessage < Window_Base
   # ● 重置对话框（对话框不关闭，清空全部设置，并继续显示）
   #--------------------------------------------------------------------------
   def eagle_message_reset_continue
-    eagle_process_env # 处理环境的存储或读取
+    eagle_process_env  # 处理环境的存储或读取
     eagle_process_temp
     @eagle_chara_sets.clear # 清空文字分组
-    show if self.visible == false # # 确保对话框显示
+    show if self.visible == false   # 确保对话框显示
     @eagle_next_chara_x = 0 # 重置下一个文字的绘制坐标x（左对齐、不考虑换行）
     @eagle_sprite_pop_tag.visible = false # 隐藏pop的tag
     @eagle_sprite_pause.visible = false  # 隐藏等待按键pause精灵
@@ -2562,7 +2568,7 @@ class Window_EagleMessage < Window_Base
   # ● 重置对话框（对话框不关闭，保留全部设置，并继续显示）
   #--------------------------------------------------------------------------
   def eagle_message_reset_next
-    show if self.visible == false # # 确保对话框显示
+    show if self.visible == false  # 确保对话框显示
     @eagle_next_chara_x = 0 # 重置下一个文字的绘制坐标x（左对齐、不考虑换行）
     @eagle_force_close = false  # 重置强制关闭
   end
@@ -2869,8 +2875,12 @@ class Window_EagleMessage < Window_Base
       c = eagle_take_out_a_chara
       ensure_character_visible(c)
       c.move_out # 已经交由文字池进行后续更新释放
-      if !@eagle_force_close
-        eagle_recalc_charas_wh_when_out
+      if @eagle_force_close  # 如果强制关闭，则不等待移出了
+      else
+        if @flag_need_change_wh  # 如果预定了宽高变化，则这里不需要再逐个变化了
+        else
+          eagle_recalc_charas_wh_when_out
+        end
         win_params[:cwo].times { Fiber.yield }
       end
     end
@@ -3467,6 +3477,7 @@ class Window_EagleMessage < Window_Base
   def eagle_process_before_start
     @background = game_message.background
     @position   = game_message.position
+    game_message.reset_child_window_wh_add  # 重置一下子窗口嵌入时占据的宽高
   end
   #--------------------------------------------------------------------------
   # ● 处理全部文本（扩展）
@@ -5793,11 +5804,13 @@ end
 # ○ 文字绘制类
 #=============================================================================
 class Font_EagleCharacter
+  attr_reader   :text  # 上一次绘制的文本
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
   def initialize(font_params)
     @params = font_params.dup
+    @text = ""
   end
   #--------------------------------------------------------------------------
   # ● 设置参数
@@ -5828,6 +5841,7 @@ class Font_EagleCharacter
   # ● 执行文字绘制
   #--------------------------------------------------------------------------
   def draw(bitmap, x, y, w, h, c, ali = 0)
+    @text = c
     bitmap.font.color = text_color(@params[:c])
     MESSAGE_EX.apply_font_params(bitmap.font, @params)
 
@@ -6117,13 +6131,14 @@ class Sprite_EagleCharacter < Sprite
   # ● 开始特效（整合）
   #--------------------------------------------------------------------------
   def start_effects(effects)
-    @effects = effects.dup # code_symbol => param_string
-    @effects.each { |sym, param_s| start_effect(sym, param_s) }
+    @effects = {} # code_symbol => param_string
+    effects.each { |sym, param_s| start_effect(sym, param_s) }
   end
   #--------------------------------------------------------------------------
   # ● 开始特效
   #--------------------------------------------------------------------------
   def start_effect(sym, param_s)
+    @effects[sym] = param_s
     @params[sym] = init_effect_params(sym).dup # 初始化
     m = ("start_effect_" + sym.to_s).to_sym
     method(m).call(@params[sym], param_s.dup) if respond_to?(m)
@@ -6134,7 +6149,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 更新特效（整合）
   #--------------------------------------------------------------------------
   def update_effects
-    @effects.each { |sym, param|
+    @effects.each { |sym, param_s|
       m = ("update_effect_" + sym.to_s).to_sym
       method(m).call(@params[sym]) if respond_to?(m)
     }
@@ -6632,7 +6647,6 @@ class Sprite_EagleCharacter < Sprite
   def update_effect_cjump(params)
     if params[:tc] < 0 # 等待中
     elsif params[:tc] <= params[:t] # 跳跃中
-      a =
       @dy = (params[:tc]-params[:t]/2)**2 * params[:A] - params[:h]
     elsif params[:w] && params[:tc] >= params[:t] + params[:w]
       # 跳跃后的等待结束
