@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.7.6"
+$imported["EAGLE-MessageEX"] = "1.7.9"
 #=============================================================================
-# - 2022.7.21.23 修复逐个移出文字、对话框不关闭时，动态宽度会出现瞬间变化的bug
+# - 2022.7.25.19 优化缓动函数的使用
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -188,6 +188,7 @@ CONVERT_ESCAPE["测试用"] = "这是一句测试语句。"
 # 【注意】
 #   该转义符使用花括号，同时 string 中不可以出现花括号
 #   可用 s 代替 $game_switches ，用 v 代替 $game_variables
+#   可用 event 代表执行当前对话框的事件（Game_Event对象）
 #
 # 【示例】
 #   - 对话编写（1号变量值为1，2号变量值为2）
@@ -1694,11 +1695,17 @@ module MESSAGE_EX
   def self.ease_value(type, x)
     if $imported["EAGLE-EasingFunction"]
       case type
-      when :msg_xywh
+      when :msg_open  # 对话框打开
         return EasingFuction.call("easeOutBack", x)
-      when :face_xy
+      when :msg_close # 对话框关闭
+        return EasingFuction.call("easeInBack", x)
+      when :msg_xywh  # 对话框通常情况下变更位置和大小
+        return EasingFuction.call("easeOutQuart", x)
+      when :msg_vp    # 视图ox和oy变动时（文字绘制在可视范围外，或clc清屏）
+        return EasingFuction.call("easeOutQuart", x)
+      when :face_xy   # 脸图移动处理
         return EasingFuction.call("easeOutElastic", x)
-      when :chara_xy
+      when :chara_xy  # 文字移动处理
         return EasingFuction.call("easeOutExpo", x)
       end
     end
@@ -2153,7 +2160,7 @@ class Game_Message
     end
   end
   #--------------------------------------------------------------------------
-  # ● 重置额外增加的宽高（开始显示时调用）
+  # ● 重置额外增加的宽高（new_page时调用）
   #--------------------------------------------------------------------------
   def reset_child_window_wh_add
     @child_window_w_des = 0 # 因子窗口嵌入而额外增加的宽高
@@ -2825,7 +2832,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_close_type_ease
     eagle_move_out_assets
-    eagle_set_wh({:w => 1, :h => 1}) if self.openness > 0
+    eagle_set_wh({:w => 1, :h => 1, :close => true}) if self.openness > 0
     self.openness = 0
     close
   end
@@ -2877,11 +2884,12 @@ class Window_EagleMessage < Window_Base
       c.move_out # 已经交由文字池进行后续更新释放
       if @eagle_force_close  # 如果强制关闭，则不等待移出了
       else
-        if @flag_need_change_wh  # 如果预定了宽高变化，则这里不需要再逐个变化了
+        win_params[:cwo].times { Fiber.yield }
+        if @flag_need_change_wh || # 如果预定了宽高变化，则这里不需要再逐个变化了
+           win_params[:cwo] == 0  # 如果根本没有逐个移出，也不需要动态变化宽高
         else
           eagle_recalc_charas_wh_when_out
         end
-        win_params[:cwo].times { Fiber.yield }
       end
     end
     @eagle_chara_sets.clear
@@ -2923,7 +2931,7 @@ class Window_EagleMessage < Window_Base
   # ● 对话框位置大小更新前的处理
   #--------------------------------------------------------------------------
   def eagle_before_set_xywh(_p)
-    eagle_win_update # 确保对话框的xy为移动的目的地
+    eagle_win_update # 确保对话框当前的xy为移动的目的地
   end
   #--------------------------------------------------------------------------
   # ● 设置对话框xywh的参数Hash
@@ -2937,7 +2945,7 @@ class Window_EagleMessage < Window_Base
     #_p[:x] 与 _p[:y] 为更新结束时的位置，如果为 nil，且对话框未关闭，将自动计算
     #_p[:w] 与 _p[:h] 为更新结束时的宽高，如果为 nil，将自动计算
     if _p[:open] || @eagle_last_x.nil? || @eagle_last_y.nil?
-      # 如果为打开，则直接移动到目的地
+      # 如果为打开，则已经直接移到了目的地，此处不再变更xy
       _p[:x] = nil
       _p[:y] = nil
     elsif self.openness == 255
@@ -2990,7 +2998,7 @@ class Window_EagleMessage < Window_Base
       self.height = _p[:h]
       _p[:update].clear
     end
-    if _p[:open] || @flag_need_change_wh # 如果为打开，记录最终宽高
+    if _p[:open] || @flag_need_change_wh # 如果为打开/预定变更宽高，记录最终宽高
       @eagle_win_des_w = _p[:w]
       @eagle_win_des_h = _p[:h]
     end
@@ -3008,7 +3016,14 @@ class Window_EagleMessage < Window_Base
       break if self.openness == 0
       break if _i > _t
       per = _i * 1.0 / _t
-      per = (_i == _t ? 1 : MESSAGE_EX.ease_value(:msg_xywh, per))
+      if _i == _t
+        per = 1
+      else
+        f = :msg_xywh
+        f = :msg_open if _p[:open]
+        f = :msg_close if _p[:close]
+        per = MESSAGE_EX.ease_value(f, per)
+      end
       _p[:update].each do |sym|
         case sym
         when :x
@@ -3393,6 +3408,7 @@ class Window_EagleMessage < Window_Base
         @back_bitmap.gradient_fill_rect(rect3, back_color1, back_color2, true)
       end
       @back_sprite.bitmap = @back_bitmap
+      update_back_sprite
       @back_sprite.visible = true
       self.opacity = 0
     when 2 # 透明背景
@@ -3477,7 +3493,6 @@ class Window_EagleMessage < Window_Base
   def eagle_process_before_start
     @background = game_message.background
     @position   = game_message.position
-    game_message.reset_child_window_wh_add  # 重置一下子窗口嵌入时占据的宽高
   end
   #--------------------------------------------------------------------------
   # ● 处理全部文本（扩展）
@@ -3564,6 +3579,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_rb(text)
     s = $game_switches; v = $game_variables
+    event = $game_map.events[game_message.event_id] rescue nil
     text.gsub!(/\\RB\{(.*?)\}/i) { eval($1).to_s }
     text
   end
@@ -3602,6 +3618,7 @@ class Window_EagleMessage < Window_Base
   # ● 翻页处理（删去了翻页功能）
   #--------------------------------------------------------------------------
   def new_page(text, pos)
+    game_message.reset_child_window_wh_add  # 重置一下子窗口嵌入时占据的宽高
     @eagle_force_close = false  # 重置强制关闭
 
     pos[:x] = 0; pos[:y] = 0
@@ -3906,7 +3923,7 @@ class Window_EagleMessage < Window_Base
       t = MESSAGE_EX::CHARAS_SCROLL_OUT_FRAME
       (t+1).times do |i|
         per = i * 1.0 / t
-        per = MESSAGE_EX.ease_value(:msg_xywh, per)
+        per = MESSAGE_EX.ease_value(:msg_vp, per)
         self.ox = ox_1 + ox_d * per if ox_d != 0
         self.oy = oy_1 + oy_d * per if oy_d != 0
         update_moving_charas_oxy
@@ -4245,7 +4262,7 @@ class Window_EagleMessage < Window_Base
       t = MESSAGE_EX::CLC_CHARAS_OUT_FRAME
       (t+1).times do |i|
         per = i * 1.0 / t
-        per = MESSAGE_EX.ease_value(:msg_xywh, per)
+        per = MESSAGE_EX.ease_value(:msg_vp, per)
         self.oy = oy_1 + oy_d * per
         update_moving_charas_oxy
         Fiber.yield
@@ -6083,9 +6100,16 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   # ● 设置相对偏移值（以对话框中的文字显示区域的屏幕左上角为原点）
   #--------------------------------------------------------------------------
-  def reset_xy(x, y)
-    @_x = x # 存储文字相对对话框左上角的显示位置
-    @_y = y
+  def reset_xy(x = nil, y = nil)
+    @_x = x if x # 存储文字相对对话框左上角的显示位置
+    @_y = y if y
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置移动增量
+  #--------------------------------------------------------------------------
+  def reset_dxy(dx = nil, dy = nil)
+    @dx = dx if dx
+    @dy = dy if dy
   end
   #--------------------------------------------------------------------------
   # ● 设置显示原点

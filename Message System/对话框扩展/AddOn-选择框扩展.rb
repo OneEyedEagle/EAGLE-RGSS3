@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "1.1.0"
+$imported["EAGLE-ChoiceEX"] = "1.1.1"
 #=============================================================================
-# - 2022.5.6.20 随对话框的姓名框嵌入而更新
+# - 2022.5.25.17 修复对话框固定宽度大于选择框时，无法嵌入的bug
 #==============================================================================
 #------------------------------------------------------------------------------
 # 【优化】
@@ -514,7 +514,7 @@ class Window_EagleChoiceList < Window_Command
       # 嵌入时对话框所需宽度最小值（不含边界）
       width_min = self.width - standard_padding * 2
       # 对话框实际能提供的宽度（文字区域宽度）
-      win_w = @message_window.eagle_charas_w
+      win_w = @message_window.eagle_charas_max_w
       d = width_min - win_w
       if d > 0
         if @message_window.eagle_add_w_by_child_window?
@@ -533,9 +533,9 @@ class Window_EagleChoiceList < Window_Command
       if d > 0  # 对话框剩余高度不足，没法直接嵌入
         if @message_window.eagle_add_h_by_child_window?  # 可以增加对话框高度？
           $game_message.child_window_h_des = d # 扩展对话框的高度
-        elsif win_h > choice_h  # 可以通过滚动文字获得足够高度？
+        elsif win_h > self_h  # 可以通过滚动文字获得足够高度？
           d_empty = win_h - charas_h
-          @message_window.oy += (choice_h - d_empty)
+          @message_window.oy += (self_h - d_empty)
         else  # 没法了，别嵌入了
           @flag_in_msg_window = false
         end

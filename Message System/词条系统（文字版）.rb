@@ -297,7 +297,7 @@ module DICT
         pre = data[0] == :new ? "新增词条" : "词条更新"
         t += "#{pre}：#{data[1]}\n"
       end
-      MESSAGE_HINT.add({:text => t}, id="居中")
+      MESSAGE_HINT.add({:text => t}, id="居中偏下")
       return
     end
     if $imported["EAGLE-MessagePara"]
