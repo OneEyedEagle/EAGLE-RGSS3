@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.1.0"
+$imported["EAGLE-MessagePara2"] = "1.2.0"
 #==============================================================================
-# - 2022.2.13.16
+# - 2022.8.14.9 放开 wait 参数传入 0 的限制
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -76,6 +76,8 @@ $imported["EAGLE-MessagePara2"] = "1.1.0"
 #
 #  3. 在“文本框”中，编写 <wait 数字> 用于设置对话框的显示等待时间
 #      该时间为对话框移入移出中间的显示等待时间，不包括移入移出的时间。
+#      如果设为 0，则不会自动移出，需手动执行 MESSAGE_PARA2.finish(id) 移出，
+#        其中 id 为第 8 点中设置的唯一标识符（字符串）
 #
 #  4. 在“文本框”中，编写 <until>条件</until> 用于设置对话框的等待条件
 #      当 eval(条件) 返回 true 时，对话框才会关闭。
@@ -135,7 +137,7 @@ $imported["EAGLE-MessagePara2"] = "1.1.0"
 #      :position => 0           # 对话框位置的类型（0居上 1居中 2居下）
 #
 #      :skin => 0               # 对话框所用皮肤的索引
-#      :wait => 1               # 对话框的停留帧数（请不要设置为0或负数）
+#      :wait => 1               # 对话框的停留帧数
 #      :io   => "fade"          # 对话框的移入移出类型
 #      :io_t => 20              # 移入移出的耗时
 #
@@ -377,7 +379,7 @@ class Sprite_EagleMsg < Sprite
 
     params[:skin] = _params[:skin] || DEF_SKIN_ID
     params[:wait] = _params[:wait] || WAIT_BEFORE_OUT
-    params[:wait] = 1 if params[:wait] <= 0
+    params[:wait] = 1 if params[:wait] < 0
     params[:until] = _params[:until] || ""
     params[:io] = _params[:io] || DEF_IO_TYPE
     params[:io_t] = _params[:io_t] || DEF_IO_T
@@ -693,6 +695,13 @@ class Sprite_EagleMsg < Sprite
   # ● 处理等待帧数
   #--------------------------------------------------------------------------
   def process_wait_count
+    if params[:wait] == 0
+      loop do
+        break if @flag_no_wait
+        Fiber.yield
+      end
+      return
+    end
     params[:wait].times do
       break if @flag_no_wait
       Fiber.yield

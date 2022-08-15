@@ -2,9 +2,9 @@
 # ■ 组件-通用方法汇总 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.1.0"
+$imported["EAGLE-CommonMethods"] = "1.1.1"
 #==============================================================================
-# - 2022.6.26.0
+# - 2022.8.14.18
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #---------------------------------------------------------------------------
@@ -87,6 +87,11 @@ $imported["EAGLE-CommonMethods"] = "1.1.0"
 #
 #  EAGLE_COMMON.sprite_on_sprite?(s1, s2)
 #   → 判定 精灵s1 是否与 精灵s2 存在重叠（依据实际占据屏幕的大小）
+#
+#  EAGLE_COMMON.point_in_sprite?(x, y, s, alpha=true)
+#   → 判定屏幕坐标(x,y) 是否位于 精灵s 内（依据实际占据屏幕的大小）
+#     （若 alpha 传入 true，则位于透明像素也算在精灵内，
+#       否则位于透明像素时将返回 false，即点不在精灵内）
 #
 #---------------------------------------------------------------------------
 # 【地图相关】
@@ -416,6 +421,22 @@ module EAGLE_COMMON
     r1 = get_rect(s1)
     r2 = get_rect(s2)
     rect_collide_rect?(r1, r2)
+  end
+  #--------------------------------------------------------------------------
+  # ● 点在精灵内？
+  #--------------------------------------------------------------------------
+  def self.point_in_sprite?(x, y, s, alpha=true)
+    r = get_rect(s)
+    if(x < r.x || x > r.x + r.width-1 ||
+       y < r.y || y > r.y + r.height-1)
+      return false
+    end
+    if alpha == false
+      _x = x - (s.x - s.ox)
+      _y = y - (s.y - s.oy)
+      return false if s.bitmap.get_pixel(_x, _y).alpha == 0
+    end
+    return true
   end
 end
 
