@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.7.9"
+$imported["EAGLE-MessageEX"] = "1.8.0"
 #=============================================================================
-# - 2022.7.25.19 优化缓动函数的使用
+# - 2022.8.21.22 修复temp转义符无法重置name参数的bug；修复姓名框嵌入时错位bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -779,7 +779,7 @@ DEFAULT_NO_OVERLAP_FACE = true
 # 【常量设置：参数预设值】
 NAME_PARAMS_INIT = {
 # \name[]
-  :o => 0, # 自身的显示原点位置
+  :o => 7, # 自身的显示原点位置
   :do => 0, # 相较于对话框的显示原点位置
   :dx => 0, # 姓名框整体的偏移增量（如果为嵌入，则会自动增加占位的宽高）
   :dy => 0,
@@ -1652,7 +1652,7 @@ CHARAS_SCROLL_OUT_FRAME = 12
 #----------------------------------------------------------------------------
 # ○ 当对话框内容无需滚动浏览时，若该常量设置为 true，则使用方向键也可以继续对话
 # 如果设置为 false，则无改变（仍然需要按确定键或取消键继续对话）
-INPUT_NEXT_WITH_DIR4 = true
+INPUT_NEXT_WITH_DIR4 = false
 
 #----------------------------------------------------------------------------
 # ○ 预定绘制文本
@@ -2310,6 +2310,17 @@ class Game_Message
     t.clone_ex(self)
     return true
   end
+  #--------------------------------------------------------------------------
+  # ● 将临时环境存入指定环境，并返回临时环境
+  #--------------------------------------------------------------------------
+  def load_temp_env(sym = '0', temp = :eagle_temp)
+    if sym == '0'
+      @default_env = $game_system.message_envs[temp]
+    else
+      $game_system.message_envs[sym] = $game_system.message_envs[temp]
+    end
+    return $game_system.message_envs[temp]
+  end
 end
 #=============================================================================
 # ○ Game_System
@@ -2370,6 +2381,9 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def game_message
     $game_message
+  end
+  def game_message=(g)
+    $game_message = g
   end
   #--------------------------------------------------------------------------
   # ● 解析字符串参数
@@ -2439,7 +2453,8 @@ class Window_EagleMessage < Window_Base
     @flag_hold = false # 当为 true 时，当前对话框会被拷贝保留，并同步更新
     @flag_instant = false # 当为 true 时，当前对话框不再处理文字显示的等待
     @flag_next = false  # 当为 true 时，当前对话框不关闭，下一个显示文字继续使用
-    @flag_temp_env = nil # 当不为 nil 时，重置当前对话框的环境
+    @flag_temp = false  # 当为 true 时，当前对话框的任何修改将不被保存
+    @flag_temp_env = nil # 存储当前对话框开启前的环境
     @flag_save_env = nil # 当不为 nil 时，当前对话框状态保存到对应环境中
     @eagle_dup_windows ||= [] # 存储全部拷贝的窗口
     @eagle_evals = [] # 存储当前对话框的动态脚本 [eval_str, eval_str...]
@@ -3129,6 +3144,7 @@ class Window_EagleMessage < Window_Base
   #  如果h小于行高，则判定其为行数
   #--------------------------------------------------------------------------
   def eagle_check_param_h(h)
+    return 0 if h <= 0
     h = line_height * h + win_params[:ld] * (h - 1) if h < line_height
     return h
   end
@@ -3341,7 +3357,7 @@ class Window_EagleMessage < Window_Base
   def eagle_name_update
     if name_params[:do] == 0  # 嵌入
       # 考虑到姓名框自己也有边框，此处 standard_padding 一加一减抵消了
-      @eagle_window_name.x = self.x - standard_padding + \
+      @eagle_window_name.x = self.x +  \
         @eagle_window_name.rect_real.x + eagle_face_left_width
       @eagle_window_name.y = self.y +  \
         @eagle_window_name.rect_real.y
@@ -3476,6 +3492,7 @@ class Window_EagleMessage < Window_Base
     game_message.visible = true
     eagle_process_before_start
     loop do
+      eagle_process_before_draw
       eagle_process_all_text
       process_input
       eagle_process_before_close
@@ -3493,6 +3510,13 @@ class Window_EagleMessage < Window_Base
   def eagle_process_before_start
     @background = game_message.background
     @position   = game_message.position
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制全部文本前的处理
+  #--------------------------------------------------------------------------
+  def eagle_process_before_draw
+    @flag_temp_env = game_message.env  # 保存处理文本前的环境名（用于temp）
+    game_message.save_env(:eagle_temp) # 保存处理文本前的环境（用于temp）
   end
   #--------------------------------------------------------------------------
   # ● 处理全部文本（扩展）
@@ -3618,7 +3642,7 @@ class Window_EagleMessage < Window_Base
   # ● 翻页处理（删去了翻页功能）
   #--------------------------------------------------------------------------
   def new_page(text, pos)
-    game_message.reset_child_window_wh_add  # 重置一下子窗口嵌入时占据的宽高
+    game_message.reset_child_window_wh_add  # 重置子窗口嵌入时占据的宽高
     @eagle_force_close = false  # 重置强制关闭
 
     pos[:x] = 0; pos[:y] = 0
@@ -3638,9 +3662,8 @@ class Window_EagleMessage < Window_Base
     # 存储实际绘制的文本，预先转义符已删去（扩展用，获取显示的对话文本）
     game_message.eagle_text = text.clone
     eagle_apply_params_changes # 执行预定的转义符修改
-    game_message.save_env(game_message.env) # 保存当前环境（用于预绘制及temp）
-
     clear_flags
+
     pre_calc_charas_wh(text, pos) # 预绘制，计算最终宽高
     clear_flags # 重置绘制会用到的变量
   end
@@ -3669,18 +3692,18 @@ class Window_EagleMessage < Window_Base
   def pre_calc_charas_wh(text, pos)
     text_ = text.clone; pos_ = pos.clone
     @flag_draw = false # 不进行实际绘制
-    last_c_w = @eagle_charas_w
+    game_message.save_env(:pre_draw) # 保存预绘制前的环境
+    last_c_w = @eagle_charas_w  # 保存预绘制前的文字区域宽高
     last_c_h = @eagle_charas_h
     @eagle_charas_w = @eagle_charas_h = 0
     process_character(text_.slice!(0, 1), text_, pos_) until text_.empty?
-    # 记录文字区域绘制完成时的宽高
-    @eagle_charas_w_final = [@eagle_charas_w, last_c_w].max
+    @eagle_charas_w_final = [@eagle_charas_w, last_c_w].max # 记录文字区域绘制完成时的宽高
     @eagle_charas_h_final = @eagle_charas_h
     before_input_pause unless @pause_skip # 此处追加对pause精灵占用宽度的处理
     @eagle_charas_w = last_c_w
     @eagle_charas_h = last_c_h # 复原当前文字区域宽高
     self.ox = self.oy = 0
-    game_message.load_env(game_message.env) # 复原转义符环境
+    game_message.load_env(:pre_draw) # 复原转义符环境
     game_message.clear_applys
     @flag_draw = true
   end
@@ -3989,14 +4012,14 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_check_temp(text)
     text.gsub!(/\e(temp)/i) { "" }
-    @flag_temp_env = game_message.env if $1
+    @flag_temp = true if $1
   end
   def eagle_process_temp
-    return if @flag_temp_env == nil
-    if game_message.load_env(@flag_temp_env)
-      game_message.env = @flag_temp_env
-    end
-    @flag_temp_env = nil
+    return if @flag_temp == false
+    @flag_temp = false
+    game_message.load_temp_env(@flag_temp_env, :eagle_temp)
+    game_message.load_env(@flag_temp_env)
+    game_message.env = @flag_temp_env
   end
   #--------------------------------------------------------------------------
   # ● 设置env指令
@@ -4158,7 +4181,7 @@ class Window_EagleMessage < Window_Base
     return 0 if name_params[:do] != 0  # 不是嵌入，则不占用
     return @eagle_window_name.contents.height + \
       @eagle_window_name.rect_real.y + @eagle_window_name.rect_real.height + \
-      name_params[:dy]
+      name_params[:dy] + standard_padding 
   end
 
   #--------------------------------------------------------------------------
@@ -4992,6 +5015,8 @@ class Window_EagleMessage_CloneEnv < Window_EagleMessage
   # ● 获取主参数
   #--------------------------------------------------------------------------
   def game_message; @game_message; end
+  def game_message=(g); @game_message = g; end
+
   #--------------------------------------------------------------------------
   # ● 初始化组件（覆盖，不再初始化，防止在赋值前还要dispose）
   #--------------------------------------------------------------------------

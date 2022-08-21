@@ -4,9 +4,9 @@
 # ※ 本插件需要放置在【组件-位图Marshal化（VX/VA）】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SaveScreenshot"] = "1.0.1"
+$imported["EAGLE-SaveScreenshot"] = "1.0.2"
 #==============================================================================
-# - 2022.5.6.13 修复旧存档报错的bug
+# - 2022.8.18.21 修复存读档失效的bug
 #==============================================================================
 # - 本插件新增了截图的保存，并且可以利用事件指令-显示图片来调用这些截图
 #--------------------------------------------------------------------------
@@ -112,7 +112,7 @@ class << DataManager
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_load_game_without_rescue load_game_without_rescue
   def load_game_without_rescue(index)
-    eagle_save_screenshot_load_game_without_rescue(load)
+    eagle_save_screenshot_load_game_without_rescue(index)
     begin
       File.open(make_filename_memory(index), "rb") do |file|
         SAVE_MEMORY.data = Marshal.load(file)
@@ -234,7 +234,7 @@ if FLAG_VX
     if @picture_name != @picture.name
       @picture_name = @picture.name
       if @picture_name != "" && @picture.dir == :save_screenshot
-        self.bitmap = SAVE_MEMORY.load_screenshot(@picture.name)
+        self.bitmap = SAVE_MEMORY.load_screenshot(@picture.name).dup
       else
         self.bitmap = Cache.picture(@picture_name)
       end
@@ -248,7 +248,7 @@ else
   alias eagle_save_screenshot_update_bitmap update_bitmap
   def update_bitmap
     if @picture.dir == :save_screenshot
-      self.bitmap = SAVE_MEMORY.load_screenshot(@picture.name)
+      self.bitmap = SAVE_MEMORY.load_screenshot(@picture.name).dup
     else
       eagle_save_screenshot_update_bitmap
     end
