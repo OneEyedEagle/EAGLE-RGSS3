@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-NumberInputEX"] = "1.1.0"
+$imported["EAGLE-NumberInputEX"] = "1.2.0"
 #=============================================================================
-# - 2022.5.6.20 随对话框的姓名框嵌入而更新
+# - 2022.9.5.20 随对话框更新
 #==============================================================================
 # - 在对话框中利用 \numinput[param] 对数值输入框进行部分参数设置：
 #     o → 数值输入框的显示原点类型（九宫格小键盘）（默认7）（嵌入时固定为7）
@@ -130,13 +130,8 @@ end
 # ○ Window_EagleNumberInput
 #==============================================================================
 class Window_EagleNumberInput < Window_Base
-  #--------------------------------------------------------------------------
-  # ● 获取文字颜色
-  #     n : 文字颜色编号（0..31）
-  #--------------------------------------------------------------------------
-  def text_color(n)
-    MESSAGE_EX.text_color(n, self.windowskin)
-  end
+  def numinput_params; $game_message.numinput_params; end
+  def text_color(n); MESSAGE_EX.text_color(n, self.windowskin); end
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -210,13 +205,13 @@ class Window_EagleNumberInput < Window_Base
     self.height = @height_max + padding * 2
 
     # 处理嵌入的特殊情况
-    @flag_in_msg_window = @message_window.open? && $game_message.numinput_params[:do] == 0
+    @flag_in_msg_window = @message_window.child_window_embed_in? && numinput_params[:do] == 0
     new_w = self.width
     if @flag_in_msg_window
       # 嵌入时对话框所需宽度最小值（不含边界）
       width_min = self.width - standard_padding * 2
       # 对话框实际能提供的宽度（文字区域宽度）
-      win_w = @message_window.eagle_charas_w
+      win_w = @message_window.eagle_charas_max_w
       d = width_min - win_w
       if d > 0
         if @message_window.eagle_add_w_by_child_window?
@@ -253,10 +248,10 @@ class Window_EagleNumberInput < Window_Base
       self.y = @message_window.y + @message_window.height + 8
     end
 
-    self.x = $game_message.numinput_params[:x] if $game_message.numinput_params[:x]
-    self.y = $game_message.numinput_params[:y] if $game_message.numinput_params[:y]
-    o = $game_message.numinput_params[:o]
-    if (d_o = $game_message.numinput_params[:do]) < 0 # 相对于屏幕
+    self.x = numinput_params[:x] if numinput_params[:x]
+    self.y = numinput_params[:y] if numinput_params[:y]
+    o = numinput_params[:o]
+    if (d_o = numinput_params[:do]) < 0 # 相对于屏幕
       MESSAGE_EX.reset_xy_dorigin(self, nil, d_o)
     elsif @message_window.open?
       if d_o == 0 # 嵌入对话框
@@ -271,17 +266,17 @@ class Window_EagleNumberInput < Window_Base
       end
     end
     MESSAGE_EX.reset_xy_origin(self, o)
-    self.x += $game_message.numinput_params[:dx]
-    self.y += $game_message.numinput_params[:dy]
+    self.x += numinput_params[:dx]
+    self.y += numinput_params[:dy]
     self.z = @message_window.z + 10
   end
   #--------------------------------------------------------------------------
   # ● 更新其他属性
   #--------------------------------------------------------------------------
   def update_params_ex
-    skin = @message_window.get_cur_windowskin_index($game_message.numinput_params[:skin])
+    skin = @message_window.get_cur_windowskin_index(numinput_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(skin)
-    self.opacity = $game_message.numinput_params[:opa]
+    self.opacity = self.back_opacity = numinput_params[:opa]
     self.contents_opacity = 255
 
     if @flag_in_msg_window # 如果嵌入，则不执行打开
@@ -385,7 +380,7 @@ class Window_EagleNumberInput < Window_Base
     process_digit_change
     process_handling
     update_cursor
-    update_placement if @message_window.open? && $game_message.numinput_params[:do] == 0
+    update_placement if @message_window.open? && numinput_params[:do] == 0
   end
   #--------------------------------------------------------------------------
   # ● 处理光标的移动

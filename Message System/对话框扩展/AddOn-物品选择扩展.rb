@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ItemChoiceEX"] = "1.1.0"
+$imported["EAGLE-ItemChoiceEX"] = "1.2.0"
 #=============================================================================
-# - 2022.5.6.20 随对话框的姓名框嵌入而更新
+# - 2022.9.5.20 随对话框更新
 #==============================================================================
 # - 在对话框中利用 \keyitem[param] 对物品选择框进行部分参数设置：
 #     type → 【默认】物品选择范围的类型index（见 index → 物品种类的符号数组 的映射）
@@ -111,6 +111,7 @@ end
 # ○ Window_KeyItem
 #==============================================================================
 class Window_EagleKeyItem < Window_ItemList
+  def keyitem_params; $game_message.keyitem_params; end
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -147,8 +148,8 @@ class Window_EagleKeyItem < Window_ItemList
   # ● 重设最小宽度
   #--------------------------------------------------------------------------
   def reset_width_min
-    return if self.width == $game_message.keyitem_params[:wmin]
-    self.width = $game_message.keyitem_params[:wmin]
+    return if self.width == keyitem_params[:wmin]
+    self.width = keyitem_params[:wmin]
     self.height = fitting_height(1)
     create_contents
   end
@@ -156,7 +157,7 @@ class Window_EagleKeyItem < Window_ItemList
   # ● 更新物品种类
   #--------------------------------------------------------------------------
   def update_category
-    @categories = MESSAGE_EX.keyitem_type($game_message.keyitem_params[:type])
+    @categories = MESSAGE_EX.keyitem_type(keyitem_params[:type])
   end
   #--------------------------------------------------------------------------
   # ● 查询列表中是否含有此物品
@@ -191,18 +192,18 @@ class Window_EagleKeyItem < Window_ItemList
   # ● 更新窗口的大小
   #--------------------------------------------------------------------------
   def update_size
-    self.width = $game_message.keyitem_params[:w] if $game_message.keyitem_params[:w] > self.width
-    h = eagle_check_param_h($game_message.keyitem_params[:h])
+    self.width = keyitem_params[:w] if keyitem_params[:w] > self.width
+    h = eagle_check_param_h(keyitem_params[:h])
     self.height = h + standard_padding * 2 if h > 0
 
     # 处理嵌入的特殊情况
-    @flag_in_msg_window = @message_window.open? && $game_message.keyitem_params[:do] == 0
+    @flag_in_msg_window = @message_window.child_window_embed_in? && keyitem_params[:do] == 0
     new_w = self.width
     if @flag_in_msg_window
       # 嵌入时对话框所需宽度最小值（不含边界）
       width_min = self.width - standard_padding * 2
       # 对话框实际能提供的宽度（文字区域宽度）
-      win_w = @message_window.eagle_charas_w
+      win_w = @message_window.eagle_charas_max_w
       d = width_min - win_w
       if d > 0
         if @message_window.eagle_add_w_by_child_window?
@@ -235,10 +236,10 @@ class Window_EagleKeyItem < Window_ItemList
     self.x = (Graphics.width - width) / 2 # 默认位置
     self.y = Graphics.height - 100 - height
 
-    self.x = $game_message.keyitem_params[:x] if $game_message.keyitem_params[:x]
-    self.y = $game_message.keyitem_params[:y] if $game_message.keyitem_params[:y]
-    o = $game_message.keyitem_params[:o]
-    if (d_o = $game_message.keyitem_params[:do]) < 0 # 相对于屏幕
+    self.x = keyitem_params[:x] if keyitem_params[:x]
+    self.y = keyitem_params[:y] if keyitem_params[:y]
+    o = keyitem_params[:o]
+    if (d_o = keyitem_params[:do]) < 0 # 相对于屏幕
       MESSAGE_EX.reset_xy_dorigin(self, nil, d_o)
     elsif @message_window.open?
       if d_o == 0 # 嵌入对话框
@@ -253,17 +254,17 @@ class Window_EagleKeyItem < Window_ItemList
       end
     end
     MESSAGE_EX.reset_xy_origin(self, o)
-    self.x += $game_message.keyitem_params[:dx]
-    self.y += $game_message.keyitem_params[:dy]
+    self.x += keyitem_params[:dx]
+    self.y += keyitem_params[:dy]
     self.z = @message_window.z + 10
   end
   #--------------------------------------------------------------------------
   # ● 更新其他属性
   #--------------------------------------------------------------------------
   def update_params_ex
-    skin = @message_window.get_cur_windowskin_index($game_message.keyitem_params[:skin])
+    skin = @message_window.get_cur_windowskin_index(keyitem_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(skin)
-    self.opacity = $game_message.keyitem_params[:opa]
+    self.opacity = self.back_opacity = keyitem_params[:opa]
     self.contents_opacity = 255
 
     if @flag_in_msg_window # 如果嵌入，则不执行打开
@@ -277,7 +278,7 @@ class Window_EagleKeyItem < Window_ItemList
   #--------------------------------------------------------------------------
   def update
     super
-    update_placement if @message_window.open? && $game_message.keyitem_params[:do] == 0
+    update_placement if @message_window.open? && keyitem_params[:do] == 0
   end
   #--------------------------------------------------------------------------
   # ● 确定时的处理

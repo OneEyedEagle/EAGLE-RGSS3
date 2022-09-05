@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "1.1.1"
+$imported["EAGLE-ChoiceEX"] = "1.2.0"
 #=============================================================================
-# - 2022.5.25.17 修复对话框固定宽度大于选择框时，无法嵌入的bug
+# - 2022.9.5.20 随对话框更新
 #==============================================================================
 #------------------------------------------------------------------------------
 # 【优化】
@@ -508,7 +508,7 @@ class Window_EagleChoiceList < Window_Command
     self.width = [choice_params[:w], @final_w].max + standard_padding * 2
 
     # 处理嵌入的特殊情况
-    @flag_in_msg_window = @message_window.open? && choice_params[:do] == 0
+    @flag_in_msg_window = @message_window.child_window_embed_in? && choice_params[:do] == 0
     new_w = self.width
     if @flag_in_msg_window
       # 嵌入时对话框所需宽度最小值（不含边界）
@@ -587,7 +587,7 @@ class Window_EagleChoiceList < Window_Command
   def reset_params_ex
     @skin = @message_window.get_cur_windowskin_index(choice_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(@skin)
-    self.opacity = choice_params[:opa]
+    self.opacity = self.back_opacity = choice_params[:opa]
     self.contents_opacity = 255
 
     if @flag_in_msg_window # 如果嵌入，则不执行打开
