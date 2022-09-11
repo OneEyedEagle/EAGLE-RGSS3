@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.0"
+$imported["EAGLE-MessageEX"] = "1.9.1"
 #=============================================================================
-# - 2022.9.5.21 \func 转义符调整为【预先】；优化 para 参数效果
+# - 2022.9.8.22 \next 不再跳过等待按键
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -915,10 +915,9 @@ NO_DEFAULT_PAUSE = true
 #  \next 【结尾】
 #----------------------------------------------------------------------------
 # 【功能】
-#    当前对话框不处理按键继续，且不会关闭，
-#    在处理下一条事件指令-显示文本时，文本将继续显示在该对话框内。
+#    当前对话框在按键继续后不关闭，而是保留显示，
+#    在处理下一条事件指令-显示文本时，文本将继续显示在对话框的新行。
 #    （中途可以调用其它事件指令，对话框将一直保持开启状态。）
-#
 #
 #----------------------------------------------------------------------------
 #  \clc
@@ -2118,7 +2117,7 @@ class Game_Message
   attr_accessor :face_params, :name_params, :pause_params
   attr_accessor :func_params, :ex_params, :env
   attr_accessor :event_id, :child_window_w_des, :child_window_h_des
-  attr_accessor :no_name_overlap_face, :no_input_pause
+  attr_accessor :no_name_overlap_face, :no_input_pause, :active # 对话框在显示中
   attr_accessor :eagle_text # 存储实际绘制的文本（去除了预处理的转义符）
   attr_accessor :eagle_message # 兼容模式
   #--------------------------------------------------------------------------
@@ -3513,6 +3512,7 @@ class Window_EagleMessage < Window_Base
   def eagle_process_before_draw
     @flag_temp_env = game_message.env  # 保存处理文本前的环境名（用于temp）
     game_message.save_env(:eagle_temp) # 保存处理文本前的环境（用于temp）
+    game_message.active = true   # 对话框开始处理文字，该flag置为true用于判定
   end
   #--------------------------------------------------------------------------
   # ● 关闭前
@@ -3520,6 +3520,7 @@ class Window_EagleMessage < Window_Base
   def eagle_process_before_close
     game_message.clear
     @gold_window.close if @gold_window
+    game_message.active = false   # 对话框不再显示了，将该flag置为false
   end
   #--------------------------------------------------------------------------
   # ● 判定文字是否继续显示（覆盖）
@@ -4717,11 +4718,8 @@ class Window_EagleMessage < Window_Base
       input_number
     elsif game_message.item_choice?
       input_item
-    else
-      if @pause_skip || @flag_next
-      else
-        input_pause
-      end
+    elsif input_pause?
+      input_pause
     end
     eagle_process_hold
   end
@@ -4729,7 +4727,7 @@ class Window_EagleMessage < Window_Base
   # ● 需要输入等待？
   #--------------------------------------------------------------------------
   def input_pause?
-    game_message.input_pause? && !@pause_skip && !@flag_next
+    game_message.input_pause? && !@pause_skip
   end
   #--------------------------------------------------------------------------
   # ● 处理输入等待
@@ -4814,7 +4812,7 @@ class Window_EagleMessage < Window_Base
       end
     end
     self.arrows_visible = false
-    Input.update
+    Fiber.yield
   end
   #--------------------------------------------------------------------------
   # ● 等待按键时，自动继续的处理
