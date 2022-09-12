@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】（>= 1.9.1）之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AnotherMsg"] = "1.0.0"
+$imported["EAGLE-AnotherMsg"] = "1.0.1"
 #=============================================================================
-# - 2022.9.11.21
+# - 2022.9.12.10 确保备用对话框关闭了，事件才会结束执行
 #==============================================================================
 # - 本插件新增了多对话框的处理，当对话框已经开启时，将生成新的对话框继续执行事件
 #------------------------------------------------------------------------------
@@ -195,7 +195,7 @@ class Game_Interpreter
   def command_0
     eagle_another_command_0
     if @eagle_another_msg
-      20.times { Fiber.yield }
+      Fiber.yield while @eagle_another_msg.visible
       MESSAGE_EX.dispose_another_msg(@eagle_another_msg)
       @eagle_another_msg = nil
     end

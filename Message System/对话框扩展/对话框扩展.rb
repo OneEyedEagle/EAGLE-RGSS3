@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.1"
+$imported["EAGLE-MessageEX"] = "1.9.2"
 #=============================================================================
-# - 2022.9.8.22 \next 不再跳过等待按键
+# - 2022.9.12.22 修复\win的dh为true时，对话框打开时出现高度瞬间变化的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -3128,7 +3128,7 @@ class Window_EagleMessage < Window_Base
     end
     return eagle_check_param_h(win_params[:h]) if win_params[:h] > 0
     h = nil
-    h = @eagle_charas_h       if eagle_dynamic_h?
+    h = [@eagle_charas_h, line_height].max if eagle_dynamic_h?
     h = @eagle_charas_h_final if eagle_dyn_fit_h?
     if h
       h = win_params[:hmin] if win_params[:hmin] > 0 && h < win_params[:hmin]
