@@ -2,9 +2,9 @@
 # ■ 组件-通用方法汇总 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.1.1"
+$imported["EAGLE-CommonMethods"] = "1.1.2"
 #==============================================================================
-# - 2022.8.14.18
+# - 2022.9.24.18 新增图片精灵的获取
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ $imported["EAGLE-CommonMethods"] = "1.1.1"
 # 【事件相关】
 #
 #  EAGLE_COMMON.get_chara(event, id)
-#   → 获取id号的Game_Character对象，
+#   → 获取id号的Game_Character对象（地图场景中），
 #       传入的 event 为当前事件（当id号对象不存在时，将取当前事件）
 #     若 id 为 0，则返回当前事件，若当前事件为nil，则返回玩家$game_player
 #     若 id 为正整数，则返回地图上对应id号事件，若不存在，则返回当前事件
@@ -113,6 +113,15 @@ $imported["EAGLE-CommonMethods"] = "1.1.1"
 #  EAGLE_COMMON.get_chara_sprite(id)
 #   → 获取id号的Game_Character对象所对应的Sprite_Charactor精灵对象
 #     若未找到，则返回 nil
+#
+#  EAGLE_COMMON.get_pic_sprite(id)
+#   → 获取id号的显示图片所对应的Sprite_Picture精灵对象
+#     若未找到，则返回 nil
+#
+#  EAGLE_COMMON.get_battler_sprite(id)
+#   → 获取id号的Game_Battler对象（战斗场景中），
+#     若 id 为正整数，则返回敌群中对应序号的敌人的Sprite_Battler
+#     若 id 为负整数，则返回玩家队伍中对应数据库中 |id| 号的角色，若不存在，则返回nil
 #
 #---------------------------------------------------------------------------
 # 【事件页相关】
@@ -493,7 +502,7 @@ module EAGLE_COMMON
     end
   end
   #--------------------------------------------------------------------------
-  # ● 获取事件精灵
+  # ● 获取地图事件的精灵
   #--------------------------------------------------------------------------
   def self.get_chara_sprite(id)
     return if !SceneManager.scene_is?(Scene_Map)
@@ -502,11 +511,41 @@ module EAGLE_COMMON
     charas_s.each { |s| return s if s.character == chara }
     return nil
   end
+  #--------------------------------------------------------------------------
+  # ● 获取图片的精灵
+  #--------------------------------------------------------------------------
+  def self.get_pic_sprite(id)
+    if SceneManager.scene_is?(Scene_Map) || SceneManager.scene_is?(Scene_Battle)
+      ss = SceneManager.scene.spriteset.picture_sprites
+      return ss[id]
+    end 
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取战斗角色的精灵
+  #--------------------------------------------------------------------------
+  def self.get_battler_sprite(id)
+    return if !SceneManager.scene_is?(Scene_Battle)
+    if id > 0
+      ss = SceneManager.scene.spriteset.enemy_sprites
+      return ss[id] || nil 
+    else
+      ss = SceneManager.scene.spriteset.actor_sprites
+      ss.each { |s| return s if s.battler.id == id.abs }
+      return nil 
+    end
+  end
 end
 class Spriteset_Map
-  attr_reader  :character_sprites
+  attr_reader  :character_sprites, :picture_sprites
 end
 class Scene_Map
+  attr_reader  :spriteset
+end
+class Spriteset_Battle
+  attr_reader  :actor_sprites, :enemy_sprites, :picture_sprites
+end
+class Scene_Battle
   attr_reader  :spriteset
 end
 
