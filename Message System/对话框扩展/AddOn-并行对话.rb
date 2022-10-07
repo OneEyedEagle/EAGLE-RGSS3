@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara"] = "1.2.0"
+$imported["EAGLE-MessagePara"] = "1.2.1"
 #==============================================================================
-# - 2022.9.12.21 随对话框更新
+# - 2022.10.8.0 增强兼容性
 #==============================================================================
 # - 本插件利用【对话框扩展】中的对话框，生成了并行显示的对话
 #--------------------------------------------------------------------------
@@ -440,7 +440,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   def initialize(id, list_str)
     @id = id
     @list_str = list_str   # 待处理的标签队列
-    @game_message = $game_message.clone
+    @game_message = $game_message.clone2
     @game_message.clear
     @face = ["", 0]
     @params = MESSAGE_PARA::PARA_MESSAGE_PARAMS.dup
@@ -638,7 +638,6 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @game_message.background = @params[:bg]
     @game_message.position = @params[:pos]
     @game_message.win_params[:z] = @params[:z]
-    @game_message.pause_params[:v] = 0
     @game_message.visible = true
   end
   #--------------------------------------------------------------------------
@@ -754,6 +753,12 @@ class Window_EagleMessage_Para < Window_EagleMessage
     end
     return if @eagle_force_close
     eagle_process_hold
+  end
+  #--------------------------------------------------------------------------
+  # ● 输入等待前的操作
+  #--------------------------------------------------------------------------
+  def before_input_pause
+    # 去掉 pause 精灵的宽度占位计算
   end
   #--------------------------------------------------------------------------
   # ● 监听“确定”键的按下，更新快进的标志

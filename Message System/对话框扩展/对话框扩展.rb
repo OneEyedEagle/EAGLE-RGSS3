@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.3"
+$imported["EAGLE-MessageEX"] = "1.9.4"
 #=============================================================================
-# - 2022.10.7.21 增强稳定性
+# - 2022.10.7.23 增强兼容性
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2283,7 +2283,7 @@ class Game_Message
   #--------------------------------------------------------------------------
   # ● 参数拷贝
   #--------------------------------------------------------------------------
-  def clone
+  def clone2
     t = Game_Message.new
     t.visible = true
     eagle_params.each do |sym|
@@ -2306,10 +2306,10 @@ class Game_Message
   #--------------------------------------------------------------------------
   def save_env(sym = '0')
     if sym == '0' # 如果是默认环境，则保存到自己，防止与子窗口的默认环境相互干扰
-      @default_env = self.clone
+      @default_env = self.clone2
       return
     end
-    $game_system.message_envs[sym] = self.clone
+    $game_system.message_envs[sym] = self.clone2
   end
   #--------------------------------------------------------------------------
   # ● 读取指定环境
@@ -6757,9 +6757,10 @@ if EAGLE_MSG_EX_COMPAT_MODE == true
   #--------------------------------------------------------------------------
   # ● 生成信息窗口
   #--------------------------------------------------------------------------
+  alias eagle_message_ex_compa_mode_create_message_window create_message_window
   def create_message_window
-    @msg_windows = [Window_Message.new, Window_EagleMessage.new]
-    @message_window = @msg_windows[0]
+    eagle_message_ex_compa_mode_create_message_window
+    @msg_windows = [@message_window, Window_EagleMessage.new]
   end
 else
   #--------------------------------------------------------------------------
@@ -6782,9 +6783,10 @@ if EAGLE_MSG_EX_COMPAT_MODE == true
   #--------------------------------------------------------------------------
   # ● 生成信息窗口
   #--------------------------------------------------------------------------
+  alias eagle_message_ex_compa_mode_create_message_window create_message_window
   def create_message_window
-    @msg_windows = [Window_Message.new, Window_EagleMessage.new]
-    @message_window = @msg_windows[0]
+    eagle_message_ex_compa_mode_create_message_window
+    @msg_windows = [@message_window, Window_EagleMessage.new]
   end
 else
   #--------------------------------------------------------------------------
