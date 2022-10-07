@@ -2,9 +2,9 @@
 # ■ 自由显示光标 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Cursor"] = "1.0.0"
+$imported["EAGLE-Cursor"] = "1.0.2"
 #==============================================================================
-# - 2022.9.25.16 
+# - 2022.9.30.21 
 #==============================================================================
 # - 本插件新增了一个允许利用全局脚本自由控制位置的光标
 #-----------------------------------------------------------------------------
@@ -37,6 +37,7 @@ $imported["EAGLE-Cursor"] = "1.0.0"
 #
 #       CURSOR.set_sprite(id, s, ps)  → 将光标定位到精灵s的区域上
 #
+#       CURSOR.set_map_xy(id, x, y, ps) → 将光标定位到地图(x,y)上
 #
 #    （以下需要使用【组件-通用方法汇总 by老鹰】）
 #
@@ -204,6 +205,16 @@ module CURSOR
     ps[:map] = true
     set_sprite(id, s, ps)
   end
+  #--------------------------------------------------------------------------
+  # ● 将光标移动到指定地图位置上（地图坐标）
+  #--------------------------------------------------------------------------
+	def self.set_map_xy(id, x, y, ps={})
+    return if !exist?(id)
+    ps[:map] = true
+		wx = 32 * (x - $game_map.display_x)
+		wy = 32 * (y - $game_map.display_y)
+		set_xywh(id, wx, wy, 32, 32, ps)
+	end
   #--------------------------------------------------------------------------
   # ● 将光标移动到指定战斗者上（窗口坐标）
   #--------------------------------------------------------------------------
@@ -427,16 +438,29 @@ class Spriteset_EagleCursor
     return if ps[:text] == nil || ps[:text] == ""
     
     return if $imported["EAGLE-DrawTextEX"] == nil
-    ps2 = {}
+    # 预绘制文字
+    ps2 = { :ali => 1, :lhd => 4 }
     d = Process_DrawTextEX.new(ps[:text], ps2)
-    b = Bitmap.new(d.width + 4 *2, d.height + 2 * 2)
-    b.fill_rect(b.rect, Color.new(0,0,0,150))
+    # 新建一个位图
+    tag_h = 5
+    c = Color.new(0,0,0,150)
+    b = Bitmap.new(d.width + 4 *2, d.height + 2 * 2 + tag_h)
+    b.fill_rect(0,0,b.width,b.height-tag_h, c)
+    # 绘制文字
     d.bind_bitmap(b)
     ps2[:x0] = 4
     ps2[:y0] = 2
     d.run
+    # 绘制箭头
+    [ [-4,0],[-3,0],[-2,0],[-1,0],[0,0],[1,0],[2,0],[3,0],[4,0],
+      [-3,1],[-2,1],[-1,1],[0,1],[1,1],[2,1],[3,1],
+      [-2,2],[-1,2],[0,2],[1,2],[2,2],
+      [-1,3],[0,3],[1,3],
+      [0,4] ].each do |xy|
+      b.set_pixel(b.width / 2 + xy[0], b.height - 5 + xy[1], c)
+    end
+
     @sprite_help.bitmap = b
-    
     @sprite_help.ox = @sprite_help.width / 2
     @sprite_help.oy = @sprite_help.height
   end
