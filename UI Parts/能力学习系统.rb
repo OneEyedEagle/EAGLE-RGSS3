@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.2.0"
+$imported["EAGLE-AbilityLearn"] = "1.2.1"
 #==============================================================================
-# - 2022.2.12.10 新增调整帮助窗口位置
+# - 2022.10.7.17 增强兼容性
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
 #------------------------------------------------------------------------------
@@ -1519,14 +1519,18 @@ class Game_Actor
   #--------------------------------------------------------------------------
   alias eagle_ability_learn_init_skills init_skills
   def init_skills
-    eagle_ability_learn_init_skills
     @eagle_ability_data = Data_AbilityLearn.new(@actor_id)
+    eagle_ability_learn_init_skills
   end
   #--------------------------------------------------------------------------
   # ● 获取添加的技能
   #--------------------------------------------------------------------------
+  ##########  by alexncf125 (rpg.blue) 2022.10.7
+  instance_methods(false).include?(:added_skills) || (def added_skills *args; super; end)
+  alias eagle_ability_learn_added_skills added_skills
+  ##########
   def added_skills
-    super | @eagle_ability_data.skills
+    eagle_ability_learn_added_skills | @eagle_ability_data.skills
   end
   #--------------------------------------------------------------------------
   # ● 获取普通能力的附加值
