@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.2"
+$imported["EAGLE-MessageEX"] = "1.9.3"
 #=============================================================================
-# - 2022.9.12.22 修复\win的dh为true时，对话框打开时出现高度瞬间变化的bug
+# - 2022.10.7.21 增强稳定性
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2530,7 +2530,6 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
-  alias eagle_message_ex_dispose dispose
   def dispose
     dispose_all_windows
     dispose_back_bitmap
@@ -2542,7 +2541,7 @@ class Window_EagleMessage < Window_Base
     @eagle_sprite_pause.dispose
     @eagle_dup_windows.each { |w| w.dispose if !w.disposed? }
     @eagle_chara_viewport.dispose
-    eagle_message_ex_dispose
+    super
   end
   #--------------------------------------------------------------------------
   # ● 释放所有窗口
