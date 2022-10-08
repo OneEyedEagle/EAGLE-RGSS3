@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.4"
+$imported["EAGLE-MessageEX"] = "1.9.5"
 #=============================================================================
-# - 2022.10.7.23 增强兼容性
+# - 2022.10.8.13 修复用setm结束文字特效时，文字如未开启特效则报错的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2479,7 +2479,7 @@ class Window_EagleMessage < Window_Base
   # ● 拷贝自身
   #--------------------------------------------------------------------------
   def clone(window = Window_EagleMessage_Clone)
-    t = window.new(game_message.clone)
+    t = window.new(game_message.clone2)
     t.game_message.win_params[:z] = 0
     t.move(self.x, self.y, self.width, self.height)
     t.z = self.z - 5
@@ -6204,6 +6204,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 结束特效
   #--------------------------------------------------------------------------
   def finish_effect(sym)
+    return if !@effects.include?(sym)
     m = ("finish_effect_" + sym.to_s).to_sym
     method(m).call(@params[sym]) if respond_to?(m)
     @effects.delete(sym)
