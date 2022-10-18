@@ -2,15 +2,15 @@
 # ■ 事件消息机制 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventMsg"] = "1.5.2"
+$imported["EAGLE-EventMsg"] = "1.6.0"
 #==============================================================================
-# - 2022.5.5.23 现在可以正常把事件消息存档了
+# - 2022.10.18.23 为msg方法新增扩展参数
 #==============================================================================
 # - 本插件新增消息机制，以直接触发事件中的指令
 #-----------------------------------------------------------------------------
 # ○ 地图的事件
 #-----------------------------------------------------------------------------
-# - 对于 Game_Event 对象，利用 msg(LABEL[, cur_page]) 方法，并行调用指定指令序列
+# - 对于 Game_Event 对象，利用 msg(LABEL[, cur_page, ps]) 方法，并行调用指定指令序列
 #
 #    其中 LABEL 为事件中的标签内容的字符串
 #               需要与 事件指令-标签 中所写的内容完全一致，包括前后空格
@@ -19,6 +19,12 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #                  传入 true，则只在当前激活的事件页中搜索 LABEL 标签
 #                  可省略，默认传入 false
 #
+#    其中 ps 传入扩展参数Hash，具体如下，可省略
+#
+#        :player => Game_Character类对象（比如 $game_map.events[1]）
+#                  # 若设置，则将用该事件对象替换消息中全部事件指令的“玩家”
+#
+#--------------------------------------------------
 # 【运行逻辑】
 #
 #    1. 在目标事件页（无视事件触发条件）中搜索内容为 LABEL 的标签
@@ -29,7 +35,7 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #
 #    4. 当成功找到标签时，msg 方法返回 true，否则返回 false
 #
-#
+#--------------------------------------------------
 # 【示例】
 #
 #   当前地图的 1 号事件的第 2 页的指令列表如下
@@ -48,7 +54,7 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #
 #  → 若在另一事件中调用事件脚本 $game_map.events[1].msg("B")，则只显示 测试语句4
 #
-#
+#--------------------------------------------------
 # 【注意】
 #
 #   1. 为了保证事件的等待指令有意义，并且不出现明显的操作延时感，
@@ -58,14 +64,14 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #
 #   3. 事件切换页面后，仅在当前页查找的全部消息将终止执行。
 #
-#
+#--------------------------------------------------
 # 【特殊指令：特定功能的标签】
 #
 #   1. 编写内容为 RESTART 的标签指令，在读取到该标签时，将立即从头开始执行当前消息。
 #        可放置于 END 标签指令前，用来制作循环执行的消息。
 #      注意：中止事件处理依然能够强行结束消息。
 #
-#
+#--------------------------------------------------
 # 【特殊指令：扩展的标签跳转】
 #
 #   - 对于事件消息中的【标签跳转】指令，将在本消息的初始查找范围内尝试跳转，
@@ -78,7 +84,7 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #
 #   - 如果想在跳转后回到当前消息，请见【事件脚本：仿公共事件调用消息】。
 #
-#
+#--------------------------------------------------
 # 【特殊指令：自动触发的消息】
 #
 #   - 在一些特定场合，可能需要地图事件中的消息能够自动执行，
@@ -103,16 +109,29 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #
 #   - 注意：在调用前会先强制终止本事件已在执行的同名消息！
 #
+#--------------------------------------------------
+# 【事件脚本：消息执行中途的便捷调用】
 #
-# 【事件脚本：仿公共事件调用消息】
+#    msg_player  → 获取消息触发时所绑定的 :player 对象，若没有，则返回player
+#    player      → 等价于 $game_player
+#    event       → 等价于 $game_map.events[@event_id]
 #
-#   - 编写内容为 msg(LABEL, wait=false) 的事件脚本来调用当前页中的 LABEL 消息
-#        若wait传入true，则会等待消息结束，否则继续执行当前事件。
+#--------------------------------------------------
+# 【事件脚本：调用消息】
 #
-#      注意：该调用是直接另开一个并行处理以执行新的消息，
+#   - 编写事件脚本 msg(LABEL, wait=false, eid=0, ps={})
+#     来调用指定事件的当前页的 LABEL 消息
+#
+#       其中 wait 传入true，则会等待消息结束，否则继续执行当前事件
+#       其中 eid 传入 0 时代表当前事件，否则为当前地图的指定 eid 号事件
+#       其中 ps 为扩展指令Hash，同 event.msg 中的参数一致
+#
+#    注意：
+#      1. 该调用是直接另开一个并行处理以执行新的消息，
 #           当 wait 传入 false 时，当前消息依然继续执行。
+#      2. 如果当前已经是在消息中了，则它的ps参数会拷贝一份传递给msg的目标事件
 #
-#
+#--------------------------------------------------
 # 【事件脚本：实时判定的消息跳转】
 #
 #   - 为了制作有限状态机，需要能够实时监测状态之间的切换，
@@ -135,7 +154,7 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #   - 注意：每次发生跳转后，将清空全部的绑定，且丢弃之前消息的剩余指令。
 #      （对于状态机来说，每个状态的跳转情况都应该独立设计。）
 #
-#
+#--------------------------------------------------
 # 【高级：消息的判定与控制】
 #
 #    event.msg?(LABEL=nil) → 当指定事件正在执行LABEL消息时，返回true
@@ -152,6 +171,7 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #    event.msg_continue(LABEL=nil) → 继续执行LABEL消息
 #                                    若 LABEL 传入 nil，则为事件的全部消息
 #
+#--------------------------------------------------
 # 【高级：定时触发的消息】
 #
 #   - 有一些消息可能需要它能够延时执行，但专门为了它去创建全局计时器总有些麻烦，
@@ -170,7 +190,7 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #-----------------------------------------------------------------------------
 # - 利用脚本调用公共事件中的消息
 #
-#      $game_map.msg_common(LABLE[, common_event])
+#      $game_map.msg_common(LABLE[, common_event, ps])
 #
 #    其中 LABEL 同上，与事件中的标签文本完全一致的字符串
 #
@@ -178,6 +198,8 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #                      传入数组，将在数组范围内按序查询公共事件，并调用第一组匹配
 #                      传入正整数，将在该ID的公共事件内查询
 #                      可省略，默认传入 0
+#
+#    其中 ps 同上，可设置一些扩展参数
 #
 #    当成功查找到LABEL时，将返回 true 并立即执行；否则返回 false
 #
@@ -190,13 +212,15 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 #-----------------------------------------------------------------------------
 # - 利用脚本调用敌群事件中的消息
 #
-#      $game_troop.msg(LABEL[, cond_met])
+#      $game_troop.msg(LABEL[, cond_met, ps])
 #
 #    其中 LABEL 同上，与事件中的标签文本完全一致的字符串
 #
 #    其中 cond_met 传入 true 时，将只在满足条件的全部事件页中搜索
 #                  传入 false 时，将在全部事件页中搜索
 #                  可省略，默认传入 true
+#
+#    其中 ps 同上，可设置一些扩展参数
 #
 # 【注意】
 #
@@ -206,17 +230,6 @@ $imported["EAGLE-EventMsg"] = "1.5.2"
 # 【高级】
 #
 #    $game_troop.msg?  → 当敌群存在任意正在执行的消息时，返回true
-#
-#-----------------------------------------------------------------------------
-# ○ 高级
-#-----------------------------------------------------------------------------
-# - 新增了部分便利的全局方法，用于获取指定对象
-#
-#    $game_temp.last_menu_item → 获取最近一次在菜单中所使用物品/技能的实例
-#
-#    $game_map.forward_event_id(chara) → 获取 chara 面前一格事件的ID
-#       其中 chara 为 Game_CharacterBase 对象
-#       如 $game_player 代表玩家，$game_map.events[id] 代表id号事件
 #
 #==============================================================================
 
@@ -252,6 +265,30 @@ module EVENT_MSG
     eagle_list.push( RPG::EventCommand.new )
     return eagle_list
   end
+
+  #============================================================================
+  # ■ Data_EagleMsg
+  #============================================================================
+  class Data_EagleMsg 
+    def initialize(ps);  @ps = ps;  end 
+    # 消息名称
+    def label;   @ps[:label];  end
+    # 保存原本的全部指令列表，用于做跳转
+    def lists;   @ps[:lists];  end 
+    # 将替换消息中事件指令的“玩家”
+    def player;  @ps[:player]; end  
+    # 参数复制给ps
+    def copy_to(ps)
+      ps[:player] = @ps[:player]
+    end 
+  end
+  #--------------------------------------------------------------------------
+  # ● 生成消息数据包
+  #--------------------------------------------------------------------------
+  def self.new_msg_data(ps)
+    Data_EagleMsg.new(ps)
+  end
+
 #==============================================================================
 # ■ 注入用的实例方法
 #==============================================================================
@@ -267,18 +304,18 @@ module INTO_CLASS
   #--------------------------------------------------------------------------
   # ● 新增消息
   #--------------------------------------------------------------------------
-  def msg_trigger_call(label, lists)
-    label = label.to_s
-    list = EVENT_MSG.find_label_list(label, lists)
+  def msg_trigger_call(params)
+    list = EVENT_MSG.find_label_list(params[:label], params[:lists])
     return false if list == nil
-    @eagle_msg_lists.push( [label, list, lists] )
+    d = EVENT_MSG.new_msg_data(params)
+    @eagle_msg_lists.push([list, d]) 
     return true
   end
   #--------------------------------------------------------------------------
   # ● 当前正在执行指定消息？
   #--------------------------------------------------------------------------
   def msg_trigger_running?(label)
-    @eagle_interpreters.any? { |i| i.running? && i.eagle_label == label }
+    @eagle_interpreters.any? { |i| i.running? && i.msg_label == label }
   end
   #--------------------------------------------------------------------------
   # ● 更新消息
@@ -288,17 +325,14 @@ module INTO_CLASS
     if ! @eagle_msg_lists.empty?
       list = @eagle_msg_lists.shift
       i = msg_get_valid_interpreter
-      i.eagle_label = list[0]
-      i.setup(list[1], @eagle_msg_cur_event_id, list[2])
+      i.setup(list[0], @eagle_msg_cur_event_id, list[1])
     end
   end
   #--------------------------------------------------------------------------
   # ● 获取一个可用的解释器
   #--------------------------------------------------------------------------
   def msg_get_valid_interpreter
-    @eagle_interpreters.each do |i|
-      return i if ! i.running?
-    end
+    @eagle_interpreters.each { |i| return i if !i.running? }
     i = Game_Interpreter_EagleMsg.new
     @eagle_interpreters.push(i)
     return i
@@ -318,7 +352,7 @@ module INTO_CLASS
     if label == nil
       @eagle_interpreters.each { |i| i.halt = true; i.halt_t = t }
     else
-      inters = @eagle_interpreters.select { |i| label == i.eagle_label }
+      inters = @eagle_interpreters.select { |i| label == i.msg_label }
       inters.each { |i| i.halt = true; i.halt_t = t }
     end
   end
@@ -329,7 +363,7 @@ module INTO_CLASS
     if label == nil
       @eagle_interpreters.each { |i| i.halt = false }
     else
-      inters = @eagle_interpreters.select { |i| label == i.eagle_label }
+      inters = @eagle_interpreters.select { |i| label == i.msg_label }
       inters.each { |i| i.halt = false }
     end
   end
@@ -340,28 +374,41 @@ module INTO_CLASS
     if label == nil
       @eagle_interpreters.each { |i| i.finish }
     else
-      inters = @eagle_interpreters.select { |i| label == i.eagle_label }
+      inters = @eagle_interpreters.select { |i| label == i.msg_label }
       inters.each { |i| i.finish }
     end
   end
   def msg_abort(label = nil); msg_fin(label); end
 end # end of INTO_CLASS
+
 #==============================================================================
 # ■ Game_Interpreter_EagleMsg
 #==============================================================================
 class Game_Interpreter_EagleMsg < Game_Interpreter
-  attr_accessor  :eagle_label  #（外部修改）当前执行的消息
   attr_accessor  :halt, :halt_t
   #--------------------------------------------------------------------------
   # ● 设置事件
   #--------------------------------------------------------------------------
-  def setup(list, event_id = 0, lists = nil)
+  def setup(list, event_id = 0, data = nil)
     # list 是 消息标签 到 第一个END 之间的内容（还额外增加了一个空指令用于结束）
-    @lists = lists  # 保存原本的全部指令列表，用于做跳转
+    @msg_data = data  # 当前执行的消息的数据
     @halt = false
     @halt_t = nil
     @gotos = []  # 绑定的消息跳转
     super(list, event_id)
+  end
+  #--------------------------------------------------------------------------
+  # ● 当前执行的消息
+  #--------------------------------------------------------------------------
+  def msg_label
+    return nil if @msg_data == nil 
+    @msg_data.label
+  end
+  #--------------------------------------------------------------------------
+  # ● 仅在一页事件页中查找？
+  #--------------------------------------------------------------------------
+  def lists_only_one?
+    @msg_data.lists.size == 1
   end
   #--------------------------------------------------------------------------
   # ● 储存实例
@@ -370,7 +417,7 @@ class Game_Interpreter_EagleMsg < Game_Interpreter
   #--------------------------------------------------------------------------
   def marshal_dump
     [@depth, @map_id, @event_id, @list, @index + 1, @branch,
-     @eagle_label, @lists, @halt, @halt_t, @gotos]
+     @msg_data, @halt, @halt_t, @gotos]
   end
   #--------------------------------------------------------------------------
   # ● 读取实例
@@ -379,14 +426,8 @@ class Game_Interpreter_EagleMsg < Game_Interpreter
   #--------------------------------------------------------------------------
   def marshal_load(obj)
     @depth, @map_id, @event_id, @list, @index, @branch, \
-    @eagle_label, @lists, @halt, @halt_t, @gotos = obj
+    @msg_data, @halt, @halt_t, @gotos = obj
     create_fiber
-  end
-  #--------------------------------------------------------------------------
-  # ● 仅在一页事件页中查找？
-  #--------------------------------------------------------------------------
-  def lists_only_one?
-    @lists.size == 1
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -421,6 +462,20 @@ class Game_Interpreter_EagleMsg < Game_Interpreter
     @fiber = nil
   end
   #--------------------------------------------------------------------------
+  # ● 获取事件
+  #     param : -1 则玩家、0 则本事件、其他 则是指定的事件ID 
+  #--------------------------------------------------------------------------
+  def get_character(param)
+    if $game_party.in_battle
+      nil
+    elsif param < 0
+      msg_player
+    else
+      events = same_map? ? $game_map.events : {}
+      events[param > 0 ? param : @event_id]
+    end
+  end
+  #--------------------------------------------------------------------------
   # ● 添加标签
   #--------------------------------------------------------------------------
   def command_118
@@ -438,11 +493,10 @@ class Game_Interpreter_EagleMsg < Game_Interpreter
     if @eagle_index_before != @index
       return
     end
-    if @lists  # 跳转到别的事件消息，同时覆盖当前的执行
-      list = EVENT_MSG.find_label_list(label_name, @lists)
+    if @msg_data.lists  # 跳转到别的事件消息，同时覆盖当前的执行
+      list = EVENT_MSG.find_label_list(label_name, @msg_data.lists)
       if list
-        self.eagle_label = label_name
-        setup(list, @event_id, @lists)
+        setup(list, @event_id, @msg_data)
       else  # 未找到，报错，并继续当前的执行
         p "【错误】在执行#{@map_id}号地图#{@event_id}号事件的标签跳转：#{label_name}时："
         p " - 未找到目标标签，无法进行事件消息的切换。"
@@ -465,10 +519,9 @@ class Game_Interpreter_EagleMsg < Game_Interpreter
   def check_goto
     @gotos.each do |d|
       next if eagle_eval(d.cond) != true
-      list = EVENT_MSG.find_label_list(d.label, @lists)
+      list = EVENT_MSG.find_label_list(d.label, @msg_data.lists)
       if list
-        self.eagle_label = d.label
-        setup(list, @event_id, @lists)
+        setup(list, @event_id, @msg_data)
       end
     end
   end
@@ -488,6 +541,28 @@ class Game_Interpreter_EagleMsg < Game_Interpreter
     end
     return false
   end
+  #--------------------------------------------------------------------------
+  # ● 便捷调用
+  #--------------------------------------------------------------------------
+  def msg_player
+    if @msg_data && @msg_data.player
+      return @msg_data.player
+    end
+    return player
+  end
+  def player 
+    $game_player
+  end 
+  def event 
+    $game_map.events[@event_id]
+  end 
+  #--------------------------------------------------------------------------
+  # ● 事件脚本-调用当前页的消息
+  #--------------------------------------------------------------------------
+  def msg(label, wait = false, eid = 0, ps = {})
+    @msg_data.copy_to(ps)
+    super(label, wait, eid, ps)
+  end
 end # end of Game_Interpreter_EagleMsg
 #==============================================================================
 # ■ Data_EagleMsg_GOTO
@@ -504,34 +579,7 @@ class Data_EagleMsg_GOTO
   end
 end
 end # end of EVENT_MSG
-#==============================================================================
-# ■ Scene_ItemBase
-#==============================================================================
-class Scene_ItemBase < Scene_MenuBase
-  #--------------------------------------------------------------------------
-  # ● 公共事件预定判定
-  #    如果预约了事件的调用，则切换到地图画面。
-  #--------------------------------------------------------------------------
-  alias eagle_event_msg_trigger_check_common_event check_common_event
-  def check_common_event
-    $game_temp.last_menu_item = item
-    eagle_event_msg_trigger_check_common_event
-  end
-end
-#==============================================================================
-# ■ Game_Temp
-#==============================================================================
-class Game_Temp
-  attr_accessor :last_menu_item
-  #--------------------------------------------------------------------------
-  # ● 初始化对象
-  #--------------------------------------------------------------------------
-  alias eagle_event_msg_trigger_init initialize
-  def initialize
-    eagle_event_msg_trigger_init
-    @last_menu_item = nil
-  end
-end
+
 #==============================================================================
 # ■ Game_Troop
 #==============================================================================
@@ -548,7 +596,7 @@ class Game_Troop < Game_Unit
   #--------------------------------------------------------------------------
   # ● 新增消息
   #--------------------------------------------------------------------------
-  def msg(label, cond_met = true)
+  def msg(label, cond_met = true, ps = {})
     return true if msg_trigger_running?(label)
     lists = []
     troop.pages.each do |page|
@@ -557,7 +605,9 @@ class Game_Troop < Game_Unit
       end
       lists.push(page.list)
     end
-    return msg_trigger_call(label, lists)
+    ps[:label] = label
+    ps[:lists] = lists
+    return msg_trigger_call(ps)
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -582,18 +632,9 @@ class Game_Map
     eagle_event_msg_trigger_init
   end
   #--------------------------------------------------------------------------
-  # ○ 获取角色面前一格的事件ID
-  #--------------------------------------------------------------------------
-  def forward_event_id(chara)
-    x = $game_map.round_x_with_direction(chara.x, chara.direction)
-    y = $game_map.round_y_with_direction(chara.y, chara.direction)
-    events = events_xy(x, y)
-    return events.empty? ? 0 : events[0].id
-  end
-  #--------------------------------------------------------------------------
   # ● 新增消息
   #--------------------------------------------------------------------------
-  def msg_common(label, common_event_id = 0)
+  def msg_common(label, common_event_id = 0, ps = {})
     return true if msg_trigger_running?(label)
     lists = []
     if common_event_id.is_a?(Array)
@@ -605,7 +646,9 @@ class Game_Map
     else
       lists.push( $data_common_events[common_event_id].list )
     end
-    return msg_trigger_call(label, lists)
+    ps[:label] = label
+    ps[:lists] = lists
+    return msg_trigger_call(ps)
   end
   #--------------------------------------------------------------------------
   # ● 更新事件
@@ -648,11 +691,13 @@ class Game_Event
   #--------------------------------------------------------------------------
   # ● 新增消息
   #--------------------------------------------------------------------------
-  def msg(label, cur_page = false)
+  def msg(label, cur_page = false, ps = {})
     return true if msg_trigger_running?(label)
     return false if cur_page && @page.nil?
     lists = (cur_page ? [@page.list] : @event.pages.collect { |e| e.list })
-    return msg_trigger_call(label, lists)
+    ps[:label] = label
+    ps[:lists] = lists
+    return msg_trigger_call(ps)
   end
   #--------------------------------------------------------------------------
   # ● 新增定时消息
@@ -723,14 +768,16 @@ class Game_Interpreter
   #--------------------------------------------------------------------------
   # ● 事件脚本-调用当前页的消息
   #--------------------------------------------------------------------------
-  def msg(label, wait = false)
-    e = $game_map.events[@event_id]
-    return if e == nil
-    e.msg(label, true)
-    while e.msg?(label)
-      break if wait == false
-      Fiber.yield
+  def msg(label, wait = false, eid = 0, ps = {})
+    if eid == 0
+      e = $game_map.events[@event_id]
+    else 
+      e = $game_map.events[eid]
     end
+    return if e == nil
+    e.msg(label, true, ps)
+    Fiber.yield
+    Fiber.yield while e.msg?(label) if wait 
   end
   #--------------------------------------------------------------------------
   # ● 事件脚本-绑定跳转

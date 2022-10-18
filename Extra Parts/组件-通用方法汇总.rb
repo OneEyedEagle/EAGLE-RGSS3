@@ -2,9 +2,9 @@
 # ■ 组件-通用方法汇总 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.1.2"
+$imported["EAGLE-CommonMethods"] = "1.1.3"
 #==============================================================================
-# - 2022.9.24.18 新增图片精灵的获取
+# - 2022.10.18.20 新增菜单物品使用后的引用
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #---------------------------------------------------------------------------
@@ -123,6 +123,11 @@ $imported["EAGLE-CommonMethods"] = "1.1.2"
 #     若 id 为正整数，则返回敌群中对应序号的敌人的Sprite_Battler
 #     若 id 为负整数，则返回玩家队伍中对应数据库中 |id| 号的角色，若不存在，则返回nil
 #
+#  EAGLE_COMMON.forward_event_id(chara) 
+#   → 获取 chara 面前一格的事件的ID
+#       其中 chara 为 Game_CharacterBase 对象
+#       如 $game_player 代表玩家，$game_map.events[id] 代表id号事件
+#
 #---------------------------------------------------------------------------
 # 【事件页相关】
 #
@@ -143,6 +148,12 @@ $imported["EAGLE-CommonMethods"] = "1.1.2"
 #   → 由指定对象，获取标志字符
 #     比如 get_item_str($data_items[10]) 将返回 "i10"
 #     比如 get_item_str($data_armors[1], 5) 将返回 "5a1"
+#
+#---------------------------------------------------------------------------
+# 【菜单相关】
+#
+#  $game_temp.last_menu_item
+#   → 获取最近一次在菜单中所使用物品/技能的实例
 #
 #==============================================================================
 
@@ -450,7 +461,7 @@ module EAGLE_COMMON
 end
 
 #==============================================================================
-# □ 地图数据相关
+# □ 地图相关
 #===============================================================================
 module EAGLE_COMMON
   #--------------------------------------------------------------------------
@@ -535,6 +546,16 @@ module EAGLE_COMMON
       return nil 
     end
   end
+
+  #--------------------------------------------------------------------------
+  # ○ 获取角色面前一格的事件ID
+  #--------------------------------------------------------------------------
+  def self.forward_event_id(chara)
+    x = $game_map.round_x_with_direction(chara.x, chara.direction)
+    y = $game_map.round_y_with_direction(chara.y, chara.direction)
+    events = $game_map.events_xy(x, y)
+    return events.empty? ? 0 : events[0].id
+  end
 end
 class Spriteset_Map
   attr_reader  :character_sprites, :picture_sprites
@@ -596,5 +617,32 @@ module EAGLE_COMMON
     t = _type + item.id.to_s
     t = num.to_s + t if num != 1
     return t
+  end
+end
+
+
+#==============================================================================
+# □ 菜单相关
+#===============================================================================
+class Game_Temp
+  attr_accessor :last_menu_item
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  alias eagle_common_functions_init initialize
+  def initialize
+    eagle_common_functions_init
+    @last_menu_item = nil
+  end
+end
+class Scene_ItemBase < Scene_MenuBase
+  #--------------------------------------------------------------------------
+  # ● 公共事件预定判定
+  #    如果预约了事件的调用，则切换到地图画面。
+  #--------------------------------------------------------------------------
+  alias eagle_common_functions_check_common_event check_common_event
+  def check_common_event
+    $game_temp.last_menu_item = item
+    eagle_common_functions_check_common_event
   end
 end
