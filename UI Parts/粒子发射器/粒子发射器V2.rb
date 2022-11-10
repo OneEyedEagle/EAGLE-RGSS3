@@ -2,9 +2,9 @@
 # ■ 粒子发射器V2 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Particle"] = true
+$imported["EAGLE-Particle"] = "2.0.1"
 #==============================================================================
-# - 2022.1.18.23 修复发射器无法在短时间内重复start的bug
+# - 2022.11.6.19  
 #==============================================================================
 # - 本插件新增了一个发射粒子的系统
 #------------------------------------------------------------------------------
@@ -340,7 +340,7 @@ class Particle_Emitter
   #--------------------------------------------------------------------------
   def dispose
     finish
-    @particles.each { |s| s.finish; @@particles_fin.push(s) }
+    @particles.each { |t| delete_particle(t) }
     @particles.clear
     @template.dispose
     @viewport = nil
@@ -361,14 +361,11 @@ class Particle_Emitter
       @template.get_new_num_once.times { add_particle }
     end
     @particles.each do |t|
-      if t.fin?
-        @@particles_fin.push(t)
-        next t.finish
-      end
+      next delete_particle(t) if t.fin?
       # 计算粒子的更新间隔
       next if (t.wait_count += 1) < @template.get_update_wait
       t.wait_count = 0
-      t.update
+      update_particle(t)
     end
     @particles.delete_if { |t| t.fin? }
     @template.update(@particles)
@@ -378,12 +375,29 @@ class Particle_Emitter
   #--------------------------------------------------------------------------
   def add_particle
     if @@particles_fin.empty?
-      s = Sprite_Particle.new(self)
+      s = Sprite_Particle.new
     else
       s = @@particles_fin.shift
-      s.start(self)
     end
-    @particles.push(s) if s
+    s.viewport = @viewport
+    s.start
+    @template.start_particle(s)
+    @particles.push(s)
+  end
+  #--------------------------------------------------------------------------
+  # ● 删去一个指定粒子
+  #--------------------------------------------------------------------------
+  def delete_particle(t)
+    @@particles_fin.push(t)
+    @template.finish_particle(t)
+    t.viewport = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新指定粒子
+  #--------------------------------------------------------------------------
+  def update_particle(t)
+    @template.update_particle(t)
+    t.update
   end
 end
 
@@ -394,49 +408,17 @@ class Sprite_Particle < Sprite
   attr_reader   :params
   attr_accessor :wait_count
   #--------------------------------------------------------------------------
-  # ● 初始化
-  #--------------------------------------------------------------------------
-  def initialize(emitter)
-    super(emitter.viewport)
-    start(emitter)
-  end
-  #--------------------------------------------------------------------------
-  # ● 释放
-  #--------------------------------------------------------------------------
-  def dispose
-    self.viewport = nil
-    self.bitmap.dispose if self.bitmap
-    super
-  end
-  #--------------------------------------------------------------------------
   # ● 启动
   #--------------------------------------------------------------------------
-  def start(emitter)
-    self.viewport = emitter.viewport
-    @emitter  = emitter
-    @params   = { :life => 0 } # 还会存在的时间
+  def start
+    @params = { :life => 0 } # 还会存在的时间
     @wait_count = 0  # 更新等待用计数（emitter内使用）
-    @emitter.template.start_particle(self)
-    update
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新
-  #--------------------------------------------------------------------------
-  def update
-    super
-    @emitter.template.update_particle(self)
   end
   #--------------------------------------------------------------------------
   # ● 结束？
   #--------------------------------------------------------------------------
   def fin?
     @params[:life] == 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 结束
-  #--------------------------------------------------------------------------
-  def finish
-    @emitter.template.finish_particle(self)
   end
 end
 
@@ -862,9 +844,6 @@ class ParticleTemplate_OnPlayerFoot < ParticleTemplate_OnMap
     @params[:z] = 0
     @params[:pos_rect] = Rect.new(8, 26, 16, 6)  # 在基础地图格子位置上的偏移值
   end
-  #--------------------------------------------------------------------------
-  # ● 粒子的总数
-  #--------------------------------------------------------------------------
   def get_total_num
     @params[:total]
   end
@@ -900,18 +879,12 @@ class ParticleTemplate_BitmapNoDup < ParticleTemplate
     @params[:xys] = []  # 坐标集合Vector
     # 注意：需要保证 @xys元素个数 和 @bitmaps元素个数 相同
   end
-  #--------------------------------------------------------------------------
-  # ● 粒子初始位置
-  #--------------------------------------------------------------------------
   def init_xy
     # （屏幕坐标）初始显示位置
     @particle.params[:pos] = @params[:xys].shift
     # 移动中所产生的偏移值
     @particle.params[:pos_offset] = Vector.new
   end
-  #--------------------------------------------------------------------------
-  # ● 返回一个位图对象
-  #--------------------------------------------------------------------------
   def get_bitmap
     return Cache.empty_bitmap if @params[:bitmaps].empty?
     return @params[:bitmaps].shift

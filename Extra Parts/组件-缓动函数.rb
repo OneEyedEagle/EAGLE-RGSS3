@@ -2,9 +2,9 @@
 # ■ 组件-缓动函数 by 老鹰（http://oneeyedeagle.lofter.com/）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-EasingFunction"] = true
+$imported["EAGLE-EasingFunction"] = "1.0.1"
 #=============================================================================
-# - 2020.9.7.15
+# - 2022.11.10.22 修复三角函数类型的缓动函数返回值错误的bug
 #=============================================================================
 # - 原型参考：https://easings.net/
 #=============================================================================
@@ -45,13 +45,14 @@ module EasingFuction
   end
 
   def self.easeInSine(x)
-    return 1 - EAGLE.cos( (x * Math::PI) / 2 )
+    # x 为 0~1 的浮点数，但三角函数需要传入 0~90 度
+    return 1 - EAGLE.cos( x * 90 )
   end
   def self.easeOutSine(x)
-    return EAGLE.sin( (x * Math::PI) / 2 )
+    return EAGLE.sin( x * 90 )
   end
   def self.easeInOutSine(x)
-    return - (EAGLE.cos(Math::PI * x) - 1) / 2
+    return - (EAGLE.cos(x * 90) - 1) / 2
   end
 
   def self.easeInQuad(x)
