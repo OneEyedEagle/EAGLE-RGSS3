@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.5"
+$imported["EAGLE-MessageEX"] = "1.9.6"
 #=============================================================================
-# - 2022.10.8.13 修复用setm结束文字特效时，文字如未开启特效则报错的bug
+# - 2022.11.19.19 修复暗色背景下不显示背景的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -3462,7 +3462,10 @@ class Window_EagleMessage < Window_Base
   # ● 更新背景精灵的缩放
   #--------------------------------------------------------------------------
   def update_back_sprite_zoom(max_w = nil, max_h = nil)
-    return if @background != 0  # 正常背景下，使用了图片背景，才进行缩放
+    if @background != 0  # 正常背景下，使用了图片背景，才进行缩放
+      @back_sprite.zoom_x = @back_sprite.zoom_y = 1
+      return 
+    end
     if max_w == nil
       @back_sprite.zoom_x = 1
     else
