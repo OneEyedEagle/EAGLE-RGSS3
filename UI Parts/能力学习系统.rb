@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.2.1"
+$imported["EAGLE-AbilityLearn"] = "1.3.0"
 #==============================================================================
-# - 2022.10.7.17 增强兼容性
+# - 2022.11.26.10 新增背景绘制额外连线
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
 #------------------------------------------------------------------------------
@@ -185,6 +185,13 @@ PARAMS[0] = {  # 这里设置 0号角色 的一些参数
   #【可选】是否显示网格背景（默认 true，若填 false 则不显示）
   # （该网格背景显示在 :bg 上方，显示在能力图标等的下方）
   :grid => true,
+  #------------------------------------------------------------------------
+  #【可选】额外绘制的连线，不产生任何影响
+  #  [能力名称1, 能力名称2, 线条粗细（默认1）, 
+  #   线条类型（默认 "01"）, 线条颜色（默认Color.new(255,255,255,150)）]
+  # 具体含义请见【组件-形状绘制 by老鹰】中的线段绘制
+  # 如： :lines => [ [1,2], [1,3,1,"011",Color.new(255,0,0)] ],
+  :lines => [],
 }
 
 # 至此，0号角色设置完了
@@ -208,7 +215,11 @@ end  # 必须的模块结尾，不要漏掉
 #--------------------------------------------------------------------------
 # 【高级】
 #
-# - 对于Game_Actor对象，用 $game_actors[1].add_ap(v) 为 1号角色增加 v 点AP
+# - 对于Game_Actor对象：
+#
+#     $game_actors[1].add_ap(v) 为 1号角色增加 v 点AP
+#
+#     $game_actors[1].ability_unlock?(name) 检查是否解锁了name能力
 #
 # - 利用全局脚本 $game_party.add_ap(v) 为队伍中的全部角色增加 v 点AP
 #
@@ -678,6 +689,7 @@ module ABILITY_LEARN
   def self.eagle_eval(str, actor_id = nil)
     actor_id ||= @actor_id
     actor = $game_actors[actor_id] rescue nil
+    as = $game_actors
     EAGLE_COMMON.eagle_eval(str)
   end
 end
@@ -916,6 +928,17 @@ class << ABILITY_LEARN
         end
         # 绘制从s1到s2的直线
         EAGLE.DDALine(@sprite_lines.bitmap, s1.x,s1.y, s2.x, s2.y, 1, t, c)
+      end
+    end
+    ls = ABILITY_LEARN.get_params(@actor_id)[:lines]
+    if ls 
+      ls.each do |v|
+        s1 = @sprites_token[v[0]]
+        s2 = @sprites_token[v[1]]
+        d = v[2] || 1
+        t = v[3] || "01"
+        c = v[4] || Color.new(255,255,255, 150)
+        EAGLE.DDALine(@sprite_lines.bitmap, s1.x,s1.y, s2.x, s2.y, d, t, c)
       end
     end
   end
@@ -1550,6 +1573,12 @@ class Game_Actor
   def level_up
     eagle_ability_learn_level_up
     add_ap(ABILITY_LEARN::AP_LEVEL_UP)
+  end
+  #--------------------------------------------------------------------------
+  # ● 已解锁？
+  #--------------------------------------------------------------------------
+  def ability_unlock?(token_id)
+    @eagle_ability_data.unlock?(token_id)
   end
 end
 

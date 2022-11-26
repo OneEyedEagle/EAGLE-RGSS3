@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CallEvent"] = "1.2.1"
+$imported["EAGLE-CallEvent"] = "1.2.2"
 #==============================================================================
-# - 2022.7.20.21 修复F12后报错的bug
+# - 2022.11.26.14 修复在战斗场景中卡死的bug
 #==============================================================================
 # - 本插件新增了在事件解释器中呼叫任意事件页并执行的事件脚本
 #   （与 呼叫公共事件 效果一致，会等待执行结束）
@@ -245,7 +245,7 @@ module EAGLE
       end
     else # 如果在其他场景
       while true
-        SceneManager.scene.update
+        SceneManager.scene.update_basic
         interpreter.update
         message_window.update
         break if !interpreter.running?
