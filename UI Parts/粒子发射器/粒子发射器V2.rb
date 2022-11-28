@@ -2,9 +2,9 @@
 # ■ 粒子发射器V2 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Particle"] = "2.0.1"
+$imported["EAGLE-Particle"] = "2.1.0"
 #==============================================================================
-# - 2022.11.6.19  
+# - 2022.11.28.23 粒子模板新增:sprites属性，可传入需要作为粒子处理的精灵 
 #==============================================================================
 # - 本插件新增了一个发射粒子的系统
 #------------------------------------------------------------------------------
@@ -350,6 +350,18 @@ class Particle_Emitter
   #--------------------------------------------------------------------------
   def update
     return if @freeze
+    check_new
+    @particles.each do |t|
+      next delete_particle(t) if delete_particle?(t)
+      update_particle(t)
+    end
+    @particles.delete_if { |t| delete_particle?(t) }
+    @template.update(@particles)
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查是否需要生成新粒子
+  #--------------------------------------------------------------------------
+  def check_new 
     # 对于一次性的，完全生成并暂停
     if @active && @template.flag_start_once
       @template.get_total_num.times { add_particle }
@@ -360,65 +372,77 @@ class Particle_Emitter
       @frame_count = 0
       @template.get_new_num_once.times { add_particle }
     end
-    @particles.each do |t|
-      next delete_particle(t) if t.fin?
-      # 计算粒子的更新间隔
-      next if (t.wait_count += 1) < @template.get_update_wait
-      t.wait_count = 0
-      update_particle(t)
-    end
-    @particles.delete_if { |t| t.fin? }
-    @template.update(@particles)
-  end
+  end 
   #--------------------------------------------------------------------------
   # ● 由粒子模板新增一个粒子
   #--------------------------------------------------------------------------
   def add_particle
+    s = get_particle_sprite
+    s.viewport = @viewport
+    @template.start_particle(s)
+    @particles.push(s)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获得一个可用于作为粒子的精灵
+  #--------------------------------------------------------------------------
+  def get_particle_sprite
+    s = @template.get_new_sprite
+    if s 
+      convert_particle(s)
+      s.eparams[:flag_from_sprite] = true
+      return s 
+    end
     if @@particles_fin.empty?
-      s = Sprite_Particle.new
+      s = Sprite.new 
     else
       s = @@particles_fin.shift
     end
-    s.viewport = @viewport
-    s.start
-    @template.start_particle(s)
-    @particles.push(s)
+    convert_particle(s)
+    s
+  end
+  #--------------------------------------------------------------------------
+  # ● 将指定精灵转化为允许粒子发射器使用的格式
+  #--------------------------------------------------------------------------
+  def convert_particle(sprite, ps = {})
+    def sprite.eparams 
+      @eparams
+    end
+    def sprite.eparams=(ps)
+      @eparams = ps 
+    end 
+    sprite.eparams = { 
+      :life => 0, # 还会存在的时间
+      :wait_count => 0, # 更新等待用计数（emitter内使用）
+      :reuse => ps[:reuse] || true,  # 是否允许重复使用
+    } 
   end
   #--------------------------------------------------------------------------
   # ● 删去一个指定粒子
   #--------------------------------------------------------------------------
   def delete_particle(t)
-    @@particles_fin.push(t)
     @template.finish_particle(t)
     t.viewport = nil
+    if t.eparams[:reuse] == true
+      if t.eparmas[:flag_from_sprite] == true  # 如果原来是精灵，则不会放入池
+      else
+        @@particles_fin.push(t)
+      end 
+    else 
+      t.bitmap.dispose if @template.flag_dispose_bitmap && t.bitmap 
+      t.dispose
+    end
+  end
+  def delete_particle?(t)
+    t.eparams[:life] == 0
   end
   #--------------------------------------------------------------------------
   # ● 更新指定粒子
   #--------------------------------------------------------------------------
   def update_particle(t)
+    # 计算粒子的更新间隔
+    return if (t.eparams[:wait_count] += 1) < @template.get_update_wait
+    t.eparams[:wait_count] = 0
     @template.update_particle(t)
-    t.update
-  end
-end
-
-#==============================================================================
-# ■ 单个粒子精灵
-#==============================================================================
-class Sprite_Particle < Sprite
-  attr_reader   :params
-  attr_accessor :wait_count
-  #--------------------------------------------------------------------------
-  # ● 启动
-  #--------------------------------------------------------------------------
-  def start
-    @params = { :life => 0 } # 还会存在的时间
-    @wait_count = 0  # 更新等待用计数（emitter内使用）
-  end
-  #--------------------------------------------------------------------------
-  # ● 结束？
-  #--------------------------------------------------------------------------
-  def fin?
-    @params[:life] == 0
   end
 end
 
@@ -557,7 +581,8 @@ class ParticleTemplate
   # ● 初始化粒子的动态参数
   #--------------------------------------------------------------------------
   def init_settings
-    @params[:bitmaps]  = []               # 位图对象数组
+    @params[:sprites] = []  # 将被用于作为粒子的精灵的数组（不调用它的update）
+    @params[:bitmaps]  = []                 # 位图对象数组
     @params[:pos_rect] = Rect.new(0,0,0,0)  # 粒子生成区域（窗口）
     @params[:force]    = Vector.new(0,0)    # 作用力（加速度）Vector
     # 以下变量均可以传入 VarValue类型 或 数值 或 字符串（会先被eval求值）
@@ -595,7 +620,7 @@ class ParticleTemplate
   end
   #--------------------------------------------------------------------------
   # ● 全部粒子更新完成后，发射器将调用模板的该方法
-  # all_particles = [Sprite_Particle, Sprite_Particle...]
+  # all_particles = [Sprite, Sprite...]
   #--------------------------------------------------------------------------
   def update(all_particles)
   end
@@ -632,6 +657,13 @@ class ParticleTemplate
   #--------------------------------------------------------------------------
   def get_update_wait
     get_value(@params[:update_wait])
+  end
+  #--------------------------------------------------------------------------
+  # ● 由已有的精灵生成一个粒子
+  #--------------------------------------------------------------------------
+  def get_new_sprite
+    return nil if @params[:sprites].empty? 
+    return @params[:sprites].shift
   end
 
   #--------------------------------------------------------------------------
@@ -676,19 +708,22 @@ class ParticleTemplate
   # ● 生命周期初值与每次更新
   #--------------------------------------------------------------------------
   def init_life
-    @particle.params[:life] = get_value(@params[:life]).to_i  # 必须为整数
+    @particle.eparams[:life] = get_value(@params[:life]).to_i  # 必须为整数
   end
   def update_life
-    return if @particle.params[:life] < 0
-    @particle.params[:life] -= 1  # 生命周期减一
+    return if @particle.eparams[:life] < 0
+    @particle.eparams[:life] -= 1  # 生命周期减一
   end
   #--------------------------------------------------------------------------
   # ● 位图初值与每次更新
   #--------------------------------------------------------------------------
   def init_bitmap
-    @particle.bitmap = get_bitmap
-    @particle.ox = @particle.width / 2
-    @particle.oy = @particle.height / 2
+    if @particle.eparams[:flag_from_sprite] == true
+    else
+      @particle.bitmap = get_bitmap if @particle.bitmap == nil
+      @particle.ox = @particle.width / 2
+      @particle.oy = @particle.height / 2
+    end
   end
   def update_bitmap
   end
@@ -703,16 +738,20 @@ class ParticleTemplate
   # ● 显示位置初值与每次更新
   #--------------------------------------------------------------------------
   def init_xy
-    r = @params[:pos_rect]  # 在该矩形内随机一个位置
-    v = Vector.new(r.x, r.y) + Vector.new(rand(r.width), rand(r.height))
+    if @particle.eparams[:flag_from_sprite] == true
+      v = Vector.new(@particle.x+@particle.ox, @particle.y+@particle.oy)
+    else
+      r = @params[:pos_rect]  # 在该矩形内随机一个位置
+      v = Vector.new(r.x, r.y) + Vector.new(rand(r.width), rand(r.height))
+    end
     # （屏幕坐标）初始显示位置
-    @particle.params[:pos] = v
+    @particle.eparams[:pos] = v
     # 移动中所产生的偏移值
-    @particle.params[:pos_offset] = Vector.new
+    @particle.eparams[:pos_offset] = Vector.new
   end
   def update_xy
-    @particle.x = @particle.params[:pos].x + @particle.params[:pos_offset].x
-    @particle.y = @particle.params[:pos].y + @particle.params[:pos_offset].y
+    @particle.x = @particle.eparams[:pos].x + @particle.eparams[:pos_offset].x
+    @particle.y = @particle.eparams[:pos].y + @particle.eparams[:pos_offset].y
   end
   #--------------------------------------------------------------------------
   # ● 移动速度初值与每次更新
@@ -721,52 +760,64 @@ class ParticleTemplate
     theta = get_value(@params[:theta])
     x = Math.cos(theta * Math::PI / 180.0)
     y = Math.sin(theta * Math::PI / 180.0)
-    @particle.params[:dir] = Vector.new(x, y) * get_value(@params[:speed])
+    @particle.eparams[:dir] = Vector.new(x, y) * get_value(@params[:speed])
   end
   def update_speed
     # 计算下一帧的移动位置
-    @particle.params[:pos_offset] += @particle.params[:dir]
+    @particle.eparams[:pos_offset] += @particle.eparams[:dir]
     # 计算下一帧的速度
-    @particle.params[:dir] += @params[:force]
+    @particle.eparams[:dir] += @params[:force]
   end
   #--------------------------------------------------------------------------
   # ● 不透明度初值与每次更新
   #--------------------------------------------------------------------------
   def init_opa
-    @particle.opacity = get_value(@params[:start_opa])
-    @particle.params[:opa_delta] =
-      (@params[:end_opa].v - @particle.opacity) / @particle.params[:life]
+    if @particle.eparams[:flag_from_sprite] == true
+    else
+      @particle.opacity = get_value(@params[:start_opa])
+    end
+    @particle.eparams[:opa_delta] =
+      (@params[:end_opa].v - @particle.opacity) / @particle.eparams[:life]
   end
   def update_opa
-    @particle.opacity += @particle.params[:opa_delta]
+    @particle.opacity += @particle.eparams[:opa_delta]
   end
   #--------------------------------------------------------------------------
   # ● 角度初值与每次更新
   #--------------------------------------------------------------------------
   def init_angle
-    @particle.angle = get_value(@params[:start_angle])
-    @particle.params[:angle_delta] = get_value(@params[:angle]) # 每帧旋转度数
+    if @particle.eparams[:flag_from_sprite] == true
+    else
+      @particle.angle = get_value(@params[:start_angle])
+    end
+    @particle.eparams[:angle_delta] = get_value(@params[:angle]) # 每帧旋转度数
   end
   def update_angle
-    @particle.angle += @particle.params[:angle_delta]
+    @particle.angle += @particle.eparams[:angle_delta]
   end
   #--------------------------------------------------------------------------
   # ● 缩放初值与每次更新
   #--------------------------------------------------------------------------
   def init_zoom
-    @particle.zoom_x = @particle.zoom_y = get_value(@params[:start_zoom])
-    @particle.params[:zoom_delta] =
-    (get_value(@params[:end_zoom]) - @particle.zoom_x) / @particle.params[:life]
+    if @particle.eparams[:flag_from_sprite] == true
+    else
+      @particle.zoom_x = @particle.zoom_y = get_value(@params[:start_zoom])
+    end
+    @particle.eparams[:zoom_delta] =
+    (get_value(@params[:end_zoom]) - @particle.zoom_x) / @particle.eparams[:life]
   end
   def update_zoom
-    @particle.zoom_x += @particle.params[:zoom_delta]
-    @particle.zoom_y += @particle.params[:zoom_delta]
+    @particle.zoom_x += @particle.eparams[:zoom_delta]
+    @particle.zoom_y += @particle.eparams[:zoom_delta]
   end
   #--------------------------------------------------------------------------
   # ● 其它初值与每次更新
   #--------------------------------------------------------------------------
   def init_others
-    @particle.z = get_value(@params[:z])
+    if @particle.eparams[:flag_from_sprite] == true
+    else
+      @particle.z = get_value(@params[:z])
+    end
   end
   def update_others
   end
@@ -788,8 +839,8 @@ class ParticleTemplate_Single_Gravity < ParticleTemplate
     dx = rand * 2 - 1 if dx.to_i == 0
     dy = rand * 2 - 1 if dy.to_i == 0
     r = Math.sqrt(dx * dx + dy * dy)
-    @particle.params[:dir].x += @params[:gravity] * dx * 1.0 / r
-    @particle.params[:dir].y += @params[:gravity] * dy * 1.0 / r
+    @particle.eparams[:dir].x += @params[:gravity] * dx * 1.0 / r
+    @particle.eparams[:dir].y += @params[:gravity] * dy * 1.0 / r
   end
 end
 
@@ -822,11 +873,11 @@ class ParticleTemplate_OnMap < ParticleTemplate
   def init_xy
     super
     _x, _y = @params[:pos_map].rand_pos
-    @particle.params[:pos_map] = Vector.new(_x, _y)
+    @particle.eparams[:pos_map] = Vector.new(_x, _y)
   end
   def update_xy
-    _x = (@particle.params[:pos_map].x - $game_map.display_x) * 32
-    _y = (@particle.params[:pos_map].y - $game_map.display_y) * 32
+    _x = (@particle.eparams[:pos_map].x - $game_map.display_x) * 32
+    _y = (@particle.eparams[:pos_map].y - $game_map.display_y) * 32
     super
     @particle.x += _x
     @particle.y += _y
@@ -881,9 +932,9 @@ class ParticleTemplate_BitmapNoDup < ParticleTemplate
   end
   def init_xy
     # （屏幕坐标）初始显示位置
-    @particle.params[:pos] = @params[:xys].shift
+    @particle.eparams[:pos] = @params[:xys].shift
     # 移动中所产生的偏移值
-    @particle.params[:pos_offset] = Vector.new
+    @particle.eparams[:pos_offset] = Vector.new
   end
   def get_bitmap
     return Cache.empty_bitmap if @params[:bitmaps].empty?
@@ -901,19 +952,19 @@ class ParticleTemplate_ReboundBox < ParticleTemplate
     @params[:rebound_factor] = -1.0   # 反弹因子，速度的改变因子（乘法）
   end
   def update_speed
-    last_dx = @particle.params[:pos_offset].x
-    last_dy = @particle.params[:pos_offset].y
+    last_dx = @particle.eparams[:pos_offset].x
+    last_dy = @particle.eparams[:pos_offset].y
     super
     box = @params[:rebound_box]
-    new_x = @particle.params[:pos].x + @particle.params[:pos_offset].x
-    new_y = @particle.params[:pos].y + @particle.params[:pos_offset].y
+    new_x = @particle.eparams[:pos].x + @particle.eparams[:pos_offset].x
+    new_y = @particle.eparams[:pos].y + @particle.eparams[:pos_offset].y
     if new_x <= box.x or new_x >= box.x + box.width
-      @particle.params[:pos_offset].x = last_dx
-      @particle.params[:dir].x *= @params[:rebound_factor]
+      @particle.eparams[:pos_offset].x = last_dx
+      @particle.eparams[:dir].x *= @params[:rebound_factor]
     end
     if new_y <= box.y or new_y >= box.y + box.height
-      @particle.params[:pos_offset].y = last_dy
-      @particle.params[:dir].y *= @params[:rebound_factor]
+      @particle.eparams[:pos_offset].y = last_dy
+      @particle.eparams[:dir].y *= @params[:rebound_factor]
     end
   end
 end

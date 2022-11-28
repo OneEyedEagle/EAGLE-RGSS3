@@ -2,11 +2,14 @@
 # ■ Add-On 文字四散移出V2 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【粒子发射器V2 by老鹰】之下
 #==============================================================================
-# - 2021.10.18.23 更新
+$imported ||= {}
+$imported["EAGLE-Particle-CharasSpread"] = "2.0.1"
+#==============================================================================
+# - 2022.11.28.23 适配 粒子发射器V2 2.1.0版本
 #==============================================================================
 # - 本插件为 文字精灵组的粒子化 实现了一个简单便捷的调用接口
 #----------------------------------------------------------------------------
-# ○ 若使用了【对话框扩展 by老鹰】，将本插件置于其下
+# ○ 若使用了【对话框扩展 by老鹰】（V1.9.7以上），将本插件置于其下
 #
 # - 为对话框中增加 \pout 转义符，启用后，文本移出时将调用预设粒子模板
 #
@@ -88,37 +91,21 @@ module PARTICLE
     if PARTICLE.emitters[sym]
       f = PARTICLE.emitters[sym].template
     else
-      f = ParticleTemplate_BitmapNoDup.new
+      f = ParticleTemplate.new
     end
-    # 一次性生成完
-    f.flag_start_once = true
-    # 结束后释放位图
-    f.flag_dispose_bitmap = true
-    # 设置显示端口
-    if PARTICLE.emitters[sym]
+    f.flag_start_once = true      # 一次性生成完
+    f.flag_dispose_bitmap = true  # 结束后释放位图
+    if PARTICLE.emitters[sym]     # 设置显示端口
       vp = PARTICLE.emitters[sym].viewport
     else
       vp = Viewport.new
     end
     vp.z = 1000
     vp.add_fast_layer(1, 0) if $RGD # 整合RGD加速
-    # 初始化
-    PARTICLE.setup(sym, f, vp)
-    # 设置模板属性
-    pout_set_template(f, params)
-    # 将文字精灵的拷贝放入模板
-    f.params[:total] = charas.size
-    f.params[:bitmaps] = charas.collect { |s| s.bitmap.dup }
-    f.params[:xys] = charas.collect { |s|
-      x = s.x + s.width/2; y = s.y + s.height/2
-      if s.viewport
-        x += s.viewport.rect.x
-        y += s.viewport.rect.y
-      end
-      Vector.new(x, y)
-    }
-    # 发射器开始工作
-    PARTICLE.start(sym)
+    PARTICLE.setup(sym, f, vp)    # 初始化
+    pout_set_template(f, params)  # 设置模板属性
+    f.params[:sprites] = charas   # 将文字精灵的拷贝放入模板
+    PARTICLE.start(sym)  # 发射器开始工作
   end
 end
 
@@ -145,18 +132,17 @@ class Window_EagleMessage
     if game_message.pout_params[:type] && game_message.pout_params[:type] > 0
       if win_params[:cwo] > 0
         while(!@eagle_chara_sprites.empty?)
-          c = eagle_take_out_a_chara
-          ensure_character_visible(c)
-          c.finish
-          PARTICLE.pout(:msg_charas, [c], game_message.pout_params)
+          s = eagle_take_out_a_chara
+          ensure_character_visible(s)
+          s.free_from_msg
+          PARTICLE.pout(:msg_charas, [s], game_message.pout_params)
           win_params[:cwo].times { Fiber.yield }
         end
       else
         charas = @eagle_chara_sprites.select { |s| !s.finish? }
-        charas.each { |s| s.finish }
+        charas.each { |s| s.free_from_msg }
         PARTICLE.pout(:msg_charas, charas, game_message.pout_params)
       end
-      @eagle_chara_sprites.each { |s| s.move_out }
       @eagle_chara_sprites.clear
     else
       eagle_particle_out_sprites_move_out
@@ -186,16 +172,15 @@ class Window_EagleMessage_Box < Window_Base
       if win_params[:cwo] > 0
         @eagle_chara_sprites.each do |s|
           next if s.finish?
-          s.finish
+          s.free_from_msg
           PARTICLE.pout(:st_charas, [s], pout_params)
           win_params[:cwo].times { Fiber.yield }
         end
       else
         charas = @eagle_chara_sprites.select { |s| !s.finish? }
-        charas.each { |s| s.finish }
+        charas.each { |s| s.free_from_msg }
         PARTICLE.pout(:st_charas, charas, pout_params)
       end
-      @eagle_chara_sprites.each { |s| s.move_out }
       @eagle_chara_sprites.clear
     else
       eagle_particle_out_charas_move_out
@@ -224,8 +209,9 @@ class Spriteset_Choice
   def move_out
     if @pout_params && pout_params[:type] > 0
       charas = @charas.select { |s| !s.finish? }
-      charas.each { |s| s.finish }
+      charas.each { |s| s.free_from_msg }
       PARTICLE.pout("choice_#{@i_w}".to_sym, charas, @pout_params)
+      @charas.clear
     end
     eagle_particle_out_move_out
   end

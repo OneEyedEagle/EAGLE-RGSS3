@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.6"
+$imported["EAGLE-MessageEX"] = "1.9.7"
 #=============================================================================
-# - 2022.11.19.19 修复暗色背景下不显示背景的bug
+# - 2022.11.28.23 文字精灵现在能够更容易被提取出来了
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -6012,6 +6012,13 @@ class Sprite_EagleCharacter < Sprite
     reset(x, y, w, h)
   end
   #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  def dispose
+    self.bitmap.dispose if !self.bitmap.disposed?
+    super
+  end
+  #--------------------------------------------------------------------------
   # ● 获取文字在屏幕上的碰撞矩形（计算了绑定的viewport的位置）
   #--------------------------------------------------------------------------
   def screen_rect
@@ -6040,12 +6047,19 @@ class Sprite_EagleCharacter < Sprite
     @viewport_bind = vp
     self.viewport = vp
   end
+  # 临时解绑与重新绑定
+  def unbind_viewport
+    self.viewport = nil
+  end
+  def rebind_viewport
+    self.viewport = @viewport_bind
+  end
   #--------------------------------------------------------------------------
   # ● 设置绑定的窗口
   #--------------------------------------------------------------------------
   def bind_window(window_bind)
     @window_bind = window_bind
-    self.z = @window_bind.z + 1
+    self.z = @window_bind.z + 1 if @window_bind
   end
   #--------------------------------------------------------------------------
   # ● 设置绑定的绘制参数
@@ -6054,23 +6068,13 @@ class Sprite_EagleCharacter < Sprite
     @eagle_font = font_bind
   end
   #--------------------------------------------------------------------------
-  # ● 取消绑定视图
+  # ● 在位置不变的情况下，文字精灵不再受限于对话框
   #--------------------------------------------------------------------------
-  def unbind_viewport
-    self.viewport = nil
-  end
-  #--------------------------------------------------------------------------
-  # ● 重新绑定视图
-  #--------------------------------------------------------------------------
-  def rebind_viewport
-    self.viewport = @viewport_bind
-  end
-  #--------------------------------------------------------------------------
-  # ● 释放
-  #--------------------------------------------------------------------------
-  def dispose
-    self.bitmap.dispose if !self.bitmap.disposed?
-    super
+  def free_from_msg
+    reset_oxy(7)
+    bind_viewport(nil) # 取消视图，确保不会出现资源崩溃，且不再限制可见范围
+    update_position    # 更新一次位置，用于刷新保存的@x0和@_ox
+    @window_bind = nil # 取消窗口的绑定
   end
   #--------------------------------------------------------------------------
   # ● 重置
@@ -6090,12 +6094,12 @@ class Sprite_EagleCharacter < Sprite
     # 重置参数
     @dx = 0; @dy = 0 # 动态移动时的偏移值
     @flag_first_move_in = true # 第一次移入？
-    @flag_update_pos = true # 需要时刻更新位置？
+    @flag_update_pos = true # 需要更新位置？
     @flag_move = nil # 在移动中？
     @flag_in_charapool = false # 已经被放入文字池？
     # 重置特效参数
     @effects = {} # effect_sym => param_string
-    @params = {} # effect_sym => param_has
+    @effect_params = {} # effect_sym => param_has
     # 重置精灵参数
     self.src_rect = Rect.new(0,0,self.width,self.height)
     self.zoom_x = self.zoom_y = 1.0
@@ -6176,9 +6180,9 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def start_effect(sym, param_s)
     @effects[sym] = param_s
-    @params[sym] = init_effect_params(sym).dup # 初始化
+    @effect_params[sym] = init_effect_params(sym).dup # 初始化
     m = ("start_effect_" + sym.to_s).to_sym
-    method(m).call(@params[sym], param_s.dup) if respond_to?(m)
+    method(m).call(@effect_params[sym], param_s.dup) if respond_to?(m)
   end
   # def start_effect_code(param)  code → 转义符
   # end
@@ -6188,7 +6192,7 @@ class Sprite_EagleCharacter < Sprite
   def update_effects
     @effects.each { |sym, param_s|
       m = ("update_effect_" + sym.to_s).to_sym
-      method(m).call(@params[sym]) if respond_to?(m)
+      method(m).call(@effect_params[sym]) if respond_to?(m)
     }
   end
   # def update_effect_code(param)  code → 转义符
@@ -6199,7 +6203,7 @@ class Sprite_EagleCharacter < Sprite
   def finish_effects
     @effects.each { |sym, param|
       m = ("finish_effect_" + sym.to_s).to_sym
-      method(m).call(@params[sym]) if respond_to?(m)
+      method(m).call(@effect_params[sym]) if respond_to?(m)
     }
     @effects.clear
   end
@@ -6209,7 +6213,7 @@ class Sprite_EagleCharacter < Sprite
   def finish_effect(sym)
     return if !@effects.include?(sym)
     m = ("finish_effect_" + sym.to_s).to_sym
-    method(m).call(@params[sym]) if respond_to?(m)
+    method(m).call(@effect_params[sym]) if respond_to?(m)
     @effects.delete(sym)
   end
   # def finish_effect_code(param)  code → 转义符
@@ -6256,7 +6260,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 更新移动
   #--------------------------------------------------------------------------
   def move_update(sym = :cin) # 只有移动结束时，才进行其他更新
-    params = @params[sym]
+    params = @effect_params[sym]
     params[:tc] += 1
 
     per = params[:tc] * 1.0 / params[:t]
@@ -6332,7 +6336,7 @@ class Sprite_EagleCharacter < Sprite
   # ● 执行移入
   #--------------------------------------------------------------------------
   def move_in
-    params = @params[:cin]
+    params = @effect_params[:cin]
     rebind_viewport # 重新绑定视图
     update_position # 记录包含视图位移的值
      # 如果没有定义移入特效 或 不是首次移入且在视图外
@@ -6380,9 +6384,7 @@ class Sprite_EagleCharacter < Sprite
     if !finish?
       process_move_out  # 处理移出模式
     end
-    bind_viewport(nil) # 取消视图，确保不会出现资源崩溃，且不再限制可见范围
-    update_position # 更新一次位置
-    @window_bind = nil # 取消窗口的绑定
+    free_from_msg  # 不再受限于对话框内，但位置保持不变
     MESSAGE_EX.charapool_push(self) # 由文字池接管
     @flag_in_charapool = true
   end
@@ -6401,8 +6403,12 @@ class Sprite_EagleCharacter < Sprite
   # ● 处理移出模式
   #--------------------------------------------------------------------------
   def process_move_out
-    return move_out_cout(@params[:cout]) if @params[:cout] && !@params[:cout].empty?
-    return move_out_uout(@params[:uout]) if @params[:uout] && !@params[:uout].empty?
+    if @effect_params[:cout] && !@effect_params[:cout].empty?
+      return move_out_cout(@effect_params[:cout]) 
+    end
+    if @effect_params[:uout] && !@effect_params[:uout].empty?
+      return move_out_uout(@effect_params[:uout]) 
+    end
     finish # 如果未预订任何移出模式，则直接结束
   end
   #--------------------------------------------------------------------------
