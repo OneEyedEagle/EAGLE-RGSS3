@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = "1.9.7"
 #=============================================================================
-# - 2022.11.28.23 文字精灵现在能够更容易被提取出来了
+# - 2022.11.29.22 文字精灵现在能够更容易被提取出来了
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -6096,7 +6096,6 @@ class Sprite_EagleCharacter < Sprite
     @flag_first_move_in = true # 第一次移入？
     @flag_update_pos = true # 需要更新位置？
     @flag_move = nil # 在移动中？
-    @flag_in_charapool = false # 已经被放入文字池？
     # 重置特效参数
     @effects = {} # effect_sym => param_string
     @effect_params = {} # effect_sym => param_has
@@ -6386,7 +6385,6 @@ class Sprite_EagleCharacter < Sprite
     end
     free_from_msg  # 不再受限于对话框内，但位置保持不变
     MESSAGE_EX.charapool_push(self) # 由文字池接管
-    @flag_in_charapool = true
   end
   #--------------------------------------------------------------------------
   # ● 执行移出（外部调用的方法）（临时移出，之后可以再执行move_in）

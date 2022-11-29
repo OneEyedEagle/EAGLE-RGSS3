@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【粒子发射器V2 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Particle-CharasSpread"] = "2.0.1"
+$imported["EAGLE-Particle-CharasSpread"] = "2.0.2"
 #==============================================================================
-# - 2022.11.28.23 适配 粒子发射器V2 2.1.0版本
+# - 2022.11.29.22 适配 粒子发射器V2 2.1.0版本
 #==============================================================================
 # - 本插件为 文字精灵组的粒子化 实现了一个简单便捷的调用接口
 #----------------------------------------------------------------------------
@@ -105,6 +105,9 @@ module PARTICLE
     PARTICLE.setup(sym, f, vp)    # 初始化
     pout_set_template(f, params)  # 设置模板属性
     f.params[:sprites] = charas   # 将文字精灵的拷贝放入模板
+    f.params[:total] = charas.size # 设置总数
+    # 结束后放回文字池
+    f.params[:eval2] = "@particle.finish; MESSAGE_EX.charapool_push(@particle)"
     PARTICLE.start(sym)  # 发射器开始工作
   end
 end

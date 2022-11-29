@@ -2,9 +2,9 @@
 # ■ 粒子发射器V2 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Particle"] = "2.1.0"
+$imported["EAGLE-Particle"] = "2.1.1"
 #==============================================================================
-# - 2022.11.28.23 粒子模板新增:sprites属性，可传入需要作为粒子处理的精灵 
+# - 2022.11.29.21 粒子模板新增:sprites属性，可传入需要作为粒子处理的精灵 
 #==============================================================================
 # - 本插件新增了一个发射粒子的系统
 #------------------------------------------------------------------------------
@@ -352,8 +352,8 @@ class Particle_Emitter
     return if @freeze
     check_new
     @particles.each do |t|
-      next delete_particle(t) if delete_particle?(t)
       update_particle(t)
+      delete_particle(t) if delete_particle?(t)
     end
     @particles.delete_if { |t| delete_particle?(t) }
     @template.update(@particles)
@@ -422,13 +422,15 @@ class Particle_Emitter
   def delete_particle(t)
     @template.finish_particle(t)
     t.viewport = nil
+    if t.eparams[:flag_from_sprite] == true  # 如果之前就是精灵，那不管了！
+      return
+    end
+    t.opacity = 0
+    t.bitmap.dispose if @template.flag_dispose_bitmap && t.bitmap 
+    t.bitmap = nil
     if t.eparams[:reuse] == true
-      if t.eparmas[:flag_from_sprite] == true  # 如果原来是精灵，则不会放入池
-      else
-        @@particles_fin.push(t)
-      end 
+      @@particles_fin.push(t)
     else 
-      t.bitmap.dispose if @template.flag_dispose_bitmap && t.bitmap 
       t.dispose
     end
   end
@@ -597,6 +599,8 @@ class ParticleTemplate
     @params[:start_zoom] = VarValue.new(1.0, 0) # 开始时的缩放值
     @params[:end_zoom] = VarValue.new(1.0, 0) # 结束时的缩放值
     @params[:z]    = 1    # 粒子的z值
+    @params[:eval1] = ""  # 粒子生成后执行的方法
+    @params[:eval2] = ""  # 粒子结束前执行的方法
   end
 
   #--------------------------------------------------------------------------
@@ -679,6 +683,7 @@ class ParticleTemplate
     init_angle
     init_zoom
     init_others
+    run_eval(@params[:eval1])
   end
   #--------------------------------------------------------------------------
   # ● 粒子更新
@@ -699,9 +704,7 @@ class ParticleTemplate
   #--------------------------------------------------------------------------
   def finish_particle(particle)
     @particle = particle
-    @particle.bitmap.dispose if @flag_dispose_bitmap
-    @particle.bitmap = nil
-    @particle.opacity = 0
+    run_eval(@params[:eval2])
   end
 
   #--------------------------------------------------------------------------
@@ -711,7 +714,7 @@ class ParticleTemplate
     @particle.eparams[:life] = get_value(@params[:life]).to_i  # 必须为整数
   end
   def update_life
-    return if @particle.eparams[:life] < 0
+    return if @particle.eparams[:life] == 0
     @particle.eparams[:life] -= 1  # 生命周期减一
   end
   #--------------------------------------------------------------------------
@@ -820,6 +823,18 @@ class ParticleTemplate
     end
   end
   def update_others
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 执行方法
+  #--------------------------------------------------------------------------
+  def run_eval(str)
+    begin
+      eval(str.to_s) if str 
+    rescue
+      p "在执行【粒子发射器V2 by老鹰】的粒子所绑定的脚本时发生错误！\n" 
+      p $!
+    end
   end
 end
 
