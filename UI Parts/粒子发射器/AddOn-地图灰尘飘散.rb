@@ -163,9 +163,9 @@ class Spriteset_Map
     # tags[:n] = "v1, v2"
     arr = PARTICLE.parse_number_string(tags[:n]) rescue []
     if arr.size == 2
-      f.params[:new_per_frame] = RangeValue.new(arr[0],arr[1])
+      f.params[:new_per_wave] = RangeValue.new(arr[0],arr[1])
     else
-      f.params[:new_per_frame] = VarValue.new(3,2)
+      f.params[:new_per_wave] = VarValue.new(3,2)
     end
 
     # tags[:all] = "v"

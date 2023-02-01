@@ -577,7 +577,7 @@ class ParticleTemplate
     @params[:total] = 20   # 粒子总数
     # 以下变量均可以传入 VarValue类型 或 数值 或 字符串（会先被eval求值）
     @params[:new_wait] = 30   # 生成一波粒子后的等待帧数
-    @params[:new_per_frame] = VarValue.new(3, 2)  # 每次生成的粒子数目
+    @params[:new_per_wave] = VarValue.new(3, 2)  # 每次生成的粒子数目
   end
   #--------------------------------------------------------------------------
   # ● 初始化粒子的动态参数
@@ -654,7 +654,7 @@ class ParticleTemplate
   # ● 返回每一次生成粒子时需要生成的数目
   #--------------------------------------------------------------------------
   def get_new_num_once
-    get_value(@params[:new_per_frame]).to_i
+    get_value(@params[:new_per_wave]).to_i
   end
   #--------------------------------------------------------------------------
   # ● 粒子更新一次后的等待时间
