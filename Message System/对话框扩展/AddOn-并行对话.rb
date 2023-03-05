@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara"] = "1.2.1"
+$imported["EAGLE-MessagePara"] = "1.3.0"
 #==============================================================================
-# - 2022.10.8.0 增强兼容性
+# - 2023.3.4.14 新增按键继续功能
 #==============================================================================
 # - 本插件利用【对话框扩展】中的对话框，生成了并行显示的对话
 #--------------------------------------------------------------------------
@@ -44,7 +44,7 @@ $imported["EAGLE-MessagePara"] = "1.2.1"
 #         可设置变量一览：
 #           bg → 对话框的背景类型id（0普通，1暗色，2透明）（同VA默认）
 #           pos → 设置对话框的显示位置类型id（0居上，1居中，2居下）（同VA默认）
-#           w → 设置对话框绘制完成后、关闭前的等待帧数（赋值成$时将不自动关闭）
+#           w → 设置对话框绘制完成后、关闭前的等待帧数（-1时将不自动关闭）
 #           t → 设置对话框关闭后、下一次对话开启前的等待帧数
 #           z → 设置对话框的z值（默认100）
 #       示例： <msgp w=20>
@@ -95,6 +95,10 @@ $imported["EAGLE-MessagePara"] = "1.2.1"
 #    <call list_name>
 #       → 呼叫预设的“标签序列”
 #         在文本文件预设的序列中查找名称为 list_name 的序列，并开始解析它
+#
+#    <toggleinput>
+#       → 如果 NEXT_BY_KEY 为true，则该标签代表之后的对话不准按键继续
+#         如果 NEXT_BY_KEY 为false，则该标签代表之后的对话可以按键继续
 #
 #--------------------------------------------------------------------------
 # ○ 执行“标签序列”：全局脚本
@@ -251,7 +255,7 @@ module MESSAGE_PARA
   PARA_MESSAGE_PARAMS = {
     :bg => 0, # 对话框背景类型id
     :pos => 2, # 对话框位置类型id
-    :w => 40, # 对话完成后、关闭前的等待帧数
+    :w => -1, # 对话完成后、关闭前的等待帧数
     :t => 1, # 当前对话框关闭后的等待帧数
     :z => 100, # 对话框的z值
   }
@@ -266,6 +270,10 @@ module MESSAGE_PARA
     :f => 1, # 当cond条件不满足时，是否立即结束显示？
     :w => 60, # 显示结束后需再等待w帧，才能再次触发（若为nil，则不再触发）
   }
+  #--------------------------------------------------------------------------
+  # ●【常量】允许按确定键继续？
+  #--------------------------------------------------------------------------
+  NEXT_BY_KEY = true
 end
 #==============================================================================
 # ○ 【读取部分】
@@ -445,6 +453,7 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
     @face = ["", 0]
     @params = MESSAGE_PARA::PARA_MESSAGE_PARAMS.dup
     @params[:id] = id
+    @params[:input] = MESSAGE_PARA::NEXT_BY_KEY
     @window = Window_EagleMessage_Para.new(self)
     @f_ensure_fin = false # 保证必定显示完？（场景切换时只暂时暂停并关闭）
     @fiber = Fiber.new { fiber_main }
@@ -539,6 +548,12 @@ class MessagePara_List # 该list中每一时刻只显示一个对话框
   #--------------------------------------------------------------------------
   def tag_msgp(tag_str)
     MESSAGE_EX.parse_param(@params, tag_str) # 解析对话框参数
+  end
+  #--------------------------------------------------------------------------
+  # ● 标签：反转按键继续对话框
+  #--------------------------------------------------------------------------
+  def tag_toggleinput(tag_str)
+    @params[:input] = !@params[:input]
   end
   #--------------------------------------------------------------------------
   # ● 标签：呼叫预定序列
@@ -743,27 +758,56 @@ class Window_EagleMessage_Para < Window_EagleMessage
   #--------------------------------------------------------------------------
   def process_input
     return if @eagle_force_close
-    @input_wait_c = para_params[:w]
-    while true
-      Fiber.yield
-      if @input_wait_c
-        break if @input_wait_c <= 0
-        @input_wait_c -= 1
-      end
+    if para_params[:input]
+      input_pause  # 处理按键继续的精灵
+    else 
+      process_input_pause
     end
     return if @eagle_force_close
     eagle_process_hold
   end
   #--------------------------------------------------------------------------
+  # ● 按键继续处理
+  #--------------------------------------------------------------------------
+  def input_pause 
+    return if !@flag_draw
+    before_input_pause
+    eagle_process_draw_update # 统一更新一次
+    @eagle_sprite_pause.bind_last_chara(@eagle_chara_sprites[-1])
+    @eagle_sprite_pause.show
+    @flag_input_pause = true
+    self.pause = true unless MESSAGE_EX::NO_DEFAULT_PAUSE
+    process_input_pause
+    self.pause = false
+    @flag_input_pause = false
+    @eagle_sprite_pause.hide
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理等待继续
+  #--------------------------------------------------------------------------
+  def process_input_pause
+    @input_wait_c = para_params[:w] || (para_params[:input] ? -1 : 0)
+    @input_wait_c = 40 if para_params[:input] == false && @input_wait_c < 0
+    while true
+      Fiber.yield
+      break if para_params[:input] && Input.trigger?(:C)
+      break if @input_wait_c == 0
+      @input_wait_c -= 1
+    end
+  end 
+  #--------------------------------------------------------------------------
   # ● 输入等待前的操作
   #--------------------------------------------------------------------------
   def before_input_pause
     # 去掉 pause 精灵的宽度占位计算
+    return if !para_params[:input]
+    super
   end
   #--------------------------------------------------------------------------
   # ● 监听“确定”键的按下，更新快进的标志
   #--------------------------------------------------------------------------
   def update_show_fast
+    super if para_params[:input]
   end
   #--------------------------------------------------------------------------
   # ● 强制结束当前对话框
