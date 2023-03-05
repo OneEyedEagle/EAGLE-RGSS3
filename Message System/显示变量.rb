@@ -4,9 +4,9 @@
 #   【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ShowVariable"] = "1.0.2"
+$imported["EAGLE-ShowVariable"] = "1.0.3"
 #==============================================================================
-# - 2022.6.20.21 优化注释
+# - 2023.3.5.23 修复利用脚本设置颜色时报错的bug
 #==============================================================================
 # - 本插件提供了在屏幕上显示变量的便捷方法
 # - 在地图上时，指定的文本将显示于屏幕指定位置，当变量值变更时将自动重绘
@@ -207,10 +207,12 @@ module VAR
   def self.add(v_id, params = {})
     params[:refresh] = true # 需要刷新的标志
     params[:visible] = true # 是否显示
-    vars = [ :t, :x, :y, :z, :ox, :oy, :w, :size, :x0, :y0, :padding ]
+    vars = [ :t, :x, :y, :z, :w, :size, :x0, :y0, :padding ]
     vars.each { |v| params[v] = params[v].to_i if params[v] }
+    vars = [ :ox, :oy ]
+    vars.each { |v| params[v] = params[v].to_f if params[v] }
     vars = [ :color, :bg1 ]
-    vars.each { |v| params[v] = eval(params[v]) if params[v] }
+    vars.each { |v| params[v].is_a?(Color) ? params[v] : eval(params[v]) if params[v] }
     $game_system.var_show[v_id] = params
   end
   #--------------------------------------------------------------------------
@@ -385,11 +387,13 @@ class Sprite_VarShow < Sprite
     t.gsub!(/<vid>/) { @v_id }
     t.gsub!(/<v>/) { $game_variables[@v_id] }
 
+    self.bitmap.dispose if self.bitmap
+    return if t == ""
+
     d = Process_DrawTextEX.new(t, ps)
     d.run(false)
     ps[:text_w] = d.width
     ps[:text_h] = d.height
-    self.bitmap.dispose if self.bitmap
     redraw_contents(ps)
     # 绘制文字
     d.bind_bitmap(self.bitmap)
