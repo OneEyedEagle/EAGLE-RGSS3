@@ -2,9 +2,9 @@
 # ■ 自由显示光标 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Cursor"] = "1.0.2"
+$imported["EAGLE-Cursor"] = "1.0.3"
 #==============================================================================
-# - 2022.9.30.21 
+# - 2023.3.7.18 若未设置事件图像，则改为显示在地图格子上
 #==============================================================================
 # - 本插件新增了一个允许利用全局脚本自由控制位置的光标
 #-----------------------------------------------------------------------------
@@ -202,6 +202,9 @@ module CURSOR
   def self.set_map_chara(id, eid, ps={})
     return if !exist?(id)
     s = EAGLE_COMMON.get_chara_sprite(eid)
+    if s.character.character_name == ""  # 如果未设置图像，则退化为地图格子
+      return set_map_xy(id, s.character.x, s.character.y, ps)
+    end
     ps[:map] = true
     set_sprite(id, s, ps)
   end
