@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ESAS"] = "1.1.6"
+$imported["EAGLE-ESAS"] = "1.1.7"
 #==============================================================================
-# - 2022.6.20.23
+# - 2023.3.18.23 优化pop的动态
 #==============================================================================
 # - 本插件新增一系列方便事件脚本调用的方法，用于创作简易ARPG
 #--------------------------------------------------------------------------
@@ -345,7 +345,10 @@ $imported["EAGLE-ESAS"] = "1.1.6"
 #        :text => 需要绘制的文本（单行，不可含转义符）
 #        :cid => 绑定显示的角色ID（-1为玩家，正数为事件）
 #        :type => 显示模式
-#            （:float 浮起，:zoom1 缩小上浮，:zoom2 上浮放大，:bounce 弹跳并淡出）
+#             :float 浮起并逐渐透明
+#             :zoom1 由放大状态，动态缩小并透明
+#             :zoom2 动态放大上浮，再动态缩小下降
+#             :bounce 从事件图像中心向上弹出落地后跳起，并逐渐透明
 #        :w / :h => 精灵宽度、高度
 #        :size => 字体大小
 #        :c => 字体颜色的索引号
@@ -1894,7 +1897,7 @@ module ESAS
       1 - 2**(-10 * v)
     end
     #--------------------------------------------------------------------------
-    # ● 开始 - 缩小上浮
+    # ● 开始 - 缩小
     #--------------------------------------------------------------------------
     def run_zoom1
       d = (@params[:chara_s] ? @params[:chara_s].ch / 2 - 16 : 0)
@@ -1907,8 +1910,12 @@ module ESAS
         Fiber.yield
       end
       20.times { Fiber.yield }
-      10.times { @dy -= 1; self.opacity -= 7; Fiber.yield }
-      20.times { self.opacity -= 7; Fiber.yield }
+      t.times do |i| 
+        per = easeOutBack(i * 1.0 / t)
+        self.zoom_x = self.zoom_y = 1.0 + (0.0 - 1.0) * per
+        self.opacity -= 7
+        Fiber.yield
+      end
     end
     #--------------------------------------------------------------------------
     # ● 开始 - 上浮放大
@@ -1925,7 +1932,18 @@ module ESAS
         Fiber.yield
       end
       20.times { Fiber.yield }
-      30.times { self.opacity -= 7; Fiber.yield }
+      t.times do |i| 
+        per = easeInBack(i * 1.0 / t)
+        self.zoom_x = self.zoom_y = 1.0 - 1.0 * per
+        @dy = -d + dy1 + (dy0 - dy1) * per
+        self.opacity -= 7
+        Fiber.yield
+      end
+    end
+    def easeInBack(x)
+      c1 = 1.70158
+      c3 = c1 + 1
+      return c3 * x * x * x - c1 * x * x
     end
     def easeOutBack(v)
       return 0 if v == 0

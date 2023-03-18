@@ -2,9 +2,9 @@
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-DrawTextEX"] = "1.0.1"
+$imported["EAGLE-DrawTextEX"] = "1.0.2"
 #==============================================================================
-# - 2022.5.27.0 将 \\n 优先替换为 \n
+# - 2023.3.17.22 修复当ali为1时\ln位置错误的问题
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #-----------------------------------------------------------------------------
@@ -160,6 +160,7 @@ class Process_DrawTextEX
       elsif @params[:ali] == 2  # 右对齐
         pos[:x] += (self.width_pre - pos[:w])
       end
+      pos[:x0_cur] = pos[:x]  # 存储下一行的开头位置
     else  # 预绘制时，计算每一行的宽高
       pos[:w] = 0
       pos[:h] = 0
@@ -316,11 +317,12 @@ class Process_DrawTextEX
   # ● 底部绘制横线并换行
   #--------------------------------------------------------------------------
   def process_new_line_with_line(text, pos)
-    _x = pos[:x0] + 2
-    _y = pos[:y] + pos[:h]
     dy = 4 + @params[:lhd]
     if pos[:flag_draw]
-      @bitmap.fill_rect(_x, _y+dy, self.width-4, 1, Color.new(255,255,255,150))
+      _x = pos[:x0_cur]
+      _y = pos[:y] + pos[:h]
+      _w = pos[:x] - _x
+      @bitmap.fill_rect(_x, _y+dy, _w, 1, Color.new(255,255,255,150))
       dy += 1 + 4
     else
       @info[:h_add] += dy + 1 + 4
