@@ -1,10 +1,10 @@
 #==============================================================================
-# ■ 技能多段伤害 by 老鹰（http://oneeyedeagle.lofter.com/）
-#==============================================================================
-# - 2020.7.3.11 兼容 SideView
+# ■ 技能多段伤害 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SkillDamageEX"] = true
+$imported["EAGLE-SkillDamageEX"] = "1.0.0"
+#==============================================================================
+# - 2023.4.2.22 拆分出兼容 SideView 的版本
 #==============================================================================
 # - 新增跟随动画进行伤害结算，指定动画某一帧结算指定技能公式
 #----------------------------------------------------------------------------
@@ -172,9 +172,6 @@ class Process_AnimDamage
     item = @items[frame]
     if item
       @object.item_apply(@subject, item)
-      if defined?(SideView)
-        SceneManager.scene.spriteset.set_damage_pop(@object)
-      end
       SceneManager.scene.log_window.display_action_results(@object, item)
     end
     end_apply_item_effects if finish?
@@ -233,22 +230,6 @@ class Sprite_Battler < Sprite_Base
 end
 
 #==============================================================================
-# ○ Sprite_Weapon
-#==============================================================================
-if defined?(SideView)
-class Sprite_Weapon < Sprite_Base  # 该精灵与技能的主动方绑定……
-  #--------------------------------------------------------------------------
-  # ● 设置动画的精灵
-  #     frame : 帧数据（RPG::Animation::Frame）
-  #--------------------------------------------------------------------------
-  def animation_set_sprites(frame)
-    super(frame)
-    battler.process_anim_damage.add_frame
-  end
-end
-end
-
-#==============================================================================
 # ○ Scene_Battle
 #==============================================================================
 class Scene_Battle < Scene_Base
@@ -273,7 +254,7 @@ class Scene_Battle < Scene_Base
   alias eagle_skill_damage_ex_invoke_item invoke_item
   def invoke_item(target, item)
     eagle_skill_damage_ex_invoke_item(target, item)
-    eagle_wait_for_animation # 兼容sideview，增加额外的等待
+    eagle_wait_for_animation # 增加额外的等待
   end
   #--------------------------------------------------------------------------
   # ●（覆盖）处理攻击动画
@@ -307,30 +288,6 @@ class Scene_Battle < Scene_Base
       anim_id = anim_id2 if anim_id2 > 0
     end
     target.add_item_apply(@subject, item, anim_id)
-  end
-  #--------------------------------------------------------------------------
-  # ●（覆盖）发动反击
-  # （已经在use_item后添加了等待）
-  #--------------------------------------------------------------------------
-  if !defined?(SideView)
-  def invoke_counter_attack(target, item)
-    @log_window.display_counter(target, item)
-    _subject = @subject # 被反击者
-    @subject = target   # 反击主体
-    show_normal_animation([_subject], @subject.atk_animation_id1, false)
-    apply_item_effects(_subject, $data_skills[@subject.attack_skill_id])
-    @subject = _subject
-  end
-  end
-  #--------------------------------------------------------------------------
-  # ● 飛ばしアニメ処理
-  #--------------------------------------------------------------------------
-  if defined?(SideView)
-  alias eagle_skill_damage_ex_sideview_set_move_anime set_move_anime
-  def set_move_anime(item)
-    eagle_skill_damage_ex_sideview_set_move_anime(item)
-    eagle_wait_for_animation
-  end
   end
 end
 
