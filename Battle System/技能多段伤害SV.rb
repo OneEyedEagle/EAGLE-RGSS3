@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【SideView套件】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SV-SkillDamageEX"] = "1.0.0"
+$imported["EAGLE-SV-SkillDamageEX"] = "1.0.1"
 #==============================================================================
-# - 2023.4.3.0 
+# - 2023.4.3.19 
 #==============================================================================
 # - 本插件新增独立的伤害结算，可以指定在技能后的某一帧结算指定技能公式
 # - 本插件完全兼容 SideView，但对于其它战斗系统可能存在较多问题
@@ -185,9 +185,12 @@ class Process_AnimDamage
     if item
       scene = SceneManager.scene
       @objects.each do |s|
+        @subject.result.clear
         s.result.clear
         s.item_apply(@subject, item)
-        scene.spriteset.set_damage_pop(s) if defined?(SideView)
+        s.sv.damage_action(@subject, item)
+        scene.spriteset.set_damage_pop(s)
+        scene.spriteset.set_damage_pop(@subject) if s != @subject
         scene.log_window.display_action_results(s, item)
         #p [frame, @subject.name, s.name, item.name]
       end
