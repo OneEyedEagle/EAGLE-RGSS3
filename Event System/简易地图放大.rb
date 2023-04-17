@@ -2,9 +2,9 @@
 # ■ 简易地图放大 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MapZoom"] = "1.0.0"
+$imported["EAGLE-MapZoom"] = "1.0.1"
 #==============================================================================
-# - 2022.8.14.9
+# - 2023.4.2.19
 #==============================================================================
 # - 本插件新增了一个简单的地图放大功能
 #   本质为实时截图，并放大显示该截图
@@ -120,7 +120,7 @@ class Spriteset_Map
   alias eagle_map_zoom_dispose_parallax dispose_parallax
   def dispose_parallax
     eagle_map_zoom_dispose_parallax
-    @eagle_sprite_zoom.bitmap.dispose
+    @eagle_sprite_zoom.bitmap.dispose if @eagle_sprite_zoom.bitmap
     @eagle_sprite_zoom.dispose
   end
   #--------------------------------------------------------------------------

@@ -1,13 +1,14 @@
 #==============================================================================
-# ■ 技能多段伤害（计时版本） by 老鹰（http://oneeyedeagle.lofter.com/）
-#==============================================================================
-# - 2022.1.22.23 计时版本，更好地兼容 SideView
+# ■ 技能多段伤害SV by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
+# ※ 本插件需要放置在【SideView套件】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SkillDamageEX"] = true
+$imported["EAGLE-SV-SkillDamageEX"] = "1.0.1"
+#==============================================================================
+# - 2023.4.3.19 
 #==============================================================================
 # - 本插件新增独立的伤害结算，可以指定在技能后的某一帧结算指定技能公式
-# - 本插件已经完全兼容 SideView，但对于其它战斗系统可能存在较多问题
+# - 本插件完全兼容 SideView，但对于其它战斗系统可能存在较多问题
 #----------------------------------------------------------------------------
 # ● 设置
 #----------------------------------------------------------------------------
@@ -26,34 +27,16 @@ $imported["EAGLE-SkillDamageEX"] = true
 #   <frame n: i2> 或 <frame n: i 2>
 #     → 在动画第n帧时结算2号物品的数据库中的公式（包含使用效果）
 #
-# - 若无任何设置，则会在动画的最后一帧结算原始伤害公式（若无动画则立即结算）
+# - 若无任何设置，则会在动画的最后一帧结算伤害公式（若无动画则立即结算）。
 #
-#----------------------------------------------------------------------------
-# ● 警告
-#----------------------------------------------------------------------------
-#   数据库-技能/物品-“使用”栏-“连续次数”属性将无效，
-#   如果它被设置了 1 以外的值，可能出现不明的伤害处理BUG
+# - 若动画使用的是 普通攻击，则该设置无效。
+#
 #----------------------------------------------------------------------------
 # ● 兼容
 #----------------------------------------------------------------------------
-# 1. 为了让伤害结算尽量与动画同步，
-#    本插件覆盖了 Scene_Battle#wait_for_animation 方法，并使其无效，
-#    如需调用原方法，请使用别名方法 Scene_Battle#eagle_wait_for_animation。
+# 1. 默认 Window_BattleLog 的 wait 方法，会使显示动画与伤害处理不同步，
+#    因此本插件最后选择移除了战斗日志的等待，请选用并行处理的战斗日志。
 #
-# 2. 新增 显示动画+对目标应用物品 的方法
-#   假如在原始脚本中，使用了：
-#      show_animation(targets, anim_id)
-#      targets.each {|target| item.repeats.times{invoke_item(target, item)}}
-#   （在默认 invoke_item 方法中包含了 wait_for_animation），
-#   那在使用本插件后，需要在这两句后再加上
-#      eagle_wait_for_animation
-#   来等待 伤害计算与动画显示 的结束。
-#
-# 3. 默认 Window_BattleLog 的 wait 方法，会使显示动画与伤害处理不同步，
-#     因此本插件最后选择移除了战斗日志的等待，请选用并行处理的战斗日志
-#
-# 4. 本插件最好与带有 伤害POPUP 的插件共同使用
-#     （如 YEA - Ace Battle Engine，将本插件置于其下即可）
 #==============================================================================
 module EAGLE; end
 #==============================================================================
@@ -162,6 +145,7 @@ class Process_AnimDamage
     @subject = nil; @object = nil
     @items ||= {}; @items.clear
     @frame = 0; @frame_max = 0
+    @count = 0; @ani_rate = 4   # 动画每4帧切帧
   end
   #--------------------------------------------------------------------------
   # ● 已经没有动画显示？
@@ -187,8 +171,11 @@ class Process_AnimDamage
   # ● 处理下一帧
   #--------------------------------------------------------------------------
   def add_frame
-    @frame += 1
-    apply_item_effects(@frame)
+    if @count % @ani_rate == 0
+      @frame += 1
+      apply_item_effects(@frame)
+    end
+    @count += 1
   end
   #--------------------------------------------------------------------------
   # ● 应用指定帧的技能/物品效果
@@ -198,10 +185,14 @@ class Process_AnimDamage
     if item
       scene = SceneManager.scene
       @objects.each do |s|
-        s.item_apply(@subject, item)
-        scene.spriteset.set_damage_pop(s) if defined?(SideView)
-        scene.log_window.display_action_results(s, item)
+        @subject.result.clear
         s.result.clear
+        s.item_apply(@subject, item)
+        s.sv.damage_action(@subject, item)
+        scene.spriteset.set_damage_pop(s)
+        scene.spriteset.set_damage_pop(@subject) if s != @subject
+        scene.log_window.display_action_results(s, item)
+        #p [frame, @subject.name, s.name, item.name]
       end
     end
     end_apply_item_effects if finish?
@@ -212,7 +203,6 @@ class Process_AnimDamage
   def end_apply_item_effects
     @objects.each do |s|
       s.remove_state(EAGLE::SkillDamage_EX::STATE_IMMUNE_DIE) # 移除不死
-      s.result.clear
       if $imported["YEA-BattleEngine"]
         SceneManager.scene.perform_collapse_check(s)
       else
@@ -250,99 +240,112 @@ class Scene_Battle < Scene_Base
     #abs_wait(15)
   end
   #--------------------------------------------------------------------------
+  # ● サイドビューアクション実行
+  #--------------------------------------------------------------------------
+  alias eagle_skill_damage_ex_play_sideview play_sideview
+  def play_sideview(targets, item)
+    @subject.result.flag_eagle_damage_ex = false
+    eagle_skill_damage_ex_play_sideview(targets, item)
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）ダメージ戦闘アニメ処理
+  #--------------------------------------------------------------------------
+  def damage_anime(targets, target, item)
+    @log_window.back_to(1) if @log_window.line_number == 5
+    return if item.scope != 9 && item.scope != 10 && target.dead?
+    @miss = false
+    invoke_item(target,item)
+    if target.result.missed
+      target.sv.miss_action(@subject, item)
+      return @miss = true
+    elsif target.result.evaded or target.sv.counter_id != 0
+      target.sv.evasion_action(@subject, item)
+      return @miss = true
+    elsif target.sv.reflection_id != 0
+      N03.set_damage_anime_data(targets, target, [target.sv.reflection_id, false, false, true])
+      target.sv.reflection_id = 0
+      @reflection_data = [] if @reflection_data == nil
+      return @reflection_data.push([N03.get_attack_anime_id(-3, @subject), false, false, true])
+    end
+    # 新增：如果已经有绑定伤害处理，则跳过此处的伤害处理
+    return if @subject.result.flag_eagle_damage_ex
+    target.sv.damage_action(@subject, item)
+    N03.set_damage(@subject, -target.result.hp_drain, -target.result.mp_drain) if target != @subject
+    @spriteset.set_damage_pop(target)
+    if target != @subject && @subject.result.hp_damage != 0 or @subject.result.mp_damage != 0
+      @spriteset.set_damage_pop(@subject) 
+    end
+    if @subject.sv.damage_anime_data != []
+      N03.set_damage_anime_data(targets, target, @subject.sv.damage_anime_data)
+    end
+  end
+  #--------------------------------------------------------------------------
   # ● 发动技能／物品
   #--------------------------------------------------------------------------
   alias eagle_skill_damage_ex_invoke_item invoke_item
   def invoke_item(target, item)
     eagle_skill_damage_ex_invoke_item(target, item)
-    eagle_wait_for_animation
-  end
-  #--------------------------------------------------------------------------
-  # ●（覆盖）处理攻击动画
-  # （新增双持角色第二次攻击）
-  #--------------------------------------------------------------------------
-  def show_attack_animation(targets)
-    anim_id = @subject.atk_animation_id1 rescue 0
-    show_normal_animation(targets, anim_id, false)
-    # 检查是否为双持角色
-    anim_id2 = @subject.atk_animation_id2 rescue 0
-    if anim_id2 > 0
-      item = @subject.current_action.item
-      # 直接处理双持角色的第一次攻击
-      EAGLE::SkillDamage_EX.add(@subject, targets, item, anim_id)
-      eagle_wait_for_animation
-      # 处理第二次攻击
-      show_normal_animation(targets, anim_id2, true)
-    end
-    # 之后由 apply_item_effects 进行伤害判定，在 use_item 中等待动画
-  end
-  #--------------------------------------------------------------------------
-  # ●（覆盖）应用技能／物品效果
-  # （修改为：在精灵显示动画时执行战斗者的item_apply方法）
-  #--------------------------------------------------------------------------
-  def apply_item_effects(target, item)
-    anim_id = item.animation_id
-    if item.animation_id < 0 # 显示普通攻击动画
-      anim_id = @subject.atk_animation_id1 rescue 0
-      # 如果双持，在 show_attack_animation 时已完成第一次攻击，此时处理第二次攻击
-      anim_id2 = @subject.atk_animation_id2 rescue 0
-      anim_id = anim_id2 if anim_id2 > 0
-    end
-    EAGLE::SkillDamage_EX.add(@subject, [target], item, anim_id)
-  end
-  #--------------------------------------------------------------------------
-  # ●（覆盖）发动反击
-  # （已经在use_item后添加了等待）
-  #--------------------------------------------------------------------------
-  if !defined?(SideView)
-  def invoke_counter_attack(target, item)
-    @log_window.display_counter(target, item)
-    _subject = @subject # 被反击者
-    @subject = target   # 反击主体
-    show_normal_animation([_subject], @subject.atk_animation_id1, false)
-    apply_item_effects(_subject, $data_skills[@subject.attack_skill_id])
-    @subject = _subject
-  end
+    eagle_wait_for_animation 
   end
 end
 #==============================================================================
 # ○ SideView
 #==============================================================================
-if defined?(SideView)
 class SideView
   #--------------------------------------------------------------------------
-  # ● ダメージアニメ
+  # ● （覆盖）データベース戦闘アニメ実行
+  #--------------------------------------------------------------------------
+  def battle_anime
+    data = @action_data.dup
+    targets = N03.get_targets(data[2], @battler)
+    return if targets == []
+    data[8] = !data[8] if @mirror
+    @set_damage           = data[5]
+    @damage_anime_data[0] = N03.get_attack_anime_id(data[1], @battler)
+    @damage_anime_data[1] = data[8]
+    @damage_anime_data[2] = data[7]
+    @damage_anime_data[3] = data[6]
+    @damage_anime_data[4] = data[9]
+    @wait = N03.get_anime_time(@damage_anime_data[0]) - 2 if data[4]
+    return if @set_damage
+    for target in targets do display_anime(targets, target, data) end
+    # 新增：绑定伤害处理
+    anim_id = @damage_anime_data[0]
+    item = @battler.current_action.item
+    EAGLE::SkillDamage_EX.add(@battler, targets, item, anim_id)
+    @battler.result.flag_eagle_damage_ex = true
+  end
+  #--------------------------------------------------------------------------
+  # ● （覆盖）ダメージアニメ
   #--------------------------------------------------------------------------
   def damage_anime(delay_time = 12)
     anim_id = N03.get_attack_anime_id(-3, @battler)
-    wait_count =  N03.get_anime_time(anim_id) - 2 # 记录一下动画的帧数
+    wait_count = N03.get_anime_time(anim_id) - 2  # 记录一下动画的帧数 
     anime(anim_id, wait = false)  # 不再等待，确保伤害处理也能同步进行
     action_play
-    @full_action.unshift("#{wait_count}")  # 第二、增加等待动画
+    @full_action.unshift("#{wait_count}")  # 2.增加等待动画
     @full_action.unshift("eval('@damage_anime_data = []
-    @set_damage = true')")  # 优先、开启伤害处理
+      @set_damage = true')")  # 1.开启伤害处理
   end
 end
-end
 
+#==============================================================================
+# ○ Game_ActionResult
+#==============================================================================
+class Game_ActionResult
+  attr_accessor  :flag_eagle_damage_ex
+end
 #==============================================================================
 # ○ Window_BattleLog
 #==============================================================================
 class Window_BattleLog < Window_Selectable
   #--------------------------------------------------------------------------
-  # ● 等待
+  # ● 去除等待，防止帧计数无法与动画同步
   #--------------------------------------------------------------------------
   def wait
   end
-  #--------------------------------------------------------------------------
-  # ● 等待效果执行的结束
-  #--------------------------------------------------------------------------
   def wait_for_effect
   end
-  #--------------------------------------------------------------------------
-  # ● 等待并清除
-  #    进行显示信息的最短等待，并在等待结束后清除信息。
-  #--------------------------------------------------------------------------
   def wait_and_clear
     clear
   end
