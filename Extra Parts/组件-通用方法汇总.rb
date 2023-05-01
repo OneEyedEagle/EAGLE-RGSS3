@@ -2,9 +2,9 @@
 # ■ 组件-通用方法汇总 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.1.3"
+$imported["EAGLE-CommonMethods"] = "1.1.5"
 #==============================================================================
-# - 2022.10.18.20 新增菜单物品使用后的引用
+# - 2023.4.30.10 新增指定精灵的截图，新增位图切割
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #---------------------------------------------------------------------------
@@ -42,18 +42,18 @@ $imported["EAGLE-CommonMethods"] = "1.1.3"
 #
 #  EAGLE_COMMON.bitmap_copy_do(b1, b2, o)
 #   → 将b2位图拷贝到b1位图的对应位置
-#     其中 o 为九宫格小键盘类型，
+#      其中 o 为九宫格小键盘类型，
 #       比如7代表 b1和b2的左上角对齐，5代表b1和b2中点对齐，6代表b1和b2的右边中点对齐
 #
 #  EAGLE_COMMON.draw_icon(bitmap, icon, x, y, w=24, h=24)
 #   → 在bitmap位图的(x,y)位置绘制第icon号图标（该位置为绘制后图标的左上角）
-#     其中w和h传入预留的可供绘制区域的宽高，用于保证能够居中绘制图标
+#      其中w和h传入预留的可供绘制区域的宽高，用于保证能够居中绘制图标
 #
 #  EAGLE_COMMON.draw_face(bitmap, face_name, face_index, x, y, flag_draw=true)
 #   → 在bitmap位图的(x,y)位置绘制文件名为face_name的第face_index号脸图
 #     （该位置为绘制后脸图的左上角）
-#     如果 face_name 中含有 _数字x数字，则为自定义的行数x列数（默认为2行4列）
-#     如果 flag_draw 传入 false，则不会进行绘制，可以只用于获取脸图宽高
+#      如果 face_name 中含有 _数字x数字，则为自定义的行数x列数（默认为2行4列）
+#      如果 flag_draw 传入 false，则不会进行绘制，可以只用于获取脸图宽高
 #     返回绘制脸图的宽和高两个数字
 #
 #  EAGLE_COMMON.draw_character(bitmap, character_name, character_index, x, y)
@@ -62,6 +62,16 @@ $imported["EAGLE-CommonMethods"] = "1.1.3"
 #     （该位置为绘制行走图后的底部左端点的位置）
 #     （绘制的为方向朝下的静止时的行走图）
 #     返回行走图的单个图像的宽和高两个数字
+#
+#  EAGLE_COMMON.snapshot_custom(objs=[])
+#   → 生成指定元素的截图
+#      objs 数组中的全部元素都需要有 z 属性
+#     返回生成的截图 bitmap
+#
+#  EAGLE_COMMON.img2rects(image, ps={})
+#   → 将精灵/位图image均匀分隔为小矩形
+#      ps 参数具体见方法的注释
+#     返回 ss 为各个小矩形的精灵的数组，pos 为各个精灵的坐标[x,y]的数组
 #
 #---------------------------------------------------------------------------
 # 【精灵相关】
@@ -330,6 +340,79 @@ module EAGLE_COMMON
     src_rect = Rect.new((n%4*3+1)*cw, (n/4*4)*ch, cw, ch)
     bitmap.blt(x, y - ch, _bitmap, src_rect)
     return cw, ch
+  end
+  #--------------------------------------------------------------------------
+  # ● 生成指定元素组的截图
+  #  其中 objs 数组中的元素必须有 z 属性
+  #--------------------------------------------------------------------------
+  def self.snapshot_custom(objs=[])
+    z_max = 65535
+    sprite_back = Sprite.new
+    sprite_back.bitmap = Bitmap.new(1,1)
+    sprite_back.zoom_x = Graphics.width
+    sprite_back.zoom_y = Graphics.height
+    sprite_back.z = z_max
+    objs.each { |s| s.z += z_max }
+    b = Graphics.snap_to_bitmap
+    objs.each { |s| s.z -= z_max }
+    sprite_back.bitmap.dispose
+    sprite_back.dispose
+    return b
+  end
+  #--------------------------------------------------------------------------
+  # ● 将图片均匀切割为横向ps[:nx]块、纵向ps[:ny]块
+  # 传入 image 为位图或精灵
+  #   若传入精灵，则精灵的xy将作为初始位置，否则为左上角
+  # 传入 ps 为参数数组
+  #   ps[:nx] （必须）横向的块数
+  #   ps[:ny] （必须）纵向的块数
+  #   ps[:vp] 生成的精灵的所处视图
+  #   ps[:ox] ps[:oy] 精灵的显示原点（0~1之间的浮点数，默认不传入为0左上角）
+  #
+  # 返回 ss 为每一块的精灵的数组
+  # 返回 pos 为每一个位置[x,y]的数组（同时为每个精灵的位置）
+  #--------------------------------------------------------------------------
+  def self.img2rects(image, ps={})
+    if image.is_a?(Sprite)
+      sprite = image
+      bitmap = sprite.bitmap 
+    end
+    if image.is_a?(Bitmap)
+      sprite = nil
+      bitmap = image
+    end
+    ss = []; pos = []; w = bitmap.width; h = bitmap.height
+    nx = ps[:nx] || 10  # 横方向的块数
+    ny = ps[:ny] || 10  # 纵方向的块数
+    dx = w / nx 
+    dy = h / ny 
+    nx.times do |i|
+      ny.times do |j|
+        b = Bitmap.new(dx, dy)
+        _x = i * dx
+        _y = j * dy 
+        b.blt(0, 0, bitmap, Rect.new(_x, _y, dx, dy))
+        s = Sprite.new(ps[:vp])
+        s.bitmap = b 
+        s.x = _x
+        s.y = _y
+        if sprite
+          s.x += sprite.x - sprite.ox
+          s.y += sprite.y - sprite.oy
+        end
+        if ps[:ox] # 0~1之间的小数
+          s.ox = s.width * ps[:ox]
+          s.x += s.ox
+        end
+        if ps[:oy]
+          s.oy = s.height * ps[:oy]
+          s.y += s.oy
+        end
+        pos.push([s.x, s.y])
+        ss.push(s)
+      end
+    end
+    return ss, pos
   end
 end
 
