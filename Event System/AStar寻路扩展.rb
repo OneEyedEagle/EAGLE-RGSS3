@@ -2,9 +2,9 @@
 # ■ AStar寻路扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AStar"] = "1.4.0"
+$imported["EAGLE-AStar"] = "1.4.1"
 #==============================================================================
-# - 2022.7.12.0 新增d参数，用于设置移动完成后与目的地之间的距离
+# - 2023.5.14.22 修复 same_map? 报错问题
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -221,7 +221,7 @@ class Game_Character
     elsif param < 0
       $game_player
     else
-      events = same_map? ? $game_map.events : {}
+      events = $game_map.events
       events[param > 0 ? param : @event_id]
     end
   end

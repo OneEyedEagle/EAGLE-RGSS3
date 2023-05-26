@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.7"
+$imported["EAGLE-MessageEX"] = "1.9.8"
 #=============================================================================
-# - 2022.11.29.22 文字精灵现在能够更容易被提取出来了
+# - 2023.5.26.20 \face现在能在绘制时修改脸图了
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -4491,6 +4491,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def face_params; game_message.face_params; end
   def eagle_text_control_face(param = "")
+    return if !@flag_draw
     face_params[:ls] = -1 # 设置循环开始编号（+1直至le，再从ls循环）
     face_params[:le] = -1 # 设置循环结束编号
     parse_param(face_params, param, :i)

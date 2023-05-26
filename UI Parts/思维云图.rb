@@ -5,9 +5,9 @@
 # ※ 本插件推荐与【事件互动扩展 by老鹰】共同使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ThinkBar"] = "1.0.1"
+$imported["EAGLE-ThinkBar"] = "1.0.3"
 #==============================================================================
-# - 2022.5.22.22
+# - 2023.5.14.23 无思考词时，不再打开界面
 #==============================================================================
 # - 本插件新增了效仿《十三机兵防卫圈》的思维云图系统（简化版）
 #------------------------------------------------------------------------------
@@ -247,6 +247,8 @@ module THINKBAR
   # ● 判定事件是否可以提取思考词
   #--------------------------------------------------------------------------
   def self.check_event_near(event)
+    return [] if !event.eagle_word?  # 排除已经暂时消除或空白页
+    
     d = (event.x - $game_player.x).abs + (event.y - $game_player.y).abs
     if $imported["EAGLE-PixelMove"]
       d = (event.rgss_x - $game_player.rgss_x).abs + \
@@ -341,8 +343,13 @@ class Spriteset_ThinkBar
   #--------------------------------------------------------------------------
   def fiber_main
     @flag_break = false
-    ui_init_sprites
     init_words
+    # 如果没有词语，则关闭
+    if @words.size == 0
+      THINKBAR.deactivate
+      return @fiber = nil
+    end
+    ui_init_sprites
     init_sprites
     move_in
     update_selection(1)
@@ -367,13 +374,11 @@ class Spriteset_ThinkBar
       words_params = THINKBAR.check_event_near(e)
       words_params.each do |_ps|
         next if _ps[:t] == nil
+        _ps[:__t__] = _ps[:t].dup # 用于显示和呼叫思考词
+        # 加上事件id，确保不会和已有思考词发生冲突
+        _ps[:t] = _ps[:t] + "#{_ps[:eid]}"
         @words[_ps[:t]] = _ps
       end
-    end
-    # 如果没有词语，则关闭
-    if @words.size == 0
-      THINKBAR.deactivate
-      @flag_break = true
     end
   end
   #--------------------------------------------------------------------------
@@ -593,7 +598,7 @@ class Sprite_ThinkBar_Word < Sprite
 
     # 创建位图，此时确保了位图宽高一定大于文字区域
     ps = { :x0 => 0, :y0 => 0 }
-    d = Process_DrawTextEX.new(t.dup, ps)
+    d = Process_DrawTextEX.new(params[:__t__].dup, ps)
     w = [w, d.width + padding * 2].max
     h = [h, d.height + padding * 2].max
     self.bitmap = Bitmap.new(w, h)
@@ -633,12 +638,12 @@ class Sprite_ThinkBar_Word < Sprite
     return nil if !$imported["EAGLE-EventInteractEX"]
     sym = nil
     if THINKBAR::EventInteractEX_WORD_AS_SYM
-      sym = @t
+      sym = ps[:__t__]
       sym = ps[:sym] if ps[:sym]
       return sym
     else
       sym = ps[:sym] if ps[:sym]
-      sym = @t if ps[:sym] == "0"
+      sym = ps[:__t__] if ps[:sym] == "0"
     end
     return sym
   end
@@ -812,6 +817,17 @@ end
 #===============================================================================
 # ○ Game_Interpreter
 #===============================================================================
+class Game_Event
+  #--------------------------------------------------------------------------
+  # ● 可以触发思考词？
+  #--------------------------------------------------------------------------
+  def eagle_word?
+    @erased == false && @page != nil && @transparent == false
+  end
+end
+#===============================================================================
+# ○ Game_Interpreter
+#===============================================================================
 class Game_Interpreter
   #--------------------------------------------------------------------------
   # ● 添加注释
@@ -825,6 +841,7 @@ class Game_Interpreter
       ps = EAGLE_COMMON.parse_tags(ps)
       t = v[1]
       ps[:t] = t
+      ps[:__t__] = ps[:t].dup # 用于显示和呼叫思考词
       ps[:mid] ||= @map_id
       ps[:eid] ||= @event_id
       ps[:eid] = @event_id if ps[:eid] == "0"
