@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = "1.9.8"
 #=============================================================================
-# - 2023.5.26.20 \face现在能在绘制时修改脸图了
+# - 2023.5.27.18 修复\face更改脸图后可能导致位图为空的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2899,7 +2899,7 @@ class Window_EagleMessage < Window_Base
   def eagle_message_sprites_move_out
     while(!@eagle_chara_sprites.empty?)
       c = eagle_take_out_a_chara
-      ensure_character_visible(c)
+      ensure_character_visible(c, true) # 不要聚焦当前文字的缓动动画，太慢
       c.move_out # 已经交由文字池进行后续更新释放
       if @eagle_force_close  # 如果强制关闭，则不等待移出了
       else
@@ -4543,7 +4543,7 @@ class Window_EagleMessage < Window_Base
   # ● 脸图占用的高度
   #--------------------------------------------------------------------------
   def eagle_face_height
-    face_params[:height]
+    face_params[:height] || 0
   end
   #--------------------------------------------------------------------------
   # ● 保证脸图完全显示在对话框内？
@@ -5620,7 +5620,9 @@ class Sprite_EagleFace < Sprite
   # ● 脸图未更改？
   #--------------------------------------------------------------------------
   def no_change?
-    @params[:name] == face_params[:name] && @params[:i] == face_params[:i]
+    self.bitmap && !self.bitmap.disposed? &&
+    @params[:name] == face_params[:name] && 
+    @params[:i] == face_params[:i] 
   end
   #--------------------------------------------------------------------------
   # ● 设置脸图文件
