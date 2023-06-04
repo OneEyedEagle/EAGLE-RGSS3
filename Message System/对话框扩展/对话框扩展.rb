@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = "1.9.9"
 #=============================================================================
-# - 2023.6.1.22 一些细微调整
+# - 2023.6.4.15 对话框未关闭时，修复xy没有缓动变化的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2950,7 +2950,6 @@ class Window_EagleMessage < Window_Base
   # ● 对话框位置大小更新前的处理
   #--------------------------------------------------------------------------
   def eagle_before_set_xywh(_p)
-    eagle_win_update # 确保对话框当前的xy为移动的目的地
   end
   #--------------------------------------------------------------------------
   # ● 设置对话框xywh的参数Hash
@@ -2958,11 +2957,37 @@ class Window_EagleMessage < Window_Base
   def eagle_set_params_xywh(_p = {})
     _p[:update] = [] # 将会进行更新的属性
     _p[:ins] = false if _p[:ins].nil? # 如果需要立刻更新完成，置为 true
+    _p[:ins] = true if @background == 2 # 透明背景时直接更新完成
     _p[:open] = false if _p[:open].nil? # 如果目标是打开窗口，置为 true
     _p[:t] ||= 20 # 更新所需时间（帧）
+    
+    # 先计算目标宽高（该变量与其它参数均无关，只需要预绘制后的文字区域宽高）
+    #_p[:w] 与 _p[:h] 为更新结束时的宽高，如果为 nil，将自动计算
+    _p[:w_init] = self.width
+    if _p[:w].nil?
+      _p[:w]  = eagle_window_width
+      _p[:w] += eagle_window_width_add(_p[:w])
+    end
+    _p[:w_d] = _p[:w] - _p[:w_init]
+    _p[:update].push(:w) if _p[:w_d] != 0
+
+    _p[:h_init] = self.height
+    if _p[:h].nil?
+      _p[:h]  = eagle_window_height
+      _p[:h] += eagle_window_height_add(_p[:h])
+    end
+    _p[:h_d] = _p[:h] - _p[:h_init]
+    _p[:update].push(:h) if _p[:h_d] != 0
+    
+    # 如果为打开/预定变更宽高，记录最终的宽高
+    if _p[:open] || @flag_need_change_wh 
+      @eagle_win_des_w = _p[:w]
+      @eagle_win_des_h = _p[:h]
+    end
+    # 需要先计算出目标宽高，再更新该设置，才能保证更新后的xy为真正的移动目标位置
+    eagle_win_update 
 
     #_p[:x] 与 _p[:y] 为更新结束时的位置，如果为 nil，且对话框未关闭，将自动计算
-    #_p[:w] 与 _p[:h] 为更新结束时的宽高，如果为 nil，将自动计算
     if _p[:open] || @eagle_last_x.nil? || @eagle_last_y.nil?
       # 如果为打开，则已经直接移到了目的地，此处不再变更xy
       _p[:x] = nil
@@ -2981,24 +3006,6 @@ class Window_EagleMessage < Window_Base
       _p[:y_d] = _p[:y] - _p[:y_init]
       _p[:update].push(:y) if _p[:y_d] != 0
     end
-
-    _p[:w_init] = self.width
-    if _p[:w].nil?
-      _p[:w]  = eagle_window_width
-      _p[:w] += eagle_window_width_add(_p[:w])
-    end
-    _p[:w_d] = _p[:w] - _p[:w_init]
-    _p[:update].push(:w) if _p[:w_d] != 0
-
-    _p[:h_init] = self.height
-    if _p[:h].nil?
-      _p[:h]  = eagle_window_height
-      _p[:h] += eagle_window_height_add(_p[:h])
-    end
-    _p[:h_d] = _p[:h] - _p[:h_init]
-    _p[:update].push(:h) if _p[:h_d] != 0
-
-    _p[:ins] = true if @background == 2 # 透明背景时直接更新完成
   end
   #--------------------------------------------------------------------------
   # ● 应用对话框xywh的参数Hash的预修改
@@ -3016,10 +3023,6 @@ class Window_EagleMessage < Window_Base
       self.width = _p[:w]
       self.height = _p[:h]
       _p[:update].clear
-    end
-    if _p[:open] || @flag_need_change_wh # 如果为打开/预定变更宽高，记录最终宽高
-      @eagle_win_des_w = _p[:w]
-      @eagle_win_des_h = _p[:h]
     end
   end
   #--------------------------------------------------------------------------
