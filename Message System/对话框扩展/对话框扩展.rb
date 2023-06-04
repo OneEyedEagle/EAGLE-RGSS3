@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.9"
+$imported["EAGLE-MessageEX"] = "1.9.10"
 #=============================================================================
-# - 2023.6.4.15 对话框未关闭时，修复xy没有缓动变化的bug
+# - 2023.6.4.23 对话框未关闭时，修复xy没有缓动变化的bug；给缓动函数增加四舍五入
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -3050,14 +3050,14 @@ class Window_EagleMessage < Window_Base
         case sym
         when :x
           _x = _p[:x_init] + _p[:x_d] * per
-          @eagle_move_x = _x - _p[:x]
+          @eagle_move_x = (_x - _p[:x]).round
         when :y
           _y = _p[:y_init] + _p[:y_d] * per
-          @eagle_move_y = _y - _p[:y]
+          @eagle_move_y = (_y - _p[:y]).round
         when :w
-          self.width = _p[:w_init] + _p[:w_d] * per
+          self.width = (_p[:w_init] + _p[:w_d] * per).round
         when :h
-          self.height = _p[:h_init] + _p[:h_d] * per
+          self.height = (_p[:h_init] + _p[:h_d] * per).round
         end
       end
       eagle_after_wh_change
@@ -3935,8 +3935,8 @@ class Window_EagleMessage < Window_Base
       (t+1).times do |i|
         per = i * 1.0 / t
         per = MESSAGE_EX.ease_value(:msg_vp, per)
-        self.ox = ox_1 + ox_d * per if ox_d != 0
-        self.oy = oy_1 + oy_d * per if oy_d != 0
+        self.ox = (ox_1 + ox_d * per).round if ox_d != 0
+        self.oy = (oy_1 + oy_d * per).round if oy_d != 0
         update_moving_charas_oxy
         Fiber.yield
       end
@@ -4290,7 +4290,7 @@ class Window_EagleMessage < Window_Base
       (t+1).times do |i|
         per = i * 1.0 / t
         per = MESSAGE_EX.ease_value(:msg_vp, per)
-        self.oy = oy_1 + oy_d * per
+        self.oy = (oy_1 + oy_d * per).round
         update_moving_charas_oxy
         Fiber.yield
       end
@@ -5828,8 +5828,8 @@ class Sprite_EagleFace < Sprite
       break if _i > _t
       per = _i * 1.0 / _t
       per = (_i == _t ? 1 : MESSAGE_EX.ease_value(:face_xy, per))
-      @x1 = init_x1 + d_x * per
-      @y1 = init_y1 + d_y * per
+      @x1 = (init_x1 + d_x * per).round
+      @y1 = (init_y1 + d_y * per).round
       yield self if block_given?
       Fiber.yield
       _i += 1
@@ -6271,8 +6271,8 @@ class Sprite_EagleCharacter < Sprite
 
     per = params[:tc] * 1.0 / params[:t]
     per = (params[:tc] == params[:t] ? 1 : MESSAGE_EX.ease_value(:chara_xy, per))
-    @dx = params[:dx_init] + params[:dx_d] * per
-    @dy = params[:dy_init] + params[:dy_d] * per
+    @dx = (params[:dx_init] + params[:dx_d] * per).round
+    @dy = (params[:dy_init] + params[:dy_d] * per).round
 
     if (params[:rxc] += 1) == params[:rxt]
       params[:rxc] = 0
