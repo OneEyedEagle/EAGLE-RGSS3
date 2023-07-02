@@ -2,9 +2,9 @@
 # ■ AStar寻路扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AStar"] = "1.4.1"
+$imported["EAGLE-AStar"] = "1.5.1"
 #==============================================================================
-# - 2023.5.14.22 修复 same_map? 报错问题
+# - 2023.7.2.10 新增寻路失败后往外扩展一圈移动、连续失败后结束寻路的设置
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -27,7 +27,7 @@ $imported["EAGLE-AStar"] = "1.4.1"
 #
 # - 注意：
 #
-#   1. 当寻路失败时（被其他事件挡住所有通路；目的地周围不可通行），
+#   1. 当寻路失败时（被其他事件挡住所有通路；目的地不可通行），
 #      将强制等待 WAIT_WHEN_FAIL_ASTAR 帧，以保证不会重复多次寻路造成卡顿
 #
 #   2. 当事件页发生切换时，将强制终止事件已有的寻路
@@ -79,10 +79,27 @@ module Eagle_AStar
   # ● 【常量】当开关开启时，将事件的接近玩家更改为使用自动寻路
   #--------------------------------------------------------------------------
   S_ID_EVENT_CHASE_PLAYER_ON = 1
+
+  #--------------------------------------------------------------------------
+  # ● 【常量】当目的地无法到达时，向它周围N圈进行移动
+  #  比如 N=0 时，必须到目的地，否则返回寻路失败
+  #  比如 N=1 时，会查找目的地周围一圈距离1的位置，并尝试寻路
+  #  比如 N=2 时，首先查找目的地周围一圈距离1的位置，失败则继续查找距离2的位置
+  # 注意：从目的地左上(x-N, y-N)开始，按行逐个搜索距离满足指定值的位置
+  #--------------------------------------------------------------------------
+  VALUE_N = 2
   #--------------------------------------------------------------------------
   # ● 【常量】当寻路失败，强制等待的帧数（防止多次寻路造成卡顿）
   #--------------------------------------------------------------------------
-  WAIT_WHEN_FAIL_ASTAR = 40
+  WAIT_WHEN_FAIL_ASTAR = 30
+  #--------------------------------------------------------------------------
+  # ● 【常量】当astar_until方法中连续寻路失败达该次数时，直接结束寻路
+  #--------------------------------------------------------------------------
+  VALUE_ASTAR_UNTIL_FAIL = 3
+  
+#=============================================================================
+# □ 请不要随意修改以下内容
+#=============================================================================
   #--------------------------------------------------------------------------
   # ● A*寻路算法
   #--------------------------------------------------------------------------
@@ -124,11 +141,11 @@ class Process
   # ● 搜索
   #--------------------------------------------------------------------------
   DIR_TO_DXY = { 2 => [0, 1], 4 => [-1, 0], 6 => [1, 0], 8 => [0, -1] }
-    {1 => [-1, 1], 3 => [1, 1], 7 => [-1, -1], 9 => [1, -1] }
+  DIR_TO_8DXY = { 1 => [-1, 1], 3 => [1, 1], 7 => [-1, -1], 9 => [1, -1] }
   def do_search
     @flag_fin = false
     cur = nil
-    while( !@flag_fin )
+    while( @flag_fin == false )
       break if @open.empty?
       cur = @open.shift
       cur_g = @g_data[cur[0], cur[1]]
@@ -142,14 +159,19 @@ class Process
   #--------------------------------------------------------------------------
   # ● 检查指定位置
   #--------------------------------------------------------------------------
+  V_NO_REACH = -10  # Table中代表不可通行的值
   def check_point(x_old, y_old, dir, x, y, g)
     return if x < 0 || y < 0
     return if x >= @w || y >= @h
     return if @g_data[x, y] > 0 # 已经被索引过
     if !passable?(@chara, x_old, y_old, dir)
-      @dir_data[x, y] = -1
+      @dir_data[x, y] = V_NO_REACH
       @g_data[x, y] = 999
       @f_data[x, y] = calc_f(g, x ,y)
+      if x == @des_x && y == @des_y
+        @dir_data[x, y] = -dir # 特殊：负数时表示只改方向
+        @flag_fin = "unreach"
+      end
     else
       @dir_data[x, y] = dir
       @g_data[x, y] = g + 1
@@ -160,10 +182,7 @@ class Process
       else
         @open.unshift( [x, y] )
       end
-    end
-    if x == @des_x && y == @des_y
-      @dir_data[x, y] = dir
-      @flag_fin = true
+      @flag_fin = true if x == @des_x && y == @des_y
     end
   end
   #--------------------------------------------------------------------------
@@ -185,13 +204,35 @@ class Process
   # ● 输出移动的数组（2,4,6,8）
   #--------------------------------------------------------------------------
   def output_path
-    return nil if !@flag_fin
-    path = []; x = @des_x; y = @des_y; dir = @dir_data[x, y]
+    if @flag_fin == true  # 能够成功到达目的地
+      x = @des_x; y = @des_y; dir = @dir_data[x, y]
+    elsif @flag_fin == "unreach" # 最后一步到不了，目的地无法移动
+      x = @des_x; y = @des_y; dir = @dir_data[x, y]
+    else # 到不了，没通路，查找周围位置
+      f = false
+      level = Eagle_AStar::VALUE_N
+      return nil if level <= 0  # 不查找周围位置
+      level.times do |l|
+        x1 = @des_x - (l+1); x2 = @des_x + (l+1)
+        y1 = @des_y - (l+1); y2 = @des_y + (l+1)
+        for iy in y1..y2
+          for ix in x1..x2
+            next if (@des_x - ix).abs + (@des_y - iy).abs != (l+1)
+            x = ix; y = iy; dir = @dir_data[x, y] # 超出范围时返回nil
+            break f = true if dir != nil && dir > 0 
+          end
+          break if f
+        end
+        break if f
+      end
+      return nil if f == false # 最后还是寻路失败
+    end
+    path = []
     while ( dir != 5 )
-      break if @dir_data[x, y] == -1
+      break if @dir_data[x, y] == V_NO_REACH
       path.unshift( dir )
-      x = x + DIR_TO_DXY[ 10 - dir ][0]
-      y = y + DIR_TO_DXY[ 10 - dir ][1]
+      x = x + DIR_TO_DXY[ 10 - dir.abs ][0]
+      y = y + DIR_TO_DXY[ 10 - dir.abs ][1]
       dir = @dir_data[x, y]
     end
     path
@@ -208,6 +249,11 @@ class Game_Character
     list = Eagle_AStar.do(self, x, y) rescue nil
     return true if list == true
     return false if list.nil? || list.empty?
+    if list[0] < 0  # 首位为负数时，代表只能变更方向，说明移动失败了
+      v = list.shift
+      set_direction(v.abs)
+      return false
+    end
     move_straight(list[0])
     return list[0]
   end
@@ -245,6 +291,7 @@ class Game_Character
     @astar_des_y = y
     @astar_des_d = d
     @astar_wait = 1
+    @astar_fail = 0
     update_astar_move
   end
   #--------------------------------------------------------------------------
@@ -274,8 +321,16 @@ class Game_Character
       return true
     end
     f = astar_one_step(@astar_des_x, @astar_des_y)
-    @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR if f == false
-    set_direction(f) if f.is_a?(Integer)
+    if f == false
+      @astar_fail += 1
+      if (v=Eagle_AStar::VALUE_ASTAR_UNTIL_FAIL) > 0 && @astar_fail > v
+        astar_stop
+        return false
+      end
+      @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR 
+    else
+      @astar_fail = 0
+    end
     return false
   end
   #--------------------------------------------------------------------------
