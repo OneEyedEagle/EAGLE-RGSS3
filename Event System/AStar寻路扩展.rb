@@ -2,9 +2,9 @@
 # ■ AStar寻路扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AStar"] = "1.5.1"
+$imported["EAGLE-AStar"] = "1.5.2"
 #==============================================================================
-# - 2023.7.2.10 新增寻路失败后往外扩展一圈移动、连续失败后结束寻路的设置
+# - 2023.7.2.22 新增寻路失败后往外扩展一圈移动、连续失败后结束寻路的设置
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -27,12 +27,16 @@ $imported["EAGLE-AStar"] = "1.5.1"
 #
 # - 注意：
 #
-#   1. 当寻路失败时（被其他事件挡住所有通路；目的地不可通行），
-#      将强制等待 WAIT_WHEN_FAIL_ASTAR 帧，以保证不会重复多次寻路造成卡顿
+#   1. 当寻路失败时（被其他事件挡住所有通路；目的地周围不可通行），
+#      首先，朝其周围 VALUE_N 圈位置靠近移动，
+#      然后，寻路失败后会等待 WAIT_WHEN_FAIL_ASTAR 帧，确保不会重复寻路造成卡顿，
+#      最后，如果寻路连续失败 VALUE_ASTAR_UNTIL_FAIL 次，将直接结束寻路
 #
-#   2. 当事件页发生切换时，将强制终止事件已有的寻路
+#   2. 当目的地位置不可通行时（如有其它事件存在），将在朝其移动一次后，直接结束寻路
 #
-#   3. 当事件被触发时（不含自动执行和并行执行），将停止自身的寻路
+#   3. 当事件页发生切换时，将强制终止事件已有的寻路
+#
+#   4. 当事件被触发时（不含自动执行和并行执行），将停止自身的寻路
 #
 #-----------------------------------------------------------------------------
 # 【使用：替换默认的接近】
@@ -249,10 +253,9 @@ class Game_Character
     list = Eagle_AStar.do(self, x, y) rescue nil
     return true if list == true
     return false if list.nil? || list.empty?
-    if list[0] < 0  # 首位为负数时，代表只能变更方向，说明移动失败了
-      v = list.shift
-      set_direction(v.abs)
-      return false
+    if list[0] < 0  # 首位为负数时，代表目的地无法移动（比如有事件在）
+      move_straight(list.shift.abs)
+      return "unreach"
     end
     move_straight(list[0])
     return list[0]
@@ -322,12 +325,13 @@ class Game_Character
     end
     f = astar_one_step(@astar_des_x, @astar_des_y)
     if f == false
+      @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR 
       @astar_fail += 1
       if (v=Eagle_AStar::VALUE_ASTAR_UNTIL_FAIL) > 0 && @astar_fail > v
         astar_stop
-        return false
       end
-      @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR 
+    elsif f == "unreach"
+      astar_stop
     else
       @astar_fail = 0
     end
