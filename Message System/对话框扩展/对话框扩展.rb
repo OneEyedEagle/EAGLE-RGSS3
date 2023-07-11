@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.9.10"
+$imported["EAGLE-MessageEX"] = "1.10.0" 
 #=============================================================================
-# - 2023.6.4.23 对话框未关闭时，修复xy没有缓动变化的bug；给缓动函数增加四舍五入
+# - 2023.7.11.21 优化了\next和\hold在窗口动态缩放时的体验
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2517,8 +2517,8 @@ class Window_EagleMessage < Window_Base
     t.eagle_reset_z
     # 自身初始化组件与重置
     eagle_message_init_assets
-    eagle_message_reset
-    eagle_recreate_back_bitmap
+    # 更新自身的z值
+    eagle_reset_z
     t
   end
   #--------------------------------------------------------------------------
@@ -2568,9 +2568,8 @@ class Window_EagleMessage < Window_Base
     eagle_move_out_assets    # 移出全部组件
     @eagle_last_x = @eagle_last_y = nil  # 重置存储的对话框的上一个位置
     @eagle_move_x = @eagle_move_y = 0    # 重置对话框动态移动位置
-    @eagle_win_des_w = 0     # 重置对话框最终显示宽高
-    @eagle_win_des_h = 0
-    @eagle_charas_w = @eagle_charas_h = 0  # 重置文字区域的宽高
+    @eagle_win_des_w = @eagle_win_des_h = 0  # 重置对话框最终显示宽高
+    @eagle_charas_w = @eagle_charas_h = 0    # 重置文字区域的宽高
     @eagle_charas_w_final = @eagle_charas_h_final = 0
     face_params[:width] = 0  # 重置脸图的宽度（用于文字偏移）
     @eagle_pop_obj = nil     # 重置pop对象，防止报错
@@ -2581,20 +2580,19 @@ class Window_EagleMessage < Window_Base
   # ● 重置对话框（对话框不关闭，清空全部设置，并继续显示）
   #--------------------------------------------------------------------------
   def eagle_message_reset_continue
+    show if !self.visible    # 确保对话框显示
+    if @flag_next  # 如果继续显示在当前对话框里，则不移出文字
+    else
+      eagle_message_sprites_move_out  # 移出全部文字精灵
+      eagle_reset_charas_oxy  # 重置文字显示区域
+      @eagle_chara_sets.clear  # 清空文字分组
+    end
     eagle_process_env        # 处理环境的存储或读取
     eagle_process_temp       # 处理临时环境
-    @eagle_chara_sets.clear  # 清空文字分组
     @eagle_sprite_pop_tag.visible = false # 隐藏pop的tag
     @eagle_sprite_pause.visible = false   # 隐藏等待按键pause精灵
     @eagle_sprite_pause.bind_last_chara(nil)  # 重置pause精灵的文末位置
     @eagle_sprite_pause_width_add = 0     # 因pause精灵而扩展的窗口宽度
-    eagle_message_reset_next
-  end
-  #--------------------------------------------------------------------------
-  # ● 重置对话框（对话框不关闭，保留全部设置，并继续显示）
-  #--------------------------------------------------------------------------
-  def eagle_message_reset_next
-    show if !self.visible       # 确保对话框显示
     @eagle_next_chara_x = 0     # 重置下一个文字的绘制坐标x（左对齐、不考虑换行）
     @eagle_force_close = false  # 重置强制关闭
   end
@@ -3546,6 +3544,11 @@ class Window_EagleMessage < Window_Base
   # ● 当前对话框继续显示，一些变量重置的处理
   #--------------------------------------------------------------------------
   def eagle_process_after_check_continue
+    if @flag_hold  # 保留当前对话框时
+      # 如果当前对话框还要继续显示，则重新打开，确保移动的动画从当前位置开始
+      self.openness = 255 
+      @flag_need_open = false
+    end
     eagle_message_reset_continue
     @flag_need_change_wh = true  # 由于没有打开关闭，需要执行一次更新宽高
   end
@@ -3652,11 +3655,9 @@ class Window_EagleMessage < Window_Base
     if @flag_next  # 旧页面不清空，继续绘制
       pos[:y] = @eagle_charas_h_final + win_params[:ld]  # 不要忘记加个行间距
       @flag_need_change_wh = true  # 如果是旧页面继续绘制，则需要更新宽高
-      eagle_after_set_xywh({})  # 重置对话框记录xy，作为移动的初始位置
-    else  # 通常绘制
-      eagle_message_sprites_move_out  # 移出之前的全部文字精灵
-      eagle_reset_charas_oxy  # 重置文字显示区域
+      eagle_after_set_xywh({})  # 重置记录的当前xy，作为窗口移动的初始位置
     end
+
     reset_font_settings
     eagle_check_pre_settings(text)  # 处理预先内容（脸图、姓名等）
     # 存储实际绘制的文本，预先转义符已删去（扩展用，获取显示的对话文本）
