@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.10.0" 
+$imported["EAGLE-MessageEX"] = "1.10.1" 
 #=============================================================================
-# - 2023.7.11.21 优化了\next和\hold在窗口动态缩放时的体验
+# - 2023.7.12.19 新增\env在对话框关闭时自动重置为默认环境
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -1466,6 +1466,12 @@ DEFAULT_ENVS = {
   "底部" => "\\win[o2do-2dy-30w200h3]", # 对话框居下显示
 }
 #
+# 【常量设置：设置当对话框关闭时，是否把环境重置为默认的0】
+# （若设置为 true，则每次对话框关闭时，环境重置为 0）
+# （若设置为 false ，则不会自动重置环境，请手动写 \env[0]）
+# （若设置为 数字，则该序号的开关 $game_switches[id] 开启时，才自动重置环境 ）
+S_ID_RESET_ENV = true
+#
 #----------------------------------------------------------------------------
 #  \env[sym|save] 【结尾】
 #----------------------------------------------------------------------------
@@ -2115,7 +2121,7 @@ class Game_Message
   attr_accessor :chara_params # 存储文字特效预设 code_symbol => param_string
   attr_accessor :font_params, :win_params, :pop_params
   attr_accessor :face_params, :name_params, :pause_params
-  attr_accessor :func_params, :ex_params, :env
+  attr_accessor :func_params, :ex_params, :env, :default_env
   attr_accessor :event_id, :child_window_w_des, :child_window_h_des
   attr_accessor :no_name_overlap_face, :no_input_pause, :active # 对话框在显示中
   attr_accessor :eagle_text # 存储实际绘制的文本（去除了预处理的转义符）
@@ -2373,6 +2379,7 @@ class Game_System
       MESSAGE_EX.set_game_message(g, text)
       @message_envs[sym] = g
     end
+    $game_message.save_env if $game_message.default_env == nil
   end
 end
 #=============================================================================
@@ -2883,6 +2890,7 @@ class Window_EagleMessage < Window_Base
   def close
     super
     eagle_message_reset
+    eagle_reset_env # 特殊：重置环境
   end
   #--------------------------------------------------------------------------
   # ● 判定是否所有窗口已全部关闭
@@ -3214,9 +3222,7 @@ class Window_EagleMessage < Window_Base
     eagle_change_windowskin
     self.x = win_params[:x] || default_init_x
     self.y = win_params[:y] || default_init_y
-    if win_params[:do] < 0
-      MESSAGE_EX.reset_xy_dorigin(self, nil, win_params[:do])
-    end
+    MESSAGE_EX.reset_xy_dorigin(self, nil, win_params[:do]) if win_params[:do] < 0
     MESSAGE_EX.reset_xy_origin(self, win_params[:o])
     eagle_set_xy_ex
     self.x = self.x + win_params[:dx] + @eagle_move_x
@@ -3228,9 +3234,7 @@ class Window_EagleMessage < Window_Base
   # ● 获取对话框的初始位置
   #--------------------------------------------------------------------------
   def default_init_x;  0;  end
-  def default_init_y
-    (@position * (Graphics.height - @eagle_win_des_h) / 2)
-  end
+  def default_init_y; (@position*(Graphics.height-@eagle_win_des_h)/2); end
   #--------------------------------------------------------------------------
   # ● 重定义对话框的位置（此时已经处理完了xy或do的初始指定位置）（扩展用）
   #--------------------------------------------------------------------------
@@ -4038,6 +4042,13 @@ class Window_EagleMessage < Window_Base
     game_message.save_env(@flag_save_env)
     game_message.env = @flag_save_env
     @flag_save_env = nil
+  end
+  def eagle_reset_env  # 在 close 方法中调用
+    v = MESSAGE_EX::S_ID_RESET_ENV
+    if v == true || (v.is_a?(Integer) && $game_switches[v] == true)
+      game_message.env = '0'
+      game_message.load_env('0')
+    end
   end
   #--------------------------------------------------------------------------
   # ● 设置/执行hold指令
