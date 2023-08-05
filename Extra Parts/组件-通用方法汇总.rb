@@ -1,10 +1,11 @@
 #==============================================================================
 # ■ 组件-通用方法汇总 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
+# 【此插件兼容VX和VX Ace】
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.1.5"
+$imported["EAGLE-CommonMethods"] = "1.1.7"
 #==============================================================================
-# - 2023.4.30.10 新增指定精灵的截图，新增位图切割
+# - 2023.8.5.13 兼容VX
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #---------------------------------------------------------------------------
@@ -27,7 +28,7 @@ $imported["EAGLE-CommonMethods"] = "1.1.5"
 #
 #  EAGLE_COMMON.eagle_eval(t, ps = {})
 #   → 扩展的执行字符串t
-#     （其中 s = $game_switches; v = $game_variables
+#     （其中 s = $game_switches; v = $game_variables; ss = $game_self_switches
 #       es = $game_map.events; gp = $game_player）
 #     如果 ps 中存在 ps[:event] 的值，则可用 event 代表它
 #
@@ -161,9 +162,9 @@ $imported["EAGLE-CommonMethods"] = "1.1.5"
 #
 #---------------------------------------------------------------------------
 # 【菜单相关】
-#
+# 
 #  $game_temp.last_menu_item
-#   → 获取最近一次在菜单中所使用物品/技能的实例
+#   → （仅VA）获取最近一次在菜单中所使用物品/技能的实例
 #
 #==============================================================================
 
@@ -171,6 +172,11 @@ $imported["EAGLE-CommonMethods"] = "1.1.5"
 # □ 脚本版本判定
 #===============================================================================
 module EAGLE_COMMON
+  #--------------------------------------------------------------------------
+  # ●【常量】兼容
+  #--------------------------------------------------------------------------
+  MODE_VX = RUBY_VERSION[0..2] == "1.8"
+  MODE_VA = RUBY_VERSION[0..2] == "1.9" 
   #--------------------------------------------------------------------------
   # ● 获取脚本的版本号
   #    name = "EAGLE-CommonMethods"
@@ -244,7 +250,7 @@ module EAGLE_COMMON
   # ● 执行文本
   #--------------------------------------------------------------------------
   def self.eagle_eval(t, ps = {})
-    s = $game_switches; v = $game_variables
+    s = $game_switches; v = $game_variables; ss = $game_self_switches
     es = $game_map.events
     gp = $game_player
     event = ps[:event] || nil
@@ -263,9 +269,9 @@ module EAGLE_COMMON
   #  str = "2", default=true
   #  返回 true
   #--------------------------------------------------------------------------
-  def self.check_bool(str, default=false)
+  def self.check_bool(str, default=false, ps={})
     return default if str.nil?
-    v = eagle_eval(str)
+    v = eagle_eval(str, ps)
     return true if v == true || v == 1
     return false if v == false || v == 0
     return default
@@ -703,7 +709,7 @@ module EAGLE_COMMON
   end
 end
 
-
+if EAGLE_COMMON::MODE_VA
 #==============================================================================
 # □ 菜单相关
 #===============================================================================
@@ -729,3 +735,4 @@ class Scene_ItemBase < Scene_MenuBase
     eagle_common_functions_check_common_event
   end
 end
+end 
