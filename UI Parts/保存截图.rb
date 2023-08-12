@@ -4,9 +4,9 @@
 # ※ 本插件需要放置在【组件-位图Marshal化（VX/VA）】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SaveScreenshot"] = "1.0.2"
+$imported["EAGLE-SaveScreenshot"] = "1.0.4"
 #==============================================================================
-# - 2022.8.18.21 修复存读档失效的bug
+# - 2023.8.12.20 新增未找到截图时的处理
 #==============================================================================
 # - 本插件新增了截图的保存，并且可以利用事件指令-显示图片来调用这些截图
 #--------------------------------------------------------------------------
@@ -51,23 +51,51 @@ module SAVE_MEMORY
 
   # 确保路径存在
   Dir.mkdir(SAVE_SCREEN_DIR) if !File.exist?(SAVE_SCREEN_DIR)
+
+  #--------------------------------------------------------------------------
+  # 【常量】依据存档序号，获得截图保存文件的名称
+  #--------------------------------------------------------------------------
+  def self.screenshot_filename(index)
+    v = FLAG_VX ? "%d" : "%02d"
+    t = FLAG_VX ? ".rvdata" : ".rvdata2"
+    # 全部存档文件对应同一个截图文件
+    # return sprintf(SAVE_SCREEN_DIR + "Memory" + t)
+    # 一个存档文件对应一个截图文件
+    return sprintf(SAVE_SCREEN_DIR + "Save"+v+"_memory" + t, index + 1)
+  end
+  #--------------------------------------------------------------------------
+  # 【常量】未找到对应截图时，显示的图片
+  #--------------------------------------------------------------------------
+  def self.no_screenshot
+    # 自定义无截图时显示的图片
+    #return Cache.picture("")
+    # 显示空白图片
+    return Cache.empty_bitmap
+  end
 end
 
 if FLAG_VX
+module Cache
+  #--------------------------------------------------------------------------
+  # ● 生成空位图
+  #--------------------------------------------------------------------------
+  def self.empty_bitmap
+    Bitmap.new(32, 32)
+  end
+end
 class Scene_File
   #--------------------------------------------------------------------------
   # ● 生成文件名称
   #     file_index : 存档位置（0～3）
   #--------------------------------------------------------------------------
   def make_filename_memory(file_index)
-    return SAVE_MEMORY::SAVE_SCREEN_DIR + "Save#{file_index + 1}_memory.rvdata"
   end
   #--------------------------------------------------------------------------
   # ● 执行存档
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_do_save do_save
   def do_save
-    File.open(make_filename_memory(@index), "wb") do |file|
+    File.open(SAVE_MEMORY.screenshot_filename(@index), "wb") do |file|
       Marshal.dump(SAVE_MEMORY.data, file)
     end
     eagle_save_screenshot_do_save
@@ -78,10 +106,11 @@ class Scene_File
   alias eagle_save_screenshot_do_load do_load
   def do_load
     begin
-      File.open(make_filename_memory(@index), "rb") do |file|
+      File.open(SAVE_MEMORY.screenshot_filename(@index), "rb") do |file|
         SAVE_MEMORY.data = Marshal.load(file)
       end
     rescue
+      SAVE_MEMORY.data = {}
       p $!
     end
     eagle_save_screenshot_do_load
@@ -90,19 +119,12 @@ end
 else  # if FLAG_VX
 class << DataManager
   #--------------------------------------------------------------------------
-  # ● 生成文件名
-  #     index : 文件索引
-  #--------------------------------------------------------------------------
-  def make_filename_memory(index)
-    sprintf(SAVE_MEMORY::SAVE_SCREEN_DIR + "Save%02d_memory.rvdata2", index + 1)
-  end
-  #--------------------------------------------------------------------------
   # ● 执行存档（没有错误处理）
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_save_game_without_rescue save_game_without_rescue
   def save_game_without_rescue(index)
     eagle_save_screenshot_save_game_without_rescue(index)
-    File.open(make_filename_memory(index), "wb") do |file|
+    File.open(SAVE_MEMORY.screenshot_filename(index), "wb") do |file|
       Marshal.dump(SAVE_MEMORY.data, file)
     end
     return true
@@ -114,10 +136,11 @@ class << DataManager
   def load_game_without_rescue(index)
     eagle_save_screenshot_load_game_without_rescue(index)
     begin
-      File.open(make_filename_memory(index), "rb") do |file|
+      File.open(SAVE_MEMORY.screenshot_filename(index), "rb") do |file|
         SAVE_MEMORY.data = Marshal.load(file)
       end
     rescue
+      SAVE_MEMORY.data = {}
       p $!
     end
     return true
@@ -141,7 +164,7 @@ module SAVE_MEMORY
   def self.before_screenshot
     TODOLIST.hide if $imported["EAGLE-TODOList"]
     MESSAGE_HINT.hide if $imported["EAGLE-MessageHint"]
-    PARTICLE.emitters.each { |k, v| v.hide } if $imported["EAGLE-Particle"]
+    PARTICLE.templates.each { |k, v| v.hide } if $imported["EAGLE-Particle"]
   end
   #--------------------------------------------------------------------------
   # ● 在截图后
@@ -149,7 +172,7 @@ module SAVE_MEMORY
   def self.after_screenshot
     TODOLIST.show if $imported["EAGLE-TODOList"]
     MESSAGE_HINT.show if $imported["EAGLE-MessageHint"]
-    PARTICLE.emitters.each { |k, v| v.show } if $imported["EAGLE-Particle"]
+    PARTICLE.templates.each { |k, v| v.show } if $imported["EAGLE-Particle"]
   end
   #--------------------------------------------------------------------------
   # ● 数据
@@ -166,7 +189,7 @@ module SAVE_MEMORY
   # ● 读取截图
   #--------------------------------------------------------------------------
   def self.load_screenshot(name)
-    @data[name] || Cache.empty_bitmap
+    @data[name] || SAVE_MEMORY.no_screenshot 
   end
 end
 
@@ -222,6 +245,14 @@ class Game_Picture
   def set_dir_type(t)
     @dir = t
   end
+  #--------------------------------------------------------------------------
+  # ● 消除图片
+  #--------------------------------------------------------------------------
+  alias eagle_save_screenshot_erase erase
+  def erase
+    @dir = nil
+    eagle_save_screenshot_erase
+  end
 end
 
 class Sprite_Picture < Sprite
@@ -231,14 +262,12 @@ if FLAG_VX
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_update update
   def update
-    if @picture_name != @picture.name
-      @picture_name = @picture.name
-      if @picture_name != "" && @picture.dir == :save_screenshot
-        self.bitmap = SAVE_MEMORY.load_screenshot(@picture.name).dup
-      else
-        self.bitmap = Cache.picture(@picture_name)
+    #if @picture_name != @picture.name
+      if @picture.dir == :save_screenshot
+        @picture_name = @picture.name
+        self.bitmap = SAVE_MEMORY.load_screenshot(@picture_name)
       end
-    end
+    #end
     eagle_save_screenshot_update
   end
 else
@@ -248,7 +277,7 @@ else
   alias eagle_save_screenshot_update_bitmap update_bitmap
   def update_bitmap
     if @picture.dir == :save_screenshot
-      self.bitmap = SAVE_MEMORY.load_screenshot(@picture.name).dup
+      self.bitmap = SAVE_MEMORY.load_screenshot(@picture.name)
     else
       eagle_save_screenshot_update_bitmap
     end
