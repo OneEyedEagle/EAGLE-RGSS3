@@ -4,9 +4,9 @@
 #   【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageHint"] = "1.1.0"
+$imported["EAGLE-MessageHint"] = "1.1.1"
 #==============================================================================
-# - 2022.7.20.21 修改注释
+# - 2023.8.17.19 修复读档后报错的bug
 #==============================================================================
 # - 本插件新增了并行显示的竖直排列的通知队列
 #------------------------------------------------------------------------------
@@ -313,7 +313,6 @@ module MESSAGE_HINT
   #--------------------------------------------------------------------------
   # ps[:text] = ""
   def self.add(ps, id="default")
-    $game_system.eagle_message_hint_params ||= {}
     @data[id] ||= Spriteset_EagleHint.new(id)
     @data[id].add(ps)
   end
@@ -321,6 +320,7 @@ module MESSAGE_HINT
   # ● 参数设置
   #--------------------------------------------------------------------------
   def self.set(k, v, id = "default")
+    $game_system.eagle_message_hint_params ||= {}
     $game_system.eagle_message_hint_params[id] ||= {}
     $game_system.eagle_message_hint_params[id][k] = v
   end
@@ -330,6 +330,7 @@ module MESSAGE_HINT
   def self.params(id = "default")
     ps0 = PARAMS["default"].dup
     ps1 = PARAMS[id] || {} if id != "default"
+    $game_system.eagle_message_hint_params ||= {}
     ps2 = $game_system.eagle_message_hint_params[id] || {}
     ps0 = ps0.merge!(ps1) if ps1
     ps0 = ps0.merge!(ps2)

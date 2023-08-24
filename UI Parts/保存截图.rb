@@ -4,9 +4,9 @@
 # ※ 本插件需要放置在【组件-位图Marshal化（VX/VA）】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SaveScreenshot"] = "1.0.4"
+$imported["EAGLE-SaveScreenshot"] = "1.0.5"
 #==============================================================================
-# - 2023.8.12.20 新增未找到截图时的处理
+# - 2023.8.24.21 解决VX中会释放正在使用的截图的位图的bug
 #==============================================================================
 # - 本插件新增了截图的保存，并且可以利用事件指令-显示图片来调用这些截图
 #--------------------------------------------------------------------------
@@ -59,7 +59,7 @@ module SAVE_MEMORY
     v = FLAG_VX ? "%d" : "%02d"
     t = FLAG_VX ? ".rvdata" : ".rvdata2"
     # 全部存档文件对应同一个截图文件
-    # return sprintf(SAVE_SCREEN_DIR + "Memory" + t)
+    return sprintf(SAVE_SCREEN_DIR + "Memory" + t)
     # 一个存档文件对应一个截图文件
     return sprintf(SAVE_SCREEN_DIR + "Save"+v+"_memory" + t, index + 1)
   end
@@ -256,6 +256,14 @@ class Game_Picture
 end
 
 class Sprite_Picture < Sprite
+  #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  alias eagle_save_screenshot_dispose dispose
+  def dispose
+    self.bitmap = nil if @picture.dir == :save_screenshot
+    eagle_save_screenshot_dispose
+  end
 if FLAG_VX
   #--------------------------------------------------------------------------
   # ● 更新画面
