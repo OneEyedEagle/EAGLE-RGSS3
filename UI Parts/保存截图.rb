@@ -250,7 +250,7 @@ class Game_Picture
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_erase erase
   def erase
-    @dir = nil
+    @dir = :erase
     eagle_save_screenshot_erase
   end
 end
@@ -270,12 +270,14 @@ if FLAG_VX
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_update update
   def update
-    #if @picture_name != @picture.name
-      if @picture.dir == :save_screenshot
-        @picture_name = @picture.name
-        self.bitmap = SAVE_MEMORY.load_screenshot(@picture_name)
-      end
-    #end
+    if @picture.dir == :erase
+      @picture.set_dir_type(nil)
+      self.bitmap = nil
+    end
+    if @picture.dir == :save_screenshot
+      @picture_name = @picture.name
+      self.bitmap = SAVE_MEMORY.load_screenshot(@picture_name)
+    end
     eagle_save_screenshot_update
   end
 else
@@ -284,6 +286,10 @@ else
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_update_bitmap update_bitmap
   def update_bitmap
+    if @picture.dir == :erase
+      @picture.set_dir_type(nil)
+      self.bitmap = nil
+    end
     if @picture.dir == :save_screenshot
       self.bitmap = SAVE_MEMORY.load_screenshot(@picture.name)
     else
