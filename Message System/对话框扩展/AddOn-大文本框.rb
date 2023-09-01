@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageBox"] = "1.1.0"
 #=============================================================================
-# - 2022.5.8.1 优化文字滚动的方式
+# - 2023.9.1.20 兼容对话框扩展v1.10.1
 #==============================================================================
 # - 本插件新增的大文本框，有以下几个新特性：
 #
@@ -1148,7 +1148,7 @@ class Sprite_EagleCharacter_MessageBox < Sprite_EagleCharacter
   # ● 初始化特效的默认参数
   #--------------------------------------------------------------------------
   def init_effect_params(sym)
-    @params[sym] = MESSAGE_EX.get_default_params(sym).dup
+    MESSAGE_EX.get_default_params(sym)
   end
 end
 
