@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.10.1" 
+$imported["EAGLE-MessageEX"] = "1.10.2" 
 #=============================================================================
-# - 2023.7.14.21 新增\env在对话框关闭时自动重置为默认环境
+# - 2023.9.2.18 修复\temp后下一个对话框错误显示了当前对话框的背景和位置bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2295,6 +2295,7 @@ class Game_Message
   #--------------------------------------------------------------------------
   def clone2
     t = Game_Message.new
+    clone_rgss(t)
     t.visible = true
     eagle_params.each do |sym|
       m = "#{sym}_params"
@@ -2304,11 +2305,16 @@ class Game_Message
     t
   end
   #--------------------------------------------------------------------------
+  # ● 参数拷贝（RGSS中的变量）
+  #--------------------------------------------------------------------------
+  def clone_rgss(t)
+    t.background = @background
+    t.position = @position
+  end
+  #--------------------------------------------------------------------------
   # ● 参数拷贝（扩展）
   #--------------------------------------------------------------------------
   def clone_ex(t)
-    t.background = @background
-    t.position = @position
     t.no_name_overlap_face = @no_name_overlap_face
   end
   #--------------------------------------------------------------------------
@@ -3546,6 +3552,7 @@ class Window_EagleMessage < Window_Base
   #  若返回 false，则会保留当前对话框不关闭，继续显示下一个指令的文本
   #--------------------------------------------------------------------------
   def settings_changed?
+    # 因为有动态移动，不再关注位置的改变
     @background != game_message.background #|| @position != game_message.position
   end
   #--------------------------------------------------------------------------
@@ -5455,7 +5462,8 @@ class Sprite_EaglePauseTag < Sprite
     @sprite_auto.x += MESSAGE_EX::WIN_AUTO_DX
     @sprite_auto.y += MESSAGE_EX::WIN_AUTO_DY
     @sprite_auto.z = self.z + 1
-    @sprite_auto.visible = @window_bind.win_params[:auto_t] != nil
+    @sprite_auto.bitmap.clear
+    @sprite_auto.visible = @window_bind.openness > 0 && @window_bind.win_params[:auto_t] != nil
   end
   #--------------------------------------------------------------------------
   # ● 重绘自动倒计时
