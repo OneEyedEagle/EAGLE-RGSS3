@@ -24,14 +24,13 @@
 
 - 在新版本的插件中，头部的 _$imported["插件名称"] = "1.2.3"_ 将直接写明该插件的版本号，比如此处的 _"1.2.3"_，其中第一个数字 _1_ 代表大版本，当该数字不同时，代表插件出现了较大的变动，且使用方法也会发生较大变化，可能完全无法直接进行替换，其中第二个数字 _2_ 代表功能更新，一般新增或删除了部分功能，请注意核查注释，尤其是替换掉对被删除功能的调用，其中第三个数字 _3_ 为BUG修复，可以直接复制并覆盖旧版本
 
-
 ### 下载方式
 
 - 【推荐】在当前页的文件列表的右上处，有绿色的“Code”按钮，点击后在弹出的框中选择“Download ZIP”，即可打包下载整个仓库，.rb的文件可以使用文本文档打开
 
 - 点击进入脚本文件的预览页面后，右上有“Raw”字样的按钮，点击进入只含有文件内容的页面，可利用Ctrl+A进行全选，再复制黏贴到你的工程中的空白脚本页内
 
-- 【借助第三方工具】若你已经登录了GitHub，可以通过设置GitHub Key后利用第三方工具（如[这个](https://download-directory.github.io/)）下载仓库中的独立文件夹：点击your GitHub token后跳转到你自己账户下的key生成界面，拖至最底部点击绿色按键生成key，然后复制key的字符串（注意：该字符串以后无法再找到，请保存好）到原网页中的输入框；此时可以通过在浏览器地址栏输入比如 https://download-directory.github.io?url=https://github.com/OneEyedEagle/EAGLE-RGSS3/tree/master/Demos/DEMO_EagleMessageEX 下载本仓库的Demos/DEMO_EagleMessageEX整个文件夹
+- 【借助第三方工具】若你已经登录了GitHub，可以通过设置GitHub Key后利用第三方工具（如[这个](https://download-directory.github.io/)）下载仓库中的独立文件夹：点击your GitHub token后跳转到你自己账户下的key生成界面，拖至最底部点击绿色按键生成key，然后复制key的字符串（注意：该字符串以后无法再找到，请保存好）到原网页中的输入框；此时可以通过在浏览器地址栏输入比如 [这个链接](https://download-directory.github.io?url=https://github.com/OneEyedEagle/EAGLE-RGSS3/tree/master/Demos/DEMO_EagleMessageEX) 来下载本仓库的Demos/DEMO_EagleMessageEX整个文件夹
 
 ### 更多示例
 
@@ -52,6 +51,12 @@
 - 针对 Message System 里的[【通知队列】](https://github.com/OneEyedEagle/EAGLE-RGSS3/tree/master/Message%20System/%E9%80%9A%E7%9F%A5%E9%98%9F%E5%88%97)，可以查看论坛中的[帖子](https://rpg.blue/thread-488207-1-1.html)
 
 - 针对 Event System 里的[【角色头顶显示图标】](https://github.com/OneEyedEagle/EAGLE-RGSS3/tree/master/Event%20System/%E8%A7%92%E8%89%B2%E5%A4%B4%E9%A1%B6%E6%98%BE%E7%A4%BA%E5%9B%BE%E6%A0%87)，可以查看论坛中的[帖子](https://rpg.blue/thread-489304-1-1.html)
+
+
+### 英语版
+超级感谢 Roninator2 和 BCj 努力把我的三个DEMO翻译成了英语版！具体请见[这里](https://forums.rpgmakerweb.com/index.php?threads/eagle-rgss3-scripts-and-demos-english-translated-by-google.160872/)。
+
+BIIIIIG THANKS to Roninator2 and BCj! They made awesome works to translate my three DEMOs into English version. More information is [HERE](https://forums.rpgmakerweb.com/index.php?threads/eagle-rgss3-scripts-and-demos-english-translated-by-google.160872/).
 
 
 ## 利用规约
