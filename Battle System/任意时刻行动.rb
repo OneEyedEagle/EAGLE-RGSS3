@@ -2,9 +2,9 @@
 # ■ 任意时刻行动 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ActionEX"] = "1.0.0"
+$imported["EAGLE-ActionEX"] = "1.0.1"
 #=============================================================================
-# - 2023.4.3.0
+# - 2023.9.8.21
 #=============================================================================
 # - 本插件新增了在任意时刻都能强制战斗行动的全局脚本
 # ※ 本插件兼容【SideView100】，请置于其下
@@ -19,7 +19,7 @@ $imported["EAGLE-ActionEX"] = "1.0.0"
 #
 #     可以为 Game_Battler 类的对象（单个人）
 #       比如 $game_party.members[0] 为我方队伍中的首位角色
-#            $game_actors[1] 为数据库中的 1 号角色
+#            $game_actors[1] 为数据库中的 1 号角色（可以不在战场上、不在队伍中）
 #       比如 $game_troop.members[0] 为敌方队伍中的1号索引角色
 #
 #     可以为 类型+位序 的字符串
@@ -54,9 +54,11 @@ $imported["EAGLE-ActionEX"] = "1.0.0"
 #
 # 1. 我方第二个角色使用59号技能攻击敌方全体
 #
-#  BattleManager.play_skill("a1", $game_troop.members, "s59")
+#  BattleManager.play_skill("m1", $game_troop.members, $data_skills[59])
+#  BattleManager.play_skill("m1", $game_troop.members, "s59")
+#  BattleManager.play_skill("m1", "e-1", "s59")
 #
-# 2. 
+# 2. ...
 #
 #-------------------------------------------------------------------
 # 【高级】
@@ -137,8 +139,11 @@ module BattleManager
     # 刷新状态栏
     scene.refresh_status
     # 显示动画
-    if !$imported["YEA-BattleEngine"]  
-      # 在YEA战斗系统中，显示单个动画位于invoke_item方法内
+    if $imported["YEA-BattleEngine"]
+      # YEA中，如果动画是全屏的，则只会在此处显示一次，而不在 invoke_item 中显示
+      scene.show_animation(targets, item.animation_id) if scene.show_all_animation?(item)
+    else
+      # YEA中，显示单个目标动画的处理位于 invoke_item 方法内
       scene.show_animation(targets, item.animation_id)
     end
     # 应用伤害
@@ -195,21 +200,21 @@ module BattleManager
   def self.eagle_get_targets(str)
     if str.is_a?(String)
       ts = []
-      while text != ""
-        t = text.slice!(/^[A-Z]+/i)
-        id = text.slice!(/^\d+/).to_i rescue 0
+      while str != ""
+        t = str.slice!(/^[A-Z]+/i)
+        id = str.slice!(/^\d+/).to_i rescue 0
         if t == 'm'
           ts = ts + $game_party.members if id == -1
           ts.push($game_party.members[id] || nil) if id >= 0
         elsif t == 'a'
           a = $game_party.members.select { |_m| _m.id == id }[0]
           return ts.push(a)
-        elsif str[0] == 'e'
+        elsif t == 'e'
           ts = ts + $game_troop.members if id == -1
           ts.push($game_troop.members[id] || nil) if id >= 0
         end
       end
-      return ts.conpact
+      return ts.compact
     elsif !str.is_a?(Array)
       return [str]
     else
@@ -306,7 +311,8 @@ class Game_Enemy
   # ● 获取技能实例的数组
   #--------------------------------------------------------------------------
   def skills
-    action_skills = enemy.actions.collect {|a| a.skill_id }
+    action_list = enemy.actions.select {|a| action_valid?(a) }
+    action_skills = action_list.collect {|a| a.skill_id }
     (action_skills | added_skills).sort.collect {|id| $data_skills[id] }
   end
 end

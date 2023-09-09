@@ -2,9 +2,9 @@
 # ■ 技能多段伤害 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SkillDamageEX"] = "1.0.0"
+$imported["EAGLE-SkillDamageEX"] = "1.0.1"
 #==============================================================================
-# - 2023.4.2.22 拆分出兼容 SideView 的版本
+# - 2023.9.8.23 
 #==============================================================================
 # - 新增跟随动画进行伤害结算，指定动画某一帧结算指定技能公式
 #----------------------------------------------------------------------------
@@ -162,6 +162,7 @@ class Process_AnimDamage
   # ● 处理下一帧
   #--------------------------------------------------------------------------
   def add_frame
+    return if finish?
     @frame += 1
     apply_item_effects(@frame)
   end
@@ -254,7 +255,11 @@ class Scene_Battle < Scene_Base
   alias eagle_skill_damage_ex_invoke_item invoke_item
   def invoke_item(target, item)
     eagle_skill_damage_ex_invoke_item(target, item)
-    eagle_wait_for_animation # 增加额外的等待
+    if $imported["YEA-BattleEngine"]
+    else
+      # 对于默认战斗系统，此处增加额外的等待
+      eagle_wait_for_animation
+    end
   end
   #--------------------------------------------------------------------------
   # ●（覆盖）处理攻击动画
