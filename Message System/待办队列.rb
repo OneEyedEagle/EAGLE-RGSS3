@@ -4,9 +4,9 @@
 #   【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-TODOList"] = "1.0.1"
+$imported["EAGLE-TODOList"] = "1.0.2"
 #==============================================================================
-# - 2022.5.5.23
+# - 2023.9.10.13
 #==============================================================================
 # - 本插件新增了一个显示在屏幕角落的TODO队列
 #----------------------------------------------------------------------------
@@ -132,6 +132,10 @@ module TODOLIST
   # - 待办事项精灵的初始XY
   "X" => 0,
   "Y" => 0,
+  #-----------------------------------------------------------------
+  # - 待办事项精灵的最终XY
+  "X2" => 0,
+  "Y2" => 0,
 
   #-----------------------------------------------------------------
   # - 待办事项的初始文字大小
@@ -179,6 +183,9 @@ module TODOLIST
   #-----------------------------------------------------------------
   # - 待办事项精灵之间的间隔高度
   "Y_OFFSET" => 4,
+  #-----------------------------------------------------------------
+  # - 待办事项精灵完成时的划线动画持续时间（因每一行独立处理划线，可能会有偏差）
+  "OUT_LINE_TIME" => 30,
   #-----------------------------------------------------------------
   # - 待办事项精灵移出时的坐标变化值
   "OUT_DX" => -120,
@@ -290,8 +297,8 @@ module TODOLIST
   #--------------------------------------------------------------------------
   def self.rerank
     @sprites = @sprites.sort_by { |s| -s.value }
-    _x = 0
-    _y = 0
+    _x = PARAMS["X2"]
+    _y = PARAMS["Y2"]
     offset = PARAMS["Y_OFFSET"]
     @sprites.each_with_index do |s, i|
       s.set_des_xy(_x, _y)
@@ -599,19 +606,29 @@ class Sprite_EagleTodo < Sprite
   # ● 处理划线完成时的动画
   #--------------------------------------------------------------------------
   def fiber_finish
-    _w = 3
+    # 计算总划线长度，获取每帧内的划线长度
+    _w_sum = 0
+    @text_rects.each do |r|
+      _x1 = PARAMS["TEXT_PADDING"] + r.x + 1
+      _x2 = PARAMS["TEXT_PADDING"] + r.x + r.width - 1
+      _w_sum += (_x2 - _x1)
+    end
+    _t = PARAMS["OUT_LINE_TIME"]
+    _w = _w_sum * 1.0 / _t
+    
     _c = Color.new(255, 255, 255, 255)
     @text_rects.each do |r|
       _x = PARAMS["TEXT_PADDING"] + r.x + 1
+      _x2 = PARAMS["TEXT_PADDING"] + r.x + r.width - 1
       _y = PARAMS["TEXT_PADDING"] + r.y + r.height / 2 + 1
       loop do
-        self.bitmap.fill_rect(_x, _y, _w, 1, _c)
+        _v = _x2 - _x
+        break if _v <= 0
+        _w_temp = [_v, _w].min 
+        self.bitmap.fill_rect(_x, _y, _w_temp, 1, _c)
+        _x += _w_temp
         Fiber.yield
-        break if _x - _w > r.x + r.width - 1
-        _x += _w
       end
-      Fiber.yield
-      Fiber.yield
     end
     30.times { Fiber.yield }
     move_out

@@ -1,12 +1,17 @@
 #=============================================================================
 # ■ 事件页触发条件扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
+# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-EventCondEX"] = "1.0.0"
+$imported["EAGLE-EventCondEX"] = "1.1.0"
 #=============================================================================
-# - 2021.8.15.11 修改注释
+# - 2023.9.13.22 兼容VX
 #=============================================================================
 # - 本插件对事件页的出现条件进行了扩展，并新增了事件的独立变量（与独立开关一致）
+#-----------------------------------------------------------------------------
+# 【兼容VX】
+#-----------------------------------------------------------------------------
+MODE_VX = RUBY_VERSION[0..2] == "1.8"
 #----------------------------------------------------------------------------
 # ○ 事件的独立变量
 #----------------------------------------------------------------------------
@@ -35,7 +40,7 @@ $imported["EAGLE-EventCondEX"] = "1.0.0"
 #     可用 e 获取当前事件的数据对象（RPG::Event实例）
 #         （如 e.id 为事件id，e.name 为事件名称）
 #     可用 s 代替 $game_switches，用 v 代替 $game_variables
-#     可用 p 代替 $game_player，用 m 代替 $game_party.members
+#     可用 pla 代替 $game_player，用 m 代替 $game_party.members
 #     可用 es 代替 $game_map.events 或 $game_troop.members
 #     可用 ss[A] 代表当前事件的 A 号独立开关的值
 #     可用 sv[1] 代表当前事件的 1 号独立变量的值
@@ -65,6 +70,39 @@ module EAGLE
     t
   end
 end
+
+if MODE_VX
+class Scene_Title
+  #--------------------------------------------------------------------------
+  # ● 生成各种游戏对象
+  #--------------------------------------------------------------------------
+  alias eagle_event_sv_create_game_objects create_game_objects
+  def create_game_objects
+    eagle_event_sv_create_game_objects
+    $game_self_variables = Game_SelfVariables.new
+  end
+end
+class Scene_File
+  #--------------------------------------------------------------------------
+  # ● 写入存档数据
+  #     file : 写入存档对象（已开启）
+  #--------------------------------------------------------------------------
+  alias eagle_event_sv_write_save_data write_save_data
+  def write_save_data(file)
+    eagle_event_sv_write_save_data(file)
+    Marshal.dump($game_self_variables, file)
+  end 
+  #--------------------------------------------------------------------------
+  # ● 读出存档数据
+  #     file : 读出存档对象（已开启）
+  #--------------------------------------------------------------------------
+  alias eagle_event_sv_read_save_data read_save_data
+  def read_save_data(file)
+    eagle_event_sv_read_save_data(file)
+    $game_self_variables = Marshal.load(file)
+  end
+end 
+else # VA
 #=============================================================================
 # ■ Game_SelfVariables
 #=============================================================================
@@ -95,6 +133,8 @@ class << DataManager
     $game_self_variables = contents[:self_variables]
   end
 end
+end # end of MODE_VX
+
 #=============================================================================
 # ■ Game_SelfVariables
 #=============================================================================
@@ -120,11 +160,17 @@ class Game_Event
     text = EAGLE.event_comment_head( page.list )
     se = self
     e = @event
-    p = $game_player
+    pla = $game_player
     m = $game_party.members
-    es = $game_map.events if SceneManager.scene_is?(Scene_Map)
-    es = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
-    s = $game_switches; v = $game_variables
+    if MODE_VX
+      es = $game_map.events if $scene.is_a?(Scene_Map)
+      es = $game_troop.members if $scene.is_a?(Scene_Battle)
+    else # VA 
+      es = $game_map.events if SceneManager.scene_is?(Scene_Map)
+      es = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
+    end # end of MODE_VX
+    s = $game_switches
+    v = $game_variables
     text.gsub!( /ss\[([ABCD])\]/ ) { "ss[[#{@map_id},#{@event.id},\"#{$1}\"]]" }
     ss = $game_self_switches
     text.gsub!( /sv\[(\d+)\]/ ) { "sv[[#{@map_id},#{@event.id},#{$1}]]" }
