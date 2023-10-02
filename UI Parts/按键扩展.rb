@@ -2,9 +2,9 @@
 # ■ 按键扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-InputEX"] = "2.1.0"
+$imported["EAGLE-InputEX"] = "2.2.0"
 #=============================================================================
-# - 2023.7.30.23 新增按键模拟
+# - 2023.10.2.18 新增鼠标定位
 #=============================================================================
 # - 本插件新增了一系列按键相关方法（不修改默认Input模块）
 #-----------------------------------------------------------------------------
@@ -64,6 +64,35 @@ end
 #   INPUT_EX.trigger?(:SPACE) → 返回空格键是否在当前帧从未按下到按下状态
 #
 #------------------------------------------------------------
+# ● 鼠标定位
+#------------------------------------------------------------
+#  1. 返回鼠标在游戏窗口内的坐标
+#
+#      INPUT_EX.mouse_x 和 INPUT_EX.mouse_y
+#
+#  2. 指定鼠标在游戏窗口内的坐标（超出范围时将失效）
+#
+#      INPUT_EX.set_mouse(x, y)
+#
+#  3. 判定鼠标是否在矩形区域内（游戏窗口内的矩形，不考虑 viewport）
+#
+#      INPUT_EX.mouse_in?(r)
+#
+#     其中 r 是Rect.new，如果不传入，则判定鼠标是否在游戏窗口内
+#
+#  3.1 为 Sprite 类增加实例方法，判定鼠标是否在该精灵的位图内部
+#     检查了精灵的 visible、判定区域由实际显示在游戏窗口内的位置决定
+#     如果在颜色像素上返回 true，但在透明像素上则返回false
+#
+#      sprite.mouse_in?
+#
+# - 示例：
+#
+#   INPUT_EX.mouse_x → 返回鼠标在游戏窗口内的坐标x
+#   INPUT_EX.mouse_y → 返回鼠标在游戏窗口内的坐标y
+#   INPUT_EX.mouse_in? → 返回鼠标是否在游戏窗口内
+#
+#------------------------------------------------------------
 # ● 按键模拟
 #------------------------------------------------------------
 #  1.模拟鼠标按键
@@ -107,6 +136,14 @@ module INPUT_EX
     @mouse_event = Win32API.new('user32','mouse_event', ['L']*5, 'V')
     # 模拟键盘事件
     @keybd_event = Win32API.new('user32','keybd_event', ['L']*4, 'V')
+    # 鼠标位置
+    @mouse_x = 0
+    @mouse_y = 0
+    @GetCursorPos = Win32API.new('user32','GetCursorPos', ['P'], 'V')
+    @GetForegroundWindow = Win32API.new('user32','GetForegroundWindow', ['P'], 'L')
+    @ScreenToClient = Win32API.new('user32','ScreenToClient', ['L','P'], 'B')
+    @ClientToScreen = Win32API.new('user32','ClientToScreen', ['L','P'], 'B')
+    @SetCursorPos = Win32API.new('user32','SetCursorPos', ['i']*2, 'V')
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -119,6 +156,7 @@ module INPUT_EX
     end
     @getKeyboardState.call(@keys_state_str)
     @keys_state = @keys_state_str.unpack('C*') # index to key_state
+    update_mouse
   end
 
   #--------------------------------------------------------------------------
@@ -200,6 +238,98 @@ module INPUT_EX
     keycode = get_keycode(key)
     @keybd_event.call(keycode,0,1,0)
   end
+  
+  #--------------------------------------------------------------------------
+  # ● 获取鼠标位置
+  # 参考：https://zhuanlan.zhihu.com/p/649665224
+  #--------------------------------------------------------------------------
+  def self.mouse_x;  @mouse_x; end
+  def self.mouse_y;  @mouse_y; end
+  #--------------------------------------------------------------------------
+  # ● 获取鼠标位置
+  #--------------------------------------------------------------------------
+  def self.update_mouse
+    # 获取鼠标的坐标（显示屏的坐标）
+    t = "\0" * 8
+    @GetCursorPos.call(t)
+    x0, y0 = t.unpack("LL")
+    # 获取当前窗口的句柄
+    w = get_cur_window
+    # 将该位置转化为窗口内坐标
+    @mouse_x, @mouse_y = screen_to_client(w, x0, y0)
+  end
+  #--------------------------------------------------------------------------
+  # ● 鼠标位于矩形内？
+  # 若不传入矩形，则返回鼠标是否在游戏窗口内
+  #--------------------------------------------------------------------------
+  def self.mouse_in?(rect = nil)
+    if rect == nil
+      return false if @mouse_x > Graphics.width || @mouse_y > Graphics.height
+      return true
+    end
+    return false if @mouse_x < rect.x || @mouse_x > rect.x + rect.width
+    return false if @mouse_y < rect.y || @mouse_y > rect.y + rect.height
+    return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取当前激活窗口的句柄
+  #--------------------------------------------------------------------------
+  def self.get_cur_window
+    w = '\0' * 32
+    w = @GetForegroundWindow.call('\0') 
+    return w 
+  end
+  #--------------------------------------------------------------------------
+  # ● 由屏幕坐标转化为指定窗口内的坐标
+  #--------------------------------------------------------------------------
+  def self.screen_to_client(w, x,y)
+    t = [x, y].pack("LL")
+    @ScreenToClient.call(w, t)
+    return t.unpack("LL")
+  end
+  
+  #--------------------------------------------------------------------------
+  # ● 设置鼠标的坐标
+  #--------------------------------------------------------------------------
+  def self.set_mouse(x, y)  # 传入的是屏幕内坐标
+    return if x < 0 || y < 0 || x > Graphics.width || y > Graphics.height
+    # 获取当前窗口的句柄
+    w = get_cur_window
+    # 坐标转化
+    x1, y1 = client_to_screen(w, x,y)
+    @SetCursorPos.call(x1, y1)
+  end
+  #--------------------------------------------------------------------------
+  # ● 由指定窗口内的坐标转换为屏幕坐标
+  #--------------------------------------------------------------------------
+  def self.client_to_screen(w, x,y)
+    t = [x, y].pack("LL")
+    @ClientToScreen.call(w, t)
+    return t.unpack("LL")
+  end
+  
+  #--------------------------------------------------------------------------
+  # ● 获取窗口标题
+  #--------------------------------------------------------------------------
+  def self.get_window_name(window_handle)
+    w = Win32API.new('user32','GetWindowText', ['L','P','I'], 'I')
+    t = '\0' * 32
+    w.call(window_handle, t, 32)
+    n = t.split(/\x000/)
+    return n
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取窗口左上角和右下角的显示屏坐标（含边框）
+  #--------------------------------------------------------------------------
+  def self.get_window_rect(window_handle)
+    w = Win32API.new('user32','GetWindowRect', ['L','P'], 'B')
+    t = '\0' * 4 * 4
+    w.call(window_handle, t)
+    x1, y1, x2, y2 = t.unpack('LLLL')
+    #p [x1, y1, x2, y2]
+    return Rect.new(x1, y1, x2-x1, y2-y1)
+  end
+  
 end
 class << Input
   #--------------------------------------------------------------------------
@@ -219,6 +349,27 @@ class << DataManager
   def init
     INPUT_EX.init
     eagle_input_ex_init
+  end
+end
+
+class Sprite
+  #--------------------------------------------------------------------------
+  # ● 该精灵的位图包含了鼠标？
+  #--------------------------------------------------------------------------
+  def mouse_in?
+    return false if !visible || opacity == 0
+    return false unless self.bitmap
+    return false if self.bitmap.disposed?
+    # 计算出鼠标相对于实际位图的坐标 左上原点
+    rx = INPUT_EX.mouse_x - (self.x - self.ox)
+    ry = INPUT_EX.mouse_y - (self.y - self.oy)
+    if viewport
+      rx -= self.viewport.rect.x
+      ry -= self.viewport.rect.y
+    end
+    # 边界判定  src_rect - 该矩形内的位图为精灵 (0,0) 处显示位图
+    return false if rx < 0 || ry < 0 || rx > width || ry > height
+    return self.bitmap.get_pixel(rx, ry).alpha != 0
   end
 end
 

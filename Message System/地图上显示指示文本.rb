@@ -6,9 +6,9 @@
 #     【组件-位图绘制指示文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MapHintText"] = "1.0.1"
+$imported["EAGLE-MapHintText"] = "1.0.2"
 #==============================================================================
-# - 2022.6.12.17
+# - 2023.9.30.23 增加一个黑色背景
 #==============================================================================
 # - 本插件新增了能够显示在地图上的指示型文本提示
 #------------------------------------------------------------------------------
@@ -26,7 +26,7 @@ $imported["EAGLE-MapHintText"] = "1.0.1"
 #    其中 ... 为显示的指示文本，可以使用转义符，比如\i[1]，\v[1]，也可用\n换行
 #
 # - 在玩家按下 SHIFT 键时，将搜索并生成玩家周围事件的指示文本
-#     （如果使用了【按键输入扩展 by老鹰】，则改为 TAB 键）
+#     （如果使用了【按键扩展 by老鹰】，则改为 TAB 键）
 #
 #   具体搜索距离见 SEARCH_RANGE 常量，或者利用 V_ID_SEARCH_RANGE 号变量的值。
 #
@@ -185,6 +185,11 @@ module MAP_HINT
   def self.init
     @sprites = []
     @sprites_valid = []
+    @sprite_bg = Sprite.new
+    @sprite_bg.bitmap = Bitmap.new(Graphics.width, Graphics.height)
+    @sprite_bg.bitmap.fill_rect(@sprite_bg.bitmap.rect, Color.new(0,0,0))
+    @sprite_bg.z = 180
+    @sprite_bg.opacity = 0
   end
   #--------------------------------------------------------------------------
   # ● 创建一个显示精灵
@@ -201,7 +206,10 @@ module MAP_HINT
       s = @sprites_valid.pop
       s.reset(t, ps1, ps2)
     end
-    @sprites.push(s) if s
+    if s
+      @sprite_bg.opacity = 255 - 120
+      @sprites.push(s)
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -211,6 +219,9 @@ module MAP_HINT
       s.update
       @sprites_valid.push(s) if s.finish?
     end
+    if !@sprites.empty?
+      @sprite_bg.opacity = @sprites[0].opacity - 120
+    end
     @sprites.delete_if { |s| s.finish? }
   end
   #--------------------------------------------------------------------------
@@ -219,6 +230,8 @@ module MAP_HINT
   def self.finish
     @sprites.each { |s| s.dispose }
     @sprites.clear
+    @sprite_bg.bitmap.dispose
+    @sprite_bg.dispose
   end
 #=============================================================================
 # ■ 指示精灵

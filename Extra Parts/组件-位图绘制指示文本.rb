@@ -4,9 +4,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-DrawHintText"] = "1.0.2"
+$imported["EAGLE-DrawHintText"] = "1.0.3"
 #==============================================================================
-# - 2022.5.26.23 新增文字的纯色背景
+# - 2023.9.30.23 增加行间距
 #==============================================================================
 # - 本插件提供了在位图上绘制指示型文本的方法
 # - 指示型文本示例：
@@ -88,6 +88,8 @@ module EAGLE
     params1[:dd] ||= 4    # 文字区域的下留空
     params1[:dd] = params1[:dd].to_i
 
+    params2[:lhd] ||= 2
+    
     proc_draw_text = Process_DrawTextEX.new(text, params2)
     params1[:text_w] = proc_draw_text.width  # 文字的宽高
     params1[:text_h] = proc_draw_text.height
