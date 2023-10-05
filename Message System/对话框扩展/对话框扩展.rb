@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.10.2" 
+$imported["EAGLE-MessageEX"] = "1.10.3" 
 #=============================================================================
-# - 2023.9.2.18 修复\temp后下一个对话框错误显示了当前对话框的背景和位置bug
+# - 2023.10.5.23 修复对话框快速关闭且为淡出时，脸图在移出后错误执行移入的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -5772,13 +5772,14 @@ class Sprite_EagleFace < Sprite
   def motion(type, param_str = "")
     m_c = ("fiber_#{type}").to_sym
     if respond_to?(m_c)
+      @fiber = nil if type == :fade_out
       if @fiber
         @fiber_tmp = Fiber.new { fiber_main(m_c, param_str) }
       else
         @fiber = Fiber.new { fiber_main(m_c, param_str) }
       end
     else
-      p "对话框中 \epicm 转义符，指令 #{type} 无效！请检查指令名称及其大小写！"
+      p "对话框中 \\facem 转义符，指令 #{type} 无效！请检查指令名称及其大小写！"
     end
   end
   #--------------------------------------------------------------------------

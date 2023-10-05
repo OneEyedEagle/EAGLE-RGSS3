@@ -2,9 +2,9 @@
 # ■ 按键扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-InputEX"] = "2.2.0"
+$imported["EAGLE-InputEX"] = "2.2.1"
 #=============================================================================
-# - 2023.10.2.18 新增鼠标定位
+# - 2023.10.4.11 新增鼠标与精灵、窗口的位置判定
 #=============================================================================
 # - 本插件新增了一系列按键相关方法（不修改默认Input模块）
 #-----------------------------------------------------------------------------
@@ -85,6 +85,11 @@ end
 #     如果在颜色像素上返回 true，但在透明像素上则返回false
 #
 #      sprite.mouse_in?
+#
+#  3.2 为 Window 类增加实例方法，判定鼠标是否在该窗口的contents内部
+#     检查了窗口的 visible、opacity、openness
+#
+#      window.mouse_in?
 #
 # - 示例：
 #
@@ -207,6 +212,7 @@ module INPUT_EX
 
   #--------------------------------------------------------------------------
   # ● 模拟按下鼠标按键
+  # https://learn.microsoft.com/zh-cn/windows/win32/api/winuser/nf-winuser-mouse_event
   #--------------------------------------------------------------------------
   def self.mouse_ldown
     # 模拟按下鼠标左键
@@ -370,6 +376,21 @@ class Sprite
     # 边界判定  src_rect - 该矩形内的位图为精灵 (0,0) 处显示位图
     return false if rx < 0 || ry < 0 || rx > width || ry > height
     return self.bitmap.get_pixel(rx, ry).alpha != 0
+  end
+end
+
+class Window_Base
+  #--------------------------------------------------------------------------
+  # ● 该窗口的位图包含了鼠标？
+  #--------------------------------------------------------------------------
+  def mouse_in?
+    return false if !visible || opacity == 0 || openness < 255
+    return false if disposed?
+    mx = INPUT_EX.mouse_x
+    return false if mx < x+standard_padding || mx > x+width+standard_padding
+    my = INPUT_EX.mouse_y
+    return false if my < y+standard_padding || my > y+height+standard_padding
+    return true
   end
 end
 
