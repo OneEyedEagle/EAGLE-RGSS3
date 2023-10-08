@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.10.3" 
+$imported["EAGLE-MessageEX"] = "1.11.0" 
 #=============================================================================
-# - 2023.10.5.23 修复对话框快速关闭且为淡出时，脸图在移出后错误执行移入的bug
+# - 2023.10.8.23 对话框打开关闭新增动态滑入滑出
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -427,7 +427,7 @@ WIN_PARAMS_INIT = {
   :do => 0, # 相较于屏幕的九宫格位置（覆盖x/y的设置）
   :dx => 0, # 坐标偏移值xy
   :dy => 0,
-  :fix => 1, # 是否进行位置修正，防止对话框跑出屏幕
+  :fix => 0, # 是否进行位置修正，防止对话框跑出屏幕
   # （窗口大小相关）
   :w => 0,
   :h => 0,
@@ -1525,7 +1525,7 @@ S_ID_RESET_ENV = true
 # （变量一览）
 #    open → 使用 i 号对应的对话框打开方式
 #    close → 使用 i 号对应的对话框关闭方式
-#         0 为默认的上下打开关闭，1 为淡入淡出，2 为动态缩放展开
+#         0 为默认的上下打开关闭，1 为淡入淡出，2 为动态缩放展开，3 为动态滑入滑出
 #
 #    aw → 是否开启对话框的自动换行（auto wrap）
 #        若开启，当文字绘制到对话框边界padding处时，将进行自动换行
@@ -1542,8 +1542,8 @@ S_ID_RESET_ENV = true
 # 【常量设置：参数预设值】
 FUNC_PARAMS_INIT = {
 # \func[]
-  :open => 2,   # 打开方式
-  :close => 2,  # 关闭方式
+  :open => 3,   # 打开方式
+  :close => 3,  # 关闭方式
   :aw => 1,  # 自动换行
   :para => 0, # 并行处理子窗口
 }
@@ -1729,9 +1729,9 @@ module MESSAGE_EX
   def self.ease_value(type, x)
     if $imported["EAGLE-EasingFunction"]
       case type
-      when :msg_open  # 对话框打开
+      when :msg_open  # 对话框打开 - 动态缩放展开
         return EasingFuction.call("easeOutBack", x)
-      when :msg_close # 对话框关闭
+      when :msg_close # 对话框关闭 - 动态缩放闭合
         return EasingFuction.call("easeInBack", x)
       when :msg_xywh  # 对话框通常情况下变更位置和大小
         return EasingFuction.call("easeOutQuart", x)
@@ -1741,6 +1741,10 @@ module MESSAGE_EX
         return EasingFuction.call("easeOutElastic", x)
       when :chara_xy  # 文字移动处理
         return EasingFuction.call("easeOutExpo", x)
+      when :msg_open_slide # 对话框打开 - 滑入
+        return EasingFuction.call("easeOutBack", x)
+      when :msg_close_slide # 对话框关闭 - 滑出
+        return EasingFuction.call("easeInBack", x)
       end
     end
     return 1 - 2**(-10 * x)
@@ -2482,6 +2486,7 @@ class Window_EagleMessage < Window_Base
     @flag_temp = false          # true 代表当前对话框的任何修改将不被保存
     @flag_temp_env = nil        # 存储当前对话框开启前的环境
     @flag_save_env = nil        # 当不为 nil 时，当前对话框状态保存到对应环境中
+    @flag_no_fix = false        # 关闭位置修正功能
     @eagle_dup_windows ||= []   # 存储生成的全部拷贝对话框
     @eagle_evals = []           # 当前对话中的待执行脚本 [eval_str, eval_str...]
     @eagle_chara_sets = {}      # 存储文字的全部分组 {分组名 => [文字精灵]}
@@ -2490,6 +2495,8 @@ class Window_EagleMessage < Window_Base
     @eagle_move_x = @eagle_move_y = 0
     # 存储对话框在上一帧的位置（此处新增定义，防止子类覆盖了 eagle_message_reset）
     @eagle_last_x = @eagle_last_y = nil
+    # 对话框位置的强制增量
+    @eagle_offset_x = @eagle_offset_y = 0
     eagle_check_func("")        # 预先执行一遍func，确保它们都是布尔量
   end
   #--------------------------------------------------------------------------
@@ -2787,6 +2794,8 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_open_and_wait
     case func_params[:open]
+    when 3
+      eagle_open_type_slide
     when 2
       eagle_open_type_ease
     when 1
@@ -2794,6 +2803,25 @@ class Window_EagleMessage < Window_Base
     else # :default
       eagle_open_type_default
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 打开-滑动移入
+  #--------------------------------------------------------------------------
+  def eagle_open_type_slide
+    @eagle_chara_sprites.each { |c| c.visible = false }
+    # 临时屏蔽位置修改功能，让对话框能显示到屏幕外
+    @flag_no_fix = true
+    h = {:ins => true, :open => true}
+    eagle_set_wh(h)
+    self.openness = 255
+    # 直接指定初始位置在屏幕外
+    @eagle_last_x = self.x
+    @eagle_last_y = self.y > Graphics.height/2 ? (Graphics.height+20) : (0-self.height-20)
+    # 移动回真实显示位置
+    eagle_set_wh({:ease_type => :msg_open_slide})
+    # 解除屏蔽
+    @flag_no_fix = false
+    @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
   end
   #--------------------------------------------------------------------------
   # ● 打开-动态展开
@@ -2853,6 +2881,8 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_close_and_wait
     case func_params[:close]
+    when 3
+      eagle_close_type_slide
     when 2
       eagle_close_type_ease
     when 1
@@ -2860,6 +2890,28 @@ class Window_EagleMessage < Window_Base
     else # :default
       eagle_close_type_default
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 关闭-滑出
+  #--------------------------------------------------------------------------
+  def eagle_close_type_slide
+    eagle_move_out_assets
+    @flag_no_fix = true
+    # 直接指定目的位置在屏幕外
+    h = {:ease_type => :msg_close_slide, :close => true, 
+      :w => self.width, :h => self.height}
+    h[:x_init] = self.x
+    h[:y_init] = self.y
+    h[:x] = self.x
+    h[:y] = self.y > Graphics.height/2 ? (Graphics.height+20) : (0-self.height-20)
+    # 由于 eagle_set_wh 原理是把基于目前xywh的增量逐渐减小至0，然后完成更新，
+    #  需要先强制把当前y改成目的地处，才能正常依靠增量减小而逼近目的地
+    @eagle_offset_y = h[:y] - h[:y_init]
+    eagle_set_wh(h)
+    @flag_no_fix = false
+    self.openness = 0
+    close
+    @eagle_offset_y = 0
   end
   #--------------------------------------------------------------------------
   # ● 关闭-动态缩小
@@ -2976,6 +3028,7 @@ class Window_EagleMessage < Window_Base
     _p[:ins] = true if @background == 2 # 透明背景时直接更新完成
     _p[:open] = false if _p[:open].nil? # 如果目标是打开窗口，置为 true
     _p[:t] ||= 20 # 更新所需时间（帧）
+    # _p[:ease_type] # 指定预设所用的缓动函数类别，见 MESSAGE_EX.ease_value()
     
     # 先计算目标宽高（该变量与其它参数均无关，只需要预绘制后的文字区域宽高）
     #_p[:w] 与 _p[:h] 为更新结束时的宽高，如果为 nil，将自动计算
@@ -3009,8 +3062,8 @@ class Window_EagleMessage < Window_Base
       _p[:x] = nil
       _p[:y] = nil
     elsif self.openness == 255
-      _p[:x_init] = @eagle_last_x
-      _p[:y_init] = @eagle_last_y
+      _p[:x_init] = @eagle_last_x if _p[:x_init].nil?
+      _p[:y_init] = @eagle_last_y if _p[:y_init].nil?
       _p[:x] = self.x if _p[:x].nil?
       _p[:y] = self.y if _p[:y].nil?
     end
@@ -3060,6 +3113,7 @@ class Window_EagleMessage < Window_Base
         f = :msg_xywh
         f = :msg_open if _p[:open]
         f = :msg_close if _p[:close]
+        f = _p[:ease_type] if _p[:ease_type]
         per = MESSAGE_EX.ease_value(f, per)
       end
       _p[:update].each do |sym|
@@ -3235,8 +3289,8 @@ class Window_EagleMessage < Window_Base
     MESSAGE_EX.reset_xy_dorigin(self, nil, win_params[:do]) if win_params[:do] < 0
     MESSAGE_EX.reset_xy_origin(self, win_params[:o])
     eagle_set_xy_ex
-    self.x = self.x + win_params[:dx] + @eagle_move_x
-    self.y = self.y + win_params[:dy] + @eagle_move_y
+    self.x = self.x + win_params[:dx] + @eagle_move_x + @eagle_offset_x
+    self.y = self.y + win_params[:dy] + @eagle_move_y + @eagle_offset_y
     eagle_fix_position if win_params[:fix]
     eagle_after_update_xy
   end
@@ -3254,6 +3308,7 @@ class Window_EagleMessage < Window_Base
   # ● 修正位置（确保对话框完整显示）
   #--------------------------------------------------------------------------
   def eagle_fix_position
+    return if @flag_no_fix
     self.x = [[self.x, 0].max, Graphics.width - self.width].min
     self.y = [[self.y, 0].max, Graphics.height - self.height].min
   end
@@ -3294,8 +3349,8 @@ class Window_EagleMessage < Window_Base
     when 4,5,6; self.y -= (pop_params[:chara_h] / 2)
     when 7,8,9; self.y -= (pop_params[:chara_h] + pop_params[:d])
     end
-    self.x += @eagle_move_x  # 坐标的运动偏移量
-    self.y += @eagle_move_y
+    self.x += @eagle_move_x + @eagle_offset_x
+    self.y += @eagle_move_y + @eagle_offset_y
     eagle_pop_tag_update  # 更新pop的tag的位置
     self.x += pop_params[:dx]  # 坐标的补足偏移量
     self.y += pop_params[:dy]
