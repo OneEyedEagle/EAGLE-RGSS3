@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-缓动函数 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MapEaseScroll"] = "1.0.0"
+$imported["EAGLE-MapEaseScroll"] = "1.0.1"
 #==============================================================================
-# - 2022.11.10.23  
+# - 2023.10.18.2 兼容 Map Effects v1.4.1 for VX and VXace by Zeus81
 #==============================================================================
 # - 本插件新增了地图中使用的缓动版地图卷动
 #-----------------------------------------------------------------------------
@@ -54,10 +54,10 @@ class Game_Map
   #--------------------------------------------------------------------------
   def eagle_start_scroll(map_x, map_y, t=60, type="easeInSine")
     @eagle_scroll = {}
-    @eagle_scroll["x1"] = @display_x + screen_tile_x / 2
-    @eagle_scroll["y1"] = @display_y + screen_tile_y / 2
-    @eagle_scroll["x2"] = map_x 
-    @eagle_scroll["y2"] = map_y
+    @eagle_scroll["x1"] = @display_x
+    @eagle_scroll["y1"] = @display_y
+    @eagle_scroll["x2"] = map_x - $game_player.center_x
+    @eagle_scroll["y2"] = map_y - $game_player.center_y
     @eagle_scroll["xd"] = @eagle_scroll["x2"] - @eagle_scroll["x1"]
     @eagle_scroll["yd"] = @eagle_scroll["y2"] - @eagle_scroll["y1"]
     @eagle_scroll["t"] = t
@@ -72,8 +72,14 @@ class Game_Map
     t = @eagle_scroll["c"] * 1.0 / @eagle_scroll["t"]
     v = EasingFuction.call(@eagle_scroll["type"], t)
     @eagle_scroll["c"] += 1
-    @display_x = @eagle_scroll["x1"] + @eagle_scroll["xd"] * v - screen_tile_x / 2
-    @display_y = @eagle_scroll["y1"] + @eagle_scroll["yd"] * v - screen_tile_y / 2
+    @display_x = @eagle_scroll["x1"] + @eagle_scroll["xd"] * v
+    @display_y = @eagle_scroll["y1"] + @eagle_scroll["yd"] * v
+    
+    if $imported[:Zeus_Map_Effects]
+      @display_x = limit_x(@display_x)
+      @display_y = limit_y(@display_y)
+      return 
+    end
     
     @display_x = [@display_x, 0].max
     @display_y = [@display_y, 0].max
