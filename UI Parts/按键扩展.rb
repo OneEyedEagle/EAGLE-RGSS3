@@ -2,9 +2,9 @@
 # ■ 按键扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-InputEX"] = "2.2.1"
+$imported["EAGLE-InputEX"] = "2.2.2"
 #=============================================================================
-# - 2023.10.4.11 新增鼠标与精灵、窗口的位置判定
+# - 2023.10.29.17 修改按键帧判定
 #=============================================================================
 # - 本插件新增了一系列按键相关方法（不修改默认Input模块）
 #-----------------------------------------------------------------------------
@@ -33,7 +33,6 @@ module INPUT_EX
     :U => 85,:V => 86,:W => 87,:X => 88,:Y => 89,:Z => 90,
     # ...
   }
-end
 #------------------------------------------------------------
 # ● 按键判定
 #------------------------------------------------------------
@@ -42,26 +41,33 @@ end
 #      INPUT_EX.trigger?(key)  或  INPUT_EX.down?(key)
 #
 #  2. 指定按键上一帧按下，而当前帧未按下，则返回 true
+#     其中 c1 代表需要已经持续按下的帧数，c2 代表持续按下不超过该帧数
+#       用于确保按下一段时间内松开才返回 true，减少误操作判定
 #
-#      INPUT_EX.release?(key)  或  INPUT_EX.up?(key)
+#      INPUT_EX.release?(key, c1=RELEASE_C1, c2=RELEASE_C2) 
+#  或  INPUT_EX.up?(key, c=RELEASE_C, c2=RELEASE_C2)
 #
-#  3.1 指定按键当前帧为按下，则返回 true
-#      在按下的第 1 帧及之后帧均返回 true
+#  【常量设置： release? 方法的默认c1和c2值】
+RELEASE_C1 = 1   # 最小值为 1，代表按下后立马松开
+RELEASE_C2 = 15  # 设置为 0 代表不限制上限
 #
-#      INPUT_EX.press?(key)
+#  3. 指定按键前 c-1 帧都为按下，当前帧也按下，则返回 true
+#     在按下的第 c 帧及之后帧均返回 true，c 最小值为 1
 #
-#  3.2 指定按键前 c-1 帧都为按下，当前帧也按下，则返回 true
-#      在按下的第 c 帧及之后帧均返回 true
+#      INPUT_EX.press?(key, c=1)
 #
-#      INPUT_EX.press_c?(key, c = 1)
+#  【常量设置： press? 方法的默认c值】
+PRESS_C = 10
 #
-#  3.3 获取指定按键持续按下的帧数，返回数字
+#  4. 获取指定按键持续按下的帧数，返回数字
 #
 #      INPUT_EX.count(key)
 #
 # - 示例：
 #
 #   INPUT_EX.trigger?(:SPACE) → 返回空格键是否在当前帧从未按下到按下状态
+#   INPUT_EX.up?(:ML, 30)     → 鼠标左键已经按住30帧以上后，松开的那一帧返回true
+#   INPUT_EX.count(:A)        → 键盘A键已经按下的帧数
 #
 #------------------------------------------------------------
 # ● 鼠标定位
@@ -119,6 +125,7 @@ end
 #   INPUT_EX.keyboard_down(:ESC) → 模拟按下ESC键，在地图上时为打开菜单
 #
 #=============================================================================
+end
 
 module INPUT_EX
   #--------------------------------------------------------------------------
@@ -170,6 +177,7 @@ module INPUT_EX
   def self.down?(key)
     keycode = get_keycode(key)
     return false if @keys_state[keycode] == nil
+    # 松开时可能重置为1
     @keys_last_state[keycode] == 0 && @keys_state[keycode] > 1
   end
   def self.trigger?(key)
@@ -177,30 +185,30 @@ module INPUT_EX
   end
   #--------------------------------------------------------------------------
   # ● 指定键从按下到未按下？
+  # c1 c2 代表已经按下了 c1 帧，但未超过 c2 帧，然后松开
   #--------------------------------------------------------------------------
-  def self.up?(key)
+  def self.up?(key, c1 = RELEASE_C1, c2 = RELEASE_C2)
     keycode = get_keycode(key)
     return false if @keys_state[keycode] == nil
-    @keys_last_state[keycode] > 0 && @keys_state[keycode] <= 1
+    c1 = [1, c1].max
+    return false if @keys_last_state[keycode] < c1
+    return false if c2 > 0 && @keys_last_state[keycode] > c2
+    @keys_state[keycode] <= 1 # 松开时可能重置为1
   end
-  def self.release?(key)
-    up?(key)
+  def self.release?(key, c1 = RELEASE_C1, c2 = RELEASE_C2)
+    up?(key, c1, c2)
   end
   #--------------------------------------------------------------------------
   # ● 指定键一直被按住？
   #--------------------------------------------------------------------------
-  def self.press?(key)
+  def self.press?(key, c = PRESS_C)
     keycode = get_keycode(key)
     return false if @keys_state[keycode] == nil
-    @keys_last_state[keycode] > 1 && @keys_state[keycode] > 1
+    c = [1, c].max
+    @keys_last_state[keycode] >= c && @keys_state[keycode] >= c
   end
-  #--------------------------------------------------------------------------
-  # ● 指定键一直被按住了 c 帧？
-  #--------------------------------------------------------------------------
-  def self.press_c?(key, c = 1)
-    keycode = get_keycode(key)
-    return false if @keys_state[keycode] == nil
-    @keys_last_state[keycode] >= c
+  def self.press_c?(key, c = PRESS_C)
+    press?(key, c)
   end 
   #--------------------------------------------------------------------------
   # ● 获取按键被按住的帧数
@@ -269,7 +277,7 @@ module INPUT_EX
   # 若不传入矩形，则返回鼠标是否在游戏窗口内
   #--------------------------------------------------------------------------
   def self.mouse_in?(rect = nil)
-    if rect == nil
+    if rect.nil?
       return false if @mouse_x > Graphics.width || @mouse_y > Graphics.height
       return true
     end

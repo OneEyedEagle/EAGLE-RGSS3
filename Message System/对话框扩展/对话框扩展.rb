@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.0" 
+$imported["EAGLE-MessageEX"] = "1.11.1" 
 #=============================================================================
-# - 2023.10.8.23 对话框打开关闭新增动态滑入滑出
+# - 2023.10.29.21 修复暗色背景下，对话框滑入滑出出现闪现的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2808,6 +2808,7 @@ class Window_EagleMessage < Window_Base
   # ● 打开-滑动移入
   #--------------------------------------------------------------------------
   def eagle_open_type_slide
+    self.openness = 0
     @eagle_chara_sprites.each { |c| c.visible = false }
     # 临时屏蔽位置修改功能，让对话框能显示到屏幕外
     @flag_no_fix = true
@@ -2875,6 +2876,7 @@ class Window_EagleMessage < Window_Base
     eagle_process_close_and_wait
     @flag_open_close = false
     @flag_need_open = true
+    @back_sprite.visible = false
   end
   #--------------------------------------------------------------------------
   # ● 处理关闭方式（关闭直至完成）
@@ -3141,8 +3143,8 @@ class Window_EagleMessage < Window_Base
   # 此时 self.width 与 self.height 为实时的宽高，非最终完成时的宽高
   #--------------------------------------------------------------------------
   def eagle_after_wh_change
-    eagle_recreate_back_bitmap(self.width, self.height)  # 生成新背景位图
-    eagle_win_update  # 更新对话框位置
+    eagle_win_update  # 先更新对话框位置
+    eagle_recreate_back_bitmap(self.width, self.height)  # 再生成新背景位图
   end
   #--------------------------------------------------------------------------
   # ● 对话框进行位置大小更新后的处理
