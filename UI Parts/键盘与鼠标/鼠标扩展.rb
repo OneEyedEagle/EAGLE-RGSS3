@@ -1,0 +1,349 @@
+#==============================================================================
+# ■ 鼠标扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
+# ※ 本插件需要放置在【按键扩展 by老鹰】之下
+#    或 将 MOUSE_EX 模块中的方法修改为使用你自己的鼠标系统
+#==============================================================================
+$imported ||= {}
+$imported["EAGLE-MouseEX"] = "1.0.0"
+#=============================================================================
+# - 2023.11.1.22
+#=============================================================================
+# - 本插件新增了一系列鼠标兼容控制的方法
+#-----------------------------------------------------------------------------
+# - 请逐项阅读注释并进行必要的自定义
+#=============================================================================
+module MOUSE_EX
+#===============================================================================
+# ○ 鼠标按键判定
+#===============================================================================
+#  以下方法中的 key 传入：
+#
+#    :ML → 鼠标左键
+#    :MM → 鼠标中键
+#    :MR → 鼠标右键
+#
+#  1. 鼠标按键由未按下变成按下？
+#
+#      MOUSE_EX.down?(key)
+#
+#  2. 鼠标按键由按下变成未按下？（且按下的时间帧在 c1 和 c2 之间）
+#
+#      MOUSE_EX.up?(key, c1=RELEASE_C1, c2=RELEASE_C2)
+#
+#  3. 鼠标按键按下至少c帧？
+#
+#      MOUSE_EX.press?(key, c=PRESS_C)
+#
+#  4. 将鼠标直接定位到游戏屏幕内的(x,y)处
+#
+#      MOUSE_EX.set_to(x, y)
+#
+  #--------------------------------------------------------------------------
+  # ● 判定鼠标按键是否从未按下变成按下
+  #--------------------------------------------------------------------------
+  def self.down?(key)
+    INPUT_EX.down?(key)
+  end
+  #--------------------------------------------------------------------------
+  # ● 判定鼠标按键是否从按下变成未按下
+  #  当已按下的帧数不在 c1 和 c2 之间（包含两端）时，则仍然返回 false
+  #--------------------------------------------------------------------------
+  # 【常量】默认的按下的最小帧数
+  RELEASE_C1 = 1
+  #----------------------------------
+  # 【常量】默认的按下的最大帧数
+  RELEASE_C2 = 20
+  #----------------------------------
+  def self.up?(key, c1=RELEASE_C1, c2=RELEASE_C2)
+    INPUT_EX.up?(key, c1, c2)
+  end
+  #--------------------------------------------------------------------------
+  # ● 判定鼠标按键是否按下 c 帧
+  #--------------------------------------------------------------------------
+  # 【常量】默认需要至少按下的帧数
+  PRESS_C = 10
+  #----------------------------------
+  def self.press?(key, c=PRESS_C)
+    INPUT_EX.press?(key, c)
+  end
+  #--------------------------------------------------------------------------
+  # ● 将鼠标直接定位到(x,y)处（屏幕真实坐标）
+  #--------------------------------------------------------------------------
+  def self.set_to(x, y)
+    INPUT_EX.set_mouse(x, y)
+  end
+end
+
+#===============================================================================
+# ○ 鼠标位置判定
+#===============================================================================
+#  1. 获取鼠标坐标
+#
+#      MOUSE_EX.x  和  MOUSE_EX.y
+#
+#  2. 判定鼠标是否在矩形区域内（游戏窗口内的矩形，不考虑 viewport）
+#
+#      MOUSE_EX.in?(r)
+#
+#     其中 r 是Rect.new，如果不传入，则判定鼠标是否在游戏窗口内
+#
+#  3.1 为 Sprite 类增加了实例方法，判定鼠标是否在该精灵的位图内部
+#     如果_visible传入 true，则会首先检查精灵的 visible
+#     判定区域由实际显示在游戏窗口内的位置决定
+#     如果在颜色像素上返回 true，但在透明像素上则返回false
+#
+#      sprite.mouse_in?(_visible=true)
+#
+#  3.2 为 Window 类增加了实例方法，判定鼠标是否在该窗口的contents内部
+#     如果_visible传入 true，则会首先检查窗口的 visible、opacity、openness
+#
+#      window.mouse_in?(_visible=true)
+#
+#  如： MOUSE_EX.in? → 返回鼠标是否在游戏窗口内
+#
+module MOUSE_EX
+  #--------------------------------------------------------------------------
+  # ● 获取鼠标的坐标
+  #--------------------------------------------------------------------------
+  def self.x;  INPUT_EX.mouse_x;  end
+  def self.y;  INPUT_EX.mouse_y;  end
+  #--------------------------------------------------------------------------
+  # ● 鼠标位于矩形内？（rect为屏幕真实坐标，不受 viewport 等的影响）
+  # 若不传入矩形，则返回鼠标是否在游戏窗口内
+  #--------------------------------------------------------------------------
+  def self.in?(rect = nil)
+    _x = MOUSE_EX.x; _y = MOUSE_EX.y
+    if rect.nil?
+      return false if _x > Graphics.width || _y > Graphics.height
+      return true
+    end
+    return false if _x < rect.x || _x > rect.x + rect.width
+    return false if _y < rect.y || _y > rect.y + rect.height
+    return true
+  end
+end
+class Sprite
+  #--------------------------------------------------------------------------
+  # ● 该精灵的bitmap包含了鼠标？
+  #--------------------------------------------------------------------------
+  def mouse_in?(_visible = true)
+    return false if _visible && (!visible || opacity == 0)
+    return false unless self.bitmap
+    return false if self.bitmap.disposed?
+    # 计算出鼠标相对于实际位图的坐标 左上原点
+    rx = MOUSE_EX.x - (self.x - self.ox)
+    ry = MOUSE_EX.y - (self.y - self.oy)
+    if viewport
+      rx -= self.viewport.rect.x
+      ry -= self.viewport.rect.y
+    end
+    # 边界判定  src_rect - 该矩形内的位图为精灵 (0,0) 处显示位图
+    return false if rx < 0 || ry < 0 || rx > width || ry > height
+    return self.bitmap.get_pixel(rx, ry).alpha != 0
+  end
+end
+class Window_Base
+  #--------------------------------------------------------------------------
+  # ● 该窗口的contents包含了鼠标？
+  #--------------------------------------------------------------------------
+  def mouse_in?(_visible = true)
+    return false if _visible && (!visible || opacity == 0 || openness < 255)
+    return false if disposed?
+    mx = MOUSE_EX.x
+    return false if mx < x+standard_padding || mx > x+width+standard_padding
+    my = MOUSE_EX.y
+    return false if my < y+standard_padding || my > y+height+standard_padding
+    return true
+  end
+end
+
+#===============================================================================
+# ○ 鼠标触发事件
+#===============================================================================
+class Sprite_Character < Sprite_Base
+  #--------------------------------------------------------------------------
+  # ● 更新其它内容
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_update_other update_other
+  def update_other
+    eagle_mouse_ex_update_other
+    # 鼠标触发事件
+    return if $game_map.interpreter.running?
+    if MOUSE_EX.up?(:ML) && @character.is_a?(Game_Event) && mouse_in?
+      @character.start
+    end
+  end
+end
+
+#===============================================================================
+# ○ 鼠标兼容选择窗口
+#===============================================================================
+class Window_Selectable < Window_Base
+  #--------------------------------------------------------------------------
+  # ● 处理光标的移动
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_process_cursor_move process_cursor_move
+  def process_cursor_move
+    return unless cursor_movable?
+    process_eagle_mouse_selection  # 新增鼠标选择
+    eagle_mouse_process_cursor_move
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理鼠标选择光标
+  #--------------------------------------------------------------------------
+  def process_eagle_mouse_selection
+    last_index = @index
+    # 逐个选项迭代，查看是否被鼠标选中
+    item_max.times do |i|
+      r = item_rect_for_text(i)
+      r.x += self.x + standard_padding
+      r.y += self.y + standard_padding
+      break select(i) if MOUSE_EX.in?(r)
+    end
+    Sound.play_cursor if @index != last_index
+  end
+  #--------------------------------------------------------------------------
+  # ● “确定”和“取消”的处理
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_process_handling process_handling
+  def process_handling
+    process_mouse_handling
+    eagle_mouse_process_handling
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理鼠标按键
+  #--------------------------------------------------------------------------
+  def process_mouse_handling
+    return unless open? && active
+    f = mouse_in?(false)
+    if MOUSE_EX.up?(:ML)
+      if !f # 如果鼠标在窗口外，则取消光标选择
+        unselect 
+      else  # 如果鼠标在窗口内，则触发确定
+        process_ok if ok_enabled? 
+      end
+    end
+    if MOUSE_EX.up?(:MR)
+      process_cancel if cancel_enabled?
+    end
+  end
+end
+
+#===============================================================================
+# ○ 地图上用鼠标右键打开菜单
+#===============================================================================
+class Scene_Map
+  #--------------------------------------------------------------------------
+  # ● 监听取消键的按下。如果菜单可用且地图上没有事件在运行，则打开菜单界面。
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_update_call_menu update_call_menu
+  def update_call_menu
+    if $game_system.menu_disabled || $game_map.interpreter.running?
+      @menu_calling = false
+    else
+      @menu_calling ||= Input.trigger?(:B)
+      @menu_calling = true if MOUSE_EX.up?(:MR)  # 新增
+      call_menu if @menu_calling && !$game_player.moving?
+    end
+  end
+end
+
+#===============================================================================
+# ○ 在Scene中立即把鼠标定位至指令框
+#===============================================================================
+module MOUSE_EX
+  #--------------------------------------------------------------------------
+  # ● 将鼠标移动到指定的指令窗口内
+  #--------------------------------------------------------------------------
+  def self.to_command_window(w)
+    # 该窗口需要已激活，然后鼠标移动到当前选项上
+    return if w.active == false  
+    if w.index >= 0
+      r = w.cursor_rect
+      _x = w.x + w.standard_padding + r.x + r.width / 2
+      _y = w.y + w.standard_padding + r.y + r.height / 2
+      set_to(_x, _y)
+    end
+  end
+end
+#--------------------------------------------------------------------------
+# ● 打开标题时
+#--------------------------------------------------------------------------
+class Scene_Title
+  #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_post_start post_start
+  def post_start
+    eagle_mouse_ex_post_start
+    MOUSE_EX.to_command_window(@command_window)
+  end
+end
+#--------------------------------------------------------------------------
+# ● 打开菜单时
+#--------------------------------------------------------------------------
+class Scene_Menu
+  #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_post_start post_start
+  def post_start
+    eagle_mouse_ex_post_start
+    MOUSE_EX.to_command_window(@command_window)
+  end
+end
+#--------------------------------------------------------------------------
+# ● 打开游戏结束界面时
+#--------------------------------------------------------------------------
+class Scene_End
+  #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_post_start post_start
+  def post_start
+    eagle_mouse_ex_post_start
+    MOUSE_EX.to_command_window(@command_window)
+  end
+end
+
+#===============================================================================
+# ○ 兼容默认对话框
+#===============================================================================
+class Window_Message
+  #--------------------------------------------------------------------------
+  # ● 监听“确定”键的按下，更新快进的标志
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_update_show_fast update_show_fast
+  def update_show_fast
+    eagle_mouse_ex_update_show_fast
+    @show_fast = true if MOUSE_EX.up?(:ML)
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理输入等待
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_input_pause input_pause
+  def input_pause
+    self.pause = true
+    wait(10)
+    Fiber.yield until Input.trigger?(:B) || Input.trigger?(:C) || 
+      MOUSE_EX.up?(:ML) || MOUSE_EX.up?(:MR)
+    Input.update
+    self.pause = false
+  end
+end
+
+#===============================================================================
+# ○ 兼容【对话框扩展 by老鹰】
+#===============================================================================
+class Window_EagleMessage
+  #--------------------------------------------------------------------------
+  # ● 等待按键时，按键继续的处理
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_process_input_pause_key process_input_pause_key
+  def process_input_pause_key
+    if MOUSE_EX.up?(:ML)
+      return @flag_input_loop = false 
+    end
+    eagle_mouse_ex_process_input_pause_key
+  end
+end 

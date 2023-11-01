@@ -2,9 +2,9 @@
 # ■ 按键扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-InputEX"] = "2.2.2"
+$imported["EAGLE-InputEX"] = "2.3.0"
 #=============================================================================
-# - 2023.10.29.17 修改按键帧判定
+# - 2023.11.1.21 将 mouse_in? 移入鼠标扩展
 #=============================================================================
 # - 本插件新增了一系列按键相关方法（不修改默认Input模块）
 #-----------------------------------------------------------------------------
@@ -54,7 +54,7 @@ RELEASE_C2 = 15  # 设置为 0 代表不限制上限
 #  3. 指定按键前 c-1 帧都为按下，当前帧也按下，则返回 true
 #     在按下的第 c 帧及之后帧均返回 true，c 最小值为 1
 #
-#      INPUT_EX.press?(key, c=1)
+#      INPUT_EX.press?(key, c=PRESS_C)
 #
 #  【常量设置： press? 方法的默认c值】
 PRESS_C = 10
@@ -80,28 +80,11 @@ PRESS_C = 10
 #
 #      INPUT_EX.set_mouse(x, y)
 #
-#  3. 判定鼠标是否在矩形区域内（游戏窗口内的矩形，不考虑 viewport）
-#
-#      INPUT_EX.mouse_in?(r)
-#
-#     其中 r 是Rect.new，如果不传入，则判定鼠标是否在游戏窗口内
-#
-#  3.1 为 Sprite 类增加实例方法，判定鼠标是否在该精灵的位图内部
-#     检查了精灵的 visible、判定区域由实际显示在游戏窗口内的位置决定
-#     如果在颜色像素上返回 true，但在透明像素上则返回false
-#
-#      sprite.mouse_in?
-#
-#  3.2 为 Window 类增加实例方法，判定鼠标是否在该窗口的contents内部
-#     检查了窗口的 visible、opacity、openness
-#
-#      window.mouse_in?
-#
 # - 示例：
 #
 #   INPUT_EX.mouse_x → 返回鼠标在游戏窗口内的坐标x
 #   INPUT_EX.mouse_y → 返回鼠标在游戏窗口内的坐标y
-#   INPUT_EX.mouse_in? → 返回鼠标是否在游戏窗口内
+#   INPUT_EX.set_mouse(0,0) → 把鼠标移动到游戏窗口左上角
 #
 #------------------------------------------------------------
 # ● 按键模拟
@@ -273,19 +256,6 @@ module INPUT_EX
     @mouse_x, @mouse_y = screen_to_client(w, x0, y0)
   end
   #--------------------------------------------------------------------------
-  # ● 鼠标位于矩形内？
-  # 若不传入矩形，则返回鼠标是否在游戏窗口内
-  #--------------------------------------------------------------------------
-  def self.mouse_in?(rect = nil)
-    if rect.nil?
-      return false if @mouse_x > Graphics.width || @mouse_y > Graphics.height
-      return true
-    end
-    return false if @mouse_x < rect.x || @mouse_x > rect.x + rect.width
-    return false if @mouse_y < rect.y || @mouse_y > rect.y + rect.height
-    return true
-  end
-  #--------------------------------------------------------------------------
   # ● 获取当前激活窗口的句柄
   #--------------------------------------------------------------------------
   def self.get_cur_window
@@ -343,7 +313,6 @@ module INPUT_EX
     #p [x1, y1, x2, y2]
     return Rect.new(x1, y1, x2-x1, y2-y1)
   end
-  
 end
 class << Input
   #--------------------------------------------------------------------------
@@ -363,42 +332,6 @@ class << DataManager
   def init
     INPUT_EX.init
     eagle_input_ex_init
-  end
-end
-
-class Sprite
-  #--------------------------------------------------------------------------
-  # ● 该精灵的位图包含了鼠标？
-  #--------------------------------------------------------------------------
-  def mouse_in?
-    return false if !visible || opacity == 0
-    return false unless self.bitmap
-    return false if self.bitmap.disposed?
-    # 计算出鼠标相对于实际位图的坐标 左上原点
-    rx = INPUT_EX.mouse_x - (self.x - self.ox)
-    ry = INPUT_EX.mouse_y - (self.y - self.oy)
-    if viewport
-      rx -= self.viewport.rect.x
-      ry -= self.viewport.rect.y
-    end
-    # 边界判定  src_rect - 该矩形内的位图为精灵 (0,0) 处显示位图
-    return false if rx < 0 || ry < 0 || rx > width || ry > height
-    return self.bitmap.get_pixel(rx, ry).alpha != 0
-  end
-end
-
-class Window_Base
-  #--------------------------------------------------------------------------
-  # ● 该窗口的位图包含了鼠标？
-  #--------------------------------------------------------------------------
-  def mouse_in?
-    return false if !visible || opacity == 0 || openness < 255
-    return false if disposed?
-    mx = INPUT_EX.mouse_x
-    return false if mx < x+standard_padding || mx > x+width+standard_padding
-    my = INPUT_EX.mouse_y
-    return false if my < y+standard_padding || my > y+height+standard_padding
-    return true
   end
 end
 
