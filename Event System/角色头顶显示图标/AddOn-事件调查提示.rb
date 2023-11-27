@@ -5,9 +5,9 @@
 #    与【角色头顶显示图标 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventTSearchIcon"] = "2.1.0"
+$imported["EAGLE-EventTSearchIcon"] = "2.2.0"
 #==============================================================================
-# - 2023.8.5.22 增加为事件页设置激活距离
+# - 2023.11.27.231 新增脚本内预设
 #==============================================================================
 # - 本插件新增了玩家接近或面向事件时自动显示图标的功能
 #-----------------------------------------------------------------------------
@@ -23,6 +23,10 @@ $imported["EAGLE-EventTSearchIcon"] = "2.1.0"
 #   其中 icon 替换为需要显示的图标的ID
 #   其中 ... 替换为下列的赋值字符串，可写多条，用空格隔开
 #     具体参数可见【角色头顶显示图标】中的 @pop_icon_params
+#
+#      def=数字 → 应用预设中的对应设置，然后再用实际编写的设置覆盖（图标不变）
+#      （由于脚本设计缺陷，虽然预设中已经有了图标，但事件注释的icon还是要写，
+#        比如 <图标靠近 1 def=调查>，其中的 1 无效，因为预设中的图标优先级最高）
 #
 #      pos=数字 → 显示位置（0事件头顶，1事件脚底，2事件中心）
 #      type=数字 → 设置移动的类型
@@ -249,12 +253,16 @@ class Game_Player
         h = { :event => e }
         next if ps[-1] && EAGLE_COMMON.check_bool(ps[-1][2..-3], false, h) != true
         h = EAGLE_COMMON.parse_tags(ps[2].lstrip)
+        h = POP_ICON.apply_default(h[:def], h) if h[:def]
         h[:type] ||= POP_ICON::DEF_TYPE_EVENT_FRONT
         h[:pri]  = (h[:pri] || POP_ICON::DEF_PRI_EVENT_NEAR).to_i
         h[:pri] += POP_ICON::DEF_PRI_EVENT_FRONT
         e.pop_icon_params[:pri] ||= 0
         next if e.pop_icon_params[:pri] > h[:pri]
         e.pop_icon = ps[1].to_i rescue 0
+        # 应用预设中的icon
+        e.pop_icon = h[:icon].to_i if h[:icon].to_i > 0
+        h[:icon] = 0  # 置零，防止重复刷新和持续显示
         e.pop_icon_params.merge!(h)
         _f_event ? (f_event = true) : (f_player = true)
       end
@@ -283,12 +291,16 @@ class Game_Player
       h = { :event => e }
       next if ps[-1] && EAGLE_COMMON.check_bool(ps[-1][2..-3], false, h) != true
       h = EAGLE_COMMON.parse_tags(ps[2].lstrip)
+      h = POP_ICON.apply_default(h[:def], h) if h[:def]
       h[:type] ||= POP_ICON::DEF_TYPE_EVENT_NEAR
       h[:pri]  = (h[:pri] || POP_ICON::DEF_PRI_EVENT_NEAR).to_i
       e.pop_icon_params[:pri] ||= 0
       # 如果当前显示的图标的优先级更大，则跳过
       next if e.pop_icon_params[:pri] > h[:pri]
       e.pop_icon = ps[1].to_i rescue 0
+      # 应用预设中的icon
+      e.pop_icon = h[:icon].to_i if h[:icon].to_i > 0
+      h[:icon] = 0  # 置零，防止重复刷新和持续显示
       e.pop_icon_params.merge!(h)
     end
   end

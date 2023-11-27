@@ -3,9 +3,9 @@
 # 【此插件兼容VX和VX Ace】
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventPopIcon"] = "1.2.3"
+$imported["EAGLE-EventPopIcon"] = "1.3.0"
 #==============================================================================
-# - 2023.8.5.11 兼容VX
+# - 2023.11.27.231 新增脚本内预设
 #==============================================================================
 # - 本插件新增了在地图上角色头顶显示指定图标的功能（仿气泡）
 #--------------------------------------------------------------------------
@@ -18,6 +18,8 @@ $imported["EAGLE-EventPopIcon"] = "1.2.3"
 # - 同时，也新增了 @pop_icon_params 的Hash类型变量，用来存储参数
 #
 #   有效参数一览：
+#
+#     :def => 文本 → 应用脚本中预设的参数组，然后再用当前设置自定义。
 #
 #     :pos => 数字 → 数字为 0 时（默认值），图标显示在行走图上方
 #                     数字为 1 时，图标显示在行走图下方
@@ -49,6 +51,17 @@ $imported["EAGLE-EventPopIcon"] = "1.2.3"
 # - 若 @pop_icon 设置为 0，则会立即消除图标
 #
 #==============================================================================
+module POP_ICON
+  #--------------------------------------------------------------------------
+  # ●【常量】预设的设置组
+  #--------------------------------------------------------------------------
+  DEFAULT = {
+    "默认" => { :icon => 0, :pos => 0, :dx => 0, :dy => 0,
+      :type => 1, :dir => 8, :l => 2, :opa => 0 },
+    # 编写 def=调查 就会应用这里的设置，再改为额外写的新设置 
+    "调查" => { :icon => 4, :type => 1, :dir => 8 },
+  }
+end
 module POP_ICON
   #--------------------------------------------------------------------------
   # ● 【常量】当该序号的开关开启时，不显示图标
@@ -171,6 +184,14 @@ module POP_ICON
     rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
     bitmap.blt(x, y, bitmap_, rect, enabled ? 255 : 120)
   end
+  #--------------------------------------------------------------------------
+  # ● 应用预设
+  #--------------------------------------------------------------------------
+  def self.apply_default(id, ps)
+    ps_ = DEFAULT[id]
+    return ps if ps_ == nil
+    return ps_.merge(ps)
+  end
 end
 
 #==============================================================================
@@ -274,8 +295,12 @@ class Sprite_Character < Sprite_Base
         return end_popicon
       end
       c = @popicon_count % POP_ICON::MAX_LOOP_FRAME
-      POP_ICON.draw_pop_icon(self, @popicon_sprite, @pop_icon, c,
-        @character.get_popicon_params)
+      ps = @character.get_popicon_params
+      # 应用预设
+      ps = POP_ICON.apply_default(ps[:def], ps) if ps[:def]
+      @character.pop_icon = @pop_icon = ps[:icon].to_i if ps[:icon].to_i > 0
+      ps[:icon] = 0  # 应用后，要把icon置零，防止一直重复刷新和显示
+      POP_ICON.draw_pop_icon(self, @popicon_sprite, @pop_icon, c, ps)
       @popicon_sprite.update
       @popicon_count += 1
     end
