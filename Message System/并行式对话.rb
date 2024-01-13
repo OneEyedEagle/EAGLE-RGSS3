@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.2.0"
+$imported["EAGLE-MessagePara2"] = "1.2.2"
 #==============================================================================
-# - 2022.8.14.9 放开 wait 参数传入 0 的限制
+# - 2024.1.13.21 
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -360,6 +360,8 @@ class Sprite_EagleMsg < Sprite
   # ● 重置
   #--------------------------------------------------------------------------
   def reset(_params)
+    @fiber = nil
+    @flag_no_wait = false
     reset_params(_params)
     redraw
     start
@@ -617,7 +619,8 @@ class Sprite_EagleMsg < Sprite
   #--------------------------------------------------------------------------
   def reset_viewport
     vp = nil
-    if SceneManager.scene_is?(Scene_Map) || SceneManager.scene_is?(Scene_Battle)
+    # 战斗场景不需要绑定viewport，否则会被我方状态窗口覆盖……
+    if SceneManager.scene_is?(Scene_Map) #|| SceneManager.scene_is?(Scene_Battle)
       vp = SceneManager.scene.spriteset.viewport1
     end
     self.viewport = vp

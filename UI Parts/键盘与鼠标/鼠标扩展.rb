@@ -2,15 +2,15 @@
 # ■ 鼠标扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 # ※ 本插件需要放置在【按键扩展 by老鹰】之下
 #    或 将 MOUSE_EX 模块中的方法修改为使用你自己的鼠标系统
+# ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.0.0"
+$imported["EAGLE-MouseEX"] = "1.1.2"
 #=============================================================================
-# - 2023.11.1.22
+# - 2024.1.13.21
 #=============================================================================
-# - 本插件新增了一系列鼠标兼容控制的方法
-#-----------------------------------------------------------------------------
-# - 请逐项阅读注释并进行必要的自定义
+# - 本插件新增了一系列鼠标控制的方法
+# - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
 #=============================================================================
 module MOUSE_EX
 #===============================================================================
@@ -90,7 +90,7 @@ end
 #  3.1 为 Sprite 类增加了实例方法，判定鼠标是否在该精灵的位图内部
 #     如果_visible传入 true，则会首先检查精灵的 visible
 #     判定区域由实际显示在游戏窗口内的位置决定
-#     如果在颜色像素上返回 true，但在透明像素上则返回false
+#     如果在颜色像素上返回 true，在透明像素上则返回 false
 #
 #      sprite.mouse_in?(_visible=true)
 #
@@ -158,6 +158,27 @@ class Window_Base
 end
 
 #===============================================================================
+# ○ 鼠标滚轮
+#===============================================================================
+#  此功能利用了 RGD（> 1.5.0）中 Mouse 模块的API，默认RGSS中无法使用
+module MOUSE_EX
+  #--------------------------------------------------------------------------
+  # ● 鼠标向上滚动？
+  #--------------------------------------------------------------------------
+  def self.scroll_up?
+    return Mouse.scroll > 0 if $RGD
+    return false 
+  end
+  #--------------------------------------------------------------------------
+  # ● 鼠标向下滚动？
+  #--------------------------------------------------------------------------
+  def self.scroll_down?
+    return Mouse.scroll < 0 if $RGD
+    return false 
+  end
+end
+
+#===============================================================================
 # ○ 鼠标触发事件
 #===============================================================================
 class Sprite_Character < Sprite_Base
@@ -167,11 +188,42 @@ class Sprite_Character < Sprite_Base
   alias eagle_mouse_ex_update_other update_other
   def update_other
     eagle_mouse_ex_update_other
-    # 鼠标触发事件
+    # 当事件执行时，不判定
     return if $game_map.interpreter.running?
+    # 当鼠标移动到事件上，且按下左键时，触发它
     if MOUSE_EX.up?(:ML) && @character.is_a?(Game_Event) && mouse_in?
       @character.start
+      # 被触发的事件朝向玩家
+      @character.turn_to_character($game_player)
+      # 玩家朝向被触发的事件
+      $game_player.turn_to_character(@character)
+      # 计算了被触发事件与玩家之间的距离
+      d = @character.distance_to_character($game_player)
+      # 可传入变量中，然后在事件指令里判定距离，如果过大则提示太远并中止事件执行
+      #$game_variables[1] = d
     end
+  end
+end
+class Game_Character
+  #--------------------------------------------------------------------------
+  # ● 朝向指定角色
+  #--------------------------------------------------------------------------
+  def turn_to_character(character)
+    dx = (self.x - character.x)
+    dy = (self.y - character.y)
+    if dx.abs > dy.abs
+      dx < 0 ? set_direction(6) : set_direction(4)
+    else
+      dy < 0 ? set_direction(2) : set_direction(8)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 计算与指定角色之间的距离
+  #--------------------------------------------------------------------------
+  def distance_to_character(character)
+    dx = (self.x - character.x).abs
+    dy = (self.y - character.y).abs
+    return dx + dy
   end
 end
 
@@ -180,24 +232,47 @@ end
 #===============================================================================
 class Window_Selectable < Window_Base
   #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #-------------------------------------------------------------------------
+  alias eagle_mouse_init initialize
+  def initialize(x, y, width, height)
+    # 新增一个标记，用于处理鼠标按左键确定的逻辑：
+    #   该标记为 true 时，鼠标必须在窗口内，按确定键才执行 process_ok ，
+    #         如果鼠标按左键时在窗口外，则为触发 unselect 方法，即取消光标
+    #   该标记为 false 时，鼠标按左键必定触发当前选项的 process_ok
+    @flag_mouse_in_win_when_ok = false
+    eagle_mouse_init(x, y, width, height)
+  end
+  #--------------------------------------------------------------------------
   # ● 处理光标的移动
   #--------------------------------------------------------------------------
-  alias eagle_mouse_process_cursor_move process_cursor_move
+  #alias eagle_mouse_process_cursor_move process_cursor_move
   def process_cursor_move
     return unless cursor_movable?
-    process_eagle_mouse_selection  # 新增鼠标选择
-    eagle_mouse_process_cursor_move
+    last_index = @index
+    cursor_down (Input.trigger?(:DOWN))  if Input.repeat?(:DOWN)
+    cursor_up   (Input.trigger?(:UP))    if Input.repeat?(:UP)
+    cursor_right(Input.trigger?(:RIGHT)) if Input.repeat?(:RIGHT)
+    cursor_left (Input.trigger?(:LEFT))  if Input.repeat?(:LEFT)
+    cursor_pagedown   if !handle?(:pagedown) && Input.trigger?(:R)
+    cursor_pageup     if !handle?(:pageup)   && Input.trigger?(:L)
+    # 新增鼠标滚轮
+    cursor_up   (true) if MOUSE_EX.scroll_up?
+    cursor_down (true) if MOUSE_EX.scroll_down?
+    # 新增鼠标选择
+    process_eagle_mouse_selection
+    Sound.play_cursor if @index != last_index
   end
   #--------------------------------------------------------------------------
   # ● 处理鼠标选择光标
   #--------------------------------------------------------------------------
   def process_eagle_mouse_selection
     last_index = @index
-    # 逐个选项迭代，查看是否被鼠标选中
+    # 逐个选项查看是否被鼠标选中
     item_max.times do |i|
       r = item_rect_for_text(i)
-      r.x += self.x + standard_padding
-      r.y += self.y + standard_padding
+      r.x += self.x - self.ox + standard_padding
+      r.y += self.y - self.oy + standard_padding
       break select(i) if MOUSE_EX.in?(r)
     end
     Sound.play_cursor if @index != last_index
@@ -215,11 +290,17 @@ class Window_Selectable < Window_Base
   #--------------------------------------------------------------------------
   def process_mouse_handling
     return unless open? && active
-    f = mouse_in?(false)
-    if MOUSE_EX.up?(:ML)
-      if !f # 如果鼠标在窗口外，则取消光标选择
-        unselect 
-      else  # 如果鼠标在窗口内，则触发确定
+    if @flag_mouse_in_win_when_ok 
+      f = mouse_in?(false)
+      if MOUSE_EX.up?(:ML)
+        if !f # 如果鼠标在窗口外，则无任何动作
+          #unselect # 或取消光标选择
+        else  # 如果鼠标在窗口内，则触发确定
+          process_ok if ok_enabled? 
+        end
+      end
+    else
+      if MOUSE_EX.up?(:ML)
         process_ok if ok_enabled? 
       end
     end
@@ -256,8 +337,9 @@ module MOUSE_EX
   # ● 将鼠标移动到指定的指令窗口内
   #--------------------------------------------------------------------------
   def self.to_command_window(w)
-    # 该窗口需要已激活，然后鼠标移动到当前选项上
-    return if w.active == false  
+    # 该窗口需要已激活
+    return if w.active == false 
+    # 把鼠标移动到窗口当前选项上
     if w.index >= 0
       r = w.cursor_rect
       _x = w.x + w.standard_padding + r.x + r.width / 2
@@ -282,16 +364,16 @@ end
 #--------------------------------------------------------------------------
 # ● 打开菜单时
 #--------------------------------------------------------------------------
-class Scene_Menu
-  #--------------------------------------------------------------------------
-  # ● 开始后处理
-  #--------------------------------------------------------------------------
-  alias eagle_mouse_ex_post_start post_start
-  def post_start
-    eagle_mouse_ex_post_start
-    MOUSE_EX.to_command_window(@command_window)
-  end
-end
+#~ class Scene_Menu
+#~   #--------------------------------------------------------------------------
+#~   # ● 开始后处理
+#~   #--------------------------------------------------------------------------
+#~   alias eagle_mouse_ex_post_start post_start
+#~   def post_start
+#~     eagle_mouse_ex_post_start
+#~     MOUSE_EX.to_command_window(@command_window)
+#~   end
+#~ end
 #--------------------------------------------------------------------------
 # ● 打开游戏结束界面时
 #--------------------------------------------------------------------------
@@ -335,6 +417,7 @@ end
 #===============================================================================
 # ○ 兼容【对话框扩展 by老鹰】
 #===============================================================================
+if $imported["EAGLE-MessageEX"]
 class Window_EagleMessage
   #--------------------------------------------------------------------------
   # ● 等待按键时，按键继续的处理
@@ -347,3 +430,19 @@ class Window_EagleMessage
     eagle_mouse_ex_process_input_pause_key
   end
 end 
+end 
+#===============================================================================
+# ○ 兼容【Add-On选择框扩展 by老鹰】
+#===============================================================================
+if $imported["EAGLE-ChoiceEX"]
+class Window_EagleChoiceList
+  #--------------------------------------------------------------------------
+  # ● 重置
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_reset eagle_reset
+  def eagle_reset
+    eagle_mouse_ex_reset
+    @flag_mouse_in_win_when_ok = true  # 必须要鼠标在选项内，才能用鼠标确定
+  end
+end
+end

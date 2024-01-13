@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Dice"] = "1.1.1"
+$imported["EAGLE-Dice"] = "1.1.4"
 #==============================================================================
-# - 2023.9.10.11 新增:show_stat参数，允许不开启投掷结果统计信息
+# - 2024.1.13.19 当重投掷次数为0时，自动结束投掷
 #==============================================================================
 # - 本插件增加了一套独立的骰子系统，能够在任意时刻投掷并返回结果
 #------------------------------------------------------------------------------
@@ -134,6 +134,10 @@ DICE.call(ds, ps)
 #=============================================================================
 module DICE
   #--------------------------------------------------------------------------
+  # ●【常量】战斗者未设置骰子时，默认增加的骰子
+  #--------------------------------------------------------------------------
+  DICE_BATTLER_DEFAULT = [1,2,3,4,5,6]
+  #--------------------------------------------------------------------------
   # ●【常量】显示的基础Z值
   #--------------------------------------------------------------------------
   BASE_Z = 200
@@ -163,6 +167,11 @@ module DICE
   #--------------------------------------------------------------------------
   BG_DEFAULT = "Dice_BG"
   #--------------------------------------------------------------------------
+  # ●【常量】背景图片不存在时，白底黑框的宽高 及 边框的宽度
+  #--------------------------------------------------------------------------
+  BG_DEFAULT_WH = 36
+  BG_DEFAULT_BORDER_WH = 2
+  #--------------------------------------------------------------------------
   # ●【常量】骰子被选择时的前景图片
   #  可省略后缀名，需放置于 Graphics/System 目录下
   #  如果图片不存在，则自动绘制黄色半透明
@@ -176,6 +185,10 @@ module DICE
   # ●【常量】自动投掷时，投掷后的等待帧数
   #--------------------------------------------------------------------------
   AUTO_WAIT = 40
+  #--------------------------------------------------------------------------
+  # ●【常量】重投掷次数为0时，结束投掷前的等待帧数
+  #--------------------------------------------------------------------------
+  REROLL_END_WAIT = 20
   #--------------------------------------------------------------------------
   # ●【常量】骰子移入移出所需帧数
   #--------------------------------------------------------------------------
@@ -209,9 +222,6 @@ module DICE
       b = id 
     end
     data, ps2 = get_dices(b)
-    if data.empty?
-      data.push(Data_Dice.new([1,2,3,4,5,6]))
-    end
     ps = ps2.merge!(ps)
     call(data, ps)
   end
@@ -225,9 +235,6 @@ module DICE
       b = id 
     end
     data, ps2 = get_dices(b)
-    if data.empty?
-      data.push(Data_Dice.new([1,2,3,4,5,6]))
-    end
     ps = ps2.merge!(ps)
     call(data, ps)
   end
@@ -273,15 +280,22 @@ module DICE
         params_array.push(ps)
       end
     end
+    if datas.empty? # 保底骰子
+      datas.push(Data_Dice.new(DICE_BATTLER_DEFAULT))
+    end
     # 应用更改
     changes.each do |obj, params|
       params.each do |param|  # 数量 更改前的值 更改后的值
         count = param[0].to_i; old_id = param[1].to_i; new_id = param[2].to_i
         datas.each do |data|
-          i = data.ids_init.index { |id| id == old_id }
-          next if i.nil?
-          next if data.changed?(i)  # 存在变更，则不再变动
-          data.add_change(i, obj, new_id)
+          #i = data.ids_init.index { |id| id == old_id }
+          #p [i, old_id]
+          #next if i.nil?
+          data.ids_init.each_with_index do |id, i|
+            next if id != old_id
+            break if data.changed?(i)  # 存在变更，则不再变动
+            data.add_change(i, obj, new_id)
+          end
           count -= 1
           break if count == 0
         end
@@ -468,16 +482,24 @@ class Spriteset_Dices
     process_player_start
     while true
       Fiber.yield
-      if @selected_token && Input.trigger?(:C)
+      f = Input.trigger?(:C)
+      f |= MOUSE_EX.up?(:ML) if $imported["EAGLE-MouseEX"]
+      if @selected_token && f
         if @n_reroll > 0
           @n_reroll -= 1
           redraw_hint(@sprite_hint)
           roll(@selected_token)
+          if @n_reroll == 0
+            REROLL_END_WAIT.times { Fiber.yield }
+            break
+          end
         else
           Sound.play_buzzer
         end
       end
-      break Sound.play_cancel if Input.trigger?(:B)
+      f = Input.trigger?(:B)
+      f |= MOUSE_EX.up?(:MR) if $imported["EAGLE-MouseEX"]
+      break Sound.play_cancel if f
     end
     process_player_finish
   end
@@ -692,6 +714,11 @@ class Spriteset_Dices
       s.x += d
       s.x = ui_max_x - s.width + s.ox if s.x - s.ox + s.width > ui_max_x
     end
+    
+    if $imported["EAGLE-MouseEX"] && MOUSE_EX.in?
+      s.x = MOUSE_EX.x
+      s.y = MOUSE_EX.y
+    end
 
     # 更新是否有选中的token
     if @selected_token && @selected_token.point_in?(s.x, s.y)
@@ -758,7 +785,7 @@ class Spriteset_Dices
     if change
       # change = [old_id, new_id, obj]
       icon = change[2].icon_index rescue return
-      text = "\n\\i[#{icon}]#{change[2].name} 特性："
+      text = "\n\\i[#{icon}]#{change[2].name} 效果："
       text += "由 #{change[0]} 变为了 #{change[1]}"
     end
 
@@ -859,8 +886,8 @@ class Sprite_Dice < Sprite
         t_bitmap = Cache.system(BG_DEFAULT).dup
         t_bitmap = Cache.system(BG_DEFAULT+"_#{@bg_surfix}").dup if @bg_surfix
       rescue
-        w = h = 36
-        b = 2
+        w = h = BG_DEFAULT_WH
+        b = BG_DEFAULT_BORDER_WH
         t_bitmap = Bitmap.new(w, h)
         t_bitmap.fill_rect(0,0,w,h, Color.new(0,0,0))
         t_bitmap.fill_rect(b,b,w-2*b,h-2*b, Color.new(255,255,255))
@@ -893,8 +920,8 @@ class Sprite_Dice < Sprite
     begin
       @sprite_layer_chosen.bitmap = Cache.system(BG_CHOSEN)
     rescue
-      w = h = 36
-      b = 2
+      w = h = BG_DEFAULT_WH
+      b = BG_DEFAULT_BORDER_WH
       t_bitmap = Bitmap.new(w, h)
       t_bitmap.fill_rect(b,b,w-2*b,h-2*b, Color.new(100,255,255,150))
       @sprite_layer_chosen.bitmap = t_bitmap
