@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.2.2"
+$imported["EAGLE-MessagePara2"] = "1.2.3"
 #==============================================================================
-# - 2024.1.13.21 
+# - 2024.1.18.22 优化重复触发同一sym同一文本时的处理
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -109,8 +109,10 @@ $imported["EAGLE-MessagePara2"] = "1.2.2"
 #
 # - 如果玩家主动触发的事件中存在并行对话，仍然需要等待对话结束，玩家才能继续移动
 #
-# - 当位于地图/战斗时，并行式对话将自动绑定地图的视口
+# - 当位于地图时，并行式对话将自动绑定地图的视口
 #    即与行走图位于同一 viewport 内，同样受到画面闪烁、抖动等特效影响
+#
+# - 特别的，当重复激活相同 sym 的并行对话时，如果 text 不变，则只会重置移出时间
 #
 #------------------------------------------------------------------------------
 # 【使用 - 全局脚本】
@@ -136,14 +138,16 @@ $imported["EAGLE-MessagePara2"] = "1.2.2"
 #      :background => 0         # 对话框背景的类型（0普通 1暗色 2透明）
 #      :position => 0           # 对话框位置的类型（0居上 1居中 2居下）
 #
-#      :skin => 0               # 对话框所用皮肤的索引
+#      :skin => 0               # 对话框所用皮肤的索引 或 对话框皮肤名称的字符串
 #      :wait => 1               # 对话框的停留帧数
 #      :io   => "fade"          # 对话框的移入移出类型
 #      :io_t => 20              # 移入移出的耗时
 #
 #      :pos => { :o => 2, :e => -1, :o2 => 8  } # 对话框的位置设置
+#                               # 注意：此处 :e 的参数为 0 时无效！
 #
-#   如： MESSAGE_PARA2.add("提示文字", {:text => "这是一句提示文本",
+#   如： 
+#       MESSAGE_PARA2.add("提示文字", {:text => "这是一句提示文本",
 #          :pos => {:o => 5, :mx => 5, :my => 6 }})
 #   则会在地图的 (5,6) 处显示一个并行对话框，内容是 这是一句提示文本。
 #
@@ -360,8 +364,13 @@ class Sprite_EagleMsg < Sprite
   # ● 重置
   #--------------------------------------------------------------------------
   def reset(_params)
-    @fiber = nil
     @flag_no_wait = false
+    # 如果已经存在，而且文本相同，则只重置倒计时
+    if @fiber && _params[:text] == @params[:text]
+      @count_wait = @params[:wait]
+      return
+    end
+    @fiber = nil
     reset_params(_params)
     redraw
     start
@@ -533,7 +542,10 @@ class Sprite_EagleMsg < Sprite
   #--------------------------------------------------------------------------
   def get_event(id)
     if id == 0 # 当前事件
-      return $game_map.events[params[:event_id]]
+      if $game_map.events.include?(params[:event_id])
+        return $game_map.events[params[:event_id]]
+      end
+      return $game_player
     elsif id > 0 # 第id号事件
       chara = $game_map.events[id]
       chara ||= $game_map.events[params[:event_id]]
@@ -705,9 +717,12 @@ class Sprite_EagleMsg < Sprite
       end
       return
     end
-    params[:wait].times do
+    @count_wait = params[:wait]
+    loop do
       break if @flag_no_wait
       Fiber.yield
+      @count_wait -= 1
+      break if @count_wait <= 0
     end
   end
   #--------------------------------------------------------------------------
