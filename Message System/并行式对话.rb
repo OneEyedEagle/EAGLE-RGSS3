@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.2.3"
+$imported["EAGLE-MessagePara2"] = "1.2.4"
 #==============================================================================
-# - 2024.1.18.22 优化重复触发同一sym同一文本时的处理
+# - 2024.1.21.17 优化重复触发同一sym同一文本时的处理
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -89,6 +89,7 @@ $imported["EAGLE-MessagePara2"] = "1.2.3"
 #         zoom 代表放大移入、缩小移出
 #      时间 为移入/移出的所用帧数
 #     如 <io fade10> 代表淡入淡出分别需要10帧
+#     如 <io zoom 20> 代表放大移入和缩小移出分别需要20帧
 #
 #  6. 在“文本框”中，编写 <skin id> 用于为当前对话框切换窗口皮肤
 #     其中 id 首先将在ID_TO_SKIN中查找预设的名称映射
@@ -659,6 +660,7 @@ class Sprite_EagleMsg < Sprite
   # ● 移入移出（放缩）
   #--------------------------------------------------------------------------
   def until_move_end_zoom(type = :in, t = 20)
+    self.opacity = 255
     _i = 0; _t = t
     _init = 0; _d = 0
     if type == :in
@@ -671,7 +673,7 @@ class Sprite_EagleMsg < Sprite
     while(true)
       break if _i > _t
       per = _i * 1.0 / _t
-      per = (_i == _t ? 1 : ease_value(:zoom, per))
+      per = (_i == _t ? 1 : ease_value(:zoom, per, type==:in))
       v = _init + _d * per
       self.zoom_x = self.zoom_y = v
       Fiber.yield
@@ -686,9 +688,10 @@ class Sprite_EagleMsg < Sprite
   #--------------------------------------------------------------------------
   # ● 缓动函数
   #--------------------------------------------------------------------------
-  def ease_value(type, x)
+  def ease_value(type, x, flag=true)
     if $imported["EAGLE-EasingFunction"]
-      return EasingFuction.call("easeOutBack", x)
+      return EasingFuction.call("easeOutBack", x) if flag
+      return EasingFuction.call("easeInBack", x)
     end
     return 1 - 2**(-10 * x)
   end

@@ -3,9 +3,9 @@
 # 【此插件兼容VX和VX Ace】
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.1.7"
+$imported["EAGLE-CommonMethods"] = "1.1.8"
 #==============================================================================
-# - 2023.8.5.13 兼容VX
+# - 2024.1.19.23 event_comment_head 增加保留换行功能
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #---------------------------------------------------------------------------
@@ -142,9 +142,10 @@ $imported["EAGLE-CommonMethods"] = "1.1.7"
 #---------------------------------------------------------------------------
 # 【事件页相关】
 #
-#  EAGLE_COMMON.event_comment_head(command_list)
+#  EAGLE_COMMON.event_comment_head(command_list, keep_newline=false)
 #   → 获取事件页指令列表中开头的注释指令（可能包含多个连续的注释指令）
 #     command_list 为事件页page的list属性，即RPG::Event::Page中的指令数组@list
+#     keep_newline 传入 true 时，将保留编辑器中的换行，否则只导出单行文本
 #
 #---------------------------------------------------------------------------
 # 【数据库相关】
@@ -666,11 +667,12 @@ module EAGLE_COMMON
   #--------------------------------------------------------------------------
   # ● 读取事件页开头的注释组
   #--------------------------------------------------------------------------
-  def self.event_comment_head(command_list)
+  def self.event_comment_head(command_list, keep_newline = false)
     return "" if command_list.nil? || command_list.empty?
     t = ""; index = 0
     while command_list[index].code == 108 || command_list[index].code == 408
       t += command_list[index].parameters[0]
+      t += '\n' if keep_newline
       index += 1
     end
     t

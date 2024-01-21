@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.1.2"
+$imported["EAGLE-MouseEX"] = "1.1.3"
 #=============================================================================
-# - 2024.1.13.21
+# - 2024.1.21.14 
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -88,11 +88,13 @@ end
 #     其中 r 是Rect.new，如果不传入，则判定鼠标是否在游戏窗口内
 #
 #  3.1 为 Sprite 类增加了实例方法，判定鼠标是否在该精灵的位图内部
-#     如果_visible传入 true，则会首先检查精灵的 visible
-#     判定区域由实际显示在游戏窗口内的位置决定
-#     如果在颜色像素上返回 true，在透明像素上则返回 false
+#     精灵区域为实际显示在游戏窗口内的位置（即考虑精灵所在的viewport）
+#     如果_visible传入 true，则会首先检查精灵的 visible：
+#       visible为false 或 opacity为0 则直接返回 false
+#     如果_visible传入 true，则会判定所在位置的像素：
+#       在颜色像素上返回 true，在透明像素上则返回 false
 #
-#      sprite.mouse_in?(_visible=true)
+#      sprite.mouse_in?(_visible=true, _pixel=true)
 #
 #  3.2 为 Window 类增加了实例方法，判定鼠标是否在该窗口的contents内部
 #     如果_visible传入 true，则会首先检查窗口的 visible、opacity、openness
@@ -125,9 +127,10 @@ end
 class Sprite
   #--------------------------------------------------------------------------
   # ● 该精灵的bitmap包含了鼠标？
+  #  增加了对所在像素是否透明的判定
   #--------------------------------------------------------------------------
-  def mouse_in?(_visible = true)
-    return false if _visible && (!visible || opacity == 0)
+  def mouse_in?(_visible = true, _pixel = true)
+    return false if _visible && (self.visible == false || self.opacity == 0)
     return false unless self.bitmap
     return false if self.bitmap.disposed?
     # 计算出鼠标相对于实际位图的坐标 左上原点
@@ -139,7 +142,8 @@ class Sprite
     end
     # 边界判定  src_rect - 该矩形内的位图为精灵 (0,0) 处显示位图
     return false if rx < 0 || ry < 0 || rx > width || ry > height
-    return self.bitmap.get_pixel(rx, ry).alpha != 0
+    return self.bitmap.get_pixel(rx, ry).alpha != 0 if _pixel
+    return true
   end
 end
 class Window_Base
