@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageBox"] = "1.1.1"
+$imported["EAGLE-MessageBox"] = "1.1.2"
 #=============================================================================
-# - 2023.9.1.20 兼容对话框扩展v1.10.1
+# - 2024.1.26.22 兼容鼠标
 #==============================================================================
 # - 本插件新增的大文本框，有以下几个新特性：
 #
@@ -879,18 +879,24 @@ class Window_EagleMessage_Box < Window_Base
   #--------------------------------------------------------------------------
   def check_input_pause?
     if @flag_change_page
-      if Input.trigger?(:C)
+      if input_pause_key_ok?
         next_page
         return true
       end
-      if @flags_hints[:f_prev] && Input.trigger?(:B)
+      if @flags_hints[:f_prev] && input_pause_key_cancel?
         prev_page
         return true
       end
     else
-      return true if Input.trigger?(:C) || Input.trigger?(:B)
+      return true if input_pause_key_ok? || input_pause_key_cancel?
     end
     return false
+  end
+  def input_pause_key_ok?
+    Input.trigger?(:C)
+  end
+  def input_pause_key_cancel?
+    Input.trigger?(:B)
   end
   #--------------------------------------------------------------------------
   # ● 执行切页

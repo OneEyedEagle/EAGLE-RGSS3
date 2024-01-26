@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】与【事件消息机制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageCallMsg"] = "1.1.2"
+$imported["EAGLE-MessageCallMsg"] = "1.2.0"
 #==============================================================================
-# - 2022.9.12.20 修复 \callw 失效的bug
+# - 2024.1.26.22 兼容鼠标
 #==============================================================================
 # - 本插件为对话框新增了文字选择模式，并且可以触发当前事件页的消息
 #----------------------------------------------------------------------------
@@ -75,9 +75,12 @@ module MESSAGE_EX
   # ○ 在文本选择模式中，按键触发当前选中文字的消息
   #--------------------------------------------------------------------------
   def self.selcha_activate_msg?
+    if $imported["EAGLE-MouseEX"]
+      return true if MOUSE_EX.up?(:ML)
+    end
     Input.trigger?(:C)
   end
-
+  
   #--------------------------------------------------------------------------
   # ○ 针对\msg[消息]转义符，额外增加的文本
   # （转义符需要用 \\ 代替 \）（用来明显表现这个词语可以被触发）
@@ -208,6 +211,12 @@ class Window_EagleMessage
         params_player[:d] = 1
         params_player[:last_input] = Input.dir4
         params_player[:last_input_c] = 0
+      end
+      if $imported["EAGLE-MouseEX"]
+        if self.mouse_in?
+          s.x = MOUSE_EX.x - s.viewport.rect.x
+          s.y = MOUSE_EX.y - s.viewport.rect.y
+        end
       end
       d = params_player[:d]
       if Input.press?(:UP)
