@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventLog"] = "1.0.0"
+$imported["EAGLE-EventLog"] = "1.1.0"
 #==============================================================================
-# - 2022.2.1.23 允许设置初始颜色
+# - 2024.2.3.13 兼容鼠标
 #==============================================================================
 # - 本插件新增了通过脚本写入的事件日志
 #------------------------------------------------------------------------------
@@ -66,6 +66,9 @@ EVENT_LOG.add(t, n)
 #
 #   ·若想在地图以外的场景中调用，可在对应场景的update中增加 EVENT_LOG.call_scene?
 #
+#   ·已经兼容【鼠标扩展 by老鹰】，请将本插件置于其下
+#      如果想兼容其它鼠标，请搜索 $imported["EAGLE-MouseEX"] 并修改对应内容
+#
 #==============================================================================
 module EVENT_LOG
   #--------------------------------------------------------------------------
@@ -80,6 +83,7 @@ module EVENT_LOG
   # ● 关闭日志？
   #--------------------------------------------------------------------------
   def self.close_scene?
+    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:MR)
     Input.trigger?(:R) || Input.trigger?(:B)
   end
 
@@ -337,7 +341,9 @@ module EVENT_LOG
     def ui_update
       while true
         update_basic
+        ui_update_speed_mouse
         ui_update_speed
+        ui_update_speed_change if @speed != 0
         ui_update_pos
         ui_update_line
         ui_update_hint_more
@@ -387,13 +393,42 @@ module EVENT_LOG
       @sprite_more.opacity = 0 if @log_index >= logs.size-1
     end
     #--------------------------------------------------------------------------
+    # ● UI-更新移动速度（鼠标）
+    #--------------------------------------------------------------------------
+    def ui_update_speed_mouse
+      if $imported["EAGLE-MouseEX"]
+        @last_pos ||= 0
+        pos = MOUSE_EX.pos_num(nil, 10, 40)
+        if @speed == 0
+          if MOUSE_EX.scroll_up? || pos == 8
+            @speed = +1
+            @d_speed_count = 0
+          elsif MOUSE_EX.scroll_down? || pos == 2
+            @speed = -1
+            @d_speed_count = 0
+          end
+          @ad_speed_count = @ad_speed
+        elsif (pos == 2 || pos == 8) && @last_pos == pos
+          @ad_speed_count -= 1
+          if @ad_speed_count <= 0
+            @ad_speed_count = @ad_speed
+            @speed += (@speed < 0 ? -1 : 1)
+            @d_speed_count = 0
+          end
+        end
+        @last_pos = pos
+      end
+    end
+    #--------------------------------------------------------------------------
     # ● UI-更新移动速度
     #--------------------------------------------------------------------------
     def ui_update_speed
       if Input.trigger?(:DOWN)
         @speed = -1
+        @d_speed_count = 0
       elsif Input.trigger?(:UP)
         @speed = +1
+        @d_speed_count = 0
       end
       if @sprites[0].y - @sprites[0].oy + @speed < UP_LIMIT_Y
         @speed = 0
@@ -405,18 +440,13 @@ module EVENT_LOG
         d = DOWN_LIMIT_Y - (@sprites[-1].y - @sprites[-1].oy)
         @sprites.each { |s| s.move_xy(0, d) }
       end
-      ui_update_speed_change if @speed != 0
-    end
-    #--------------------------------------------------------------------------
-    # ● UI-更新移动速度的变更
-    #--------------------------------------------------------------------------
-    def ui_update_speed_change
       if Input.press?(:DOWN)
         if @last_key == :DOWN
           @ad_speed_count -= 1
           if @ad_speed_count <= 0
             @ad_speed_count = @ad_speed
             @speed -= 1
+            @d_speed_count = 0
           end
         else
           @ad_speed_count = @ad_speed
@@ -428,16 +458,21 @@ module EVENT_LOG
           if @ad_speed_count <= 0
             @ad_speed_count = @ad_speed
             @speed += 1
+            @d_speed_count = 0
           end
         else
           @ad_speed_count = @ad_speed
         end
         @last_key = :UP
-      else
-        return if (@d_speed_count -= 1) > 0
-        @d_speed_count = @d_speed
-        @speed += (@speed > 0 ? -1 : 1)
       end
+    end
+    #--------------------------------------------------------------------------
+    # ● UI-更新移动速度的变更
+    #--------------------------------------------------------------------------
+    def ui_update_speed_change
+      return if (@d_speed_count += 1) < @d_speed
+      @d_speed_count = 0
+      @speed += (@speed > 0 ? -1 : 1)
     end
     #--------------------------------------------------------------------------
     # ● UI-新生成一组文本精灵

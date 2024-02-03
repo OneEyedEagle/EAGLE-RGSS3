@@ -1,11 +1,11 @@
 #==============================================================================
-# ■ 词条系统（文字版） by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
+# ■ 词条系统（文字版） by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Dictionary"] = "1.0.0"
+$imported["EAGLE-Dictionary"] = "1.1.0"
 #==============================================================================
-# - 2021.12.27.22 兼容【通知队列 by老鹰】
+# - 2024.2.3.13 兼容鼠标
 #==============================================================================
 # - 本插件新增了简易的文字版词条收集系统，并增加了一个简易的显示UI
 #------------------------------------------------------------------------------
@@ -297,7 +297,7 @@ module DICT
         pre = data[0] == :new ? "新增词条" : "词条更新"
         t += "#{pre}：#{data[1]}\n"
       end
-      MESSAGE_HINT.add({:text => t}, id="居中偏下")
+      MESSAGE_HINT.add({:text => t}, id="居中")
       return
     end
     if $imported["EAGLE-MessagePara"]
@@ -460,7 +460,7 @@ class << DICT
     @sprites_category = []; i = 0
     i_w = Graphics.width / @data_category.keys.size
     @data_category.each do |k, v|
-      s = Sprite_EagleDict_Category.new(k)
+      s = Sprite_EagleDict_Category.new(k, i)
       s.x = i_w /2 + i_w * i
       s.y = 12 + s.height / 2
       s.z = @sprite_bg.z + 10
@@ -589,6 +589,7 @@ class << DICT
   def update
     loop do
       update_basic
+      update_key_mouse
       update_key
       update_key_result
       update_info
@@ -601,6 +602,20 @@ class << DICT
   def update_basic
     Graphics.update
     Input.update
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新按键（鼠标）
+  #--------------------------------------------------------------------------
+  def update_key_mouse
+    if $imported["EAGLE-MouseEX"]
+      @sprites_category.each do |v|
+        if MOUSE_EX.up?(:ML) && v.mouse_in?
+          @index_category = v.i 
+          @refresh = true
+          break
+        end
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新按键
@@ -718,6 +733,7 @@ class << DICT
   # ● 退出
   #--------------------------------------------------------------------------
   def update_exit?
+    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:MR)
     Input.trigger?(:B)
   end
 end
@@ -725,14 +741,15 @@ end
 # ○ Sprite_EagleDict_Category
 #===============================================================================
 class Sprite_EagleDict_Category < Sprite
-  attr_reader :key
+  attr_reader :key, :i
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
-  def initialize(key)
+  def initialize(key, i)
     super(nil)
     @key = key
-    self.bitmap = Bitmap.new(90, 30)
+    @i = i
+    self.bitmap = Bitmap.new(80, 30)
     self.bitmap.font.size = DICT::CATE_FONT_SIZE
     self.bitmap.draw_text(0,0,self.width,self.height,key,1)
     self.ox = self.width / 2

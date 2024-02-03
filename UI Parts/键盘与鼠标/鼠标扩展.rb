@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.1.4"
+$imported["EAGLE-MouseEX"] = "1.1.5"
 #=============================================================================
-# - 2024.1.22.20 
+# - 2024.2.3.11 
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -89,19 +89,31 @@ end
 #
 #  3.1 为 Sprite 类增加了实例方法，判定鼠标是否在该精灵的位图内部
 #     精灵区域为实际显示在游戏窗口内的位置（即考虑精灵所在的viewport）
-#     如果_visible传入 true，则会首先检查精灵的 visible：
-#       visible为false 或 opacity为0 则直接返回 false
-#     如果_visible传入 true，则会判定所在位置的像素：
-#       在颜色像素上返回 true，在透明像素上则返回 false
 #
 #      sprite.mouse_in?(_visible=true, _pixel=true)
 #
+#     如果_visible传入 true，则会首先检查精灵的 visible：
+#       visible为false 或 opacity为0 则直接返回 false
+#     如果_visible传入 true，则会判定所在位置的像素：
+#       如果 _pixel 传入 true，则在颜色像素上返回 true，在透明像素上返回 false
+#       如果 _pixel 传入 false，则统一返回 true
+#
 #  3.2 为 Window 类增加了实例方法，判定鼠标是否在该窗口的contents内部
-#     如果_visible传入 true，则会首先检查窗口的 visible、opacity、openness
 #
 #      window.mouse_in?(_visible=true)
 #
-#  如： MOUSE_EX.in? → 返回鼠标是否在游戏窗口内
+#     如果_visible传入 true，则会首先检查窗口的 visible、opacity、openness
+#     如： MOUSE_EX.in? → 返回鼠标是否在游戏窗口内
+#
+#  4. 判定鼠标在矩形区域内的位置（九宫格）（游戏窗口内的矩形，不考虑 viewport）
+#     将rect按小键盘数字键划分为9块，再判定鼠标位于哪一块中，并返回对应数字
+#
+#      MOUSE_EX.pos_num(rect=nil, dw=nil, dh=nil)
+#
+#     其中 rect 是Rect.new，如果不传入，则自动设置为整个游戏窗口
+#          dw 为左右侧147和369的块的宽度，若不传入，则对rect宽度进行三等分
+#          dh 为上下侧123和789的块的高度，若不传入，则对rect高度进行三等分
+#     如果鼠标不在 rect 区域内，则返回 0
 #
 module MOUSE_EX
   #--------------------------------------------------------------------------
@@ -111,7 +123,7 @@ module MOUSE_EX
   def self.y;  INPUT_EX.mouse_y;  end
   #--------------------------------------------------------------------------
   # ● 鼠标位于矩形内？（rect为屏幕真实坐标，不受 viewport 等的影响）
-  # 若不传入矩形，则返回鼠标是否在游戏窗口内
+  #  若不传入矩形或传入 nil，则返回鼠标是否在游戏窗口内
   #--------------------------------------------------------------------------
   def self.in?(rect = nil)
     _x = MOUSE_EX.x; _y = MOUSE_EX.y
@@ -122,6 +134,49 @@ module MOUSE_EX
     return false if _x < rect.x || _x > rect.x + rect.width
     return false if _y < rect.y || _y > rect.y + rect.height
     return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 鼠标位于矩形九宫格内的位置（rect为屏幕真实坐标，不受 viewport 等的影响）
+  #  将rect按小键盘数字键划分为9块，再判定鼠标位于哪一块中，并返回对应数字
+  #  若不传入矩形或传入 nil，则以整个游戏窗口为rect进行判定
+  #   dw 为左右侧147和369的块的宽度，若不传入，则对rect宽度进行三等分
+  #   dh 为上下侧123和789的块的高度，若不传入，则对rect高度进行三等分
+  #--------------------------------------------------------------------------
+  def self.pos_num(rect = nil, dw = nil, dh = nil)
+    _x = MOUSE_EX.x; _y = MOUSE_EX.y
+    rect = Rect.new(0, 0, Graphics.width, Graphics.height) if rect.nil?
+    x0 = rect.x
+    y0 = rect.y
+    x3 = rect.x + rect.width
+    y3 = rect.y + rect.height
+    return 0 if _x < x0 || _x >= x3 || _y < y0 || _y >= y3
+    if dw == nil
+      x1 = rect.x + rect.width * 1.0 / 3
+      x2 = rect.x + rect.width * 2.0 / 3
+    else 
+      x1 = rect.x + dw 
+      x2 = rect.x + rect.width - dw
+    end
+    if dh == nil 
+      y1 = rect.y + rect.height * 1.0 / 3
+      y2 = rect.y + rect.height * 2.0 / 3
+    else 
+      y1 = rect.y + dh
+      y2 = rect.y + rect.height - dh
+    end
+    if x0 <= _x && _x < x1 # 147
+      return 7 if y0 <= _y && _y < y1
+      return 1 if y2 <= _y && _y < y3
+      return 4
+    elsif x2 < _x && _x < x3 # 369
+      return 9 if y0 <= _y && _y < y1
+      return 3 if y2 <= _y && _y < y3
+      return 6
+    else # 258
+      return 8 if y0 <= _y && _y < y1
+      return 2 if y2 <= _y && _y < y3
+      return 5
+    end
   end
 end
 class Sprite
