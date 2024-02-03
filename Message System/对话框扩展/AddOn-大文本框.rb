@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageBox"] = "1.1.2"
+$imported["EAGLE-MessageBox"] = "1.2.0"
 #=============================================================================
-# - 2024.1.26.22 兼容鼠标
+# - 2024.2.3.14 兼容鼠标
 #==============================================================================
 # - 本插件新增的大文本框，有以下几个新特性：
 #
@@ -833,6 +833,7 @@ class Window_EagleMessage_Box < Window_Base
   #--------------------------------------------------------------------------
   def process_input_pause
     recreate_contents_for_charas
+    fm = $imported["EAGLE-MouseEX"] != nil
     ox_des = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
     oy_des = self.oy
     if ox_des != 0 || oy_des != 0 # 允许移动
@@ -844,29 +845,36 @@ class Window_EagleMessage_Box < Window_Base
     while true
       Fiber.yield
       break if check_input_pause?
+      mouse_pos = MOUSE_EX.pos_num(nil, 40, 40) if fm 
+      cur_input = 0
       if @flags_hints[:f_move]
         _ox = self.ox; _oy = self.oy
-        if Input.press?(:UP) # 处理文本滚动
+        # 处理文本滚动
+        if Input.press?(:UP) || (fm && mouse_pos == 8)
+          cur_input = 8
           self.oy -= d_oxy
           self.oy = 0 if self.oy < 0
-        elsif Input.press?(:DOWN)
+        elsif Input.press?(:DOWN) || (fm && mouse_pos == 2)
+          cur_input = 2
           self.oy += d_oxy
           self.oy = oy_des if self.oy > oy_des
-        elsif Input.press?(:LEFT)
+        elsif Input.press?(:LEFT) || (fm && mouse_pos == 4)
+          cur_input = 4
           self.ox -= d_oxy
           self.ox = 0 if self.ox < 0
-        elsif Input.press?(:RIGHT)
+        elsif Input.press?(:RIGHT) || (fm && mouse_pos == 6)
+          cur_input = 6
           self.ox += d_oxy
           self.ox = ox_des if self.ox > ox_des
         end
-        if last_input == Input.dir4
+        if last_input == cur_input
           last_input_c += 1
           d_oxy += 1 if last_input_c % 10 == 0
         else
           d_oxy = 1
           last_input_c = 0
         end
-        last_input = Input.dir4
+        last_input = cur_input
         update_moving_charas_oxy if _ox != self.ox || _oy != self.oy
       end
     end
@@ -893,9 +901,11 @@ class Window_EagleMessage_Box < Window_Base
     return false
   end
   def input_pause_key_ok?
+    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:ML)
     Input.trigger?(:C)
   end
   def input_pause_key_cancel?
+    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:MR)
     Input.trigger?(:B)
   end
   #--------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 # ■ Add-On2 兼容鼠标 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【鼠标扩展 by老鹰】以及各个被兼容脚本之下
 #==============================================================================
-# - 2024.1.26.23 
+# - 2024.2.3.14
 #==============================================================================
 # - 本插件对【对话框扩展 by老鹰】及其AddOn进行了简单的鼠标操作兼容
 #==============================================================================
@@ -105,7 +105,7 @@ end
 
 #==============================================================================
 # ○ 兼容【Add-On 并行对话 by老鹰】
-# 1. 现在对于需要按键继续的并行对话，任意位置点击鼠标左键也能同样继续
+# 1. 现在对于需要按键继续的并行对话，在对话框内点击鼠标左键也能同样继续
 #==============================================================================
 if $imported["EAGLE-MessagePara"]
 class Window_EagleMessage_Para < Window_EagleMessage
@@ -114,56 +114,10 @@ class Window_EagleMessage_Para < Window_EagleMessage
   #--------------------------------------------------------------------------
   alias eagle_mouse_ex_msg_para_process_input_pause_key process_input_pause_key
   def process_input_pause_key
-    if MOUSE_EX.up?(:ML)
+    if mouse_in? && MOUSE_EX.up?(:ML)
       return true 
     end
     eagle_mouse_ex_msg_para_process_input_pause_key
-  end
-end
-end
-
-#==============================================================================
-# ○ 兼容【Add-On 大文本框 by老鹰】
-# 1. 鼠标左键等同于确定键，可进行 翻页、结束
-# 2. 鼠标右键等同于取消键，可进行 后退
-#==============================================================================
-if $imported["EAGLE-MessageBox"]
-class Window_EagleMessage_Box
-  #--------------------------------------------------------------------------
-  # ● 检查输入等待的按键
-  #--------------------------------------------------------------------------
-#~   alias eagle_mouse_ex_check_input_pause? check_input_pause?
-#~   def check_input_pause?
-#~     if MOUSE_EX.in?  # TODO: 鼠标进行文字滚动
-#~       rx = 0.2; ry = 0.2
-#~       mx = MOUSE_EX.x; gx = Graphics.width
-#~       my = MOUSE_EX.y; gy = Graphics.height
-#~       if mx > gx * rx && mx < gx * (1-rx)
-#~         if my < gy * ry
-#~           INPUT_EX.keyboard_down(:UP)
-#~         elsif my > gy * (1-ry)
-#~           INPUT_EX.keyboard_down(:DOWN)
-#~         end
-#~       end
-#~       if my > gy * ry && my < gy * (1-ry)
-#~         if mx < gx * rx 
-#~           INPUT_EX.keyboard_down(:LEFT)
-#~         else
-#~           INPUT_EX.keyboard_down(:RIGHT)
-#~         end
-#~       end
-#~     end
-#~     eagle_mouse_ex_check_input_pause?
-#~   end
-  alias eagle_mouse_ex_input_pause_key_ok? input_pause_key_ok?
-  def input_pause_key_ok?
-    return true if MOUSE_EX.up?(:ML)
-    eagle_mouse_ex_input_pause_key_ok?
-  end
-  alias eagle_mouse_ex_input_pause_key_cancel? input_pause_key_cancel?
-  def input_pause_key_cancel?
-    return true if MOUSE_EX.up?(:MR)
-    eagle_mouse_ex_input_pause_key_cancel?
   end
 end
 end
