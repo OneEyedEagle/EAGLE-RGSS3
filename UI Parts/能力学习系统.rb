@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.3.0"
+$imported["EAGLE-AbilityLearn"] = "1.4.0"
 #==============================================================================
-# - 2022.11.26.10 新增背景绘制额外连线
+# - 2024.2.12.20 兼容鼠标，扩展:if的功能，优化注释
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
 #------------------------------------------------------------------------------
@@ -35,7 +35,7 @@ PARAMS ||= {}  # 确保常量存在，不要删除
 ACTORS[0] = {  # 不要漏了花括号
 #--------------------------------------------------------------------------
 # 然后定义各个能力，把它的名称（建议数字或字符串，1 和 "1" 为不同名称）写在箭头前
-#   不同能力的脚本中名称需要不同，比如这个能力的名称是 1
+#   不同能力的脚本中名称需要不同，比如这个能力的脚本中名称是 1
   1 => {
   #------------------------------------------------------------------------
   # 之后定义这个能力的各个属性
@@ -64,67 +64,83 @@ ACTORS[0] = {  # 不要漏了花括号
   #  （编写 属性=数字 的字符串，用空格分隔不同属性，
   #    角色八维属性依次是 mhp mmp atk def mat mdf agi luk
   #    比如 "mhp=1" 为最大生命值增加1，
-  #         "atk=1 mat=1"为物理攻击+1且魔法攻击+1）
+  #         "atk=1 mat=1" 为物理攻击+1且魔法攻击+1）
   #  （如果该能力能够被反复学习，该属性也会反复增加多次）
     :params => "",
   #------------------------------------------------------------------------
   # -【可选】帮助窗口中这个能力的名称
-  #  （名称优先级为 :name > :skill > :weapon > :armor > 脚本中的能力标识符）
+  #  （名称优先级为 :name > :skill > :weapon > :armor > 脚本中该能力的名称）
     :name => "",
   #------------------------------------------------------------------------
   # -【可选】帮助窗口中追加显示的说明文本
-  #  （显示在UI界面的能力帮助窗口中，显示在技能说明、属性说明的后面）
+  #  （显示在UI界面的能力帮助窗口中，将放在技能说明、属性说明的后面）
   #  （可以使用默认的扩展转义符，记得用 \\ 代替 \，比如 \\i[1] 显示1号图标）
     :help => "",
   #------------------------------------------------------------------------
-  # -【可选】设置这个能力的最大层数，也就是可重复学习的最大次数
-  #  （若不设置，默认为1）
-    :level => 1,
-  #------------------------------------------------------------------------
   # -【可选】学习一次这个能力，需要消耗的AP点数
-  #  （如果不写或写0，则默认激活，:level固定1，:skill与:params与:eval_off无效）
+  #  （AP是本插件新增的一种资源，一般通过升级获得，也可以利用事件脚本直接增加）
+  #  （若不设置或设0，则默认不进行学习判定、自动激活、:level固定1、
+  #      且:skill与:params与:eval_off无效）
     :ap => 1,
   #------------------------------------------------------------------------
-  # -【可选】可以绑定一个开关，设置这个开关的ID
-  #  （当能力解锁时，开关将赋值为 true，重置时，开关将赋值为 false）
-  #  （只在能力解锁或重置时进行一次赋值，不会实时监控开关状态！请注意不要冲突了！）
+  # -【可选】设置这个能力的最大等级，也就是可重复学习的最大次数
+  #  （若不设置，默认为1，即只能学习一次）
+    :level => 1,
+  #------------------------------------------------------------------------
+  # -【可选】设置这个能力所绑定的开关的ID
+  #  （当能力解锁时，开关将赋值为 true；重置后，开关将赋值为 false）
+  #  （只在能力解锁或重置时进行一次赋值，不会实时监控开关或保证它开了还是关了！）
     :sid => 1,
   #------------------------------------------------------------------------
   # -【可选】设置这个能力的学习前置要求
-  #  （为一个数组，其中填写其他能力的脚本中名称，比如 [1,2,3] 或 [1,1, "1"]）
-  #  （可以重复填写同一个能力的名称，此时为那个能力的层数需求）
-  #  （但注意，对于设置了:ap为0的能力，是无法被学习的，也就无法被作为前置判定）
+  #  （数组，其中填写其他能力的脚本中名称，比如 [1,2,3] 或 [1,1, "1"]）
+  #  （可以重复填写同一个能力的名称，此时自动转为那个能力的已学习等级需求）
+  #  （但注意，:ap为0的能力是没有学习判定的，也就无法被作为前置要求）
     :pre => [1],
   #------------------------------------------------------------------------
   # -【可选】设置这个能力的学习前置要求（扩展内容）
-  #  （为一个数组，其中每一项依然为数组，数组内容依次为：
-  #     [类型, 参数...] 或者为 [判定脚本, 学习时执行脚本, 说明文本]）
+  #  （数组，其中每一项依然为数组，数组内容依次为：
+  #     [类型, 参数...] 或 [判定脚本, 学习时执行脚本, 说明文本] ）
   #  （其中已经支持的类型如下：
   #     [:ap, name, v] → 脚本中名称为 name 的能力的等级不小于 v
-  #                     （如果v为-1，则表示不可习得name能力）
-  #                     （当v大于0时，效果与:pre一致，但不会绘制能力间连线）
-  #     [:lv, v]   → 当前角色等级不小于v
-  #     [:gold, v] → 消耗v金钱
-  #     [:item, id, v] → 需要id号物品v个
+  #                     （如果v为-1，则表示前置要求为 不可习得名为 name 的能力）
+  #                     （如果v大于0，效果与:pre一致，但不会绘制背景连线）
+  #     [:lv, v]       → 当前角色等级不小于v
+  #     [:gold, v]     → 消耗v金钱
+  #     [:item, id, v] → 消耗id号物品v个
   #   ）
-  #  （注意：此处的学习消耗，在重置时并不会自动返还，
+  #  （注意：此处的消耗，在重置时并不会自动返还，
   #     但你可以在:eval_off中自己编写相应的返还，在:help中增加返还的说明文本）
-  #  （脚本中可用缩写同 :if）
+  #  （对于其它的类型， 判定脚本 被 eval 后返回 true 时才算达成前置要求，
+  #     学习时执行脚本 是在学习时将触发一次的脚本，其中可用的缩写均同 :if）
   #  （比如前置要求为 不可习得 "能力1号"，则可以写为
-  #     [:ap, "能力1号", -1] ）
+  #     :pre_ex=>[[:ap, "能力1号", -1]] ）
   #  （比如前置要求为 角色等级大于等于5，则可以写为
-  #     [:lv, 5] 或者 ["actor.level>=5", "", "角色等级不小于5"] ）
+  #     :pre_ex=>[[:lv, 5]] 
+  #     或 :pre_ex=>[["actor.level>=5", "", "角色等级不小于5"]] ）
   #  （比如前置要求为 消耗金钱x1000，则可以写为
-  #     [:gold, 1000] 或者
-  #     ["$game_party.gold>=1000","$game_party.lose_gold(1000)","消耗1000G"] ）
-  #  （比如前置要求为 1号开关打开，则可以写为
-  #     ["s[1]==true", "", "这里可以写一些说明文本，比如打败恶龙"] ）
+  #     :pre_ex=>[[:gold, 1000]] 或
+  #     :pre_ex=>[["$game_party.gold>=1000","$game_party.lose_gold(1000)","消耗1000G"]] ）
+  #  （比如前置要求为 1号开关打开 且 角色等级大于10，则可以写为
+  #     :pre_ex=>[ ["s[1]==true","","这里可以写一些说明文本，比如打败恶龙"], 
+  #                [:lv, 10] ] ）
     :pre_ex => [ [:lv, 5] ],
   #------------------------------------------------------------------------
-  # -【可选】设置这个能力的出现条件
-  #  （为一个字符串，当被 eval 后返回 true 时，才会显示这个能力）
-  #  （可以用 s 代表 $game_switches，用 v 代表 $game_variables，
+  # -【可选】设置这个能力的出现条件，全部满足时才会在UI中显示
+  #  （单独一个字符串，
+  #    或 数组，每一项为 [类型, 参数...] 数组或字符串）
+  #  （其中已经支持的类型如下：
+  #     [:ap, name, v] → 脚本中名称为 name 的能力的等级不小于 v
+  #                     （如果v为-1，则表示出现条件为 不可习得名为 name 的能力）
+  #     [:lv, v]       → 当前角色等级不小于v
+  #   ）
+  #  （在 字符串 中可以用 s 代表 $game_switches，用 v 代表 $game_variables，
   #    用 actor 代表当前角色对象Game_Actor）
+  #  （比如出现条件为 习得 "能力1号" 且 角色等级到达5，则可以写为
+  #     :if=>[ [:ap, "能力1号", 1], [:lv, 5] ] ）
+  #  （比如出现条件为 1号开关打开 且 1号变量等于1 且 持有金钱 > 1000，则可以写为
+  #     :if=>[ "s[1] == true", "v[1]==1", "$game_party.gold>1000" ] ）
+  #  （注意：如果能力已经解锁，则不会再判定该出现条件。）
     :if => "" ,
   #------------------------------------------------------------------------
   # -【可选】学习后执行的脚本
@@ -183,7 +199,7 @@ PARAMS[0] = {  # 这里设置 0号角色 的一些参数
   :bg => nil,
   #------------------------------------------------------------------------
   #【可选】是否显示网格背景（默认 true，若填 false 则不显示）
-  # （该网格背景显示在 :bg 上方，显示在能力图标等的下方）
+  # （该网格背景显示在 :bg 上方，能力图标、连线的下方）
   :grid => true,
   #------------------------------------------------------------------------
   #【可选】额外绘制的连线，不产生任何影响
@@ -213,15 +229,17 @@ end  # 必须的模块结尾，不要漏掉
 # - 如果没有设置角色的能力数据，那么在UI中就不会有任何能力。
 #
 #--------------------------------------------------------------------------
-# 【高级】
+# 【高级：增加AP】
 #
-# - 对于Game_Actor对象：
+#    $game_actors[1].add_ap(v) → 为1号角色增加 v 点AP
 #
-#     $game_actors[1].add_ap(v) 为 1号角色增加 v 点AP
+#    $game_party.add_ap(v) → 为当前队伍中的全部角色增加 v 点AP
 #
-#     $game_actors[1].ability_unlock?(name) 检查是否解锁了name能力
+#--------------------------------------------------------------------------
+# 【高级：判定能力解锁】
 #
-# - 利用全局脚本 $game_party.add_ap(v) 为队伍中的全部角色增加 v 点AP
+#    $game_actors[1].ability_unlock?(name) → 1号角色是否已解锁 name 能力
+#                           注意：name 是指脚本中的名称，不是显示的名字
 #
 #==============================================================================
 module ABILITY_LEARN
@@ -552,34 +570,29 @@ module ABILITY_LEARN
   # ● 获取指定id的帮助文本
   #--------------------------------------------------------------------------
   def self.get_token_help(actor_id, token_id)
-    data = $game_actors[@actor_id].eagle_ability_data
     t = ""
+    data = $game_actors[actor_id].eagle_ability_data
 
-    skill_id = get_token_skill(actor_id, token_id)
-    weapon_id = get_token_weapon(actor_id, token_id)
-    armor_id = get_token_armor(actor_id, token_id)
     icon = get_token_icon(actor_id, token_id)
     t += "\\i[#{icon}]" if icon > 0
     name = get_token_name(actor_id, token_id)
     t += "#{name} "
+
+    skill_id = get_token_skill(actor_id, token_id)
+    weapon_id = get_token_weapon(actor_id, token_id)
+    armor_id = get_token_armor(actor_id, token_id)
+    obj = nil
     if skill_id && skill_id > 0
-      skill = $data_skills[skill_id]
-      stype = $data_system.skill_types[skill.stype_id]
-      t += "\\c[8]#{stype}\\c[0]\n"
-      _t = " >> " + skill.description.gsub("\r\n") { "\n    " }
-      t += _t
+      obj = $data_skills[skill_id]
+      stype = $data_system.skill_types[obj.stype_id]
+      t += "\\c[8]#{stype}\\c[0]"
     elsif weapon_id && weapon_id > 0
-      weapon = $data_weapons[weapon_id]
-      t += "\n"
-      _t = " >> " + weapon.description.gsub("\r\n") { "\n    " }
-      t += _t
+      obj = $data_weapons[weapon_id]
     elsif armor_id && armor_id > 0
-      armor = $data_armors[armor_id]
-      t += "\n"
-      _t = " >> " + armor.description.gsub("\r\n") { "\n    " }
-      t += _t
+      obj = $data_armors[armor_id]
     else
     end
+    t += "\n >> " + obj.description.gsub("\r\n") { "\n    " } if obj
     t += "\\ln"
 
     params_hash = get_token_params(actor_id, token_id)
@@ -643,6 +656,7 @@ module ABILITY_LEARN
 
     return t
   end
+
 #==============================================================================
 # ■ 便捷使用（仅UI内）
 #==============================================================================
@@ -691,6 +705,33 @@ module ABILITY_LEARN
     actor = $game_actors[actor_id] rescue nil
     as = $game_actors
     EAGLE_COMMON.eagle_eval(str)
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理指定id的出现条件
+  #--------------------------------------------------------------------------
+  def self.process_token_if(data)
+    # data = [ [sym, value], [sym, value], "", ... ] 或 ""
+    #ps = get_token(actor_id, token_id)
+    #data = ps[:if] || []
+    data = [data] if data.is_a?(String)
+    data.each do |ps|
+      if ps.is_a?(String) && ABILITY_LEARN.eagle_eval(ps, @actor_id) != true
+        return false
+      end
+      if ps.is_a?(Array)
+        case(ps[0])
+        when :ap
+          id2 = ps[1]
+          v_cur = self.level(id2)
+          v = ps[2].to_i
+          return false if v < 0 && v_cur > 0
+          return false if v_cur < v
+        when :lv 
+          return false if $game_actors[@actor_id].level < ps[1].to_i
+        end
+      end
+    end
+    return true
   end
 end
 
@@ -894,7 +935,11 @@ class << ABILITY_LEARN
 
     tokens = ABILITY_LEARN.get_tokens(@actor_id)
     tokens.merge(ABILITY_LEARN.get_tokens_all).each do |id, ps|
-      next if ps[:if] && ABILITY_LEARN.eagle_eval(ps[:if], @actor_id) != true
+      if ABILITY_LEARN.unlock?(id)
+        # 如果已经解锁，则不再判定if
+      else
+        next if ps[:if] && ABILITY_LEARN.process_token_if(ps[:if]) != true
+      end
       s = Sprite_AbilityLearn_Token.new(@viewport_bg, @actor_id, id, ps)
       s.z = @sprite_grid.z + 20
       @sprites_token[id] = s
@@ -971,6 +1016,7 @@ class << ABILITY_LEARN
   # ● UI-退出？
   #--------------------------------------------------------------------------
   def finish_ui?
+    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:MR)
     Input.trigger?(:B)
   end
   #--------------------------------------------------------------------------
@@ -1000,6 +1046,14 @@ class << ABILITY_LEARN
     elsif Input.press?(:RIGHT)
       s.x += d
       s.x = ui_max_x - s.width + s.ox if s.x - s.ox + s.width > ui_max_x
+    end
+
+    # 更新移动（鼠标）
+    if $imported["EAGLE-MouseEX"]
+      if MOUSE_EX.in?
+        s.x = MOUSE_EX.x - s.viewport.rect.x
+        s.y = MOUSE_EX.y - s.viewport.rect.y
+      end
     end
 
     # 检查显示区域
@@ -1037,7 +1091,7 @@ class << ABILITY_LEARN
   # ● UI-更新解锁
   #--------------------------------------------------------------------------
   def update_unlock
-    if @selected_token && Input.trigger?(:C)
+    if @selected_token && key_unlock?
       data = $game_actors[@actor_id].eagle_ability_data
       id = @selected_token.id
       if data.can_unlock?(id)
@@ -1048,6 +1102,13 @@ class << ABILITY_LEARN
         Sound.play_buzzer
       end
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-按键解锁？
+  #--------------------------------------------------------------------------
+  def key_unlock?
+    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:ML)
+    Input.trigger?(:C)
   end
   #--------------------------------------------------------------------------
   # ● 解锁后重绘
@@ -1071,6 +1132,26 @@ class << ABILITY_LEARN
     elsif Input.trigger?(:L)  # pageup 上一个角色
       @actor = $game_party.menu_actor_prev
       reset_actor(@actor.id)
+    end
+    update_actors_mouse
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-更新角色切换（鼠标）
+  #--------------------------------------------------------------------------
+  def update_actors_mouse
+    return if $imported["EAGLE-MouseEX"] == nil 
+    if MOUSE_EX.scroll_up? # 上一个角色
+      @actor = $game_party.menu_actor_prev
+      reset_actor(@actor.id)
+    elsif MOUSE_EX.scroll_down?  # 下一个角色
+      @actor = $game_party.menu_actor_next
+      reset_actor(@actor.id)
+    end
+    if @selected_token == nil && @sprite_actor_info.mouse_in?(true, false)
+      if MOUSE_EX.up?(:ML) # 下一个角色
+        @actor = $game_party.menu_actor_next
+        reset_actor(@actor.id)
+      end
     end
   end
 end

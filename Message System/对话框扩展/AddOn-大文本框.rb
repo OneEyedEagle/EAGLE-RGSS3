@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageBox"] = "1.2.0"
+$imported["EAGLE-MessageBox"] = "1.3.0"
 #=============================================================================
-# - 2024.2.3.14 兼容鼠标
+# - 2024.2.8.17 新增自动换行
 #==============================================================================
 # - 本插件新增的大文本框，有以下几个新特性：
 #
@@ -57,11 +57,13 @@ $imported["EAGLE-MessageBox"] = "1.2.0"
 #    xo 与 yo → 第一个文字的绘制位置（窗口contents的左上角为原点）
 #    cdx → 下一个字的横轴偏移量（负数往左，正数往右）（默认1，朝右侧前进一个文字）
 #    cdy → 下一个字的纵轴偏移量（负数往上，正数往下）（默认0，与前一个字高度对齐）
-#    ck → 设置缩减的字符间距值（默认0）
+#    ck  → 设置缩减的字符间距值（默认0）
 #    ldx → 下一行的横轴偏移量（负数往左，正数往右）（默认0，与上一行行首对齐）
 #    ldy → 下一行的纵轴偏移量（负数往上，正数往下）（默认1，朝下侧移动一行）
-#    lh → 标准行高（默认24）
+#    lh  → 标准行高（默认24）
 #    lhd → 行间距（默认0）
+#    lx  → 当文字的 x 大于该值时，将进行换行（默认0，不会自动换行）
+#          注意：该值不是屏幕坐标，而是窗口内坐标，左侧还有不计入的留空
 #
 #  （文字显示相关）
 #    cwi → 单个文字绘制完成后的等待帧数（最小值0）
@@ -194,6 +196,8 @@ module MESSAGE_EX
       :ldy => 1, # 默认下一行的纵轴偏移量（负数为往上，正数为往下）
       :lh => 24, # 标准行高
       :lhd => 0, # 行间距
+      :lx => 0, # 当文字的 x + w 大于该值时，将进行换行
+      # 文字显示
       :cwi => 1, # 绘制一个字完成后的等待帧数
       :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
       :cfast => 1, # 是否允许快进显示
@@ -665,6 +669,7 @@ class Window_EagleMessage_Box < Window_Base
   def process_normal_character(c, pos)
     eagle_reset_draw_pos(pos)
     c_rect = text_size(c); c_w = c_rect.width; c_h = c_rect.height
+    eagle_process_draw_start(c_w, c_h, pos)
     s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
     s.eagle_font.draw(s.bitmap, 0, 0, c_w, c_h, c, 0)
     eagle_process_draw_end(c_w, c_h, pos)
@@ -674,6 +679,7 @@ class Window_EagleMessage_Box < Window_Base
   #--------------------------------------------------------------------------
   def process_draw_icon(icon_index, pos)
     eagle_reset_draw_pos(pos)
+    eagle_process_draw_start(24, 24, pos)
     s = eagle_new_chara_sprite(pos[:x], pos[:y], 24, 24)
     s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index)
     eagle_process_draw_end(24, 24, pos)
@@ -691,7 +697,7 @@ class Window_EagleMessage_Box < Window_Base
     h[:h] ||= _bitmap.height
     h[:opa] ||= 255
 
-    eagle_auto_new_line(h[:w], pos)
+    eagle_process_draw_start(h[:w], h[:h], pos)
     if @flag_draw
       s = eagle_new_chara_sprite(pos[:x], pos[:y], h[:w], h[:h])
       s.eagle_font.draw_pic(s.bitmap, _bitmap, h)
@@ -712,6 +718,14 @@ class Window_EagleMessage_Box < Window_Base
     s.update
     self.charas.push(s)
     s
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制开始前的处理
+  #--------------------------------------------------------------------------
+  def eagle_process_draw_start(c_w, c_h, pos)
+    if win_params[:lx] > 0  # 处理自动换行
+      process_new_line("", pos) if pos[:x] + c_w > win_params[:lx]
+    end
   end
   #--------------------------------------------------------------------------
   # ● 绘制完成时的处理
