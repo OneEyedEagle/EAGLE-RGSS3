@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.1.5"
+$imported["EAGLE-MouseEX"] = "1.1.6"
 #=============================================================================
-# - 2024.2.3.11 
+# - 2024.2.14.23
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -250,7 +250,7 @@ class Sprite_Character < Sprite_Base
     # 当事件执行时，不判定
     return if $game_map.interpreter.running?
     # 当鼠标移动到事件上，且按下左键时，触发它
-    if MOUSE_EX.up?(:ML) && @character.is_a?(Game_Event) && mouse_in?
+    if MOUSE_EX.up?(:ML) && @character.is_a?(Game_Event) && mouse_in?(true, false)
       @character.start
       # 被触发的事件朝向玩家
       @character.turn_to_character($game_player)

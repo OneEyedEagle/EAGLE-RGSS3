@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.2.4"
+$imported["EAGLE-MessagePara2"] = "1.2.5"
 #==============================================================================
-# - 2024.1.21.17 优化重复触发同一sym同一文本时的处理
+# - 2024.2.15.19 新增 background 为 -1 时的纯暗色
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -136,7 +136,7 @@ $imported["EAGLE-MessagePara2"] = "1.2.4"
 #
 #      :face_name => "脸图名称"  # 需要绘制的脸图文件名称
 #      :face_index => 0         # 需要绘制的脸图的索引号
-#      :background => 0         # 对话框背景的类型（0普通 1暗色 2透明）
+#      :background => 0         # 对话框背景的类型（0普通 1暗色 2透明 -1纯暗色）
 #      :position => 0           # 对话框位置的类型（0居上 1居中 2居下）
 #
 #      :skin => 0               # 对话框所用皮肤的索引 或 对话框皮肤名称的字符串
@@ -456,6 +456,11 @@ class Sprite_EagleMsg < Sprite
       self.bitmap.fill_rect(rect2, back_color1)
       self.bitmap.gradient_fill_rect(rect3, back_color1, back_color2, true)
     when 2 # 透明背景
+    when -1 # 纯暗色背景
+      w = self.bitmap.width
+      h = self.bitmap.height
+      rect = Rect.new(0, 2, w, h - 4)
+      self.bitmap.fill_rect(rect, back_color1)
     end
 
     # 绘制脸图

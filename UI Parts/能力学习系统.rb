@@ -6,15 +6,20 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.4.0"
+$imported["EAGLE-AbilityLearn"] = "1.5.0"
 #==============================================================================
-# - 2024.2.12.20 兼容鼠标，扩展:if的功能，优化注释
+# - 2024.2.16.15 新增设置每一级的升级要求:lvup
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
 #------------------------------------------------------------------------------
 # 【使用】
 #
 #    利用全局脚本 ABILITY_LEARN.call 呼叫能力学习界面。
+#
+#------------------------------------------------------------------------------
+# 【兼容】
+#
+#    本插件已兼容【鼠标扩展 by老鹰】，可以使用鼠标进行操作，请置于其下。
 #
 #--------------------------------------------------------------------------
 # 【设置】
@@ -28,6 +33,7 @@ $imported["EAGLE-AbilityLearn"] = "1.4.0"
 module ABILITY_LEARN
 ACTORS ||= {}  # 确保常量存在，不要删除
 PARAMS ||= {}  # 确保常量存在，不要删除
+ALL_ACTORS ||= {} # 确保常量存在，不要删除
 
 #--------------------------------------------------------------------------
 # 首先确定是哪个角色的，把它的ID写在方括号里
@@ -75,11 +81,13 @@ ACTORS[0] = {  # 不要漏了花括号
   # -【可选】帮助窗口中追加显示的说明文本
   #  （显示在UI界面的能力帮助窗口中，将放在技能说明、属性说明的后面）
   #  （可以使用默认的扩展转义符，记得用 \\ 代替 \，比如 \\i[1] 显示1号图标）
+  #  （特别的，可以用 {{text}} 来编写只有在显示时才执行 eval(text) 并替换的文本 ）
     :help => "",
   #------------------------------------------------------------------------
   # -【可选】学习一次这个能力，需要消耗的AP点数
   #  （AP是本插件新增的一种资源，一般通过升级获得，也可以利用事件脚本直接增加）
-  #  （若不设置或设0，则默认不进行学习判定、自动激活、:level固定1、
+  #  （若不设置则默认取 0，即不消耗ap也可以学习）
+  #  （若设置为-1，则默认不进行学习判定、自动激活、:level固定1、
   #      且:skill与:params与:eval_off无效）
     :ap => 1,
   #------------------------------------------------------------------------
@@ -125,6 +133,14 @@ ACTORS[0] = {  # 不要漏了花括号
   #     :pre_ex=>[ ["s[1]==true","","这里可以写一些说明文本，比如打败恶龙"], 
   #                [:lv, 10] ] ）
     :pre_ex => [ [:lv, 5] ],
+  #------------------------------------------------------------------------
+  # -【可选】设置这个能力升到指定等级时所需的前置条件
+  #  （数组，其中每一项依然为数组，数组内容依次为：
+  #    [目标等级, 类型, 参数...] 或 [目标等级, 判定脚本, 升级时执行脚本, 说明文本]）
+  #  （其中已经支持的类型同 :pre_ex，只不过在最前面加上了目标等级数字）
+  #  （比如升级到 lv.2 的前置条件是 角色等级大于等于10，则可以写为
+  #     :lvup => [ [2, :lv,10] ] ）
+    :lvup => [],
   #------------------------------------------------------------------------
   # -【可选】设置这个能力的出现条件，全部满足时才会在UI中显示
   #  （单独一个字符串，
@@ -213,6 +229,17 @@ PARAMS[0] = {  # 这里设置 0号角色 的一些参数
 # 至此，0号角色设置完了
 
 #--------------------------------------------------------------------------
+# 特别的，你可以在 ALL_ACTORS 这个哈希表中增加能力
+#  这个哈希表中的能力将作为全体角色通用的可供学习的能力
+#  在默认中，已经编写了两个，一个用于重置当前角色，一个用于在测试游戏时获得AP
+#  例如：
+#ALL_ACTORS["公共-能力1"] = {  # 注意，能力的脚本中名字别和各角色的能力重合了！
+#  :pos => [5, 1], 
+#  :skill => 1, 
+#  :ap => 1, 
+#}
+
+#--------------------------------------------------------------------------
 # 推荐不要修改上面的样本，而是自己在下方编写新内容
 #--------------------------------------------------------------------------
 
@@ -255,23 +282,26 @@ module ABILITY_LEARN
   # ○【常量】所有角色共有的能力数据
   #  注意：此处能力的唯一ID不要和其它的重复
   #--------------------------------------------------------------------------
-  ALL_ACTORS = {
+  ALL_ACTORS ||= {}
   # 这个能力用于重置全部能力
-    "RESET" => {
-      :pos => [1, 1],
-      :icon => 280,
-      :name => "重置",
-      :help => "重置当前角色全部能力。\n仅返还#{AP_TEXT}，可能不会返还其它资源。",
-      :eval_on => "ABILITY_LEARN.reset",
-    },
-    "TEST-add_ap" => {
-      :pos => [1, 3],
-      :icon => 184,
-      :name => "测试-增加#{AP_TEXT}",
-      :help => "队伍中全部角色增加 10 点#{AP_TEXT}。",
-      :eval_on => "$game_party.add_ap(10); ABILITY_LEARN.redraw_actor_info",
-      :if => "$TEST",
-    },
+  ALL_ACTORS["RESET"] = {
+    :pos => [1, 1],
+    :icon => 280,
+    :ap => -1,
+    :name => "重置",
+    :help => "重置当前角色全部能力。\n仅返还#{AP_TEXT}，可能不会返还其它资源。\\ln
+{{ABILITY_LEARN.get_unlock_skills_and_params_text}}",
+    :eval_on => "ABILITY_LEARN.reset",
+  }
+  # 这个能力用于在游戏测试时增加AP
+  ALL_ACTORS["TEST-add_ap"] = {
+    :pos => [1, 3],
+    :icon => 184,
+    :ap => -1,
+    :name => "测试-增加#{AP_TEXT}",
+    :help => "队伍中全部角色增加 10 点#{AP_TEXT}。",
+    :eval_on => "$game_party.add_ap(10); ABILITY_LEARN.redraw_actor_info",
+    :if => "$TEST",
   }
   #--------------------------------------------------------------------------
   # ○【常量】角色数据
@@ -307,11 +337,15 @@ module ABILITY_LEARN
   #--------------------------------------------------------------------------
   # ○【常量】帮助窗口中，满足条件的文本的前置符号
   #--------------------------------------------------------------------------
-  HELP_TEXT_COND_OK = "○"
+  HELP_TEXT_COND_OK = "[已满足]"
+  #--------------------------------------------------------------------------
+  # ○【常量】帮助窗口中，满足条件的文本的颜色
+  #--------------------------------------------------------------------------
+  HELP_TEXT_COLOR_OK = 8
   #--------------------------------------------------------------------------
   # ○【常量】帮助窗口中，不满足条件的文本的前置符号
   #--------------------------------------------------------------------------
-  HELP_TEXT_COND_NO = "×"
+  HELP_TEXT_COND_NO = "[未满足]"
   #--------------------------------------------------------------------------
   # ○【常量】帮助窗口中，不满足条件的文本的颜色
   #--------------------------------------------------------------------------
@@ -567,6 +601,27 @@ module ABILITY_LEARN
     end
   end
   #--------------------------------------------------------------------------
+  # ● 获取指定id的升级前置条件
+  #--------------------------------------------------------------------------
+  def self.get_token_lvup(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    ps[:lvup] || []
+  end
+  def self.process_lvup(actor_id, token_id, next_lv, ps, type=:cond)
+    # ps = [lv, sym, value...] or [lv, cond_eval, run_eval, text]
+    if ps[0].to_i == next_lv
+      return process_pre_ex(actor_id, token_id, ps[1..-1], type)
+    else
+      if type == :cond
+        return nil
+      elsif type == :run
+      elsif type == :text
+        return ""
+      end
+    end
+  end
+  
+  #--------------------------------------------------------------------------
   # ● 获取指定id的帮助文本
   #--------------------------------------------------------------------------
   def self.get_token_help(actor_id, token_id)
@@ -593,10 +648,10 @@ module ABILITY_LEARN
     else
     end
     t += "\n >> " + obj.description.gsub("\r\n") { "\n    " } if obj
-    t += "\\ln"
 
     params_hash = get_token_params(actor_id, token_id)
     if !params_hash.empty?
+      t += "\\ln"
       params_hash.each do |sym, v|
         param_id = ABILITY_LEARN::PARAMS_TO_ID[sym]
         _v = v.to_i
@@ -604,59 +659,118 @@ module ABILITY_LEARN
           t += Vocab.param(param_id) + (_v > 0 ? "+#{_v}" : "-#{_v.abs}") + " "
         end
       end
-      t += "\\ln"
     end
 
     ps = get_token(actor_id, token_id)
     if ps[:help] && ps[:help] != ""
-      t += " >> " + ps[:help].gsub("\r\n") { "\n    " } + "\\ln"
+      t += "\\ln"
+      _t = ps[:help].gsub("\r\n") { "\n    " }
+      _t = _t.gsub(/{{(.*?)}}/) { eagle_eval($1) }
+      t += " >> " + _t 
     end
 
     if no_unlock?(token_id)
-      t += " >> 无需学习\n"
+      #t += " >> 无需学习\n"
     else
+      t += "\\ln"
       v = get_token_ap(actor_id, token_id)
       if !unlock?(token_id)
         pres_all = ABILITY_LEARN.get_token_pre(actor_id, token_id)
         pres = pres_all | pres_all
-        t += "要求：\n"
+        t += " >> 学习要求：\n"
+        t_temp = ""
         # 处理前置需求
         pres.each do |id2|
           name = get_token_name(actor_id, id2)
           icon = get_token_icon(actor_id, id2)
           l = pres_all.count(id2)
           lv = level(id2)
-          t += (lv >= l ? " #{HELP_TEXT_COND_OK} " : \
-                "\\c[#{HELP_TEXT_COLOR_NOT}] #{HELP_TEXT_COND_NO} ")
-          t += "\\i[#{icon}]#{name} lv.#{l}\\c[0]\n"
+          t_temp += (lv >= l ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}" : \
+                "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
+          t_temp += "\\i[#{icon}]#{name} lv.#{l}\\c[0]\n"
         end
         # 处理扩展的前置需求
         pres_ex = get_token_pre_ex(actor_id, token_id)
         pres_ex.each do |ps|
           f = process_pre_ex(actor_id, token_id, ps, :cond)
-          t += (f ? " #{HELP_TEXT_COND_OK} " : \
-                "\\c[#{HELP_TEXT_COLOR_NOT}] #{HELP_TEXT_COND_NO} ")
-          t += "#{process_pre_ex(actor_id, token_id, ps, :text)}\\c[0]\n"
+          t_temp += (f ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK} " : \
+                "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
+          t_temp += "#{process_pre_ex(actor_id, token_id, ps, :text)}\\c[0]\n"
         end
         # 处理ap消耗
-        t += "\\c[#{HELP_TEXT_COLOR_NOT}]" if data.ap < v # ap不足
-        t += " - #{v} 点#{AP_TEXT}\\c[0]\n"
+        if v > 0
+          if data.ap < v
+            t_temp += "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}" 
+          else
+            t_temp += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}"
+          end
+          t_temp += "消耗 #{v} 点#{AP_TEXT}\\c[0]\n"
+        end
+        # 总结前置要求
+        if t_temp == ""
+          t += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}可学习\\c[0]"
+        else
+          t += t_temp
+        end
       else
         level = data.level(token_id)
         level_max = get_token_level(actor_id, token_id)
         if level_max > 1 && level < level_max
-          t += "当前等级 #{level}（最大#{level_max}）\n"
-          t += "\\c[#{HELP_TEXT_COLOR_NOT}]" if data.ap < v # ap不足
-          t += " - #{v} 点#{AP_TEXT}提升等级\\c[0]\n"
+          t += "\\c[8][可升级]\\c[0]lv.#{level} / #{level_max}\n"
+          t += " >> 升级要求：\n"
+          t_temp = ""
+          # 处理升级需求
+          l_next = level + 1  # 下一等级
+          lvup = get_token_lvup(@actor_id, token_id)
+          lvup.each do |ps|
+            f = process_lvup(@actor_id, token_id, l_next, ps, :cond)
+            next if f == nil
+            t_temp += (f ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK} " : \
+                "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
+            t_temp += "#{process_lvup(actor_id, token_id, l_next, ps, :text)}\\c[0]\n"
+          end
+          # 处理ap消耗
+          if v > 0
+            if data.ap < v
+              t_temp += "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}" 
+            else
+              t_temp += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}"
+            end
+            t_temp += "消耗 #{v} 点#{AP_TEXT}\\c[0]\n"
+          end
+          # 总结升级要求
+          if t_temp == ""
+            t += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}可升级\\c[0]"
+          else
+            t += t_temp
+          end
         else
-          t += " >> 已达最大等级 lv.#{level_max}\n"
+          t += "\\c[8][已满级]\\c[0]lv.#{level}\n"
         end
       end
     end
-
     return t
   end
-
+  #--------------------------------------------------------------------------
+  # ● 获取当前角色已解锁属性和技能一览文本
+  #--------------------------------------------------------------------------
+  def self.get_unlock_skills_and_params_text
+    actor = $game_actors[@actor_id]
+    t = " >> 当前已解锁：\n"
+    # 添加已经增加的属性
+    PARAMS_TO_ID.each do |sym, id|
+      v = actor.eagle_ability_data.param_plus(id)
+      t += "\\c[8][属性]\\c[0]" + Vocab.param(id) + "+\\c[1]#{v}\\c[0]" + "\n" if v > 0
+    end
+    # 添加已经增加的技能
+    actor.eagle_ability_data.skills.each do |sid|
+      s = $data_skills[sid]
+      t += "\\c[8][技能]\\c[0]" + "\ei[#{s.icon_index}]" + s.name
+      t += "\n"
+    end
+    return t
+  end
+ 
 #==============================================================================
 # ■ 便捷使用（仅UI内）
 #==============================================================================
@@ -1051,10 +1165,14 @@ class << ABILITY_LEARN
     # 更新移动（鼠标）
     if $imported["EAGLE-MouseEX"]
       if MOUSE_EX.in?
-        s.x = MOUSE_EX.x - s.viewport.rect.x
-        s.y = MOUSE_EX.y - s.viewport.rect.y
+        s.x = MOUSE_EX.x - s.viewport.rect.x + s.viewport.ox
+        s.y = MOUSE_EX.y - s.viewport.rect.y + s.viewport.oy
       end
     end
+    
+    # 限制在格子区域内
+    s.x = [0, [s.x, ui_max_x].min].max
+    s.y = [0, [s.y, ui_max_y].min].max
 
     # 检查显示区域
     vp = @viewport_bg
@@ -1094,7 +1212,10 @@ class << ABILITY_LEARN
     if @selected_token && key_unlock?
       data = $game_actors[@actor_id].eagle_ability_data
       id = @selected_token.id
-      if data.can_unlock?(id)
+      # 还未解锁，则判定是否满足解锁条件；已经解锁，则判定是否满足升级条件
+      f = !data.unlock?(id) ? data.can_unlock?(id) : data.can_levelup?(id)
+      f = true if data.no_unlock?(id) # 如果不用解锁，则直接可以激活
+      if f
         Sound.play_ok
         data.unlock(id)
         refresh
@@ -1388,7 +1509,7 @@ class Sprite_AbilityLearn_TokenHelp < Sprite
     text = ABILITY_LEARN.get_token_help(s.actor_id, s.id)
     return if text == ""
 
-    ps = { :font_size => HELP_TEXT_FONT_SIZE, :x0 => 0, :y0 => 0, :lhd => 2 }
+    ps = { :font_size => HELP_TEXT_FONT_SIZE, :x0 => 0, :y0 => 0, :lhd => 4 }
     d = Process_DrawTextEX.new(text, ps)
     d.run(false)
 
@@ -1409,14 +1530,14 @@ class Sprite_AbilityLearn_TokenHelp < Sprite
     self.visible = true
     case HELP_TEXT_POS
     when 0
-      if s.x + s.width / 2 + self.width > Graphics.width
+      if s.x + s.width / 2 - s.viewport.ox + self.width > Graphics.width
         # 显示在左侧
-        self.x = s.x - s.width / 2 - self.width
+        self.x = s.x - s.width / 2 - s.viewport.ox - self.width
       else
         # 显示在右侧
-        self.x = s.x + s.width / 2
+        self.x = s.x + s.width / 2 - s.viewport.ox
       end
-      self.y = s.y - s.height / 2
+      self.y = s.y - s.height / 2 - s.viewport.oy
       d = self.y + self.height - Graphics.height
       if d > 0
         self.y -= d
@@ -1490,12 +1611,21 @@ class Data_AbilityLearn
   def unlock(token_id)
     # 如果是不需要解锁的，则跳过这些处理
     if !no_unlock?(token_id)
+      # 如果是第一次解锁，则处理扩展的前置需求
+      if !@unlocks.include?(token_id)
+        # 处理扩展的前置需求
+        pres_ex = ABILITY_LEARN.get_token_pre_ex(@actor_id, token_id)
+        pres_ex.each { |ps|
+          ABILITY_LEARN.process_pre_ex(@actor_id, token_id, ps, :run) }
+      else # 已经解锁过至少一次，则处理升级的要求
+        l_next = level(token_id) + 1  # 下一等级
+        lvup = ABILITY_LEARN.get_token_lvup(@actor_id, token_id)
+        lvup.each { |ps|
+          ABILITY_LEARN.process_lvup(@actor_id, token_id, l_next, ps, :run)
+        }
+      end
       # 放入已解锁的数组
       @unlocks.push(token_id)
-      # 处理扩展的前置需求
-      pres_ex = ABILITY_LEARN.get_token_pre_ex(@actor_id, token_id)
-      pres_ex.each { |ps|
-        ABILITY_LEARN.process_pre_ex(@actor_id, token_id, ps, :run) }
       # 扣除ap
       @ap -= ABILITY_LEARN.get_token_ap(@actor_id, token_id)
       # 习得技能
@@ -1531,21 +1661,16 @@ class Data_AbilityLearn
   # ● 指定id能够解锁？
   #--------------------------------------------------------------------------
   def can_unlock?(token_id)
-    if !unlock?(token_id)
-      pres_all = ABILITY_LEARN.get_token_pre(@actor_id, token_id)
-      pres = pres_all | pres_all
-      pres.each { |id|
-        return false if !unlock?(id)
-        return false if level(id) < pres_all.count(id)
-      }
-      pres_ex = ABILITY_LEARN.get_token_pre_ex(@actor_id, token_id)
-      pres_ex.each do |ps|
-        f = ABILITY_LEARN.process_pre_ex(@actor_id, token_id, ps, :cond)
-        return false if f == false
-      end
-    else
-      f = leven_max(token_id)
-      return false if f <= 0 or f <= level(token_id)
+    pres_all = ABILITY_LEARN.get_token_pre(@actor_id, token_id)
+    pres = pres_all | pres_all
+    pres.each { |id|
+      return false if !unlock?(id)
+      return false if level(id) < pres_all.count(id)
+    }
+    pres_ex = ABILITY_LEARN.get_token_pre_ex(@actor_id, token_id)
+    pres_ex.each do |ps|
+      f = ABILITY_LEARN.process_pre_ex(@actor_id, token_id, ps, :cond)
+      return false if f == false
     end
     @ap >= ABILITY_LEARN.get_token_ap(@actor_id, token_id)
   end
@@ -1553,7 +1678,7 @@ class Data_AbilityLearn
   # ● 指定ID不需要解锁？
   #--------------------------------------------------------------------------
   def no_unlock?(token_id)
-    ABILITY_LEARN.get_token_ap(@actor_id, token_id) == 0
+    ABILITY_LEARN.get_token_ap(@actor_id, token_id) < 0
   end
   #--------------------------------------------------------------------------
   # ● 指定ID能够重复学习的次数
@@ -1563,10 +1688,25 @@ class Data_AbilityLearn
     return ABILITY_LEARN.get_token_level(@actor_id, token_id)
   end
   #--------------------------------------------------------------------------
-  # ● 获取学习次数
+  # ● 获取指定ID已经学习的次数
   #--------------------------------------------------------------------------
   def level(token_id)
     @unlocks.count(token_id)
+  end
+  #--------------------------------------------------------------------------
+  # ● 指定ID可以升级？
+  #--------------------------------------------------------------------------
+  def can_levelup?(token_id)
+    f = leven_max(token_id)
+    return false if f <= 0 or f <= level(token_id)
+    l_next = level(token_id) + 1  # 下一等级
+    lvup = ABILITY_LEARN.get_token_lvup(@actor_id, token_id)
+    lvup.each do |ps|
+      f = ABILITY_LEARN.process_lvup(@actor_id, token_id, l_next, ps, :cond)
+      next if f == nil
+      return false if f == false
+    end
+    @ap >= ABILITY_LEARN.get_token_ap(@actor_id, token_id)
   end
   #--------------------------------------------------------------------------
   # ● 获取已经学习的技能（技能ID的数组）
