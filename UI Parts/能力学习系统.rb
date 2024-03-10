@@ -6,15 +6,17 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.5.0"
+$imported["EAGLE-AbilityLearn"] = "1.5.5"
 #==============================================================================
-# - 2024.2.16.15 新增设置每一级的升级要求:lvup
+# - 2024.3.9.14 新增可解锁能力的放大动画
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
 #------------------------------------------------------------------------------
 # 【使用】
 #
 #    利用全局脚本 ABILITY_LEARN.call 呼叫能力学习界面。
+#
+#    特别的，在战斗测试中，将默认激活全部能力 1 级。
 #
 #------------------------------------------------------------------------------
 # 【兼容】
@@ -221,9 +223,21 @@ PARAMS[0] = {  # 这里设置 0号角色 的一些参数
   #【可选】额外绘制的连线，不产生任何影响
   #  [能力名称1, 能力名称2, 线条粗细（默认1）, 
   #   线条类型（默认 "01"）, 线条颜色（默认Color.new(255,255,255,150)）]
-  # 具体含义请见【组件-形状绘制 by老鹰】中的线段绘制
+  # （具体含义请见【组件-形状绘制 by老鹰】中的线段绘制）
   # 如： :lines => [ [1,2], [1,3,1,"011",Color.new(255,0,0)] ],
   :lines => [],
+  #------------------------------------------------------------------------
+  #【可选】在初始化时，默认拥有的AP点数
+  # （由于AP默认只在升级时获得，而设置了初始等级的角色没有升级处理，因此增加该项）
+  # （只在开始新游戏时处理一次，增加AP及其上限）
+  :init_ap => 0,
+  #------------------------------------------------------------------------
+  #【可选】在初始化时，默认已经学习的能力
+  # （和 :pre 相同，填入能力的脚本中名称，重复填写代表已学习次数）
+  # （由于AP默认只在升级时获得，而设置了初始等级的角色没有升级处理，因此增加该项）
+  # （只在开始新游戏时自动触发，不消耗AP，但在重置时会返还对应能力的AP）
+  # 如： :init_aps => [1,1,2],
+  :init_aps => [],
 }
 
 # 至此，0号角色设置完了
@@ -651,7 +665,7 @@ module ABILITY_LEARN
 
     params_hash = get_token_params(actor_id, token_id)
     if !params_hash.empty?
-      t += "\\ln"
+      t += "\\ln "
       params_hash.each do |sym, v|
         param_id = ABILITY_LEARN::PARAMS_TO_ID[sym]
         _v = v.to_i
@@ -661,13 +675,8 @@ module ABILITY_LEARN
       end
     end
 
-    ps = get_token(actor_id, token_id)
-    if ps[:help] && ps[:help] != ""
-      t += "\\ln"
-      _t = ps[:help].gsub("\r\n") { "\n    " }
-      _t = _t.gsub(/{{(.*?)}}/) { eagle_eval($1) }
-      t += " >> " + _t 
-    end
+    _t = get_token_help_raw(actor_id, token_id)
+    t += "\\ln >> " + _t if _t != ""
 
     if no_unlock?(token_id)
       #t += " >> 无需学习\n"
@@ -752,22 +761,67 @@ module ABILITY_LEARN
     return t
   end
   #--------------------------------------------------------------------------
+  # ● 获取指定id的附加帮助文本
+  #--------------------------------------------------------------------------
+  def self.get_token_help_raw(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    _t = ""
+    if ps[:help] && ps[:help] != ""
+      _t = ps[:help].gsub("\r\n") { "\n    " }
+      _t = _t.gsub(/{{(.*?)}}/) { eagle_eval($1) }
+    end
+    return _t
+  end
+  
+  #--------------------------------------------------------------------------
   # ● 获取当前角色已解锁属性和技能一览文本
   #--------------------------------------------------------------------------
   def self.get_unlock_skills_and_params_text
     actor = $game_actors[@actor_id]
     t = " >> 当前已解锁：\n"
     # 添加已经增加的属性
+    c = 0; t1 = ""
     PARAMS_TO_ID.each do |sym, id|
       v = actor.eagle_ability_data.param_plus(id)
-      t += "\\c[8][属性]\\c[0]" + Vocab.param(id) + "+\\c[1]#{v}\\c[0]" + "\n" if v > 0
+      if v > 0
+        t1 += "\\c[8][属性]\\c[0]" + Vocab.param(id) + "+\\c[1]#{v}\\c[0]"
+        c += 1
+        if c > 4
+          c = 0
+          t1 += "\n"
+        else
+          t1 += " "
+        end
+      end
     end
+    t += t1 + "\n" if t1 != ""
     # 添加已经增加的技能
+    c = 0; t2 = ""
     actor.eagle_ability_data.skills.each do |sid|
       s = $data_skills[sid]
-      t += "\\c[8][技能]\\c[0]" + "\ei[#{s.icon_index}]" + s.name
-      t += "\n"
+      t2 += "\\c[8][技能]\\c[0]" + "\ei[#{s.icon_index}]" + s.name
+      c += 1
+      if c > 3
+        c = 0
+        t2 += "\n"
+      else
+        t2 += " "
+      end
     end
+    t += t2 + "\n" if t2 != ""
+    # 添加已经增加的装备
+    c = 0; t3 = ""
+    actor.eagle_ability_data.equips.each do |obj|
+      t3 += "\\c[8][其它]\\c[0]" + "\ei[#{obj.icon_index}]" + obj.name
+      c += 1
+      if c > 3
+        c = 0
+        t3 += "\n"
+      else
+        t3 += " "
+      end
+    end
+    t += t3 + "\n" if t3 != ""
     return t
   end
  
@@ -1049,8 +1103,8 @@ class << ABILITY_LEARN
 
     tokens = ABILITY_LEARN.get_tokens(@actor_id)
     tokens.merge(ABILITY_LEARN.get_tokens_all).each do |id, ps|
-      if ABILITY_LEARN.unlock?(id)
-        # 如果已经解锁，则不再判定if
+      if ABILITY_LEARN.no_unlock?(id) || ABILITY_LEARN.unlock?(id)
+        # 如果不用解锁或已经解锁，则不再判定if
       else
         next if ps[:if] && ABILITY_LEARN.process_token_if(ps[:if]) != true
       end
@@ -1113,6 +1167,7 @@ class << ABILITY_LEARN
   def update_ui
     loop do
       update_basic
+      update_tokens
       update_player
       update_unlock
       update_actors
@@ -1275,6 +1330,14 @@ class << ABILITY_LEARN
       end
     end
   end
+  #--------------------------------------------------------------------------
+  # ● UI-更新能力精灵的特效
+  #--------------------------------------------------------------------------
+  def update_tokens
+    @sprites_token.each do |id, st|
+      st.update
+    end
+  end
 end
 
 #==============================================================================
@@ -1403,16 +1466,22 @@ class Sprite_AbilityLearn_Token < Sprite
   #--------------------------------------------------------------------------
   def initialize(vp, actor_id, token_id, ps)
     super(vp)
+    @sprite_unlock = nil
     @actor_id = actor_id
     @id = token_id
     refresh
     pos = ps[:pos] || [0, 0]
     reset_position(pos[0], pos[1])
+    @count_can_unlock = 0
   end
   #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
+    if @sprite_unlock
+      @sprite_unlock.bitmap.dispose
+      @sprite_unlock.dispose
+    end
     self.bitmap.dispose
     super
   end
@@ -1421,11 +1490,18 @@ class Sprite_AbilityLearn_Token < Sprite
   #--------------------------------------------------------------------------
   def refresh
     reset_bitmap
-    draw_level
     self.color = Color.new(0,0,0,0)
-    if !ABILITY_LEARN.unlock?(@id)
+    data = $game_actors[@actor_id].eagle_ability_data
+    if data.unlock?(id)
+      draw_level
+    else
       self.color = Color.new(0,0,0,120)
     end
+    @sprite_unlock ||= Sprite.new(self.viewport)
+    @sprite_unlock.bitmap.dispose if @sprite_unlock.bitmap
+    @sprite_unlock.bitmap = self.bitmap.dup
+    @sprite_unlock.color = Color.new(0,0,0,120)
+    @sprite_unlock.opacity = 0
   end
   #--------------------------------------------------------------------------
   # ● 重设位图
@@ -1479,6 +1555,13 @@ class Sprite_AbilityLearn_Token < Sprite
     self.oy = self.height / 2
     self.x = GRID_W * grid_x + self.ox
     self.y = GRID_H * grid_y + self.oy
+    if @sprite_unlock
+      @sprite_unlock.ox = @sprite_unlock.width / 2
+      @sprite_unlock.oy = @sprite_unlock.height / 2
+      @sprite_unlock.x = self.x
+      @sprite_unlock.y = self.y
+      @sprite_unlock.z = self.z + 1
+    end
   end
   #--------------------------------------------------------------------------
   # ● 指定sprite位于当前精灵上？
@@ -1491,6 +1574,32 @@ class Sprite_AbilityLearn_Token < Sprite
     return false if pos_x > self.x - self.ox + self.width
     return false if pos_y > self.y - self.oy + self.height
     return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    update_can_unlock
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新表示可解锁的动画
+  #--------------------------------------------------------------------------
+  def update_can_unlock
+    if (@count_can_unlock -= 1) > 0
+      return if @sprite_unlock.opacity == 0
+      @sprite_unlock.opacity -= 7
+      @sprite_unlock.zoom_x += 0.03
+      @sprite_unlock.zoom_y += 0.03
+    else
+      @count_can_unlock = 40
+      data = $game_actors[@actor_id].eagle_ability_data
+      flag_unlock = data.unlock?(@id)
+      return @sprite_unlock.opacity = 0 if flag_unlock
+      flag_update = data.can_unlock?(@id)
+      return @sprite_unlock.opacity = 0 if !flag_update
+      @sprite_unlock.opacity = 255
+      @sprite_unlock.zoom_x = @sprite_unlock.zoom_y = 1
+    end
   end
 end
 
@@ -1580,6 +1689,10 @@ class Data_AbilityLearn
     @ap += v
     @ap_max += v
   end
+  def add_ap_max(v)
+    return if v <= 0
+    @ap_max += v
+  end
   #--------------------------------------------------------------------------
   # ● 重置
   #--------------------------------------------------------------------------
@@ -1607,27 +1720,25 @@ class Data_AbilityLearn
   end
   #--------------------------------------------------------------------------
   # ● 解锁指定id
+  #  no_cost 传入 true 时，不处理前置要求和AP消耗
   #--------------------------------------------------------------------------
-  def unlock(token_id)
+  def unlock(token_id, no_cost=false)
     # 如果是不需要解锁的，则跳过这些处理
     if !no_unlock?(token_id)
-      # 如果是第一次解锁，则处理扩展的前置需求
-      if !@unlocks.include?(token_id)
-        # 处理扩展的前置需求
-        pres_ex = ABILITY_LEARN.get_token_pre_ex(@actor_id, token_id)
-        pres_ex.each { |ps|
-          ABILITY_LEARN.process_pre_ex(@actor_id, token_id, ps, :run) }
-      else # 已经解锁过至少一次，则处理升级的要求
-        l_next = level(token_id) + 1  # 下一等级
-        lvup = ABILITY_LEARN.get_token_lvup(@actor_id, token_id)
-        lvup.each { |ps|
-          ABILITY_LEARN.process_lvup(@actor_id, token_id, l_next, ps, :run)
-        }
+      if no_cost == false
+        if !@unlocks.include?(token_id) # 第一次解锁，处理扩展的前置需求
+          pres_ex = ABILITY_LEARN.get_token_pre_ex(@actor_id, token_id)
+          pres_ex.each {|ps| ABILITY_LEARN.process_pre_ex(@actor_id, token_id, ps, :run)}
+        else # 已经解锁过至少一次，则处理升级的要求
+          l_next = level(token_id) + 1  # 下一等级
+          lvup = ABILITY_LEARN.get_token_lvup(@actor_id, token_id)
+          lvup.each {|ps| ABILITY_LEARN.process_lvup(@actor_id, token_id, l_next, ps, :run)}
+        end
+        # 扣除ap
+        @ap -= ABILITY_LEARN.get_token_ap(@actor_id, token_id)
       end
       # 放入已解锁的数组
       @unlocks.push(token_id)
-      # 扣除ap
-      @ap -= ABILITY_LEARN.get_token_ap(@actor_id, token_id)
       # 习得技能
       skill_id = ABILITY_LEARN.get_token_skill(@actor_id, token_id)
       @skill_ids.push(skill_id) if skill_id && skill_id > 0
@@ -1764,7 +1875,32 @@ class Game_Actor
   alias eagle_ability_learn_init_skills init_skills
   def init_skills
     @eagle_ability_data = Data_AbilityLearn.new(@actor_id)
+    process_init_ap
+    process_init_aps
     eagle_ability_learn_init_skills
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化AP点数
+  #--------------------------------------------------------------------------
+  def process_init_ap
+    v = ABILITY_LEARN.get_params(@actor_id)[:init_ap] || 0
+    @eagle_ability_data.add_ap(v) if v > 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化已学习能力
+  #--------------------------------------------------------------------------
+  def process_init_aps
+    arr = ABILITY_LEARN.get_params(@actor_id)[:init_aps] || []
+    arr.each do |id|
+      l = @eagle_ability_data.level(id)
+      l_max = @eagle_ability_data.leven_max(id)
+      next if l >= l_max  # 已经最高级了，则跳过
+      next if @eagle_ability_data.no_unlock?(id)  # 不需要解锁的，则跳过
+      @eagle_ability_data.unlock(id, true)
+      # 增加ap上限
+      v = ABILITY_LEARN.get_token_ap(@actor_id, id)
+      @eagle_ability_data.add_ap_max(v)
+    end
   end
   #--------------------------------------------------------------------------
   # ● 获取添加的技能
@@ -1812,5 +1948,27 @@ class Game_Party < Game_Unit
   #--------------------------------------------------------------------------
   def add_ap(v)
     members.each { |a| a.eagle_ability_data.add_ap(v) }
+  end
+end
+
+#==============================================================================
+# ■ DataManager
+#==============================================================================
+class << DataManager
+  #--------------------------------------------------------------------------
+  # ● 设置战斗测试
+  #--------------------------------------------------------------------------
+  alias eagle_dice_battle_setup_battle_test setup_battle_test
+  def setup_battle_test
+    eagle_dice_battle_setup_battle_test
+    # 战斗测试中，全部能力都解锁一次
+    tokens_all = ABILITY_LEARN.get_tokens_all
+    $game_party.members.each do |actor|
+      tokens = ABILITY_LEARN.get_tokens(actor.id)
+      tokens.merge(tokens_all).each do |id, ps|
+        next if actor.eagle_ability_data.no_unlock?(id) # 不需要解锁的，则跳过
+        actor.eagle_ability_data.unlock(id, true)
+      end
+    end
   end
 end

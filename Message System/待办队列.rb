@@ -425,7 +425,7 @@ class Sprite_EagleTodo < Sprite
   #--------------------------------------------------------------------------
   def redraw
     params = { :font_size => PARAMS["FONT_SIZE"],
-      :x0 => 0, :y0 => 0, :lhd => 2,
+      :x0 => 0, :y0 => 0, :lhd => 4,
       :w => PARAMS["TEXT_WIDTH"],
       :ali => 0,
     }
