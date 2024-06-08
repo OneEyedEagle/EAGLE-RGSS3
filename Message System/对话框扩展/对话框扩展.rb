@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.1" 
+$imported["EAGLE-MessageEX"] = "1.11.2" 
 #=============================================================================
-# - 2023.10.29.21 修复暗色背景下，对话框滑入滑出出现闪现的bug
+# - 2024.6.1.23 强化cswing文字效果
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -1138,18 +1138,21 @@ CWAVE_PARAMS_INIT = {
 # 【参数】
 #    param → 变量参数字符串
 # （变量一览）
-#    d → 每次更新增加的角度值（0时随机取正负1）
+#    d → 每次更新增加的角度值
+#        （d为0时，角度值不缓慢增加，而是直接到最大值，但初始方向随机）
 #    t → 每次角度更新后等待t帧
+#    t2 → 每次角度到达最大值后等待t2帧
 #    a → 角度可到达的最大值（左右对称）
 #    o → 摇摆不动点所在位置类型（键盘九宫格）
 #
 # 【常量设置：参数预设值】
 CSWING_PARAMS_INIT = {
 # \cswing[]
-  :d => 0, # 每次更新增加的角度值（0时随机取正负1）
+  :d => 0, # 每次更新增加的角度值
   :t => 1, # 每次角度更新后等待t帧
-  :a => 15, # 角度可到达的最大值（左右对称）
-  :o => 2, # 摇摆不动点所在位置类型（键盘九宫格）（2为底部中心）
+  :t2 => 15, # 每次角度到达最大值后等待t2帧
+  :a => 5, # 角度可到达的最大值（左右对称）
+  :o => 8, # 摇摆不动点所在位置类型（键盘九宫格）（2为底部中心）
 }
 #
 #----------------------------------------------------------------------------
@@ -6600,17 +6603,22 @@ class Sprite_EagleCharacter < Sprite
     params[:ac] = 0 # 当前偏移角度和
     params[:tc] = 0
     parse_param(params, param_s)
-    params[:d] = rand(2) * 2 - 1 if params[:d] == 0
     reset_oxy(params[:o])
     self.angle = 0
   end
   def update_effect_cswing(params)
     return if (params[:tc] -= 1) > 0
-    params[:tc] = params[:t]
-    params[:ac] += params[:d]
-    if params[:ac].abs > params[:a]
+    if params[:d] == 0
+      params[:ac] = self.angle == 0 ? rand(2)*2-1 : (self.angle > 0 ? -1 : 1)
+      params[:ac] *= params[:a]
+    else
+      params[:ac] += params[:d]
+      params[:tc] = params[:t]
+    end
+    if params[:ac].abs >= params[:a]
       params[:ac] = params[:a] * (params[:ac] > 0 ? 1 : -1)
       params[:d] *= -1
+      params[:tc] = params[:t2]
     end
     self.angle = params[:ac]
   end

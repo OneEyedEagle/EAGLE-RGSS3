@@ -3,9 +3,9 @@
 # 【此插件兼容VX和VX Ace】
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventPositionMemory"] = "1.0.0"
+$imported["EAGLE-EventPositionMemory"] = "1.1.0"
 #==============================================================================
-# - 2021.8.29.21
+# - 2024.6.2.17 调整传入参数，便于扩展
 #==============================================================================
 # - 本插件新增对事件所在位置的存储
 #--------------------------------------------------------------------------
@@ -27,8 +27,9 @@ $imported["EAGLE-EventPositionMemory"] = "1.0.0"
 #
 # - 使用全局脚本，对当前地图的指定序号的事件进行位置存储和读取：
 #
-#    $game_system.save_event_pos(event_id)  → 存储event_id号事件的当前位置
-#    $game_system.load_event_pos(event_id)  → 读取event_id号事件的已存储位置
+#    event = $game_map.events[event_id] → 首先获取event_id号事件对象
+#    $game_system.save_event_pos(event)  → 存储event事件的当前位置
+#    $game_system.load_event_pos(event)  → 读取的已存储位置
 #
 #  对于某个事件的某一页，该存储位置只会保存一个。
 #
@@ -63,25 +64,25 @@ class Game_System
   #--------------------------------------------------------------------------
   # ● 存储指定事件的位置
   #--------------------------------------------------------------------------
-  def save_event_pos(event_id)
+  def save_event_pos(event)
     map_id = $game_map.map_id
+    event_id = event.id
     @eagle_event_pos ||= {}
     @eagle_event_pos[map_id] ||= {}
     @eagle_event_pos[map_id][event_id] ||= {}
-    e = $game_map.events[event_id]
-    @eagle_event_pos[map_id][event_id][e.page_id] = [e.x, e.y, e.direction]
+    @eagle_event_pos[map_id][event_id][event.page_id] = [event.x, event.y, event.direction]
   end
   #--------------------------------------------------------------------------
   # ● 读取指定事件的位置
   #--------------------------------------------------------------------------
-  def load_event_pos(event_id)
+  def load_event_pos(event)
     map_id = $game_map.map_id
-    page_id = $game_map.events[event_id].page_id
+    event_id = event.id
+    page_id = event.page_id
     v = @eagle_event_pos[map_id][event_id][page_id] rescue nil
     return if v == nil
-    e = $game_map.events[event_id]
-    e.moveto(v[0], v[1])
-    e.set_direction(v[2])
+    event.moveto(v[0], v[1])
+    event.set_direction(v[2])
   end
 end
 #==============================================================================
@@ -94,7 +95,7 @@ class Game_Map
   alias eagle_event_pos_setup setup
   def setup(map_id)
     if @events
-      @events.each { |eid, e| $game_system.save_event_pos(eid) }
+      @events.each { |eid, e| $game_system.save_event_pos(e) }
     end
     eagle_event_pos_setup(map_id)
   end
@@ -104,7 +105,7 @@ class Game_Map
   alias eagle_event_pos_setup_events setup_events
   def setup_events
     eagle_event_pos_setup_events
-    @events.each { |eid, e| $game_system.load_event_pos(eid) if e.restore_pos? }
+    @events.each { |eid, e| $game_system.load_event_pos(e) if e.restore_pos? }
   end
 end
 #==============================================================================
