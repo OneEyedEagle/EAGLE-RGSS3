@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.2" 
+$imported["EAGLE-MessageEX"] = "1.11.4" 
 #=============================================================================
-# - 2024.6.1.23 强化cswing文字效果
+# - 2024.6.9.14 \name转义符仅传入数字时，可替换为对应ID角色的名称
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -755,6 +755,11 @@ FACE_PARAMS_INIT = {
 #    （若无变量参数的设置，可省略 | 符号）
 #  - 若存在多个 \name ，只会取最后一个成功设置的姓名，但变量参数会依次生效覆盖
 #
+# 【姓名字符串】
+#  - 特别的，如果只写了数字，且在数据库中有该ID号角色，则将替换为该角色的名称
+#    如： \name[1] → 将在姓名框中显示 艾里克
+#    如： \name[999] → 因为数据库中没有该ID号角色，姓名框中依然显示 999
+#
 # 【参数】
 #    param → 变量参数字符串
 # （变量一览）
@@ -900,10 +905,23 @@ NO_DEFAULT_PAUSE = true
 #    当前对话框不再处理绘制间隔的等待（先完成打开，再一次性绘制全部内容）
 #
 #----------------------------------------------------------------------------
-#  \hold 【结尾】
+#  \hold 或 \hold[str] 【结尾】
 #----------------------------------------------------------------------------
 # 【功能】
 #    保留当前对话框，直至没有该指令的对话框关闭，关闭所有保留的对话框
+#
+# 【参数】
+#    str →【可选】任意字符串，代表该保留对话框的唯一ID
+#           如果设置，则对话框打开时，会关闭已保留对话框中全部是该ID的对话框
+#           如果不设置，则会始终保留，直到没有\hold指令的对话框关闭
+#
+# 【示例】
+#    显示文本：这是测试对话。\hold[1]
+#    显示文本：这是第二句测试对话。\hold[2]
+#    显示文本：这是第三句测试对话。\hold[1]
+#
+#    → 第一句对话保留，第二句对话和第一句对话会一起保留，
+#       第三句对话前首先关闭第一句对话，再和第二句对话一起保留
 #
 #----------------------------------------------------------------------------
 #  \close 【结尾】
@@ -3620,9 +3638,9 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_after_check_continue
     if @flag_hold  # 保留当前对话框时
-      # 如果当前对话框还要继续显示，则重新打开，确保移动的动画从当前位置开始
-      self.openness = 255 
-      @flag_need_open = false
+      # 如果想要对话框从当前位置继续移动，则需要该处理，否则是在新位置打开新的
+      #self.openness = 255 
+      #@flag_need_open = false
     end
     eagle_message_reset_continue
     @flag_need_change_wh = true  # 由于没有打开关闭，需要执行一次更新宽高
@@ -4125,14 +4143,27 @@ class Window_EagleMessage < Window_Base
   # ● 设置/执行hold指令
   #--------------------------------------------------------------------------
   def eagle_check_hold(text)
-    text.gsub!(/\e(hold)/i) { "" }
-    @flag_hold = $1 ? true : false
+    @flag_hold = false
+    @flag_hold_str = ""
+    text.gsub!(/\ehold(\[(.*?)\])/i) { 
+      @flag_hold = true
+      @flag_hold_str = $1 ? $1.to_s : ""
+      "" 
+    }
+    # 移出已存在的具有该 flag_hold_id 的保留对话框
+    if @flag_hold_str != ""
+      @eagle_dup_windows.each_with_index do |w, i|
+        w.close_clone if w.flag_hold_id == @flag_hold_str
+      end
+    end
   end
   def eagle_process_hold
     if @flag_hold
       t = self.clone
+      t.flag_hold_id = @flag_hold_str
       # 重置之前存储的窗口的z值（确保最近的显示在最上面）
       @eagle_dup_windows.each_with_index do |w, i|
+        next if t.close_clone?
         w.z = t.z - (i+1) * 5; w.eagle_reset_z
       end
       @eagle_dup_windows.unshift(t)
@@ -4229,8 +4260,22 @@ class Window_EagleMessage < Window_Base
       end
     }
     parse_pre_params(text, 'name', name_params, :o)
-    name_params[:name] = str_name
+    name_params[:name] = process_name_string(str_name)
     process_draw_name
+  end
+  def process_name_string(str)  # 预处理姓名字符串
+    return "" if str == ""
+    t = str
+    # 特别的：如果str仅为数字，且为数据库中有效的角色ID，则将替换为其名称
+    v = str.to_i
+    t = $game_actors[v].name if v > 0 and $game_actors[v] != nil
+    # 读取统一的前置文本
+    t = MESSAGE_EX.get_name_prefix + t
+    # 将转义符中的 <> 替换回 [] 
+    t.gsub!(/<(.*?)>/) { "[" + $1 + "]" }
+    # 处理转义符
+    t = convert_escape_characters(t)
+    return t
   end
   def process_draw_name
     @eagle_window_name.reset if @eagle_window_name
@@ -4992,6 +5037,7 @@ class Window_EagleMessage_Clone < Window_EagleMessage
   attr_accessor :eagle_chara_sprites, :eagle_sprite_pop_tag
   attr_accessor :eagle_sprite_face, :eagle_window_name, :eagle_sprite_pause
   attr_accessor :eagle_pop_obj
+  attr_accessor :flag_hold_id
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -5000,6 +5046,7 @@ class Window_EagleMessage_Clone < Window_EagleMessage
     super()
     self.openness = 255
     @fin = false # 结束显示？
+    @flag_hold_id = nil
   end
   #--------------------------------------------------------------------------
   # ● 获取主参数
@@ -5043,6 +5090,12 @@ class Window_EagleMessage_Clone < Window_EagleMessage
   #--------------------------------------------------------------------------
   def close_clone
     @fin = true
+  end
+  #--------------------------------------------------------------------------
+  # ○ 已经计划关闭？
+  #--------------------------------------------------------------------------
+  def close_clone?
+    @fin == true
   end
   #--------------------------------------------------------------------------
   # ● 重置单页对话框（覆盖，防止过早移出组件）
@@ -5187,15 +5240,6 @@ class Window_EagleMsgName < Window_Base
   #--------------------------------------------------------------------------
   def line_height; name_params[:size] || Font.default_size; end
   #--------------------------------------------------------------------------
-  # ● 获取全部文本
-  #--------------------------------------------------------------------------
-  def all_text
-    t = MESSAGE_EX.get_name_prefix + name_params[:name]
-    t.gsub!(/<(.*?)>/) { "[" + $1 + "]" }
-    t = @window_msg.convert_escape_characters(t)
-    t
-  end
-  #--------------------------------------------------------------------------
   # ● 姓名没有变化？
   #--------------------------------------------------------------------------
   def no_change?
@@ -5216,9 +5260,8 @@ class Window_EagleMsgName < Window_Base
     self.windowskin = MESSAGE_EX.windowskin(skin)
     return if open? && no_change?
     @params[:name] = name_params[:name]
-    t = all_text
-    reset_size(t)
-    redraw(t)
+    reset_size(name_params[:name])
+    redraw(name_params[:name])
     if name_params[:bg] && eagle_draw_bg_pic(self.width, self.height)
       @flag_use_back_sprite = true
       @back_sprite.visible = true
