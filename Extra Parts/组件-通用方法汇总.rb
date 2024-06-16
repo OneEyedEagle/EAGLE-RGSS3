@@ -3,9 +3,9 @@
 # 【此插件兼容VX和VX Ace】
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.1.8"
+$imported["EAGLE-CommonMethods"] = "1.1.9"
 #==============================================================================
-# - 2024.1.19.23 event_comment_head 增加保留换行功能
+# - 2024.6.16.17 修复读取开头注释时报错的bug
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #---------------------------------------------------------------------------
@@ -670,9 +670,11 @@ module EAGLE_COMMON
   def self.event_comment_head(command_list, keep_newline = false)
     return "" if command_list.nil? || command_list.empty?
     t = ""; index = 0
-    while command_list[index].code == 108 || command_list[index].code == 408
-      t += command_list[index].parameters[0]
-      t += '\n' if keep_newline
+    while command_list[index]
+      if command_list[index].code == 108 || command_list[index].code == 408
+        t += command_list[index].parameters[0]
+        t += '\n' if keep_newline
+      end
       index += 1
     end
     t

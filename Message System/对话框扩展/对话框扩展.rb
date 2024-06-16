@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.4" 
+$imported["EAGLE-MessageEX"] = "1.11.5" 
 #=============================================================================
-# - 2024.6.9.14 \name转义符仅传入数字时，可替换为对应ID角色的名称
+# - 2024.6.16.12 优化姓名框图片背景的表现
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -1563,8 +1563,8 @@ S_ID_RESET_ENV = true
 # 【常量设置：参数预设值】
 FUNC_PARAMS_INIT = {
 # \func[]
-  :open => 3,   # 打开方式
-  :close => 3,  # 关闭方式
+  :open => 2,   # 打开方式
+  :close => 2,  # 关闭方式
   :aw => 1,  # 自动换行
   :para => 0, # 并行处理子窗口
 }
@@ -2664,7 +2664,7 @@ class Window_EagleMessage < Window_Base
     end
     @eagle_sprite_face.opa = opa if @eagle_sprite_face
     if game_message.name?
-      @eagle_window_name.opacity = opa
+      @eagle_window_name.opacity = opa if @eagle_window_name.back_opacity > 0
       @eagle_window_name.contents_opacity = opa
     end
     update_back_sprite_opa(opa)
@@ -2863,7 +2863,7 @@ class Window_EagleMessage < Window_Base
     update_back_sprite_zoom(nil, nil) # 将背景精灵的缩放重置为 1.0
     @eagle_chara_sprites.each { |c| c.move_in }
     self.openness = 255
-    @eagle_window_name.openness = 255 if game_message.name?
+    @eagle_window_name.openness = 255 if game_message.name? 
     _opa = 0
     while ( _opa < 255 )
       _opa += 26
@@ -5403,8 +5403,11 @@ class Window_EagleMsgName < Window_Base
   def update
     super
     if @flag_use_back_sprite
-      @back_sprite.opacity = self.openness
-      @back_sprite.opacity = 0 if self.openness < 255 || self.contents_opacity < 255
+      if self.openness < 255 || self.contents_opacity < 255
+        @back_sprite.opacity = [self.openness, self.contents_opacity].min
+      else
+        @back_sprite.opacity = self.openness
+      end
     end
   end
 end
