@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.5" 
+$imported["EAGLE-MessageEX"] = "1.11.6" 
 #=============================================================================
-# - 2024.6.16.12 优化姓名框图片背景的表现
+# - 2024.6.21.23 优化对话框打开时姓名框的表现，确保打开动画和谐
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2805,8 +2805,8 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def open_and_wait
     @flag_open_close = true
-    @eagle_window_name.start if game_message.name?
     eagle_process_open_and_wait
+    @eagle_window_name.start if game_message.name? # 对话框打开后再打开姓名框
     @flag_open_close = false
     @flag_need_open = false
   end
@@ -2870,6 +2870,7 @@ class Window_EagleMessage < Window_Base
       self.opacity = _opa if @background == 0 && !@back_sprite.visible
       update_assets_opacity(_opa)
       Fiber.yield
+      eagle_win_update # 因为update中不更新基础对话框的位置，故加入一次更新
     end
   end
   #--------------------------------------------------------------------------
@@ -2951,13 +2952,16 @@ class Window_EagleMessage < Window_Base
   def eagle_close_type_fade
     _opa = [self.opacity, @back_sprite.opacity].max
     while ( _opa > 0 )
+      @eagle_offset_y -= 2
       _opa -= 30
       self.opacity = _opa if @background == 0 && !@back_sprite.visible
       update_assets_opacity(_opa)
       Fiber.yield
+      eagle_win_update # 因为update中不更新基础对话框的位置，故加入一次更新
     end
     self.openness = 0
     close
+    @eagle_offset_y = 0
   end
   #--------------------------------------------------------------------------
   # ● 关闭-默认openness
@@ -4507,9 +4511,10 @@ class Window_EagleMessage < Window_Base
     pop_params[:fh] = MESSAGE_EX.check_bool(pop_params[:fh])
     pop_params[:fix] = MESSAGE_EX.check_bool(pop_params[:fix])
     pop_params[:with_tag] = show_pop_tag? # 设置pop的tag
-    @eagle_sprite_pop_tag.visible = pop_params[:with_tag]
-    eagle_reset_pop_tag_bitmap if @eagle_sprite_pop_tag.visible
+    eagle_reset_pop_tag_bitmap if pop_params[:with_tag]
     eagle_pop_update
+    @eagle_sprite_pop_tag.opacity = 255
+    @eagle_sprite_pop_tag.visible = pop_params[:with_tag]
   end
   #--------------------------------------------------------------------------
   # ● 获取pop的弹出对象（需要有x、y、width、height方法）
@@ -5249,6 +5254,21 @@ class Window_EagleMsgName < Window_Base
   # ● 开始
   #--------------------------------------------------------------------------
   def start
+    if @flag_use_back_sprite 
+      # 显示背景图片时，隐藏默认窗口皮肤
+      @back_sprite.visible = true
+      self.opacity = 0
+      self.back_opacity = 0
+    else
+      @back_sprite.visible = false
+      self.opacity = name_params[:opa]
+      self.back_opacity = name_params[:opa]
+      if name_params[:do] == 0  # 嵌入时，隐藏背景框
+        self.opacity = 0
+        self.back_opacity = 0
+      end
+    end
+    self.contents_opacity = 255
     self.show.open
   end
   #--------------------------------------------------------------------------
@@ -5264,23 +5284,14 @@ class Window_EagleMsgName < Window_Base
     redraw(name_params[:name])
     if name_params[:bg] && eagle_draw_bg_pic(self.width, self.height)
       @flag_use_back_sprite = true
-      @back_sprite.visible = true
-      self.opacity = 0
-      self.back_opacity = 0
+      @back_sprite.z = self.z - 1
+      @back_sprite.opacity = 0  # 在更新前，先确保背景图片不显示
+      @back_sprite.visible = false
     else
       @flag_use_back_sprite = false
-      @back_sprite.visible = false
-      self.opacity = name_params[:opa]
-      self.back_opacity = name_params[:opa]
-      if name_params[:do] == 0  # 嵌入时，隐藏背景框
-        self.opacity = 0
-        self.back_opacity = 0
-      end
     end
     reset_rect_real
-    @back_sprite.z = self.z - 1
-    self.contents_opacity = 255
-    open
+    #open # 等待对话框中调用 start 方法来显示姓名框
   end
   #--------------------------------------------------------------------------
   # ● 重设窗口大小
@@ -5403,6 +5414,7 @@ class Window_EagleMsgName < Window_Base
   def update
     super
     if @flag_use_back_sprite
+      return @back_sprite.opacity = 0 if self.visible == false
       if self.openness < 255 || self.contents_opacity < 255
         @back_sprite.opacity = [self.openness, self.contents_opacity].min
       else
