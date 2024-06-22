@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.6" 
+$imported["EAGLE-MessageEX"] = "1.11.7" 
 #=============================================================================
-# - 2024.6.21.23 优化对话框打开时姓名框的表现，确保打开动画和谐
+# - 2024.6.22.8 优化对话框打开时姓名框的表现，确保打开动画和谐；修复\{\}异常bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -3809,6 +3809,7 @@ class Window_EagleMessage < Window_Base
     self.ox = self.oy = 0
     game_message.load_env(:pre_draw)  # 复原转义符环境
     game_message.clear_applys
+    MESSAGE_EX.apply_font_params(self.contents.font, font_params) # 重置字体设置
     @flag_draw = true
   end
 
@@ -5231,7 +5232,7 @@ class Window_EagleMsgName < Window_Base
   def initialize(window_msg)
     bind_window(window_msg)
     super(0, 0, 32, 32)
-    self.openness = 0
+    self.visible = false # 从 opacity=0 修改为 visible，确保不会一瞬间出现背景框
     @back_sprite = Sprite.new
     @flag_use_back_sprite = false
     @params = {}
@@ -5269,6 +5270,7 @@ class Window_EagleMsgName < Window_Base
       end
     end
     self.contents_opacity = 255
+    self.openness = 255 if self.back_opacity == 0 # 没有背景框，则省略open过程
     self.show.open
   end
   #--------------------------------------------------------------------------
@@ -5413,14 +5415,17 @@ class Window_EagleMsgName < Window_Base
   #--------------------------------------------------------------------------
   def update
     super
-    if @flag_use_back_sprite
-      return @back_sprite.opacity = 0 if self.visible == false
-      if self.openness < 255 || self.contents_opacity < 255
-        @back_sprite.opacity = [self.openness, self.contents_opacity].min
-      else
-        @back_sprite.opacity = self.openness
-      end
+    @back_sprite.opacity = get_back_sprite_opacity if @flag_use_back_sprite
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新背景图片的透明度
+  #--------------------------------------------------------------------------
+  def get_back_sprite_opacity
+    return 0 if self.visible == false
+    if self.back_opacity == 0
+      return self.contents_opacity if self.contents_opacity < 255
     end
+    return self.openness
   end
 end
 
