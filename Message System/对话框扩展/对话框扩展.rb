@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.7" 
+$imported["EAGLE-MessageEX"] = "1.11.8" 
 #=============================================================================
-# - 2024.6.22.8 优化对话框打开时姓名框的表现，确保打开动画和谐；修复\{\}异常bug
+# - 2024.6.23.11 修复暗色背景在淡出后，背景消失的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2945,6 +2945,11 @@ class Window_EagleMessage < Window_Base
     eagle_set_wh({:w => 1, :h => 1, :close => true}) if self.openness > 0
     self.openness = 0
     close
+    if @eagle_window_name
+      # 如果是透明对话框，没有缩小过程，姓名框来不及关闭
+      @eagle_window_name.contents_opacity = 0
+      @eagle_window_name.update
+    end
   end
   #--------------------------------------------------------------------------
   # ● 关闭-淡出
@@ -3517,9 +3522,11 @@ class Window_EagleMessage < Window_Base
       @back_sprite.bitmap = @back_bitmap
       update_back_sprite
       @back_sprite.visible = true
+      @back_sprite.opacity = 255
       self.opacity = 0
     when 2 # 透明背景
       @back_sprite.visible = false
+      @back_sprite.opacity = 255  # 依靠该值来进行关闭-淡出
       self.opacity = 0
     else # 普通
       return if win_params[:bg] && eagle_draw_bg_pic(w, h)
