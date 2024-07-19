@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.8" 
+$imported["EAGLE-MessageEX"] = "1.11.9" 
 #=============================================================================
-# - 2024.6.23.11 修复暗色背景在淡出后，背景消失的bug
+# - 2024.7.19.17 修复连续显示对话框时，姓名框消失的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2806,7 +2806,6 @@ class Window_EagleMessage < Window_Base
   def open_and_wait
     @flag_open_close = true
     eagle_process_open_and_wait
-    @eagle_window_name.start if game_message.name? # 对话框打开后再打开姓名框
     @flag_open_close = false
     @flag_need_open = false
   end
@@ -3187,7 +3186,7 @@ class Window_EagleMessage < Window_Base
   # ● 获取窗口的初始宽度高度
   #--------------------------------------------------------------------------
   def window_width;   Graphics.width;     end
-  def window_height;  fitting_height(4);  end
+  def window_height;  [96+standard_padding*2, fitting_height(4)].max;  end
   #--------------------------------------------------------------------------
   # ● 获取窗口的实际宽度高度
   #--------------------------------------------------------------------------
@@ -3591,8 +3590,8 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def fiber_main
     game_message.visible = true
-    eagle_process_before_start
     loop do
+      eagle_process_before_start
       eagle_process_before_draw
       process_all_text
       process_input
@@ -3606,7 +3605,7 @@ class Window_EagleMessage < Window_Base
     @fiber = nil
   end
   #--------------------------------------------------------------------------
-  # ● 首次开启对话框时的处理
+  # ● 对话框开启前的处理（导入事件中的参数）
   #--------------------------------------------------------------------------
   def eagle_process_before_start
     @background = game_message.background
@@ -3733,6 +3732,7 @@ class Window_EagleMessage < Window_Base
       eagle_set_wh
       @flag_need_change_wh = false
     end
+    @eagle_window_name.start if game_message.name? # 对话框打开后再打开姓名框
     loop do # 循环绘制每个文字
       break if text.empty?
       process_character(text.slice!(0, 1), text, pos)
@@ -5287,7 +5287,7 @@ class Window_EagleMsgName < Window_Base
     return close if name_params[:name] == ""
     skin = @window_msg.get_cur_windowskin_index(name_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(skin)
-    return if open? && no_change?
+    #return if open? && no_change?
     @params[:name] = name_params[:name]
     reset_size(name_params[:name])
     redraw(name_params[:name])
