@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.9" 
+$imported["EAGLE-MessageEX"] = "1.11.10" 
 #=============================================================================
-# - 2024.7.19.17 修复连续显示对话框时，姓名框消失的bug
+# - 2024.8.17.23 修复默认战斗系统中，我方角色显示pop时对话框看不见的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -576,6 +576,8 @@ WIN_AUTO_DY = 0
 #              负数id 取队列中数据库id号的角色，目标角色不在队伍中则取队首角色
 #     【战斗】设置 正数id 取敌群中index序号为id的敌人，目标敌人不存在则pop无效
 #              负数id 取我方参战角色中数据库id号的角色，目标角色不存在则pop无效
+#         注意：默认战斗系统中，我方角色的战斗者精灵的xywh均为0，
+#               为避免对话框消失，目标角色精灵的xy均为0时，pop的设置将失效。
 #    mx/my → 【重置】绑定到地图的 (mx, my) 处（同编辑器坐标）（格子中心为显示原点）
 #           （当未设置id时，该变量设置才生效）
 #    do → 对话框相对于绑定对象的位置类型（默认8，即对话框原点位于目标的顶部中间）
@@ -4511,7 +4513,7 @@ class Window_EagleMessage < Window_Base
     @eagle_pop_obj = eagle_get_pop_obj # 获取所绑定的对象
     return pop_params[:type] = nil if @eagle_pop_obj.nil?
     s = eagle_get_pop_sprite # 获取所绑定对象的精灵
-    return pop_params[:type] = nil if s.nil?
+    return pop_params[:type] = nil if s.nil? || (s.x == 0 and s.y == 0)
     eagle_set_pop_sprite_info(s)
     pop_params[:dw] = MESSAGE_EX.check_bool(pop_params[:dw])
     pop_params[:fw] = MESSAGE_EX.check_bool(pop_params[:fw])
