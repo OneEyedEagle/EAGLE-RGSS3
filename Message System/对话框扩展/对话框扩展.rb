@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.11.10" 
+$imported["EAGLE-MessageEX"] = "1.12.0" 
 #=============================================================================
-# - 2024.8.17.23 修复默认战斗系统中，我方角色显示pop时对话框看不见的bug
+# - 2024.9.15.11 加回快进功能，且现在会保证全部绘制完成
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -22,6 +22,24 @@ $imported["EAGLE-MessageEX"] = "1.11.10"
 EAGLE_MSG_EX_COMPAT_MODE = false
 
 module MESSAGE_EX
+#=============================================================================
+# ● 功能按键设置
+#=============================================================================
+#【切换显示/隐藏】
+# （每帧判定，返回 true 时切换对话框的显示/隐藏）
+# （文字将执行其移入移出效果）
+def self.toggle_visible?
+  Input.trigger?(:A)
+end
+
+#【对话快进】
+# （每帧判定，返回 true 时开启快进，迅速显示、跳过等待与按键、自动下一个对话）
+# （在每个新对话框打开前会重置，因此需要一直按键才能持续快进）
+# （如果使用了【Add-On 跳过对话】，则该设置无效，以扩展内的设置为主）
+def self.force_close?
+  Input.press?(:CTRL)
+end
+
 #=============================================================================
 # ● 什么是转义符？
 #=============================================================================
@@ -1498,7 +1516,7 @@ S_ID_RESET_ENV = true
 # （对话框关闭的情形：
 #     1.下一个事件指令不为显示文本
 #     2.下一个事件指令为显示文本，但对话框的背景与当前的不同
-#     3.当前对话中有\close转义符）
+#     3.当前对话中有\close转义符 ）
 #----------------------------------------------------------------------------
 #  \env[sym|save] 【结尾】
 #----------------------------------------------------------------------------
@@ -1676,20 +1694,12 @@ EX_PARAMS_INIT = {
 #
 
 #=============================================================================
-# ● 其它设置
+# ● 其它
 #=============================================================================
 #----------------------------------------------------------------------------
 # ○ 新游戏开始时，对话框预定将要显示的文本
 # （由于解析问题，请将 "\" 替换成 "\\"）
 ESCAPE_STRING_INIT = ""
-
-#--------------------------------------------------------------------------
-# ○ 切换显示/隐藏
-# （每帧判定，返回 true 时，会切换对话框的显示/隐藏）
-# （文字将执行其移入移出效果）
-def self.toggle_visible?
-  false #Input.trigger?(:A)
-end
 
 #----------------------------------------------------------------------------
 # ○ 内容滚动
@@ -2781,6 +2791,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_update_func_after_open
     (self.visible ? hide : show) if MESSAGE_EX.toggle_visible?
+    force_close if MESSAGE_EX.force_close?
   end
   #--------------------------------------------------------------------------
   # ● 更新（在 @fiber 更新之后）
@@ -3738,16 +3749,25 @@ class Window_EagleMessage < Window_Base
     loop do # 循环绘制每个文字
       break if text.empty?
       process_character(text.slice!(0, 1), text, pos)
-      break @pause_skip = true if @eagle_force_close
     end
     eagle_process_draw_update if !@eagle_chara_sprites.empty?
+    eagle_process_force_close if @eagle_force_close 
   end
   #--------------------------------------------------------------------------
-  # ● 强制中断绘制全部文本
+  # ● 强制快速结束
   #--------------------------------------------------------------------------
   def force_close
-    @eagle_force_close = true  # 若还在绘制，则直接结束绘制并跳过最后的等待按键
+    @eagle_force_close = true  # 迅速绘制完（跳过全部等待）并跳过最后的等待按键
+    @eagle_force_close_c = 0   # 每隔一定绘制次数才等待
     @eagle_auto_continue_c = 0 # 若进入了按键等待，则将计数置0，并依靠auto跳过按键
+  end
+  #--------------------------------------------------------------------------
+  # ● 在处理所有文本内容后，处理强制中断的额外等待
+  # （因为文字绘制过程中的等待都无了）
+  #--------------------------------------------------------------------------
+  def eagle_process_force_close
+    @pause_skip = true  # 如果启用了强制关闭，则跳过后续的按键等待
+    10.times { Fiber.yield }
   end
   #--------------------------------------------------------------------------
   # ● 翻页处理（删去了翻页功能）
@@ -3942,8 +3962,8 @@ class Window_EagleMessage < Window_Base
   # ● 检查自动换行
   #--------------------------------------------------------------------------
   def eagle_auto_new_line(c_w, pos)
+    return if !@flag_draw  # 如果在预绘制，则不判定，避免初始宽度变成最后一行的宽度
     return if func_params[:aw] == false
-    return if @flag_draw == false
     return if !eagle_fix_w? && eagle_dynamic_w?
     max_w = eagle_charas_max_w
     return if max_w <= 0
@@ -3964,6 +3984,10 @@ class Window_EagleMessage < Window_Base
     @eagle_charas_h = pos[:y] + pos[:height] if @eagle_charas_h < pos[:y] + pos[:height]
     return if !@flag_draw
     return if show_fast? # 如果是立即显示，则不更新
+    if @eagle_force_close # 如果是强制关闭，则每隔一定次数才更新
+      return if (@eagle_force_close_c += 1) < 20
+      @eagle_force_close_c = 0
+    end
     eagle_process_draw_update
     wait_for_one_character
   end
@@ -4057,7 +4081,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   # ● 处于快进显示？
   #--------------------------------------------------------------------------
-  def show_fast?
+  def show_fast?  # 忽略文字绘制后的等待，不跳过转义符产生的等待
     @flag_instant || @show_fast || @line_show_fast
   end
   #--------------------------------------------------------------------------
@@ -4069,6 +4093,7 @@ class Window_EagleMessage < Window_Base
       return if show_fast?
       update_show_fast if win_params[:cfast]
       Fiber.yield
+      return if @eagle_force_close
     end
   end
   #--------------------------------------------------------------------------
@@ -4427,7 +4452,7 @@ class Window_EagleMessage < Window_Base
 
     oy_1 = self.oy
     oy_d = pos[:y]
-    if @flag_draw
+    if @flag_draw && !@eagle_force_close
       t = MESSAGE_EX::CLC_CHARAS_OUT_FRAME
       (t+1).times do |i|
         per = i * 1.0 / t
@@ -4734,7 +4759,7 @@ class Window_EagleMessage < Window_Base
   # ● 执行shake
   #--------------------------------------------------------------------------
   def eagle_text_control_shake(param = '0')
-    return if !@flag_draw
+    return if !@flag_draw || @eagle_force_close
     h = {}
     h[:p] = 5 # shake power
     h[:s] = 5 # shake speed
@@ -5029,7 +5054,7 @@ class Window_EagleMessage < Window_Base
     add_w = game_message.child_window_w_des
     add_h = game_message.child_window_h_des
     while child_window.active
-      break child_window.deactivate.close if @eagle_force_close
+      #break child_window.deactivate.close if @eagle_force_close
       @fiber_para.resume if @fiber_para
       if add_w != game_message.child_window_w_des ||
          add_h != game_message.child_window_h_des
