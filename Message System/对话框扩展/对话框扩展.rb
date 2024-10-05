@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.12.1" 
+$imported["EAGLE-MessageEX"] = "1.12.2" 
 #=============================================================================
-# - 2024.9.16.12 修复战斗中背景消失的bug
+# - 2024.10.5.14 修复战斗中环境\env无效、环境变更时脸图报错的bug；修复\move的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -517,6 +517,7 @@ INDEX_TO_SE = {
 # 【注意】
 #    若设置了 win 转义符的 do 参数，则该移动无效
 #    若设置了 pop 转义符，则该移动无效
+#    当对话框关闭时，才会清除该转义符设置的移动增量，因此连续的对话可以累积移动量
 #
 # 【参数】
 #    param → 变量参数字符串
@@ -2151,6 +2152,15 @@ class << DataManager
     $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
     $game_system.reset_game_message_envs
   end
+  #--------------------------------------------------------------------------
+  # ● 设置战斗测试
+  #--------------------------------------------------------------------------
+  alias eagle_message_ex_setup_battle_test setup_battle_test
+  def setup_battle_test
+    eagle_message_ex_setup_battle_test
+    $game_message.add_escape(MESSAGE_EX::ESCAPE_STRING_INIT)
+    $game_system.reset_game_message_envs
+  end
 end
 
 #=============================================================================
@@ -2449,6 +2459,7 @@ end
 class Window_EagleMessage < Window_Base
   include MESSAGE_EX::CHARA_EFFECTS
   attr_reader :eagle_charas_w, :eagle_charas_h, :eagle_chara_viewport
+  attr_accessor :eagle_face_w, :eagle_face_h
   #--------------------------------------------------------------------------
   # ● 获取主参数组（方便子窗口修改为自己的game_message）
   #--------------------------------------------------------------------------
@@ -2528,7 +2539,9 @@ class Window_EagleMessage < Window_Base
     @eagle_move_x = @eagle_move_y = 0
     # 存储对话框在上一帧的位置（此处新增定义，防止子类覆盖了 eagle_message_reset）
     @eagle_last_x = @eagle_last_y = nil
-    # 对话框位置的强制增量
+    # 存储当前脸图的宽度高度
+    @eagle_face_w = @eagle_face_h = 0
+    # 对话框位置的强制增量（move转义符、对话框关闭时使用）
     @eagle_offset_x = @eagle_offset_y = 0
     eagle_check_func("")        # 预先执行一遍func，确保它们都是布尔量
   end
@@ -2623,12 +2636,13 @@ class Window_EagleMessage < Window_Base
   def eagle_message_reset
     eagle_message_reset_continue
     eagle_move_out_assets    # 移出全部组件
-    @eagle_last_x = @eagle_last_y = nil  # 重置存储的对话框的上一个位置
-    @eagle_move_x = @eagle_move_y = 0    # 重置对话框动态移动位置
+    @eagle_last_x = @eagle_last_y = nil   # 重置存储的对话框的上一个位置
+    @eagle_move_x = @eagle_move_y = 0     # 重置对话框动态移动位置
+    @eagle_offset_x = @eagle_offset_y = 0 # 重置对话框因转义符而移动的位置
     @eagle_win_des_w = @eagle_win_des_h = 0  # 重置对话框最终显示宽高
     @eagle_charas_w = @eagle_charas_h = 0    # 重置文字区域的宽高
     @eagle_charas_w_final = @eagle_charas_h_final = 0
-    face_params[:width] = 0  # 重置脸图的宽度（用于文字偏移）
+    @eagle_face_w = @eagle_face_h = 0  # 重置脸图的宽高（用于文字偏移）
     @eagle_pop_obj = nil     # 重置pop对象，防止报错
     eagle_reset_z            # 重置z值
     clear_flags              # 清除显示标志
@@ -2942,7 +2956,7 @@ class Window_EagleMessage < Window_Base
     h[:y] = self.y > Graphics.height/2 ? (Graphics.height+20) : (0-self.height-20)
     # 由于 eagle_set_wh 原理是把基于目前xywh的增量逐渐减小至0，然后完成更新，
     #  需要先强制把当前y改成目的地处，才能正常依靠增量减小而逼近目的地
-    @eagle_offset_y = h[:y] - h[:y_init]
+    @eagle_offset_y += h[:y] - h[:y_init]
     eagle_set_wh(h)
     @flag_no_fix = false
     self.openness = 0
@@ -4693,7 +4707,7 @@ class Window_EagleMessage < Window_Base
   def eagle_face_width
     return 0 if !game_message.face?
     return 0 if face_params[:z] < 0
-    face_params[:width] + face_params[:dw]
+    @eagle_face_w + face_params[:dw]
   end
   #--------------------------------------------------------------------------
   # ● 脸图在左侧占用的宽度（用于调整文字区域的左侧起始位置）
@@ -4715,7 +4729,7 @@ class Window_EagleMessage < Window_Base
   # ● 脸图占用的高度
   #--------------------------------------------------------------------------
   def eagle_face_height
-    face_params[:height] || 0
+    @eagle_face_h || 0
   end
   #--------------------------------------------------------------------------
   # ● 保证脸图完全显示在对话框内？
@@ -4802,30 +4816,33 @@ class Window_EagleMessage < Window_Base
   def eagle_text_control_move(param = '0')
     return if !@flag_draw
     return if win_params[:do] < 0 || game_message.pop?
-    win_params[:move_init_x] ||= (win_params[:x] || default_init_x)
-    win_params[:move_init_y] ||= (win_params[:y] || default_init_y)
-
+    init_x = (win_params[:x] || default_init_x)
+    init_y = (win_params[:y] || default_init_y)
     h = { :x => nil, :y => nil, :dx => nil, :dy => nil, :t => 20 }
     parse_param(h, param, :t)
-    _x = nil; _y = nil
-    if h[:x]
-      _x = (h[:x] == 0 ? win_params[:move_init_x] : h[:x])
-    else
-      _x = self.x + h[:dx] if h[:dx]
+    if h[:x] || h[:y] # 直接指定目的地
+      r = Rect.new(0, 0, self.width, self.height)
+      if h[:x] == nil  # 不变更
+        r.x = self.x
+      else
+        r.x = (h[:x] == 0 ? init_x : h[:x])
+        MESSAGE_EX.reset_xy_origin(r, win_params[:o]) # 依据原点修改成实际位置
+      end
+      # 依靠 @eagle_offset_x 来额外处理，避免与现有的移动冲突
+      @eagle_offset_x += r.x - self.x
+      if h[:y] == nil # 不变更
+        r.y = self.y
+      else
+        r.y = (h[:y] == 0 ? init_y : h[:y])
+        MESSAGE_EX.reset_xy_origin(r, win_params[:o])
+      end
+      @eagle_offset_y += r.y - self.y
     end
-    if h[:y]
-      _y = (h[:y] == 0 ? win_params[:move_init_y] : h[:y])
-    else
-      _y = self.y + h[:dy] if h[:dy]
-    end
-    # 直接重设目的地xy
-    win_params[:x] = _x if _x
-    win_params[:y] = _y if _y
+    # 指定偏移量
+    @eagle_offset_x += h[:dx] if h[:dx]
+    @eagle_offset_y += h[:dy] if h[:dy]
     # 执行移动
-    h2 = {}
-    h2[:x] = _x if _x
-    h2[:y] = _y if _y
-    h2[:t] = h[:t]
+    h2 = { :t => h[:t] }
     eagle_set_wh(h2)
   end
   #--------------------------------------------------------------------------
@@ -5822,8 +5839,8 @@ class Sprite_EagleFace < Sprite
     @params[:sole_w] = self.bitmap.width / @params[:num_col]
     @params[:sole_h] = self.bitmap.height / @params[:num_line]
     # 传出脸图宽高，用于对话框中的文字位移
-    face_params[:width] = @params[:sole_w]
-    face_params[:height] = @params[:sole_h]
+    @window.eagle_face_w = @params[:sole_w]
+    @window.eagle_face_h = @params[:sole_h]
     # 脸图以底部中心为显示原点
     self.ox = @params[:sole_w] / 2
     self.oy = @params[:sole_h]
