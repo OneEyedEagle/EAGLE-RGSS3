@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "1.2.2"
+$imported["EAGLE-ChoiceEX"] = "1.2.3"
 #=============================================================================
-# - 2024.6.15.18 新增选择支文本在en为false时，替换为？？？的功能 
+# - 2024.10.6.20 修复字体大小初始值未与对话框同步的bug
 #==============================================================================
 #------------------------------------------------------------------------------
 # 【优化】
@@ -356,6 +356,8 @@ class Window_EagleChoiceList < Window_Command
     @win_info = { :line_h => [], :col_w => [] } # 行号 => 高  列号 => 宽
     # 重置默认光标位置
     choice_params[:i] = MESSAGE_EX.get_default_params(:choice)[:i]
+    # 重置字体大小
+    @message_window.eagle_text_control_font
   end
   #--------------------------------------------------------------------------
   # ● 计算窗口内容的宽度
@@ -467,7 +469,7 @@ class Window_EagleChoiceList < Window_Command
     # 存储绘制的原始文本（去除全部判定文本）
     @choices_info[i_w][:text] = text
     # 计算原始文本占用的绘制宽度
-    w, h = MESSAGE_EX.calculate_text_wh(contents, text,
+    w, h = MESSAGE_EX.calculate_text_wh(@message_window.contents, text,
       choice_params[:fdw], choice_params[:fdh])
     @choices_info[i_w][:width] = w + choice_params[:fdw]
     @choices_info[i_w][:height] = h + choice_params[:fdh]
@@ -884,7 +886,7 @@ class Spriteset_Choice
     @charas = []
     @chara_effect_params = choice_params[:charas].dup
     @chara_dwin_rect = nil
-    @font = @choice_window.contents.font.dup # 每个选项存储独立的font对象
+    @font = message_window.contents.font.dup # 每个选项存储独立的font对象
     @font_params = $game_message.font_params.dup # font转义符参数
     @active = false # 是否开始移入
     @visible = false # 是否可见
