@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.12.2" 
+$imported["EAGLE-MessageEX"] = "1.12.3" 
 #=============================================================================
-# - 2024.10.5.14 修复战斗中环境\env无效、环境变更时脸图报错的bug；修复\move的bug
+# - 2024.10.20.17 新增在兼容模式中切换到其它对话框前的处理
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -17,9 +17,9 @@ $imported["EAGLE-MessageEX"] = "1.12.2"
 #     若此常量被设为 false，则本对话框将完全替代默认对话框。
 #
 # - 由于对话框存在动态的开启关闭特效，若对话框切换后，旧对话框仍然显示在地图上，
-#   则请在切换对话框的事件脚本前后添加【等待10帧】，来保证旧对话框有时间顺利完成关闭。
+#   则请在切换对话框的事件脚本前添加【等待30帧】，来保证旧对话框有时间顺利完成关闭。
 #
-EAGLE_MSG_EX_COMPAT_MODE = false
+EAGLE_MSG_EX_COMPAT_MODE = true
 
 module MESSAGE_EX
 #=============================================================================
@@ -6947,11 +6947,15 @@ module MESSAGE_EX::COMPA_MODE
   # ● 更新画面
   #--------------------------------------------------------------------------
   def update_all_windows
+    if @flag_last_eagle_message == true && $game_message.eagle_message == false
+      @message_window.process_before_switch_to_other_message
+    end
     if $game_message.eagle_message == true
       @message_window = @msg_windows[1]
     else
       @message_window = @msg_windows[0]
     end
+    @flag_last_eagle_message = $game_message.eagle_message
     eagle_message_ex_compa_mode_update_all_windows
   end
   #--------------------------------------------------------------------------
@@ -6961,6 +6965,13 @@ module MESSAGE_EX::COMPA_MODE
     @msg_windows.each { |w| w.dispose }
     @message_window = nil
     eagle_message_ex_compa_mode_dispose_all_windows
+  end
+end
+class Window_EagleMessage
+  #--------------------------------------------------------------------------
+  # ● 兼容模式中，切换到其它对话框时的处理
+  #--------------------------------------------------------------------------
+  def process_before_switch_to_other_message
   end
 end
 #=============================================================================
