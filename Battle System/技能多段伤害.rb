@@ -2,7 +2,7 @@
 # ■ 技能多段伤害 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SkillDamageEX"] = "1.0.1"
+$imported["EAGLE-SkillDamageEX"] = "1.0.2"
 #==============================================================================
 # - 2023.9.8.23 
 #==============================================================================
@@ -182,7 +182,7 @@ class Process_AnimDamage
   #--------------------------------------------------------------------------
   def end_apply_item_effects
     @object.remove_state(EAGLE::SkillDamage_EX::STATE_IMMUNE_DIE) # 移除不死
-    @object.result.clear
+    # @object.result.clear  # 没必要clear，等战斗者 on_action_end 时统一清空
     if $imported["YEA-BattleEngine"]
       SceneManager.scene.perform_collapse_check(@object)
     else

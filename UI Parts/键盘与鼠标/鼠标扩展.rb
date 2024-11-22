@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.1.6"
+$imported["EAGLE-MouseEX"] = "1.1.7"
 #=============================================================================
-# - 2024.2.14.23
+# - 2024.11.10.20 优化鼠标在选择框里的处理
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -301,6 +301,11 @@ class Window_Selectable < Window_Base
     #         如果鼠标按左键时在窗口外，则为触发 unselect 方法，即取消光标
     #   该标记为 false 时，鼠标按左键必定触发当前选项的 process_ok
     @flag_mouse_in_win_when_ok = false
+    # 新增一个标记，用于处理鼠标移动到选项上进行选择时，是否考虑选项的可见性
+    #   该标记为 true 时，选项必须完成显示，才能被鼠标选择
+    #   该标记为 false 时，哪怕选项在窗口外，也能被鼠标选择，并将该选项自动移入窗口
+    @flag_mouse_select_when_visible = true
+    
     eagle_mouse_init(x, y, width, height)
   end
   #--------------------------------------------------------------------------
@@ -331,8 +336,13 @@ class Window_Selectable < Window_Base
     # 逐个选项查看是否被鼠标选中
     item_max.times do |i|
       r = item_rect_for_text(i)
+      # 计算选项的RGSS全局坐标
       r.x += self.x - self.ox + standard_padding
       r.y += self.y - self.oy + standard_padding
+      if @flag_mouse_select_when_visible  # 选项必须位于窗口中，才能被鼠标选择
+        next if r.x + r.width < self.x || r.y + r.height < self.y 
+        next if r.x >= self.x + self.width || r.y >= self.y + self.height
+      end
       break select(i) if MOUSE_EX.in?(r)
     end
     Sound.play_cursor if @index != last_index

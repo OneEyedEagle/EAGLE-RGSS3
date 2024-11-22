@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.12.3" 
+$imported["EAGLE-MessageEX"] = "1.12.4" 
 #=============================================================================
-# - 2024.10.20.17 新增在兼容模式中切换到其它对话框前的处理
+# - 2024.11.22.17 修改为默认关闭 切换显隐 功能；修复\hold无效的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -19,7 +19,7 @@ $imported["EAGLE-MessageEX"] = "1.12.3"
 # - 由于对话框存在动态的开启关闭特效，若对话框切换后，旧对话框仍然显示在地图上，
 #   则请在切换对话框的事件脚本前添加【等待30帧】，来保证旧对话框有时间顺利完成关闭。
 #
-EAGLE_MSG_EX_COMPAT_MODE = true
+EAGLE_MSG_EX_COMPAT_MODE = false
 
 module MESSAGE_EX
 #=============================================================================
@@ -29,7 +29,7 @@ module MESSAGE_EX
 # （每帧判定，返回 true 时切换对话框的显示/隐藏）
 # （文字将执行其移入移出效果）
 def self.toggle_visible?
-  Input.trigger?(:A)
+  #Input.trigger?(:A)  # 如果想要该功能，请取消注释，并修改按键
 end
 
 #【对话快进】
@@ -4198,7 +4198,7 @@ class Window_EagleMessage < Window_Base
   def eagle_check_hold(text)
     @flag_hold = false
     @flag_hold_str = ""
-    text.gsub!(/\ehold(\[(.*?)\])/i) { 
+    text.gsub!(/\ehold(\[(.*?)\])?/i) { 
       @flag_hold = true
       @flag_hold_str = $1 ? $1.to_s : ""
       "" 

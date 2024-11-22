@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-QuestList"] = "1.0.0"
+$imported["EAGLE-QuestList"] = "1.0.2"
 #==============================================================================
-# - 2021.12.27.22 兼容【通知队列 by老鹰】
+# - 2024.11.11.15 修复自动换行失效的bug
 #==============================================================================
 # - 本插件新增了简易的文字版任务列表UI
 #------------------------------------------------------------------------------
@@ -14,7 +14,10 @@ $imported["EAGLE-QuestList"] = "1.0.0"
 # - 在许多游戏中都有任务系统，但默认VA中并没有这类设计，
 #    尽管已经有许多前辈设计了各式各样的任务系统，但使用起来总觉得有一些难度。
 #
-# - 本插件汲取【词条系统（文字版） by老鹰】的设计模式，编写了一套简洁的任务列表UI。
+# - 本插件汲取【词条系统（文字版） by老鹰】的设计模式，编写了一套简洁的任务列表UI：
+#    1. 在脚本中预先编写好各个任务的名称及内容
+#    2. 在事件中，使用 注释 或 事件脚本 ，让指定名称的任务显示在UI中
+#    3. 在事件中，使用 注释 或 事件脚本 ，更改指定名称的任务的完成状态
 #
 # - 但注意，本插件只有显示预设任务文本的作用，并不和其他系统交互（比如战斗），
 #    请自己利用本插件提供的全局脚本，手动编写、设计任务的领取、完成等。
@@ -31,17 +34,15 @@ $imported["EAGLE-QuestList"] = "1.0.0"
 #
 #   其中 任务名称 为编写任务时所设置的唯一标识，请注意与任务标题区分。
 #
-#   其中 任务状态 为 QUEST_STATE_TEXT 中的键值，为数字。
-#     特别的，为了编写时更加直观，新增了 QUEST_STATE_NOTE 常量以进行一次转换：
-#     比如预设 QUEST_STATE_NOTE["进行"] = 0 与 QUEST_STATE_TEXT[0] = "\ec[1]进行"
-#     则写 任务【任务状态】进行 时，将替换为状态 0，且在UI界面中显示 "\ec[1]进行"
+#   其中 任务状态 为 QUEST_STATE_TEXT 中的键值，为数字或指定字符。
+#     预设： 0 进行， 1 完成， 2 失败， 3 过期， 其它情况将显示为 无
 #
 # - 示例：
 #
 #    任务|第一个任务|进行 → 新增任务 “第一个任务”，且状态为 进行
-#    任务|第一个任务|0 → 新增任务 “第一个任务”，且状态为 进行
+#    任务|第一个任务|0    → 新增任务 “第一个任务”，且状态为 进行
 #    任务|第一个任务|完成 → 修改任务 “第一个任务”，且状态为 完成
-#    任务|第一个任务|1 → 修改任务 “第一个任务”，且状态为 完成
+#    任务|第一个任务|1    → 修改任务 “第一个任务”，且状态为 完成
 #
 #---------------------------------------------------------------------------
 # 【任务新增：全局脚本】
@@ -51,21 +52,13 @@ $imported["EAGLE-QuestList"] = "1.0.0"
 #   其中 name 为编写任务时所设置的唯一标识，即 DATA["name"] 中的 name
 #    可以与任务标题一样，也可以不一样（另外设置 :title 所对应的字符串）
 #
-#   其中 state 为任务状态，为常量 QUEST_STATE_TEXT 中预设的数字，具体含义见常量
+#   其中 state 为任务状态，为常量 QUEST_STATE_TEXT 中预设的数字（不可为字符串）
+#     预设： 0 进行， 1 完成， 2 失败， 3 过期， 其它情况将显示为 无
 #
 # - 示例：
 #
 #     QUEST.add("第一个任务", 0)  → 新增任务 “第一个任务”，且状态为 进行
 #     QUEST.add("第一个任务", 1)  → 修改任务 “第一个任务”，且状态为 完成
-#
-#---------------------------------------------------------------------------
-# 【任务状态说明】
-#
-# - 为了更好地区分任务进度，本插件在常量 QUEST_STATE_TEXT 中定义了任务的状态及说明
-#
-#   比如常量中默认的 0 => "\ec[3]进行\ec[0]"，则当任务状态为 0 时，将显示为 进行
-#
-# - 当任务的状态不存在于常量中时，将显示为 无
 #
 #---------------------------------------------------------------------------
 # 【任务编写】
@@ -137,6 +130,8 @@ end  # 必须的结尾，不要漏掉
 #
 # - 当使用了【AddOn-并行对话 by老鹰】或【并行式对话 by老鹰】或【通知队列 by老鹰】，
 #   在新增任务时，将显示提示文本窗口，若不想使用该功能，请注释掉 add_hint 方法。
+#
+# - 本插件已兼容【鼠标扩展 by老鹰】，可以使用鼠标进行操作，请置于其下。
 #
 #===============================================================================
 
@@ -356,7 +351,7 @@ module QUEST
 
       t = get_info
       ps = { :font_size => QUEST::INFO_FONT_SIZE,
-        :x0 => x_r, :y0 => y_r+4, :lhd => 2, :w => x_r+w_r
+        :x0 => x_r, :y0 => y_r+4, :lhd => 2, :w => w_r
       }
       d = Process_DrawTextEX.new(t, ps, sprite.bitmap)
       d.run(true)
@@ -388,7 +383,8 @@ module QUEST
         _s2 = data[0].get_state_s
         t += "#{_s1} - #{_s2}\n"
       end
-      MESSAGE_HINT.add({:text => t}, id="居中")
+      MESSAGE_HINT.add({:text => t}, id="居中偏上")
+      @data_hints.clear
       return
     end
     if $imported["EAGLE-MessagePara"]
@@ -524,7 +520,8 @@ class << QUEST
 
     # 生成类别组
     @sprites_category = []; i = 0
-    i_w = Graphics.width / QUEST::QUEST_STATE_TEXT.size
+    @rect_category = Rect.new(0,0,Graphics.width, 60)
+    i_w = (@rect_category.width-@rect_category.x) / QUEST::QUEST_STATE_TEXT.size
     QUEST::QUEST_STATE_TEXT.each do |state, t|
       s = Sprite_EagleQuest_Category.new(state)
       ps = { :x0 => 0, :y0 => 0, :font_size => QUEST::CATE_FONT_SIZE }
@@ -535,8 +532,8 @@ class << QUEST
       d.run(true)
       s.ox = s.width / 2
       s.oy = s.height / 2
-      s.x = i_w / 2 + i_w * i
-      s.y = 24 + s.height / 2
+      s.x = @rect_category.x + i_w / 2 + i_w * i
+      s.y = @rect_category.y + 24 + s.height / 2
       s.z = @sprite_bg.z + 10
       @sprites_category.push(s)
       i += 1
@@ -545,7 +542,7 @@ class << QUEST
 
     # 任务列表
     x = 12
-    y = 60
+    y = @rect_category.y + @rect_category.height
     w = Graphics.width - x * 2
     h = Graphics.height - y - 24
     @window_list = Window_EagleQuest_List.new(x, y, w, h)
@@ -645,6 +642,7 @@ class << QUEST
   # ○ 列表UI-退出？
   #--------------------------------------------------------------------------
   def list_update_exit?
+    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:MR)
     Input.trigger?(:B)
   end
   #--------------------------------------------------------------------------
@@ -655,10 +653,29 @@ class << QUEST
       list_prev_category
     elsif Input.trigger?(:RIGHT)
       list_next_category
+    elsif $imported["EAGLE-MouseEX"] && MOUSE_EX.in?(@rect_category)
+      list_update_category_mouse
     else
       data = @window_list.item
       if data.state != @sprites_category[@index_category].state
         list_refresh_category(data.state)
+      end
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ○ 列表UI-更新分类（鼠标）
+  #--------------------------------------------------------------------------
+  def list_update_category_mouse
+    @sprites_category.each_with_index do |s, i|
+      next if i == @index_category
+      if s.mouse_in?(true, false)
+        index = @window_list.get_state_index(s.state)
+        if index
+          @window_list.index = index
+          Sound.play_cursor
+          list_refresh_category(s.state)
+        end
+        return
       end
     end
   end
@@ -671,6 +688,7 @@ class << QUEST
     s = @sprites_category[@index_category].state
     r = @window_list.select_state(s)
     return list_prev_category if r == false
+    Sound.play_cursor
     list_refresh_category(s)
   end
   #--------------------------------------------------------------------------
@@ -682,6 +700,7 @@ class << QUEST
     s = @sprites_category[@index_category].state
     r = @window_list.select_state(s)
     return list_next_category if r == false
+    Sound.play_cursor
     list_refresh_category(s)
   end
   #--------------------------------------------------------------------------
@@ -721,8 +740,10 @@ class << QUEST
     # 循环更新
     loop do
       ui_update_basic
+      break if $imported["EAGLE-MouseEX"] && (MOUSE_EX.up?(:ML) || MOUSE_EX.up?(:MR))
       break if Input.trigger?(:B) || Input.trigger?(:C)
     end
+    Input.update
     # 回到列表
     @sprites_category.each { |s| s.visible = true }
     @window_list.open.redraw_current_item
@@ -793,10 +814,16 @@ class Window_EagleQuest_List < Window_Selectable
     select(0)
   end
   #--------------------------------------------------------------------------
+  # ● 获取指定类别的第一项的位置
+  #--------------------------------------------------------------------------
+  def get_state_index(state)
+    return @data.index { |d| d.state == state }
+  end
+  #--------------------------------------------------------------------------
   # ● 选择指定类别的第一项
   #--------------------------------------------------------------------------
   def select_state(state)
-    i = @data.index { |d| d.state == state }
+    i = get_state_index(state)
     if i == nil
       return false
     end
@@ -820,7 +847,7 @@ class Window_EagleQuest_List < Window_Selectable
   # ● 获取项目的高度
   #--------------------------------------------------------------------------
   def item_height
-    line_height
+    line_height + 24
   end
   #--------------------------------------------------------------------------
   # ● 获取物品
@@ -856,7 +883,7 @@ class Window_EagleQuest_List < Window_Selectable
       rect = item_rect(index)
       rect.width -= 4
       f = index == @index ? true : false
-      draw_item_name(item, rect.x+2, rect.y, f, rect.width)
+      draw_item_name(item, rect.x+2, rect.y+12, f, rect.width)
       draw_symbol_new(rect.x, rect.y, rect.width, rect.height) if new?(item)
     end
   end

@@ -2,15 +2,22 @@
 # ■ 游戏运行倍速切换  by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SpeedUp"] = "1.0.0"
+$imported["EAGLE-SpeedUp"] = "1.0.1"
 #==============================================================================
-# - 2019.3.21.10
+# - 2024.11.12.10
 #==============================================================================
 # - 新增在地图、战斗场景中，按下指定键后按顺序变更游戏运行倍速
+#
 # - 每一次Scene切换，都会将速率重置为 1 倍
-# - 高级：
-#     对于其它的需要允许切换倍速的Scene场景，
-#     只需添加返回 true 的 update_speed_up? 方法
+#
+# 【兼容】
+#
+# - 对于其它的需要允许切换倍速的Scene场景，只需在该 Scene 中添加：
+=begin
+def update_speed_up?
+  return true
+end
+=end
 #==============================================================================
 module EAGLE; end
 module EAGLE::SpeedUp
@@ -27,9 +34,13 @@ module EAGLE::SpeedUp
   #--------------------------------------------------------------------------
   # ● 改变倍率
   #--------------------------------------------------------------------------
-  def self.change_index
-    @index += 1
-    @index = 0 if @index >= TIMES.size
+  def self.change_index(i = nil)
+    if i.nil?
+      @index += 1
+      @index = 0 if @index >= TIMES.size
+    else
+      @index = i.to_i
+    end
     @count = 0
     redraw_hint
   end
