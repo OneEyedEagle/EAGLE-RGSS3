@@ -4,7 +4,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageEX"] = "1.12.4" 
 #=============================================================================
-# - 2024.11.22.17 修改为默认关闭 切换显隐 功能；修复\hold无效的bug
+# - 2024.11.25.10 修复临时生成的对话框的脸图未能成功占位的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -29,7 +29,7 @@ module MESSAGE_EX
 # （每帧判定，返回 true 时切换对话框的显示/隐藏）
 # （文字将执行其移入移出效果）
 def self.toggle_visible?
-  #Input.trigger?(:A)  # 如果想要该功能，请取消注释，并修改按键
+  Input.trigger?(:A)
 end
 
 #【对话快进】
@@ -2572,6 +2572,8 @@ class Window_EagleMessage < Window_Base
     t.eagle_sprite_pop_tag = @eagle_sprite_pop_tag
     # 拷贝脸图
     if @eagle_sprite_face
+      t.eagle_face_w = @eagle_face_w
+      t.eagle_face_h = @eagle_face_h
       t.eagle_sprite_face = @eagle_sprite_face
       t.eagle_sprite_face.bind_window(t)
     end
@@ -4198,7 +4200,7 @@ class Window_EagleMessage < Window_Base
   def eagle_check_hold(text)
     @flag_hold = false
     @flag_hold_str = ""
-    text.gsub!(/\ehold(\[(.*?)\])?/i) { 
+    text.gsub!(/\ehold(\[(.*?)\])/i) { 
       @flag_hold = true
       @flag_hold_str = $1 ? $1.to_s : ""
       "" 
