@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.2.5"
+$imported["EAGLE-MessagePara2"] = "1.2.7"
 #==============================================================================
-# - 2024.2.15.19 新增 background 为 -1 时的纯暗色
+# - 2024.12.1.23 新增 字体大小 的设置
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -103,6 +103,9 @@ $imported["EAGLE-MessagePara2"] = "1.2.5"
 #     对于有相同标识符的对话，新显示的对话将直接覆盖旧的对话。
 #     若不填写，则默认取当前事件的ID数字。
 #
+#  9. 在“文本框”中，编写 <font 数字> 用于为当前对话框设置基础文字大小
+#     如：<font 16> 将设置字体大小为16，仅当前对话框有效
+#
 #---------------------------------------------------------------------------
 # 【注意】
 #
@@ -146,6 +149,7 @@ $imported["EAGLE-MessagePara2"] = "1.2.5"
 #
 #      :pos => { :o => 2, :e => -1, :o2 => 8  } # 对话框的位置设置
 #                               # 注意：此处 :e 的参数为 0 时无效！
+#      :font => 21              # 当前对话框的文字大小
 #
 #   如： 
 #       MESSAGE_PARA2.add("提示文字", {:text => "这是一句提示文本",
@@ -357,7 +361,6 @@ class Sprite_EagleMsg < Sprite
   #--------------------------------------------------------------------------
   def initialize(viewport, _params = {})
     super(viewport)
-    self.z = INIT_Z
     reset(_params)
     @flag_no_wait = false
   end
@@ -395,6 +398,7 @@ class Sprite_EagleMsg < Sprite
     params[:until] = _params[:until] || ""
     params[:io] = _params[:io] || DEF_IO_TYPE
     params[:io_t] = _params[:io_t] || DEF_IO_T
+    params[:font] = _params[:font] || FONT_SIZE
 
     params[:pos] = _params[:pos] || nil
     params[:finish] = false
@@ -422,7 +426,7 @@ class Sprite_EagleMsg < Sprite
     params[:cont_h] = 0
     #  若绘制文本
     if params[:text] != ""
-      ps = { :font_size => FONT_SIZE, :x0 => 0, :y0 => 0, :lhd => 2 }
+      ps = { :font_size => params[:font], :x0 => 0, :y0 => 0, :lhd => 2 }
       d = Process_DrawTextEX.new(params[:text], ps)
       d.run(false)
       params[:cont_w] = d.width
@@ -475,7 +479,7 @@ class Sprite_EagleMsg < Sprite
     cont_x = params[:bg_x] + params[:face_w] + TEXT_BORDER_WIDTH
     cont_y = params[:bg_y] + TEXT_BORDER_WIDTH
     if params[:text] != ""
-      ps = { :font_size => FONT_SIZE, :x0 => cont_x, :y0 => cont_y, :lhd => 2 }
+      ps = { :font_size => params[:font], :x0 => cont_x, :y0 => cont_y, :lhd => 2 }
       d = Process_DrawTextEX.new(params[:text], ps, self.bitmap)
       d.run(true)
     elsif params[:pic] != ""
@@ -511,6 +515,7 @@ class Sprite_EagleMsg < Sprite
   # ● 处理位置参数
   #--------------------------------------------------------------------------
   def process_position
+    self.z = INIT_Z
     if params[:pos]
       # "o=? wx=? wy=? mx=? my=? e=? o2=? dx=? dy=?"
       h = params[:pos].dup
@@ -540,6 +545,7 @@ class Sprite_EagleMsg < Sprite
       h[:dx] = h[:dx].to_i
       h[:dy] = h[:dy].to_i
       h[:fix] = h[:fix].to_i || 0
+      h[:z] = h[:z].to_i if h[:z]
       params[:pos_update] = h
     end
   end
@@ -611,6 +617,7 @@ class Sprite_EagleMsg < Sprite
     end
     self.x += h[:dx]
     self.y += h[:dy]
+    self.z = h[:z] if h[:z]
   end
 
   #--------------------------------------------------------------------------
@@ -820,6 +827,7 @@ class Game_Interpreter
       text.gsub!( /#{t1}/im) { t2 }
     end
     # 提取可能存在的flags
+    text.gsub!( /<font:? ?(.*?)>/im ) { params[:font] = $1.to_i; "" }
     text.gsub!( /<no hangup>/im) { params[:nohangup] = true; "" }
     text.gsub!( /<id:? ?(.*?)>/im ) { params[:id] = $1; "" }
     text.gsub!( /<skin:? ?(.*?)>/im ) { params[:skin] = $1; "" }
@@ -829,7 +837,7 @@ class Game_Interpreter
       params[:io] = $1; params[:io_t] = $2.to_i; "" }
     # 设置位置 当前对话框的o处，与 w/m/e 的o处相重合
     text.gsub!( /<pos:? ?(.*?)>/im ) {
-      # "o=? wx=? wy=? mx=? my=? e=? o2=? dx=? dy=? fix=?"
+      # "o=? wx=? wy=? mx=? my=? e=? o2=? dx=? dy=? fix=? z=?"
       params[:pos] = EAGLE_COMMON.parse_tags($1)
       ""
     }

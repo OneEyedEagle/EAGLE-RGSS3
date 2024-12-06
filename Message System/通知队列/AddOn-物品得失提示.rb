@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【通知队列 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageHint-GetItem"] = "1.0.2"
+$imported["EAGLE-MessageHint-GetItem"] = "1.0.3"
 #==============================================================================
-# - 2022.5.15.18
+# - 2024.12.3.2 删去更换装备时的物品得失提示
 #==============================================================================
 # - 本插件基于【通知队列】，新增了自动处理的物品得失提示。
 #   具体设置请见【通知队列】脚本中的注释。
@@ -162,5 +162,26 @@ class Game_Party < Game_Unit
       ps[:text] = t
       MESSAGE_HINT.add(ps, MESSAGE_HINT::DEF_FUNC_ID)
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 无物品得失提示的减少物品
+  #     include_equip : 是否包括装备
+  #--------------------------------------------------------------------------
+  def eagle_message_hint_lose_item(item, amount, include_equip = false)
+    eagle_message_hint_gain_item(item, -amount, include_equip)
+  end
+end
+
+class Game_Actor
+  #--------------------------------------------------------------------------
+  # ● 交换物品
+  #     new_item : 取出的物品
+  #     old_item : 放入的物品
+  #--------------------------------------------------------------------------
+  def trade_item_with_party(new_item, old_item)
+    return false if new_item && !$game_party.has_item?(new_item)
+    $game_party.eagle_message_hint_gain_item(old_item, 1)
+    $game_party.eagle_message_hint_lose_item(new_item, 1)
+    return true
   end
 end
