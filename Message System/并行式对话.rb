@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.2.7"
+$imported["EAGLE-MessagePara2"] = "1.2.8"
 #==============================================================================
-# - 2024.12.1.23 新增 字体大小 的设置
+# - 2024.12.19.0 新增 强制刷新 的设置
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -106,6 +106,10 @@ $imported["EAGLE-MessagePara2"] = "1.2.7"
 #  9. 在“文本框”中，编写 <font 数字> 用于为当前对话框设置基础文字大小
 #     如：<font 16> 将设置字体大小为16，仅当前对话框有效
 #
+#  9. 在“文本框”中，编写 <reset> 用于强制重绘制当前对话框
+#     该设置主要用于对话框中仅显示转义符时，由于比较的是转义前的原始文本，
+#      故虽然 \v[id] 的id号变量发生变化，但对话框不会认为文本需要更新。
+#
 #---------------------------------------------------------------------------
 # 【注意】
 #
@@ -150,6 +154,8 @@ $imported["EAGLE-MessagePara2"] = "1.2.7"
 #      :pos => { :o => 2, :e => -1, :o2 => 8  } # 对话框的位置设置
 #                               # 注意：此处 :e 的参数为 0 时无效！
 #      :font => 21              # 当前对话框的文字大小
+#
+#      :reset => true           # 强制刷新对话框内容
 #
 #   如： 
 #       MESSAGE_PARA2.add("提示文字", {:text => "这是一句提示文本",
@@ -369,14 +375,20 @@ class Sprite_EagleMsg < Sprite
   #--------------------------------------------------------------------------
   def reset(_params)
     @flag_no_wait = false
-    # 如果已经存在，而且文本相同，则只重置倒计时
-    if @fiber && _params[:text] == @params[:text]
-      @count_wait = @params[:wait]
-      return
+    # 如果已经存在
+    if @fiber
+      # 如果强制更新，则重绘
+      if _params[:reset] == true
+        start
+        return
+      elsif _params[:text] == @params[:text]
+        # 否则如果文本相同，则只重置倒计时
+        @count_wait = @params[:wait]
+        return
+      end
     end
     @fiber = nil
     reset_params(_params)
-    redraw
     start
   end
   #--------------------------------------------------------------------------
@@ -499,8 +511,9 @@ class Sprite_EagleMsg < Sprite
   # ● 开始显示
   #--------------------------------------------------------------------------
   def start
+    redraw
     process_position
-    @fiber = Fiber.new { fiber_main }
+    @fiber = Fiber.new { fiber_main } if @fiber == nil
   end
   #--------------------------------------------------------------------------
   # ● 更新
@@ -827,6 +840,7 @@ class Game_Interpreter
       text.gsub!( /#{t1}/im) { t2 }
     end
     # 提取可能存在的flags
+    text.gsub!( /<reset>/im ) { params[:reset] = true; "" }
     text.gsub!( /<font:? ?(.*?)>/im ) { params[:font] = $1.to_i; "" }
     text.gsub!( /<no hangup>/im) { params[:nohangup] = true; "" }
     text.gsub!( /<id:? ?(.*?)>/im ) { params[:id] = $1; "" }

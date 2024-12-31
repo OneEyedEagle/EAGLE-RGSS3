@@ -2,9 +2,9 @@
 # ■ 按键扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-InputEX"] = "2.3.0"
+$imported["EAGLE-InputEX"] = "2.3.1"
 #=============================================================================
-# - 2023.11.1.21 将 mouse_in? 移入鼠标扩展
+# - 2024.12.21.1 兼容游戏运行倍速切换 
 #=============================================================================
 # - 本插件新增了一系列按键相关方法（不修改默认Input模块）
 #-----------------------------------------------------------------------------
@@ -175,6 +175,10 @@ module INPUT_EX
     return false if @keys_state[keycode] == nil
     c1 = [1, c1].max
     return false if @keys_last_state[keycode] < c1
+    if $imported["EAGLE-SpeedUp"]
+      # 如果使用了游戏运行速率变更，则此处的判定区间扩大运行速率倍
+      c2 = c2 * EAGLE::SpeedUp.current
+    end
     return false if c2 > 0 && @keys_last_state[keycode] > c2
     @keys_state[keycode] <= 1 # 松开时可能重置为1
   end

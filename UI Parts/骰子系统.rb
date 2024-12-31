@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Dice"] = "1.1.4"
+$imported["EAGLE-Dice"] = "1.1.8"
 #==============================================================================
-# - 2024.1.13.19 当重投掷次数为0时，自动结束投掷
+# - 2024.12.25.0 可以指定骰子的初始位置和最终位置了
 #==============================================================================
 # - 本插件增加了一套独立的骰子系统，能够在任意时刻投掷并返回结果
 #------------------------------------------------------------------------------
@@ -23,6 +23,14 @@ $imported["EAGLE-Dice"] = "1.1.4"
 #     :show_stat => 布尔量,# 是否显示左上角统计信息（默认 true）
 #     :auto => 布尔量,  # 若传入 true，则不可操作，自动投掷结束（默认 false）
 #     :reroll => 数字,  # 允许进行重投掷的次数（默认0）
+#     :in_x => 字符串,    # 骰子的初始位置（eval后需要返回数字）
+#     :in_y => 字符串,
+#     :in_dx => 字符串,   # 骰子的初始位置增量（eval后需要返回数字）
+#     :in_dy => 字符串,
+#     :in_t => 字符串，   # 骰子从初始位置移动到增量后位置的时间（每颗骰子独立计算）
+#     :out_x => 字符串,   # 投掷完成后骰子的移出位置（eval后需要返回数字）
+#     :out_y => 字符串, 
+#     :out_t => 字符串，  # 骰子移出的时间（每颗骰子独立计算）
 #
 #   （传出参数）
 #     :results => 数组, # 在投掷完成后，所有骰子的值将存入该数组，方便后续使用
@@ -43,7 +51,10 @@ $imported["EAGLE-Dice"] = "1.1.4"
 #
 #    其中 id 为数据库中角色的id，或 Game_Actor 的实例对象
 #            为数据库敌人的id，或 Game_Enemy 的实例对象
-#    其中 ps 与之上的一致
+#    其中 ps 与之上的一致，部分新增如下：
+#   （传入参数）
+#     :init => 二维数组     # 设置初始骰子
+#                      比如 [ [1,2,3],[1,2,3] ] 就是设置两个三面骰
 #
 # - 示例：
 #
@@ -65,7 +76,9 @@ $imported["EAGLE-Dice"] = "1.1.4"
 #
 #      bg=字符串  # 骰子使用的背景图片的后缀
 #                   默认使用 BG_DEFAULT 设置的，即 Dice_BG 图片，
-#                   但如果设置了该项，则为查找 Dice_BG_字符串 的图片
+#                     但如果设置了该项，则为查找 Dice_BG_字符串 的图片。
+#                   同理，对于被选中骰子的遮挡图片，默认使用 Dice_Chosen 图片，
+#                     但如果设置了该项，则为查找 Dice_Chosen_字符串 的图片。
 #
 # - 注意：
 #
@@ -147,19 +160,32 @@ module DICE
   HINT_FONT_SIZE = 14
   #--------------------------------------------------------------------------
   # ●【常量】骰子的初始位置
+  #  如果未设置 :in_x 和 :in_y ，则使用此处设置
   #--------------------------------------------------------------------------
-  INIT_X = Graphics.width / 2
-  INIT_Y = Graphics.height / 2
+  INIT_X = "Graphics.width / 2"
+  INIT_Y = "Graphics.height / 2"
   #--------------------------------------------------------------------------
   # ●【常量】骰子的初始位置增量
+  #  如果未设置 :in_dx 和 :in_dy ，则使用此处设置
   #--------------------------------------------------------------------------
   INIT_DX = "rand(241) - 120"
   INIT_DY = "rand(201) - 100"
   #--------------------------------------------------------------------------
-  # ●【常量】骰子的结束位置
+  # ●【常量】骰子移入所需帧数
+  #  如果未设置 :in_t ，则使用此处设置
   #--------------------------------------------------------------------------
-  END_X = Graphics.width / 2
-  END_Y = Graphics.height / 2
+  TIME_MOVE_IN  = 15
+  #--------------------------------------------------------------------------
+  # ●【常量】骰子的结束位置
+  #  如果未设置 :out_x 和 :out_y ，则使用此处设置
+  #--------------------------------------------------------------------------
+  END_X = "Graphics.width / 2"
+  END_Y = "Graphics.height / 2"
+  #--------------------------------------------------------------------------
+  # ●【常量】骰子移出所需帧数
+  #  如果未设置 :out_t ，则使用此处设置
+  #--------------------------------------------------------------------------
+  TIME_MOVE_OUT = 15
   #--------------------------------------------------------------------------
   # ●【常量】骰子的背景图片
   #  可省略后缀名，需放置于 Graphics/System 目录下
@@ -174,9 +200,14 @@ module DICE
   #--------------------------------------------------------------------------
   # ●【常量】骰子被选择时的前景图片
   #  可省略后缀名，需放置于 Graphics/System 目录下
-  #  如果图片不存在，则自动绘制黄色半透明
+  #  如果图片不存在，则自动绘制所设置的纯色
   #--------------------------------------------------------------------------
   BG_CHOSEN = "Dice_Chosen"
+  BG_CHOSEN_OPACITY = 160  # 该前景图片的不透明度
+  #--------------------------------------------------------------------------
+  # ●【常量】骰子被选择时，如果图片不存在，则绘制该纯色遮挡
+  #--------------------------------------------------------------------------
+  BG_CHOSEN_COLOR = Color.new(100,255,255,150)
   #--------------------------------------------------------------------------
   # ●【常量】骰子中文字的颜色
   #--------------------------------------------------------------------------
@@ -189,11 +220,6 @@ module DICE
   # ●【常量】重投掷次数为0时，结束投掷前的等待帧数
   #--------------------------------------------------------------------------
   REROLL_END_WAIT = 20
-  #--------------------------------------------------------------------------
-  # ●【常量】骰子移入移出所需帧数
-  #--------------------------------------------------------------------------
-  TIME_MOVE_IN  = 15
-  TIME_MOVE_OUT = 15
   #--------------------------------------------------------------------------
   # ●【常量】骰子投掷前的等待帧数
   #--------------------------------------------------------------------------
@@ -221,7 +247,7 @@ module DICE
     else 
       b = id 
     end
-    data, ps2 = get_dices(b)
+    data, ps2 = get_dices(b, ps[:init])
     ps = ps2.merge!(ps)
     call(data, ps)
   end
@@ -234,7 +260,7 @@ module DICE
     else 
       b = id 
     end
-    data, ps2 = get_dices(b)
+    data, ps2 = get_dices(b, ps[:init])
     ps = ps2.merge!(ps)
     call(data, ps)
   end
@@ -245,12 +271,12 @@ module DICE
   #   【可选】在最后利用 {string} 来为骰子设置属性
   #       如：<dice 1 3 5 {bg=w1}> - 该骰子使用 Dice_BG_w1 作为背景图
   #--------------------------------------------------------------------------
-  REGEXP_DICE_ADD = /<(?i:DICE):? ?([\d, ]*?) ?(\{.*?\})?>/
+  REGEXP_DICE_ADD = /<(?i:DICE):? ?([\d, -]*?) ?\{(.*?)\}?>/
   #--------------------------------------------------------------------------
   # ●【常量】修改指定数目骰子的全部数字为另一数字
   #  如： <change 2 Dice 1 to 2> - 将2个骰子的全部1修改为2
   #--------------------------------------------------------------------------
-  REGEXP_DICE_CHANGE = /<change (\d+) dice:? ?(\d+) to (\d+)>/i
+  REGEXP_DICE_CHANGE = /<change (\d+) dice:? ?([-\d]+) to ([-\d]+)>/i
   #--------------------------------------------------------------------------
   # ●【常量】设置投掷的参数
   #  如： <dicep reroll=1> - 设置重投掷次数+1 
@@ -259,10 +285,13 @@ module DICE
   #--------------------------------------------------------------------------
   # ● 获取战斗者的骰子组
   #--------------------------------------------------------------------------
-  def self.get_dices(battler)
+  def self.get_dices(battler, init_dices=nil)
     datas = [] # [Data_Dice]
     changes = {} # obj => change_array
     params_array = []  # [ {}, {} ]
+    if init_dices  # 强制设置初始骰子 [ [1,2,3,4,5,6], [1,2,3,4,5,6] ]
+      init_dices.each { |d| datas.push(Data_Dice.new(d)) }
+    end
     # 优先级： 状态 > 角色/敌人 > 职业 > 装备
     battler.feature_objects.each do |obj|
       next if obj.nil?
@@ -455,14 +484,25 @@ class Spriteset_Dices
   # ● 骰子移入
   #--------------------------------------------------------------------------
   def move_in
-    t = TIME_MOVE_IN
+    ts = []
     @sprite_dices.each do |s|
       s.z = BASE_Z + 10
-      s.set_xy(INIT_X, INIT_Y)
+      _t = @ps[:in_t] ? @ps[:in_t] : TIME_MOVE_IN 
+      t = EAGLE_COMMON.eagle_eval(_t).to_i
+      ts.push(t)
+      _x = @ps[:in_x] ? @ps[:in_x] : INIT_X
+      _y = @ps[:in_y] ? @ps[:in_y] : INIT_Y
+      x = EAGLE_COMMON.eagle_eval(_x).to_i
+      y = EAGLE_COMMON.eagle_eval(_y).to_i
+      s.set_xy(x, y)
       s.set_des_opa(255, t)
-      s.set_des_xy(INIT_X + eval(INIT_DX).to_i, INIT_Y + eval(INIT_DY).to_i, t)
+      _dx = @ps[:in_dx] ? @ps[:in_dx] : INIT_DX
+      _dy = @ps[:in_dy] ? @ps[:in_dy] : INIT_DY
+      dx = EAGLE_COMMON.eagle_eval(_dx).to_i
+      dy = EAGLE_COMMON.eagle_eval(_dy).to_i
+      s.set_des_xy(x + dx, y + dy, t)
     end
-    t.times { Fiber.yield }
+    ts.max.times { Fiber.yield }
   end
   #--------------------------------------------------------------------------
   # ● 处理骰子第一次投掷
@@ -486,6 +526,7 @@ class Spriteset_Dices
       f |= MOUSE_EX.up?(:ML) if $imported["EAGLE-MouseEX"]
       if @selected_token && f
         if @n_reroll > 0
+          process_player_finish
           @n_reroll -= 1
           redraw_hint(@sprite_hint)
           roll(@selected_token)
@@ -493,6 +534,7 @@ class Spriteset_Dices
             REROLL_END_WAIT.times { Fiber.yield }
             break
           end
+          process_player_start
         else
           Sound.play_buzzer
         end
@@ -512,12 +554,19 @@ class Spriteset_Dices
   # ● 骰子移出
   #--------------------------------------------------------------------------
   def move_out
-    t = TIME_MOVE_OUT
+    ts = []
     @sprite_dices.each do |s|
+      _t = @ps[:out_t] ? @ps[:out_t] : TIME_MOVE_OUT 
+      t = EAGLE_COMMON.eagle_eval(_t).to_i
+      ts.push(t)
       s.set_des_opa(0, t)
-      s.set_des_xy(END_X, END_Y, t)
+      _x = @ps[:out_x] ? @ps[:out_x] : END_X
+      _y = @ps[:out_y] ? @ps[:out_y] : END_Y
+      x = EAGLE_COMMON.eagle_eval(_x).to_i
+      y = EAGLE_COMMON.eagle_eval(_y).to_i
+      s.set_des_xy(x, y, t)
     end
-    t.times { Fiber.yield }
+    ts.max.times { Fiber.yield }
   end
   #--------------------------------------------------------------------------
   # ● 指定骰子投掷
@@ -528,6 +577,7 @@ class Spriteset_Dices
     if s == nil
       @sprite_dices.each { |s| s.run }
     else
+      s.unchoose
       s.run
     end
     Fiber.yield until waiting?
@@ -883,8 +933,11 @@ class Sprite_Dice < Sprite
     @bitmaps = [] # 按序存储各个面的位图
     @data.ids.each_with_index do |id, index|
       begin
-        t_bitmap = Cache.system(BG_DEFAULT).dup
-        t_bitmap = Cache.system(BG_DEFAULT+"_#{@bg_surfix}").dup if @bg_surfix
+        if @bg_surfix
+          t_bitmap = Cache.system(BG_DEFAULT+"_#{@bg_surfix}").dup
+        else
+          t_bitmap = Cache.system(BG_DEFAULT).dup
+        end
       rescue
         w = h = BG_DEFAULT_WH
         b = BG_DEFAULT_BORDER_WH
@@ -907,7 +960,7 @@ class Sprite_Dice < Sprite
           t_bitmap.height/2+_y, r.width+2, 1, color)
         t_bitmap.draw_text(_w, _y*-1, t_bitmap.width-_w, t_bitmap.height, id, 1)
       else
-        t_bitmap.draw_text(0, 0, t_bitmap.width, t_bitmap.height, id, 1)
+        t_bitmap.draw_text(0, 0, t_bitmap.width+2, t_bitmap.height, id, 1)
       end
       @bitmaps.push(t_bitmap)
     end
@@ -919,11 +972,12 @@ class Sprite_Dice < Sprite
     @sprite_layer_chosen = Sprite.new
     begin
       @sprite_layer_chosen.bitmap = Cache.system(BG_CHOSEN)
+      @sprite_layer_chosen.bitmap = Cache.system(BG_CHOSEN+"_#{@bg_surfix}") if @bg_surfix
     rescue
       w = h = BG_DEFAULT_WH
       b = BG_DEFAULT_BORDER_WH
       t_bitmap = Bitmap.new(w, h)
-      t_bitmap.fill_rect(b,b,w-2*b,h-2*b, Color.new(100,255,255,150))
+      t_bitmap.fill_rect(b,b,w-2*b,h-2*b, BG_CHOSEN_COLOR)
       @sprite_layer_chosen.bitmap = t_bitmap
     end
     @sprite_layer_chosen.ox = @sprite_layer_chosen.width / 2
@@ -976,8 +1030,9 @@ class Sprite_Dice < Sprite
   # ● 设置目标xy与移速
   #--------------------------------------------------------------------------
   def set_des_xy(x = self.x, y = self.y, t = 30)
-    @des_x = x
-    @des_y = y
+    # 确保骰子的移动不会出屏幕
+    @des_x = [[x, 0+self.width/2].max, Graphics.width-self.width/2].min
+    @des_y = [[y, 0+self.height/2].max, Graphics.height-self.height/2].min
     @v_x = (@des_x - @x_f) * 1.0 / t
     @v_y = (@des_y - @y_f) * 1.0 / t
   end
@@ -1013,7 +1068,7 @@ class Sprite_Dice < Sprite
       @sprite_layer_chosen.x = self.x
       @sprite_layer_chosen.y = self.y
       @sprite_layer_chosen.z = self.z + 1
-      @sprite_layer_chosen.opacity = self.opacity
+      @sprite_layer_chosen.opacity = [self.opacity, BG_CHOSEN_OPACITY].min
     end
   end
 
@@ -1093,11 +1148,13 @@ class Sprite_Dice < Sprite
     return if @chosen
     @chosen = true
     self.z += 10
+    @opa_f = 120  # 如果被选中，则半透明化
   end
   def unchoose
     return if !@chosen
     @chosen = false
     self.z -= 10
+    @opa_f = 255
   end
   #--------------------------------------------------------------------------
   # ● 获取当前面的序号

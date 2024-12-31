@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.1.7"
+$imported["EAGLE-MouseEX"] = "1.1.9"
 #=============================================================================
-# - 2024.11.10.20 优化鼠标在选择框里的处理
+# - 2024.12.31.0 优化鼠标在选择框里的处理
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -336,13 +336,14 @@ class Window_Selectable < Window_Base
     # 逐个选项查看是否被鼠标选中
     item_max.times do |i|
       r = item_rect_for_text(i)
+      if @flag_mouse_select_when_visible  # 选项必须位于窗口中，才能被鼠标选择
+        next if r.x - self.ox < 0 || r.y - self.oy < 0 
+        next if r.x - self.ox + r.width > self.width-standard_padding*2
+        next if r.y - self.oy + r.height > self.height-standard_padding*2
+      end
       # 计算选项的RGSS全局坐标
       r.x += self.x - self.ox + standard_padding
       r.y += self.y - self.oy + standard_padding
-      if @flag_mouse_select_when_visible  # 选项必须位于窗口中，才能被鼠标选择
-        next if r.x + r.width < self.x || r.y + r.height < self.y 
-        next if r.x >= self.x + self.width || r.y >= self.y + self.height
-      end
       break select(i) if MOUSE_EX.in?(r)
     end
     Sound.play_cursor if @index != last_index

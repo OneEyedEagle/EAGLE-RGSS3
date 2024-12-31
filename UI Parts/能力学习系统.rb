@@ -6,11 +6,11 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.6.0"
+$imported["EAGLE-AbilityLearn"] = "1.6.5"
 #==============================================================================
-# - 2024.10.3.23 优化提示文本的修改；新增删去指定能力的设置；新增已投入ap点数的条件
+# - 2024.12.20.23 修改切换按键提示为 Q键 和 W键
 #==============================================================================
-# - 本插件新增了每个角色的能力学习界面（仿霓虹深渊）
+# - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
 # 【使用】
 #
@@ -281,7 +281,11 @@ end  # 必须的模块结尾，不要漏掉
 #
 #    $game_actors[1].add_ap(v) → 为1号角色增加 v 点AP
 #
+#    $game_actors[1].have_ap?(v=0) → 1号角色的剩余AP大于 v 点
+#
 #    $game_party.add_ap(v) → 为当前队伍中的全部角色增加 v 点AP
+#
+#    $game_party.have_ap?(v=0) → 队伍中有角色的剩余AP大于 v 点
 #
 #--------------------------------------------------------------------------
 # 【高级：判定能力解锁】
@@ -404,7 +408,7 @@ module ABILITY_LEARN
   }
   # 这个能力用于在游戏测试时增加AP
   ALL_ACTORS["TEST-add_ap"] = {
-    :pos => [1, 3],
+    :pos => [0, 0],
     :icon => 184,
     :ap => -1,
     :name => "测试-增加#{AP_TEXT}",
@@ -778,7 +782,7 @@ module ABILITY_LEARN
         pres_ex = get_token_pre_ex(actor_id, token_id)
         pres_ex.each do |ps|
           f = process_pre_ex(actor_id, token_id, ps, :cond)
-          t_temp += (f ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK} " : \
+          t_temp += (f ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}" : \
                 "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
           t_temp += "#{process_pre_ex(actor_id, token_id, ps, :text)}\\c[0]\n"
         end
@@ -947,6 +951,7 @@ class << ABILITY_LEARN
       dispose_ui
     end
     @flag_ui = false
+    $game_map.need_refresh = true  # 结束后，刷新下地图
   end
   #--------------------------------------------------------------------------
   # ● UI-结束并释放
@@ -1100,8 +1105,9 @@ class << ABILITY_LEARN
     redraw_tokens
     redraw_lines
     @sprite_actor_info.set_actor(@actor_id)
-    @viewport_bg.ox = 0
-    @viewport_bg.oy = 0
+    # 将整个界面放到屏幕居中显示
+    @viewport_bg.ox = - (Graphics.width - @sprite_grid.width) / 2
+    @viewport_bg.oy = - (Graphics.height - @sprite_grid.height) / 2
   end
   #--------------------------------------------------------------------------
   # ● 检查设置
@@ -1129,8 +1135,8 @@ class << ABILITY_LEARN
 
     tokens = ABILITY_LEARN.get_actor_tokens(@actor_id)
     tokens.each do |id, ps|
-      if ABILITY_LEARN.no_unlock?(id) || ABILITY_LEARN.unlock?(id)
-        # 如果不用解锁或已经解锁，则不再判定if
+      if ABILITY_LEARN.unlock?(id)
+        # 如果已经解锁，则不再判定if
       else
         next if ps[:if] && ABILITY_LEARN.process_token_if(ps[:if]) != true
       end
@@ -1252,8 +1258,8 @@ class << ABILITY_LEARN
     end
     
     # 限制在格子区域内
-    s.x = [0, [s.x, ui_max_x].min].max
-    s.y = [0, [s.y, ui_max_y].min].max
+    s.x = [s.width/2 , [s.x, ui_max_x-s.width/2].min ].max
+    s.y = [s.height/2, [s.y, ui_max_y-s.height/2].min].max
 
     # 检查显示区域
     vp = @viewport_bg
@@ -1469,7 +1475,7 @@ class Sprite_AbilityLearn_ActorInfo < Sprite
     # 绘制R切换提示
     self.bitmap.font.size = INFO_TEXT_FONT_SIZE
     self.bitmap.font.color = Color.new(255,255,255,255)
-    self.bitmap.draw_text(_x,0,_w_key,self.height,"E",1)
+    self.bitmap.draw_text(_x,0,_w_key,self.height,"W",1)
     self.bitmap.draw_text(_x,self.height/2,_w_key,self.height/2,">>",1)
   end
   #--------------------------------------------------------------------------
@@ -1518,7 +1524,7 @@ class Sprite_AbilityLearn_Token < Sprite
     reset_bitmap
     self.color = Color.new(0,0,0,0)
     data = $game_actors[@actor_id].eagle_ability_data
-    if data.unlock?(id)
+    if data.unlock?(id) || data.no_unlock?(id)
       draw_level
     else
       self.color = Color.new(0,0,0,120)
@@ -1608,7 +1614,7 @@ class Sprite_AbilityLearn_Token < Sprite
     update_can_unlock
   end
   #--------------------------------------------------------------------------
-  # ● 更新表示可解锁的动画
+  # ● 更新表示可解锁/升级的动画
   #--------------------------------------------------------------------------
   def update_can_unlock
     if (@count_can_unlock -= 1) > 0
@@ -1619,10 +1625,13 @@ class Sprite_AbilityLearn_Token < Sprite
     else
       @count_can_unlock = 40
       data = $game_actors[@actor_id].eagle_ability_data
-      flag_unlock = data.unlock?(@id)
-      return @sprite_unlock.opacity = 0 if flag_unlock
-      flag_update = data.can_unlock?(@id)
-      return @sprite_unlock.opacity = 0 if !flag_update
+      if data.no_unlock?(@id) || (!data.can_levelup?(@id) && data.unlock?(@id) ) 
+        # 如果不用解锁，或 已经解锁 且 不能升级，则不显示动画
+        return @sprite_unlock.opacity = 0
+      end
+      if !data.can_unlock?(@id)  # 如果不满足解锁条件，则不显示动画
+        return @sprite_unlock.opacity = 0
+      end
       @sprite_unlock.opacity = 255
       @sprite_unlock.zoom_x = @sprite_unlock.zoom_y = 1
     end
@@ -1665,7 +1674,7 @@ class Sprite_AbilityLearn_TokenHelp < Sprite
     self.visible = true
     case HELP_TEXT_POS
     when 0
-      if s.x + s.width / 2 - s.viewport.ox + self.width > Graphics.width
+      if s.x + s.width / 2 - s.viewport.ox > Graphics.width / 2
         # 显示在左侧
         self.x = s.x - s.width / 2 - s.viewport.ox - self.width
       else
@@ -1673,11 +1682,9 @@ class Sprite_AbilityLearn_TokenHelp < Sprite
         self.x = s.x + s.width / 2 - s.viewport.ox
       end
       self.y = s.y - s.height / 2 - s.viewport.oy
-      d = self.y + self.height - Graphics.height
-      if d > 0
-        self.y -= d
-        self.y = [self.y, 0].max
-      end
+      # 确保完整显示
+      self.x = [[self.x, 0].max, Graphics.width-self.width].min
+      self.y = [[self.y, 0].max, Graphics.height-self.height].min
     when 1
       EAGLE_COMMON.reset_sprite_oxy(self, HELP_TEXT_POS1_O)
       self.x = HELP_TEXT_POS1_X
@@ -1718,6 +1725,12 @@ class Data_AbilityLearn
   def add_ap_max(v)
     return if v <= 0
     @ap_max += v
+  end
+  #--------------------------------------------------------------------------
+  # ● 剩余ap数大于指定值？
+  #--------------------------------------------------------------------------
+  def have_ap?(v=0)
+    @ap > v
   end
   #--------------------------------------------------------------------------
   # ● 重置
@@ -1791,7 +1804,6 @@ class Data_AbilityLearn
   # ● 指定id已经解锁？
   #--------------------------------------------------------------------------
   def unlock?(token_id)
-    return true if no_unlock?(token_id)
     @unlocks.include?(token_id)
   end
   #--------------------------------------------------------------------------
@@ -1813,6 +1825,7 @@ class Data_AbilityLearn
   end
   #--------------------------------------------------------------------------
   # ● 指定ID不需要解锁？
+  # 注意：该类型不算在已经解锁中
   #--------------------------------------------------------------------------
   def no_unlock?(token_id)
     ABILITY_LEARN.get_token_ap(@actor_id, token_id) < 0
@@ -1878,6 +1891,18 @@ class Data_AbilityLearn
 end
 
 #==============================================================================
+# ■ Game_Battler
+#==============================================================================
+class Game_Battler
+  #--------------------------------------------------------------------------
+  # ● 已习得指定能力？
+  #--------------------------------------------------------------------------
+  def ability_unlock?(token_id)
+    return false
+  end
+end
+
+#==============================================================================
 # ■ Game_Actor
 #==============================================================================
 class Game_Actor
@@ -1894,6 +1919,12 @@ class Game_Actor
   #--------------------------------------------------------------------------
   def add_ap(v)
     @eagle_ability_data.add_ap(v)
+  end
+  #--------------------------------------------------------------------------
+  # ● 剩余ap数大于指定值？
+  #--------------------------------------------------------------------------
+  def have_ap?(v=0)
+    @eagle_ability_data.have_ap?(v)
   end
   #--------------------------------------------------------------------------
   # ● 初始化技能
@@ -1958,10 +1989,10 @@ class Game_Actor
     add_ap(ABILITY_LEARN::AP_LEVEL_UP)
   end
   #--------------------------------------------------------------------------
-  # ● 已解锁？
+  # ● 已习得指定能力？（已经解锁 or 不需要解锁）
   #--------------------------------------------------------------------------
   def ability_unlock?(token_id)
-    @eagle_ability_data.unlock?(token_id)
+    @eagle_ability_data.unlock?(token_id) || @eagle_ability_data.no_unlock?(token_id)
   end
 end
 
@@ -1970,10 +2001,16 @@ end
 #==============================================================================
 class Game_Party < Game_Unit
   #--------------------------------------------------------------------------
-  # ● 增加AP
+  # ● 全队增加AP
   #--------------------------------------------------------------------------
   def add_ap(v)
     members.each { |a| a.eagle_ability_data.add_ap(v) }
+  end
+  #--------------------------------------------------------------------------
+  # ● 队伍中有角色的剩余ap数大于指定值？
+  #--------------------------------------------------------------------------
+  def have_ap?(v=0)
+    members.any? { |a| a.eagle_ability_data.have_ap?(v) }
   end
 end
 

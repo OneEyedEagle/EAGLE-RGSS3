@@ -3,18 +3,18 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CallEvent"] = "1.2.3"
+$imported["EAGLE-CallEvent"] = "1.3.0"
 #==============================================================================
-# - 2024.6.16.17 修复游戏开始时无指令报错的bug
+# - 2024.12.13.22 优化写法，增强扩展性
 #==============================================================================
 # - 本插件新增了在事件解释器中呼叫任意事件页并执行的事件脚本
 #   （与 呼叫公共事件 效果一致，会等待执行结束）
 # - 本插件新增了事件页的插入，通过注释，可以把指定事件页的全部内容黏贴到注释位置
 #   （就仿佛一开始编写了这些指令，可以确保像是【事件消息机制】等能够找到标签）
 #---------------------------------------------------------------------------
-# 【使用：标准参数格式】
+# 【使用：标准格式】
 #
-# - 在事件脚本中，使用如下指令调用指定事件页（整页调用）：
+# - 在事件解释器中的事件脚本中，使用如下指令调用指定事件页（整页调用）：
 #
 #      call_event(mid, eid, pid)
 #
@@ -72,11 +72,14 @@ $imported["EAGLE-CallEvent"] = "1.2.3"
 #---------------------------------------------------------------------------
 # 【使用：脚本中任意位置】
 #
-# - 在脚本中，使用如下指令调用指定事件页（参数与上述一致）：
+# - 在脚本中，使用如下指令调用指定事件页：
 #
-#      EAGLE.call_event(mid, eid, pid)
+#      EAGLE.call_event(mid, eid, pid) { block }
 #
-#      EAGLE.call_event(t)
+#      EAGLE.call_event(t) { block }
+#
+#   其中 {block} 中可以增加需要每帧调用的方法
+#    （每帧仅调用了当前 Scene 的 update_basic，其他的更新请自行加入该block中）
 #
 # - 示例：
 #
@@ -85,12 +88,27 @@ $imported["EAGLE-CallEvent"] = "1.2.3"
 #
 # - 注意：
 #
-#  · 当不在地图上时，调用事件时，部分与地图相关的指令会被忽略
+#  · 利用该方法调用事件时，部分与地图相关的指令会被忽略
 #
 #    以下指令将被忽略：
 #      场所移动、地图卷动、设置移动路径、显示动画、显示心情图标、集合队伍成员
 #
 #  · 被调用的事件页中，全部的【本事件】依然为原始事件
+#
+#---------------------------------------------------------------------------
+# 【使用：地图中任意位置】
+#
+# - 在脚本中，使用如下指令调用指定事件页（参数与上述一致）：
+#
+#      EAGLE.call_event_map(mid, eid, pid) { block }
+#
+#      EAGLE.call_event_map(t) { block }
+#
+# - 该方法与 EAGLE.call_event 的不同：
+#
+#  1. 必须在地图上使用，且每帧调用 Scene_Map 的 update 方法进行更新
+#
+#  2. 使用了全局的对话框，和完整的事件解释器
 #
 #---------------------------------------------------------------------------
 # 【使用：事件页替换】
@@ -215,7 +233,7 @@ module EAGLE
   #--------------------------------------------------------------------------
   # ● 呼叫指定事件 - 任意时刻调用
   #--------------------------------------------------------------------------
-  def self.call_event(*args)
+  def self.call_event(*args) # 可传入block，将每帧同步执行
     h = EAGLE.call_event_args(args)
     if h == nil
       p "【警告】执行 EAGLE.call_event 时发现参数数目有错误！"
@@ -227,31 +245,49 @@ module EAGLE
     page = EAGLE.call_event_page(h)
     return if page == nil
     # 实际执行
-    if SceneManager.scene_is?(Scene_Map) # 如果在地图上
-      interpreter = Game_Interpreter.new
-    else # 如果在其他场景
-      interpreter = Game_Interpreter_EagleCallEvent.new
-      message_window = Window_EagleMessage.new if $imported["EAGLE-MessageEX"]
-      message_window ||= Window_Message.new
-    end
+    interpreter = Game_Interpreter_EagleCallEvent.new
+    message_window = Window_EagleMessage.new if $imported["EAGLE-MessageEX"]
+    message_window ||= Window_Message.new
     interpreter.setup(page.list, h[:eid])
     if $imported["EAGLE-EventInteractEX"]
       interpreter.event_interact_search(h[:sym]) if h[:sym]
     end
-    if SceneManager.scene_is?(Scene_Map) # 如果在地图上
-      while true
-        SceneManager.scene.update
-        interpreter.update
-        break if !interpreter.running?
-      end
-    else # 如果在其他场景
-      while true
-        SceneManager.scene.update_basic
-        interpreter.update
-        message_window.update
-        break if !interpreter.running?
-      end
-      message_window.dispose if message_window
+    while true
+      SceneManager.scene.update_basic
+      message_window.update # 先更新对话框，再更新事件指令，否则会吞对话……
+      yield if block_given?
+      interpreter.update
+      break if !interpreter.running?
+    end
+    message_window.dispose if message_window
+    return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 呼叫指定事件 - 在地图上、无事件执行、使用事件的全部指令、使用全局对话框
+  #--------------------------------------------------------------------------
+  def self.call_event_map(*args)
+    return if !SceneManager.scene_is?(Scene_Map)
+    h = EAGLE.call_event_args(args)
+    if h == nil
+      p "【警告】执行 EAGLE.call_event 时发现参数数目有错误！"
+      p "EAGLE.call_event 来自于脚本【呼叫指定事件 by老鹰】，" +
+        "请仔细阅读脚本说明并进行修改！"
+      return false
+    end
+    h[:mid] = $game_map.map_id if h[:mid] == nil || h[:mid] == 0
+    page = EAGLE.call_event_page(h)
+    return if page == nil
+    # 实际执行
+    interpreter = Game_Interpreter.new
+    interpreter.setup(page.list, h[:eid])
+    if $imported["EAGLE-EventInteractEX"]
+      interpreter.event_interact_search(h[:sym]) if h[:sym]
+    end
+    while true
+      SceneManager.scene.update
+      yield if block_given?
+      interpreter.update
+      break if !interpreter.running?
     end
     return true
   end

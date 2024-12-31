@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.12.4" 
+$imported["EAGLE-MessageEX"] = "1.12.6" 
 #=============================================================================
-# - 2024.11.25.10 修复临时生成的对话框的脸图未能成功占位的bug
+# - 2024.12.30.15 新增横向、纵向缩放的窗口打开、关闭
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -472,6 +472,9 @@ WIN_PARAMS_INIT = {
   :cdw => 0, # 文本右边距
   :cdh => 0, # 文本下边距
 }
+#
+# 【常量设置：窗口背景的不透明度】
+WINDOW_BACK_OPACITY = 200
 #
 # 【常量设置：序号映射到windowskin文件名】
 #  （其中 index 必须为整数）
@@ -1567,7 +1570,9 @@ S_ID_RESET_ENV = true
 # （变量一览）
 #    open → 使用 i 号对应的对话框打开方式
 #    close → 使用 i 号对应的对话框关闭方式
-#         0 为默认的上下打开关闭，1 为淡入淡出，2 为动态缩放展开，3 为动态滑入滑出
+#         0 为默认的上下打开关闭，1 为淡入淡出，
+#         2 为动态缩放，21 为仅纵向动态缩放，22 为仅横向动态缩放
+#         3 为动态滑入滑出
 #
 #    aw → 是否开启对话框的自动换行（auto wrap）
 #        若开启，当文字绘制到对话框边界padding处时，将进行自动换行
@@ -2513,7 +2518,7 @@ class Window_EagleMessage < Window_Base
   # （推荐将一些不需要传递给拷贝窗口的数据置于此处）
   #--------------------------------------------------------------------------
   def eagle_message_init_params
-    self.back_opacity = 255     # 背景不透明度
+    self.back_opacity = MESSAGE_EX::WINDOW_BACK_OPACITY  # 背景不透明度
     self.arrows_visible = false # 内容位图未完全显示时出现的箭头
     @fiber = nil                # 纤程
     @background = 0             # 背景类型
@@ -2847,6 +2852,10 @@ class Window_EagleMessage < Window_Base
       eagle_open_type_slide
     when 2
       eagle_open_type_ease
+    when 21
+      eagle_open_type_ease(nil, 1)
+    when 22
+      eagle_open_type_ease(1, nil)
     when 1
       eagle_open_type_fade
     else # :default
@@ -2876,10 +2885,12 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   # ● 打开-动态展开
   #--------------------------------------------------------------------------
-  def eagle_open_type_ease
+  def eagle_open_type_ease(init_w = 1, init_h = 1)
     @eagle_chara_sprites.each { |c| c.visible = false }
-    eagle_set_wh({:w => 1, :h => 1, :ins => true, :open => true}) if self.openness == 0
-    self.openness = 255
+    if self.openness == 0 # 如果还没打开，则预设下初始窗口大小
+      eagle_set_wh({:w => init_w, :h => init_h, :ins => true, :open => true}) 
+    end
+    self.openness = 255 #直接完成打开，该效果不需要openness打开
     eagle_set_wh({:open => true})
     @eagle_chara_sprites.each { |c| c.move_in; c.visible = true }
   end
@@ -2937,6 +2948,10 @@ class Window_EagleMessage < Window_Base
       eagle_close_type_slide
     when 2
       eagle_close_type_ease
+    when 21
+      eagle_close_type_ease(nil, 1)
+    when 22
+      eagle_close_type_ease(1, nil)
     when 1
       eagle_close_type_fade
     else # :default
@@ -2968,9 +2983,9 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   # ● 关闭-动态缩小
   #--------------------------------------------------------------------------
-  def eagle_close_type_ease
+  def eagle_close_type_ease(final_w = 1, final_h = 1)
     eagle_move_out_assets
-    eagle_set_wh({:w => 1, :h => 1, :close => true}) if self.openness > 0
+    eagle_set_wh({:w => final_w, :h => final_h, :close => true}) if self.openness > 0
     self.openness = 0
     close
     if @eagle_window_name
