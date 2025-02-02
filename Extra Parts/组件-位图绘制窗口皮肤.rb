@@ -2,9 +2,9 @@
 # ■ 组件-位图绘制窗口皮肤 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-DrawWindowSkin"] = "1.0.0"
+$imported["EAGLE-DrawWindowSkin"] = "1.0.1"
 #==============================================================================
-# - 2021.2.20.12 修复 rect_b 绘制错位的问题
+# - 2025.1.27.10 新增背景不透明度的设置
 #==============================================================================
 # - 本插件提供了在位图上绘制窗口皮肤的方法
 #-----------------------------------------------------------------------------
@@ -15,7 +15,11 @@ $imported["EAGLE-DrawWindowSkin"] = "1.0.0"
 #   其中 windowskin 为 Graphics/System 目录下的窗口皮肤文件名称（字符串）
 #       bitmap 为需要将窗口皮肤绘制在其上的位图对象
 #       rect_b 【可省略】为位图对象被绘制的区域（默认取整个位图区域）
-#       params 【可省略】设置更多细节参数，具体见方法注释
+#       params 【可省略】设置更多细节参数的Hash
+#         :cx => 数字,   # 设置绘制时在x方向上的偏移增量
+#         :cy => 数字,   # 设置绘制时在y方向上的偏移增量
+#         :opa => 数字,  # 设置背景的不透明度
+#
 #==============================================================================
 
 module EAGLE
@@ -24,7 +28,9 @@ module EAGLE
   #  windowskin → 在 Graphics/System 目录下的窗口皮肤文件名称，字符串
   #  bitmap → 需要将窗口皮肤绘制在其上的位图对象
   #  rect_b → 位图对象被绘制的区域（当w、h为0时，取整个位图）
-  #  params → :cx 设置内容在x方向上的偏移量， :cy 设置在y方向上的偏移量
+  #  params → :cx 设置在x方向上的偏移量
+  #           :cy 设置在y方向上的偏移量
+  #           :opa 设置背景的透明度
   #--------------------------------------------------------------------------
   def self.draw_windowskin(windowskin, bitmap, rect_b = nil, params = {})
     rect_b ||= Rect.new(0,0,0,0)
@@ -45,7 +51,8 @@ module EAGLE
     rect = Rect.new(rect_b.x + params[:cx], rect_b.y + params[:cy],
       rect_b.width - params[:cx] * 2, rect_b.height - params[:cy] * 2)
     src_rect = Rect.new(0, 0, 64, 64)
-    bitmap.stretch_blt(rect, skin, src_rect)
+    opa = params[:opa] || 255
+    bitmap.stretch_blt(rect, skin, src_rect, opa)
   end
   #--------------------------------------------------------------------------
   # ● 平铺绘制背景花纹
@@ -55,6 +62,7 @@ module EAGLE
       rect_b.width - params[:cx] * 2, rect_b.height - params[:cy] * 2)
     _x = rect.x
     _y = rect.y
+    opa = params[:opa] || 255
     while(_y < rect.y + rect.height)
       src_rect = Rect.new(0, 64, 64, 64)
       d = rect.y + rect.height - _y
@@ -62,7 +70,7 @@ module EAGLE
       while(_x < rect.x + rect.width)
         d = rect.x + rect.width - _x
         src_rect.width = d if d < 64
-        bitmap.blt(_x, _y, skin, src_rect)
+        bitmap.blt(_x, _y, skin, src_rect, opa)
         _x += src_rect.width
       end
       _x = rect.x

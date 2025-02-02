@@ -1,11 +1,10 @@
 #=============================================================================
 # ■ 事件页触发条件扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
-# ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-EventCondEX"] = "1.1.0"
+$imported["EAGLE-EventCondEX"] = "1.2.0"
 #=============================================================================
-# - 2023.9.13.22 兼容VX
+# - 2025.1.2.22 方便扩展
 #=============================================================================
 # - 本插件对事件页的出现条件进行了扩展，并新增了事件的独立变量（与独立开关一致）
 #-----------------------------------------------------------------------------
@@ -68,6 +67,37 @@ module EAGLE
       index += 1
     end
     t
+  end
+  #--------------------------------------------------------------------------
+  # ● 检查事件页开头注释里写的条件
+  #--------------------------------------------------------------------------
+  def self.met_event_condition_ex?(page, game_event=nil, rgss_event=nil)
+    text = EAGLE.event_comment_head( page.list )
+    pla = $game_player
+    m = $game_party.members
+    if MODE_VX
+      es = $game_map.events if $scene.is_a?(Scene_Map)
+      es = $game_troop.members if $scene.is_a?(Scene_Battle)
+    else # VA 
+      es = $game_map.events if SceneManager.scene_is?(Scene_Map)
+      es = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
+    end # end of MODE_VX
+    s = $game_switches
+    v = $game_variables
+    if SceneManager.scene_is?(Scene_Map)
+      se = game_event
+      e = rgss_event
+      text.gsub!( /ss\[([ABCD])\]/ ) { "ss[[#{@map_id},#{e.id},\"#{$1}\"]]" }
+      ss = $game_self_switches
+      text.gsub!( /sv\[(\d+)\]/ ) { "sv[[#{@map_id},#{e.id},#{$1}]]" }
+      sv = $game_self_variables
+    end
+    f = nil 
+    text.scan(/<cond>(.*?)<\/cond>/).each do |cond|
+      return false if eval(cond[0]) == false
+      f = true
+    end
+    return f  # 返回 nil 代表没有写扩展条件
   end
 end
 
@@ -157,27 +187,6 @@ class Game_Event
   alias eagle_event_cond_met conditions_met?
   def conditions_met?(page)
     return false if !eagle_event_cond_met(page)
-    text = EAGLE.event_comment_head( page.list )
-    se = self
-    e = @event
-    pla = $game_player
-    m = $game_party.members
-    if MODE_VX
-      es = $game_map.events if $scene.is_a?(Scene_Map)
-      es = $game_troop.members if $scene.is_a?(Scene_Battle)
-    else # VA 
-      es = $game_map.events if SceneManager.scene_is?(Scene_Map)
-      es = $game_troop.members if SceneManager.scene_is?(Scene_Battle)
-    end # end of MODE_VX
-    s = $game_switches
-    v = $game_variables
-    text.gsub!( /ss\[([ABCD])\]/ ) { "ss[[#{@map_id},#{@event.id},\"#{$1}\"]]" }
-    ss = $game_self_switches
-    text.gsub!( /sv\[(\d+)\]/ ) { "sv[[#{@map_id},#{@event.id},#{$1}]]" }
-    sv = $game_self_variables
-    text.scan(/<cond>(.*?)<\/cond>/).each do |cond|
-      return false if eval(cond[0]) == false
-    end
-    return true
+    return EAGLE.met_event_condition_ex?(page, self, @event) != false
   end
 end

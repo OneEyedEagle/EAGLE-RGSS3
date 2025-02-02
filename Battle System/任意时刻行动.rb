@@ -2,9 +2,9 @@
 # ■ 任意时刻行动 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ActionEX"] = "1.0.1"
+$imported["EAGLE-ActionEX"] = "1.0.2"
 #=============================================================================
-# - 2023.9.8.21
+# - 2025.1.12.22
 #=============================================================================
 # - 本插件新增了在任意时刻都能强制战斗行动的全局脚本
 # ※ 本插件兼容【SideView100】，请置于其下
@@ -113,6 +113,10 @@ module BattleManager
         raw_play_skill_sv(scene, subject, targets, item)
       else
         raw_play_skill(scene, subject, targets, item)
+      end
+      # 整合【技能多段伤害 by老鹰】，确保动画与伤害结算结束
+      if $imported["EAGLE-SkillDamageEX"]
+        scene.eagle_wait_for_animation 
       end
       # 新增行动后处理
       scene.process_after_use_item

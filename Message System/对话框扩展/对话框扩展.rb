@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.12.6" 
+$imported["EAGLE-MessageEX"] = "1.12.7" 
 #=============================================================================
-# - 2024.12.30.15 新增横向、纵向缩放的窗口打开、关闭
+# - 2025.1.3.14 新增横向、纵向缩放的窗口打开、关闭
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -2774,8 +2774,6 @@ class Window_EagleMessage < Window_Base
     elsif game_message.busy? && !game_message.scroll_mode
       @fiber = Fiber.new { fiber_main }
       @fiber.resume
-    else
-      game_message.visible = false
     end
   end
   #--------------------------------------------------------------------------

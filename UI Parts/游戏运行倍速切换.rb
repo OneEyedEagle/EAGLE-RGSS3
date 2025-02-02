@@ -2,13 +2,13 @@
 # ■ 游戏运行倍速切换  by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SpeedUp"] = "1.1.0"
+$imported["EAGLE-SpeedUp"] = "1.1.1"
 #==============================================================================
-# - 2024.12.21.1 
+# - 2025.1.1.23 为每个scene独立保存了其运行倍速 
 #==============================================================================
 # - 新增在地图、战斗场景中，按下指定键后按顺序变更游戏运行倍速
 #
-# - 每一次Scene切换，都会将速率重置为 1 倍
+# - 每一次Scene切换，都会将速率重置为它上一次保存的运行倍速
 #
 # 【兼容】
 #
@@ -49,6 +49,9 @@ module EAGLE::SpeedUp
   #--------------------------------------------------------------------------
   def self.current
     TIMES[@index]
+  end
+  def self.index
+    @index
   end
   #--------------------------------------------------------------------------
   # ● 重置
@@ -110,6 +113,10 @@ class << Graphics
   end
 end
 
+class Game_System
+  attr_accessor  :scene2speedup  # scene_class => speed up index
+end
+
 class << SceneManager
   #--------------------------------------------------------------------------
   # ● 开始
@@ -132,6 +139,16 @@ end
 
 class Scene_Base
   #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  alias eagle_speed_up_post_start post_start
+  def post_start
+    eagle_speed_up_post_start
+    $game_system.scene2speedup ||= {}
+    i = $game_system.scene2speedup[self.class]
+    EAGLE::SpeedUp.change_index(i) if i
+  end
+  #--------------------------------------------------------------------------
   # ● 更新画面（基础）
   #--------------------------------------------------------------------------
   alias eagle_speed_up_update_basic update_basic
@@ -150,12 +167,14 @@ class Scene_Base
     false
   end
   #--------------------------------------------------------------------------
-  # ● 结束处理
+  # ● 结束前处理
   #--------------------------------------------------------------------------
-  alias eagle_speed_up_terminate terminate
-  def terminate
+  alias eagle_speed_up_pre_terminate pre_terminate
+  def pre_terminate
+    eagle_speed_up_pre_terminate
+    $game_system.scene2speedup ||= {}
+    $game_system.scene2speedup[self.class] = EAGLE::SpeedUp.index
     EAGLE::SpeedUp.reset_index
-    eagle_speed_up_terminate
   end
 end
 

@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.2.8"
+$imported["EAGLE-MessagePara2"] = "1.2.9"
 #==============================================================================
-# - 2024.12.19.0 新增 强制刷新 的设置
+# - 2025.1.12.0 当重复消除、显示同一对话时，现在能正常显现了
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -377,12 +377,10 @@ class Sprite_EagleMsg < Sprite
     @flag_no_wait = false
     # 如果已经存在
     if @fiber
-      # 如果强制更新，则重绘
-      if _params[:reset] == true
-        start
-        return
+      if _params[:reset] == true or params[:show] == false
+        # 如果强制更新，或已经结束显示，则正常重绘
       elsif _params[:text] == @params[:text]
-        # 否则如果文本相同，则只重置倒计时
+        # 如果文本相同，则只重置倒计时
         @count_wait = @params[:wait]
         return
       end
@@ -643,7 +641,9 @@ class Sprite_EagleMsg < Sprite
     rescue
       until_move_end_fade(:in)
     end
+    params[:show] = true
     process_wait
+    params[:show] = false
     begin
       method("until_move_end_#{params[:io]}").call(:out, params[:io_t])
     rescue

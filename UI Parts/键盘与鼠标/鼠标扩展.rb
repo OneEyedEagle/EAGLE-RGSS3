@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.1.9"
+$imported["EAGLE-MouseEX"] = "1.1.10"
 #=============================================================================
-# - 2024.12.31.0 优化鼠标在选择框里的处理
+# - 2025.1.3.16 窗口也有viewport
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -87,6 +87,8 @@ end
 #
 #     其中 r 是Rect.new，如果不传入，则判定鼠标是否在游戏窗口内
 #
+#     如： MOUSE_EX.in? → 返回鼠标是否在游戏窗口内
+#
 #  3.1 为 Sprite 类增加了实例方法，判定鼠标是否在该精灵的位图内部
 #     精灵区域为实际显示在游戏窗口内的位置（即考虑精灵所在的viewport）
 #
@@ -98,12 +100,12 @@ end
 #       如果 _pixel 传入 true，则在颜色像素上返回 true，在透明像素上返回 false
 #       如果 _pixel 传入 false，则统一返回 true
 #
-#  3.2 为 Window 类增加了实例方法，判定鼠标是否在该窗口的contents内部
+#  3.2 为 Window 类增加了实例方法，判定鼠标是否在该窗口内部
 #
-#      window.mouse_in?(_visible=true)
+#      window.mouse_in?(_visible=true, _in_contents=true)
 #
 #     如果_visible传入 true，则会首先检查窗口的 visible、opacity、openness
-#     如： MOUSE_EX.in? → 返回鼠标是否在游戏窗口内
+#     如果_in_contents传入 true，则必须要在contents内部，在边框处不算
 #
 #  4. 判定鼠标在矩形区域内的位置（九宫格）（游戏窗口内的矩形，不考虑 viewport）
 #     将rect按小键盘数字键划分为9块，再判定鼠标位于哪一块中，并返回对应数字
@@ -203,15 +205,25 @@ class Sprite
 end
 class Window_Base
   #--------------------------------------------------------------------------
-  # ● 该窗口的contents包含了鼠标？
+  # ● 该窗口包含了鼠标？
   #--------------------------------------------------------------------------
-  def mouse_in?(_visible = true)
+  def mouse_in?(_visible = true, _in_contents = true)
     return false if _visible && (!visible || opacity == 0 || openness < 255)
     return false if disposed?
-    mx = MOUSE_EX.x
-    return false if mx < x+standard_padding || mx > x+width+standard_padding
-    my = MOUSE_EX.y
-    return false if my < y+standard_padding || my > y+height+standard_padding
+    rx = MOUSE_EX.x - self.x 
+    ry = MOUSE_EX.y - self.y 
+    if viewport
+      rx -= self.viewport.rect.x
+      ry -= self.viewport.rect.y
+    end
+    # 边界判定
+    if _in_contents  # 边框不算
+      return false if rx < standard_padding || rx > width - standard_padding
+      return false if ry < standard_padding || ry > height - standard_padding
+    else # 边框也可以
+      return false if rx < 0 || rx > width 
+      return false if ry < 0 || ry > height 
+    end
     return true
   end
 end

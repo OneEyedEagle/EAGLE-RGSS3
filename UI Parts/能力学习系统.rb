@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.6.5"
+$imported["EAGLE-AbilityLearn"] = "1.6.6"
 #==============================================================================
-# - 2024.12.20.23 修改切换按键提示为 Q键 和 W键
+# - 2025.1.19.13 新增判定是否已习得的缩写方法 abi?()
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
@@ -162,7 +162,7 @@ ACTORS[0] = {  # 不要漏了花括号
   #  （比如出现条件为 1号开关打开 且 1号变量等于1 且 持有金钱 > 1000，则可以写为
   #     :if=>[ "s[1] == true", "v[1]==1", "$game_party.gold>1000" ] ）
   #  （注意：如果能力已经解锁，则不会再判定该出现条件。）
-    :if => "" ,
+    :if => [] ,
   #------------------------------------------------------------------------
   # -【可选】学习后执行的脚本
   #  （每次学习，都会执行一次这个脚本）
@@ -292,6 +292,7 @@ end  # 必须的模块结尾，不要漏掉
 #
 #    $game_actors[1].ability_unlock?(name) → 1号角色是否已解锁 name 能力
 #                           注意：name 是指脚本中的名称，不是显示的名字
+#    或者提供的方便简写 $game_actors[1].abi?(name)
 #
 #==============================================================================
 module ABILITY_LEARN
@@ -402,7 +403,7 @@ module ABILITY_LEARN
     :icon => 280,
     :ap => -1,
     :name => "重置",
-    :help => "重置当前角色全部能力。\n仅返还#{AP_TEXT}，可能不会返还其它资源。\\ln
+    :help => "重置当前角色全部能力。\n    仅返还#{AP_TEXT}，可能不会返还其它资源。\\ln
 {{ABILITY_LEARN.get_unlock_skills_and_params_text}}",
     :eval_on => "ABILITY_LEARN.reset",
   }
@@ -901,8 +902,13 @@ module ABILITY_LEARN
   def self.eagle_eval(str, actor_id = nil)
     actor_id ||= @actor_id
     actor = $game_actors[actor_id] rescue nil
-    as = $game_actors
-    EAGLE_COMMON.eagle_eval(str)
+    as = $game_actors; gp = $game_player; es = $game_map.events
+    s = $game_switches; v = $game_variables; ss = $game_self_switches
+    begin
+      eval(str.to_s)
+    rescue
+      p $!
+    end
   end
   #--------------------------------------------------------------------------
   # ● 处理指定id的出现条件
@@ -1897,9 +1903,8 @@ class Game_Battler
   #--------------------------------------------------------------------------
   # ● 已习得指定能力？
   #--------------------------------------------------------------------------
-  def ability_unlock?(token_id)
-    return false
-  end
+  def ability_unlock?(token_id); return false; end
+  def abi?(token_id); return false; end
 end
 
 #==============================================================================
@@ -1993,6 +1998,9 @@ class Game_Actor
   #--------------------------------------------------------------------------
   def ability_unlock?(token_id)
     @eagle_ability_data.unlock?(token_id) || @eagle_ability_data.no_unlock?(token_id)
+  end
+  def abi?(token_id)
+    ability_unlock?(token_id)
   end
 end
 
