@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.2.9"
+$imported["EAGLE-MessagePara2"] = "1.3.0"
 #==============================================================================
-# - 2025.1.12.0 当重复消除、显示同一对话时，现在能正常显现了
+# - 2025.2.28.0 现在可以设置不绑定在地图上了
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -71,6 +71,8 @@ $imported["EAGLE-MessagePara2"] = "1.2.9"
 #
 #      fix=数字 → 设置是否强制显示在屏幕内
 #                  传入 1 时代表强制该对话框完整显示在屏幕内，默认 0 可以出屏幕
+#
+#      z=数字 → 该对话框的z值
 #
 #     如 <pos o=5 e=-1 o2=8> 代表对话框中心会显示到玩家的顶部中心
 #
@@ -151,6 +153,7 @@ $imported["EAGLE-MessagePara2"] = "1.2.9"
 #      :io   => "fade"          # 对话框的移入移出类型
 #      :io_t => 20              # 移入移出的耗时
 #
+#      :map => true             # 当在地图场景时，是否绑定在地图上
 #      :pos => { :o => 2, :e => -1, :o2 => 8  } # 对话框的位置设置
 #                               # 注意：此处 :e 的参数为 0 时无效！
 #      :font => 21              # 当前对话框的文字大小
@@ -409,7 +412,8 @@ class Sprite_EagleMsg < Sprite
     params[:io] = _params[:io] || DEF_IO_TYPE
     params[:io_t] = _params[:io_t] || DEF_IO_T
     params[:font] = _params[:font] || FONT_SIZE
-
+    
+    params[:map] = _params[:map] != nil ? _params[:map] : true
     params[:pos] = _params[:pos] || nil
     params[:finish] = false
   end
@@ -657,8 +661,7 @@ class Sprite_EagleMsg < Sprite
   #--------------------------------------------------------------------------
   def reset_viewport
     vp = nil
-    # 战斗场景不需要绑定viewport，否则会被我方状态窗口覆盖……
-    if SceneManager.scene_is?(Scene_Map) #|| SceneManager.scene_is?(Scene_Battle)
+    if params[:map] == true and SceneManager.scene_is?(Scene_Map)
       vp = SceneManager.scene.spriteset.viewport1
     end
     self.viewport = vp

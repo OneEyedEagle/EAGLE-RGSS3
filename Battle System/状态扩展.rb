@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.0.0"
+$imported["EAGLE-StateEX"] = "1.0.1"
 #==============================================================================
-# - 2025.2.1.16
+# - 2025.2.5.8 
 #==============================================================================
 # - 本插件针对状态系统进行了扩展，可能需要一些脚本知识以兼容其他战斗系统
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -515,16 +515,19 @@ class Data_StateEX
   end
   #--------------------------------------------------------------------------
   # ● 依据状态更新时机来更新计数
+  #  如果传入的 timing 为 nil，则任意时刻的状态都要减少
   #--------------------------------------------------------------------------
   def update_count(timing, added_states=[])
     # 执行该时机的伤害公式
     process_timing_formula(timing)
-    # 查看是否要在该时机让计数减少
-    return if timing != @count_type
+    # 0 表示一直存在的状态，没有计数，不用减少
+    return if @count_type == 0
+    # 查看是否要在该时机让计数减少，若 timing 为 nil，则必定处理减少
+    return if timing != nil and timing != @count_type
     f = @flag_new
     @flag_new = false
-    # 如果为新附加状态，且在例外状态数组中，比如本次行动才被附加的状态，则不减一
-    return if f && added_states.include?(@id)
+    # 如果为新附加状态，且在例外状 态数组中，比如本次行动才被附加的状态，则不减一
+    return if f && added_states && added_states.include?(@id)
     @count -= 1
   end
   #--------------------------------------------------------------------------
@@ -862,7 +865,7 @@ class Game_Battler < Game_BattlerBase
     states.uniq.each do |state|
       # 如果是本次行动增加的状态，则不减1
       next if state.nil?
-      next if @result.added_states.include?(state.id)
+      next if @result.added_states && @result.added_states.include?(state.id)
       if state.auto_removal_timing == timing
         @state_turns[state.id] -= 1
         remove_state(state.id) if @state_turns[state.id] == 0

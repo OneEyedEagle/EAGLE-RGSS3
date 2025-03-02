@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.12.7" 
+$imported["EAGLE-MessageEX"] = "1.12.8" 
 #=============================================================================
-# - 2025.1.3.14 新增横向、纵向缩放的窗口打开、关闭
+# - 2025.2.24.13 修复 temp 失效的问题；pop 和 win 的w、h设置互相独立
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -611,7 +611,7 @@ WIN_AUTO_DY = 0
 #    dx/dy → x、y方向上的像素增量（默认0）
 #    fix → 是否进行位置修正（保证pop对话框完整显示在屏幕内）
 #
-#  （窗口大小相关）（与win中相同，均覆盖win中的对应设置）
+#  （窗口大小相关）（与win中的设置互相独立）
 #    w → pop对话框的内容固定宽度（默认0不设置）（优先级高于dw/fw）
 #    h → pop对话框的内容固定高度
 #       （若小于对话框的 line_height 方法值，则识别为行数，乘以行高，作为高度值）
@@ -2397,17 +2397,6 @@ class Game_Message
     t.clone_ex(self)
     return true
   end
-  #--------------------------------------------------------------------------
-  # ● 将临时环境存入指定环境，并返回临时环境
-  #--------------------------------------------------------------------------
-  def load_temp_env(sym = '0', temp = :eagle_temp)
-    if sym == '0'
-      @default_env = $game_system.message_envs[temp]
-    else
-      $game_system.message_envs[sym] = $game_system.message_envs[temp]
-    end
-    return $game_system.message_envs[temp]
-  end
 end
 #=============================================================================
 # ○ Game_System
@@ -3256,8 +3245,11 @@ class Window_EagleMessage < Window_Base
   # ● 获取窗口的文字的宽度高度
   #--------------------------------------------------------------------------
   def eagle_window_charas_width
-    return pop_params[:w] if game_message.pop? && pop_params[:w] > 0
-    return win_params[:w] if win_params[:w] > 0
+    if game_message.pop?
+      return pop_params[:w] if pop_params[:w] > 0
+    else
+      return win_params[:w] if win_params[:w] > 0
+    end
     w = nil
     w = @eagle_charas_w       if eagle_dynamic_w?
     w = @eagle_charas_w_final if eagle_dyn_fit_w?
@@ -3268,10 +3260,11 @@ class Window_EagleMessage < Window_Base
     return w
   end
   def eagle_window_charas_height
-    if game_message.pop? && pop_params[:h] > 0
-      return eagle_check_param_h(pop_params[:h])
+    if game_message.pop? 
+      return eagle_check_param_h(pop_params[:h]) if pop_params[:h] > 0
+    else
+      return eagle_check_param_h(win_params[:h]) if win_params[:h] > 0
     end
-    return eagle_check_param_h(win_params[:h]) if win_params[:h] > 0
     h = nil
     h = [@eagle_charas_h, line_height].max if eagle_dynamic_h?
     h = @eagle_charas_h_final if eagle_dyn_fit_h?
@@ -4168,8 +4161,7 @@ class Window_EagleMessage < Window_Base
   def eagle_process_temp
     return if @flag_temp == false
     @flag_temp = false
-    game_message.load_temp_env(@flag_temp_env, :eagle_temp)
-    game_message.load_env(@flag_temp_env)
+    game_message.load_env(:eagle_temp)
     game_message.env = @flag_temp_env
   end
   #--------------------------------------------------------------------------

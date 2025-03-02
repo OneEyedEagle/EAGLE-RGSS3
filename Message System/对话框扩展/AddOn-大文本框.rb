@@ -3,15 +3,17 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageBox"] = "1.3.0"
+$imported["EAGLE-MessageBox"] = "1.3.1"
 #=============================================================================
-# - 2024.2.8.17 新增自动换行
+# - 2025.2.8.21 
 #==============================================================================
 # - 本插件新增的大文本框，有以下几个新特性：
 #
 # ·与【对话框扩展】中的对话框具有相同的文字描绘模式，即可以使用其中的全部文字特效
 #
 # ·删去文本自动对齐，新增 \pos 转义符用于直接定位文字绘制的位置
+#
+# ·新增自动换行，当绘制到窗口右侧时，将自动换行
 #
 # ·新增分页符，支持在相邻页之间切换（确定键下一页，取消键上一页）
 #
@@ -420,12 +422,21 @@ class Window_EagleMessage_Box < Window_Base
   def chara_sprites_move_out
     @eagle_chara_sprites.each do |i, cs|
       cs.each do |c|
-        c.move_out
+        c.move_out2  # 调用不由文字池接管的移出方法
         c.update if !c.disposed?
         win_params[:cwo].times { Fiber.yield } if i == @page_index
       end
-      cs.clear # 文字池接管更新
     end
+    # 等待全部文字移出完成
+    loop do 
+      Fiber.yield
+      flag = true
+      @eagle_chara_sprites.each do |i, cs|
+        break flag = false if cs.any? { |c| !c.finish? }
+      end
+      break if flag == true
+    end
+    @eagle_chara_sprites.each { |i, cs| cs.each { |c| c.dispose }; cs.clear }
     @eagle_chara_sprites.clear
   end
 
@@ -747,7 +758,7 @@ class Window_EagleMessage_Box < Window_Base
   # ● 绘制完成时的更新
   #--------------------------------------------------------------------------
   def eagle_process_draw_update
-    ensure_character_visible(self.charas[-1])
+    ensure_character_visible(self.charas[-1], true)
   end
   #--------------------------------------------------------------------------
   # ● 确保最后绘制完成的文字在视图内
@@ -1179,6 +1190,18 @@ class Sprite_EagleCharacter_MessageBox < Sprite_EagleCharacter
   #--------------------------------------------------------------------------
   def init_effect_params(sym)
     MESSAGE_EX.get_default_params(sym)
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行移出（外部调用的方法）
+  #--------------------------------------------------------------------------
+  def move_out2
+    finish_effects # 先结束全部特效
+    finish if !in_viewport? # 若精灵在视图外，则会直接结束
+    if !finish?
+      process_move_out  # 处理移出模式
+    end
+    free_from_msg  # 不再受限于对话框内，但位置保持不变
+    #MESSAGE_EX.charapool_push(self) # 不由文字池接管
   end
 end
 
