@@ -4,9 +4,9 @@
 #   【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-TODOList"] = "1.1.1"
+$imported["EAGLE-TODOList"] = "1.1.2"
 #==============================================================================
-# - 2025.1.1.21 新增结束全部待办事项
+# - 2025.5.3.18 结束时不会再闪回
 #==============================================================================
 # - 本插件新增了一个显示在屏幕角落的TODO队列
 #----------------------------------------------------------------------------
@@ -186,6 +186,9 @@ module TODOLIST
   # - 待办事项精灵之间的间隔高度
   "Y_OFFSET" => 4,
   #-----------------------------------------------------------------
+  # - 待办事项精灵每次移动的消耗时间
+  "MOVE_TIME" => 10,
+  #-----------------------------------------------------------------
   # - 待办事项精灵完成时的划线动画持续时间（因每一行独立处理划线，可能会有偏差）
   "OUT_LINE_TIME" => 30,
   #-----------------------------------------------------------------
@@ -281,9 +284,10 @@ module TODOLIST
     refresh if @flag_need_refresh
     @sprites.each do |s|
       s.update
-      @sprites_fin.push(s) if s.finish?
+      @sprites_fin.push(s) if s.in_finish?
     end
-    @sprites.delete_if { |s| s.finish? }
+    @sprites.delete_if { |s| s.in_finish? }
+    @sprites_fin.each { |s| s.update if !s.finish? }
   end
   #--------------------------------------------------------------------------
   # ● 需要刷新精灵组
@@ -408,6 +412,7 @@ class Sprite_EagleTodo < Sprite
     redraw
     reset_position
     @finish = false
+    @in_finish = false
     @d_opa = 0
     self.opacity = 255
   end
@@ -532,7 +537,7 @@ class Sprite_EagleTodo < Sprite
     return if des_x == nil && des_y == nil
     set_xy
     @params_move = {}
-    @params_move[:t] =20
+    @params_move[:t] = PARAMS["MOVE_TIME"]
     @params_move[:i] = 0
     @params_move[:des_x] = des_x
     @params_move[:des_y] = des_y
@@ -584,7 +589,7 @@ class Sprite_EagleTodo < Sprite
   #--------------------------------------------------------------------------
   def ease_value(v)
     if $imported["EAGLE-EasingFunction"]
-      return EasingFuction.call("easeOutBack", v)
+      return EasingFuction.call("easeOutQuad", v)
     end
     return 1 - 2**(-10 * v)
   end
@@ -598,12 +603,20 @@ class Sprite_EagleTodo < Sprite
   # ● 完成
   #--------------------------------------------------------------------------
   def finish(anim = true)
+    @in_finish = true
     @value = 0
     TODOLIST.need_refresh
     @fiber = Fiber.new { 
       fiber_finish if anim
       fiber_finish_no_anim
+      @in_finish = false
     }
+  end
+  #--------------------------------------------------------------------------
+  # ● 在处理完成中？
+  #--------------------------------------------------------------------------
+  def in_finish?
+    @in_finish == true
   end
   #--------------------------------------------------------------------------
   # ● 完成？

@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Dice"] = "1.1.9"
+$imported["EAGLE-Dice"] = "1.2.0"
 #==============================================================================
-# - 2025.2.1.16 修复新增骰子的正则表达式
+# - 2025.5.3.15 新增返回最大值最小值，新增加值骰子
 #==============================================================================
 # - 本插件增加了一套独立的骰子系统，能够在任意时刻投掷并返回结果
 #------------------------------------------------------------------------------
@@ -23,6 +23,9 @@ $imported["EAGLE-Dice"] = "1.1.9"
 #     :show_stat => 布尔量,# 是否显示左上角统计信息（默认 true）
 #     :auto => 布尔量,  # 若传入 true，则不可操作，自动投掷结束（默认 false）
 #     :reroll => 数字,  # 允许进行重投掷的次数（默认0）
+#     :type => 数字,  # 返回结果的类型，默认返回和
+#                   传入 0 返回和，1 返回最大值，2 返回最小值
+#                   注意：类型为 1 的骰子不参与统计，而是直接在结果中增加
 #     :in_x => 字符串,    # 骰子的初始位置（eval后需要返回数字）
 #     :in_y => 字符串,
 #     :in_dx => 字符串,   # 骰子的初始位置增量（eval后需要返回数字）
@@ -79,6 +82,8 @@ $imported["EAGLE-Dice"] = "1.1.9"
 #                     但如果设置了该项，则为查找 Dice_BG_字符串 的图片。
 #                   同理，对于被选中骰子的遮挡图片，默认使用 Dice_Chosen 图片，
 #                     但如果设置了该项，则为查找 Dice_Chosen_字符串 的图片。
+#      type=数字  # 骰子的类型，默认 0
+#                  0 代表一般骰子，1 代表加值骰子（不参与统计，仅在最后结果中增加）
 #
 # - 注意：
 #
@@ -118,6 +123,8 @@ $imported["EAGLE-Dice"] = "1.1.9"
 #    其中 params 为变量参数字符串，由以下项任意组成（空格分隔）
 # 
 #      reroll=数字   → 增加可重投掷的次数
+#      type=数字     → 返回结果的类型（取最后一个的设置）
+#                       0 为和，1 为最大值，2 为最小值
 #
 # - 示例：
 #
@@ -331,9 +338,10 @@ module DICE
       end
     end
     # 获取投掷参数
-    params = { :reroll => 0 }
+    params = { :reroll => 0, :type => 0 }
     params_array.each do |h|
       params[:reroll] += h[:reroll].to_i if h[:reroll]
+      params[:type]    = h[:type].to_i   if h[:type]
     end
     return datas, params
   end
@@ -354,6 +362,10 @@ module DICE
     end
     s.dispose
     ps[:result] = s.results
+    case ps[:type]
+    when 1; return s.max
+    when 2; return s.min
+    end
     return s.sum
   end
   #--------------------------------------------------------------------------
@@ -368,7 +380,7 @@ module DICE
 #==============================================================================
 class Spriteset_Dices
   include DICE
-  attr_reader   :results, :sum
+  attr_reader   :results, :sum, :max, :min
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -433,9 +445,30 @@ class Spriteset_Dices
   # ● 主线程（无UI）
   #--------------------------------------------------------------------------
   def fiber_no_ui
-    @results = @data.collect { |d| d.ids.sample(1)[0] }
-    @sum = @results.inject(0) {|v, s| s += v }
+    data = @data.collect { |d| [d.ids.sample(1)[0], d.type] }
+    get_statistics(data)
     @fiber = nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 计算统计量
+  #--------------------------------------------------------------------------
+  def get_statistics(data) # data=[[v, dice_type]]
+    # type=0的一般骰子
+    s1 = data.select { |s| s[1] == 0 }
+    r1 = s1.collect { |s| s[0] }
+    sum1 = r1.inject(0) { |v, s| s += v }
+    max1 = r1.max
+    min1 = r1.min
+    
+    # type=1的加值骰子
+    s2 = data.select { |s| s[1] == 1 }
+    r2 = s2.collect { |s| s[0] }
+    sum2 = r2.inject(0) { |v, s| s += v }
+    
+    @results = r1 + [sum2]
+    @sum = sum1 + sum2
+    @max = max1 + sum2
+    @min = min1 + sum2
   end
 
   #--------------------------------------------------------------------------
@@ -582,8 +615,7 @@ class Spriteset_Dices
     end
     Fiber.yield until waiting?
     @active = f
-    @results = @sprite_dices.collect { |s| s.v }
-    @sum = @results.inject(0) { |v, s| s += v }
+    get_statistics(@sprite_dices.collect{|s| [s.v, s.type]})
     redraw_info
     redraw_dice_info
   end
@@ -852,7 +884,7 @@ end
 #==============================================================================
 class Data_Dice
   attr_reader   :ids_init, :ids, :changes
-  attr_accessor :params
+  attr_accessor :params, :type
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -862,6 +894,8 @@ class Data_Dice
     @ids = ids.dup # 最终id数组
     @changes = {} # 面index => [old_id, new_id, obj]
     @params = params # 存储一些额外的参数
+    @type = @params[:type] || 0
+    @type = @type.to_i
   end
   #--------------------------------------------------------------------------
   # ● 增加指定面的修改
@@ -882,6 +916,13 @@ class Data_Dice
   def changed_with_icon?(index)
     changed?(index) && @changes[index][2].icon_index
   end
+  #--------------------------------------------------------------------------
+  # ● 判断骰子的类型
+  # 0 为一般骰子，作为最后统计的基准值
+  # 1 为最终加值骰子，在最后算出的结果后再加值
+  #--------------------------------------------------------------------------
+  def type_normal?; @type == 0; end
+  def type_add?;    @type == 1; end
 end
 
 #==============================================================================
@@ -890,6 +931,7 @@ end
 class Sprite_Dice < Sprite
   include DICE
   attr_reader  :data
+  def type;  @data.type;  end
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -948,19 +990,24 @@ class Sprite_Dice < Sprite
       t_bitmap.font.color = TEXT_COLOR
       t_bitmap.font.outline = false
       t_bitmap.font.shadow = false
+      if @data.type_add?
+        t = id >= 0 ? "+#{id}" : "#{id}"
+      else
+        t = "#{id}"
+      end
       # 如果存在数值变动
       if @data.changed_with_icon?(index)
-        t = @data.changes[index][0].to_s
-        r = t_bitmap.text_size(t)
+        t2 = @data.changes[index][0].to_s
+        r = t_bitmap.text_size(t2)
         _y = -2
         _w = 10
         color = TEXT_COLOR
-        t_bitmap.draw_text(0, _y, t_bitmap.width-_w, t_bitmap.height, t, 1)
+        t_bitmap.draw_text(0, _y, t_bitmap.width-_w, t_bitmap.height, t2, 1)
         t_bitmap.fill_rect((t_bitmap.width-_w-r.width)/2-1,
           t_bitmap.height/2+_y, r.width+2, 1, color)
-        t_bitmap.draw_text(_w, _y*-1, t_bitmap.width-_w, t_bitmap.height, id, 1)
+        t_bitmap.draw_text(_w, _y*-1, t_bitmap.width-_w, t_bitmap.height, t, 1)
       else
-        t_bitmap.draw_text(0, 0, t_bitmap.width+2, t_bitmap.height, id, 1)
+        t_bitmap.draw_text(0, 0, t_bitmap.width+2, t_bitmap.height, t, 1)
       end
       @bitmaps.push(t_bitmap)
     end
