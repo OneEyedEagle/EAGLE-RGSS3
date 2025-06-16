@@ -4,25 +4,40 @@
 # ※ 本插件需要放置在【组件-位图Marshal化（VX/VA）】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SaveScreenshot"] = "1.0.5"
+$imported["EAGLE-SaveScreenshot"] = "1.0.6"
 #==============================================================================
-# - 2023.8.24.21 解决VX中会释放正在使用的截图的位图的bug
+# - 2025.6.16.21 新增全部存档通用的截图
 #==============================================================================
 # - 本插件新增了截图的保存，并且可以利用事件指令-显示图片来调用这些截图
 #--------------------------------------------------------------------------
-# ○ 保存截图
+# ○ 保存截图（各存档独立）
 #--------------------------------------------------------------------------
-# - 利用事件脚本 save_screenshot(name) 来将当前屏幕的截图进行保存
+# - 利用事件脚本 save_screenshot(name) 保存当前屏幕的截图
 #    其中 name 为任意字符串，将作为截图的名称，请确保唯一性
 #
 # - 注意：
 #
-#    1. 在进行存档时，将同步存储全部截图，读档时也将同步读取。
-#    2. 不同存档之间的数据互相独立。
+#    1. 在进行存档时，才会同步存储全部截图，读档时将同步读取。
+#    2. 不同存档之间的截图互相独立。
 #
 # - 示例：
 #
 #     事件脚本调用 save_screenshot("第一次见面")
+#
+#--------------------------------------------------------------------------
+# ○ 保存截图（各存档通用）
+#--------------------------------------------------------------------------
+# - 利用事件脚本 save_screenshot_global(name) 保存当前屏幕的截图
+#    其中 name 为任意字符串，将作为截图的名称，请确保唯一性
+#
+# - 注意：
+#
+#    1. 在调用事件脚本时，便会同步存储到文件，新游戏及读档时将同步读取。
+#    2. 全部存档通用该处的截图。
+#
+# - 示例：
+#
+#     事件脚本调用 save_screenshot_global("第一次新游戏")
 #
 #--------------------------------------------------------------------------
 # ○ 读取截图
@@ -39,6 +54,11 @@ $imported["EAGLE-SaveScreenshot"] = "1.0.5"
 #    1. 事件脚本调用 load_screenshot("第一次见面", 1)
 #    2. 事件指令-显示图片-原点中点、位置、不透明度150 等自由设置，就能显示这张截图了
 #    3. 事件指令-移动图片，也可以正常移动
+#
+# - 注意：
+#
+#    1. 优先读取存档对应的截图，若未找到，则读取全局的截图，
+#       若未找到，则返回默认设置的图片/空图片
 #
 #==============================================================================
 FLAG_VX = RUBY_VERSION[0..2] == "1.8"  # 兼容VX用
@@ -58,10 +78,13 @@ module SAVE_MEMORY
   def self.screenshot_filename(index)
     v = FLAG_VX ? "%d" : "%02d"
     t = FLAG_VX ? ".rvdata" : ".rvdata2"
-    # 全部存档文件对应同一个截图文件
-    return sprintf(SAVE_SCREEN_DIR + "Memory" + t)
-    # 一个存档文件对应一个截图文件
-    return sprintf(SAVE_SCREEN_DIR + "Save"+v+"_memory" + t, index + 1)
+    if index == -1
+      # 全部存档文件通用的截图文件
+      return sprintf(SAVE_SCREEN_DIR + "Memory" + t)
+    else
+      # 一个存档文件对应一个截图文件
+      return sprintf(SAVE_SCREEN_DIR + "Save"+v+"_memory" + t, index + 1)
+    end
   end
   #--------------------------------------------------------------------------
   # 【常量】未找到对应截图时，显示的图片
@@ -71,6 +94,44 @@ module SAVE_MEMORY
     #return Cache.picture("")
     # 显示空白图片
     return Cache.empty_bitmap
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 写入文件
+  #--------------------------------------------------------------------------
+  def self.save(index)
+    if index == -1
+      File.open(SAVE_MEMORY.screenshot_filename(-1), "wb") do |file|
+        Marshal.dump(SAVE_MEMORY.data_global, file)
+      end
+    else 
+      File.open(SAVE_MEMORY.screenshot_filename(index), "wb") do |file|
+        Marshal.dump(SAVE_MEMORY.data, file)
+      end
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取文件
+  #--------------------------------------------------------------------------
+  def self.load(index)
+    if index == -1
+      begin
+        File.open(SAVE_MEMORY.screenshot_filename(-1), "rb") do |file|
+          SAVE_MEMORY.data_global = Marshal.load(file)
+        end
+      rescue
+        SAVE_MEMORY.data_global = {}
+      end
+    else
+      begin
+        File.open(SAVE_MEMORY.screenshot_filename(index), "rb") do |file|
+          SAVE_MEMORY.data = Marshal.load(file)
+        end
+      rescue
+        SAVE_MEMORY.data = {}
+        p $!
+      end
+    end
   end
 end
 
@@ -95,9 +156,7 @@ class Scene_File
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_do_save do_save
   def do_save
-    File.open(SAVE_MEMORY.screenshot_filename(@index), "wb") do |file|
-      Marshal.dump(SAVE_MEMORY.data, file)
-    end
+    SAVE_MEMORY.save(@index)
     eagle_save_screenshot_do_save
   end
   #--------------------------------------------------------------------------
@@ -105,15 +164,19 @@ class Scene_File
   #--------------------------------------------------------------------------
   alias eagle_save_screenshot_do_load do_load
   def do_load
-    begin
-      File.open(SAVE_MEMORY.screenshot_filename(@index), "rb") do |file|
-        SAVE_MEMORY.data = Marshal.load(file)
-      end
-    rescue
-      SAVE_MEMORY.data = {}
-      p $!
-    end
+    SAVE_MEMORY.load(-1)
+    SAVE_MEMORY.load(@index)
     eagle_save_screenshot_do_load
+  end
+end
+class Scene_Title
+  #--------------------------------------------------------------------------
+  # ● 命令：新游戏
+  #--------------------------------------------------------------------------
+  alias eagle_save_screenshot_command_new_game command_new_game
+  def command_new_game
+    SAVE_MEMORY.load(-1)
+    eagle_save_screenshot_command_new_game
   end
 end
 else  # if FLAG_VX
@@ -124,9 +187,7 @@ class << DataManager
   alias eagle_save_screenshot_save_game_without_rescue save_game_without_rescue
   def save_game_without_rescue(index)
     eagle_save_screenshot_save_game_without_rescue(index)
-    File.open(SAVE_MEMORY.screenshot_filename(index), "wb") do |file|
-      Marshal.dump(SAVE_MEMORY.data, file)
-    end
+    SAVE_MEMORY.save(index)
     return true
   end
   #--------------------------------------------------------------------------
@@ -135,15 +196,17 @@ class << DataManager
   alias eagle_save_screenshot_load_game_without_rescue load_game_without_rescue
   def load_game_without_rescue(index)
     eagle_save_screenshot_load_game_without_rescue(index)
-    begin
-      File.open(SAVE_MEMORY.screenshot_filename(index), "rb") do |file|
-        SAVE_MEMORY.data = Marshal.load(file)
-      end
-    rescue
-      SAVE_MEMORY.data = {}
-      p $!
-    end
+    SAVE_MEMORY.load(-1)
+    SAVE_MEMORY.load(index)
     return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置新游戏
+  #--------------------------------------------------------------------------
+  alias eagle_save_screenshot_setup_new_game setup_new_game
+  def setup_new_game
+    SAVE_MEMORY.load(-1)
+    eagle_save_screenshot_setup_new_game
   end
 end
 end  # if FLAG_VX
@@ -178,22 +241,33 @@ module SAVE_MEMORY
   # ● 数据
   #--------------------------------------------------------------------------
   @data = {}  # name => bitmap
-  class << self; attr_accessor :data; end
+  @data_global = {} # name => bitmap
+  class << self; attr_accessor :data, :data_global; end
   #--------------------------------------------------------------------------
   # ● 保存截图
   #--------------------------------------------------------------------------
   def self.save_screenshot(name)
     @data[name] = get_screenshot
   end
+  def self.save_screenshot_global(name)
+    @data_global[name] = get_screenshot
+  end
   #--------------------------------------------------------------------------
   # ● 读取截图
   #--------------------------------------------------------------------------
   def self.load_screenshot(name)
-    @data[name] || SAVE_MEMORY.no_screenshot 
+    @data[name] || @data_global[name] || SAVE_MEMORY.no_screenshot 
   end
 end
 
 class Game_Interpreter
+  #--------------------------------------------------------------------------
+  # ● 保存截图（全存档通用）
+  #--------------------------------------------------------------------------
+  def save_screenshot_global(name)
+    SAVE_MEMORY.save_screenshot_global(name)
+    SAVE_MEMORY.save(-1)
+  end
   #--------------------------------------------------------------------------
   # ● 保存截图
   #--------------------------------------------------------------------------
