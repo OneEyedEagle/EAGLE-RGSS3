@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-SaveScreenshot"] = "1.0.6"
 #==============================================================================
-# - 2025.6.16.21 新增全部存档通用的截图
+# - 2025.6.16.24 新增全部存档通用的截图，新增删除截图
 #==============================================================================
 # - 本插件新增了截图的保存，并且可以利用事件指令-显示图片来调用这些截图
 #--------------------------------------------------------------------------
@@ -59,6 +59,14 @@ $imported["EAGLE-SaveScreenshot"] = "1.0.6"
 #
 #    1. 优先读取存档对应的截图，若未找到，则读取全局的截图，
 #       若未找到，则返回默认设置的图片/空图片
+#
+#--------------------------------------------------------------------------
+# ○ 删除截图
+#--------------------------------------------------------------------------
+# - 利用事件脚本 delete_screenshot(name) 来删除之前保存的截图
+#   delete_screenshot_global(name) 来删除之前保存的全局截图
+#
+#   若不传入 name 或传入 nil，则删除全部截图
 #
 #==============================================================================
 FLAG_VX = RUBY_VERSION[0..2] == "1.8"  # 兼容VX用
@@ -258,6 +266,27 @@ module SAVE_MEMORY
   def self.load_screenshot(name)
     @data[name] || @data_global[name] || SAVE_MEMORY.no_screenshot 
   end
+  #--------------------------------------------------------------------------
+  # ● 删除截图
+  #--------------------------------------------------------------------------
+  def self.delete_screenshot(name)
+    if name == nil
+      @data.each { |name, b| b.dispose }
+      @data.clear
+    else
+      @data[name].dispose 
+      @data.delete(name)
+    end
+  end
+  def self.delete_screenshot_global(name)
+    if name == nil
+      @data_global.each { |name, b| b.dispose }
+      @data_global.clear
+    else
+      @data_global[name].dispose 
+      @data_global.delete(name)
+    end
+  end
 end
 
 class Game_Interpreter
@@ -279,6 +308,16 @@ class Game_Interpreter
   #--------------------------------------------------------------------------
   def load_screenshot(name, pid)
     @eagle_show_screenshot = [pid, name]
+  end
+  #--------------------------------------------------------------------------
+  # ● 删除截图
+  #--------------------------------------------------------------------------
+  def delete_screenshot(name=nil)
+    SAVE_MEMORY.delete_screenshot(name)
+  end
+  def delete_screenshot_global(name=nil)
+    SAVE_MEMORY.delete_screenshot_global(name)
+    SAVE_MEMORY.save(-1)
   end
   #--------------------------------------------------------------------------
   # ● 显示图片
