@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.1.11"
+$imported["EAGLE-MouseEX"] = "1.1.13"
 #=============================================================================
-# - 2025.4.27.20 选择窗口新增鼠标移走后调用 unselect 
+# - 2025.6.2.12 优化鼠标滚轮处理选择窗口
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -208,7 +208,7 @@ class Window_Base
   # ● 该窗口包含了鼠标？
   #--------------------------------------------------------------------------
   def mouse_in?(_visible = true, _in_contents = true)
-    return false if _visible && (!visible || opacity == 0 || openness < 255)
+    return false if _visible && (!visible || openness < 255 || (opacity == 0 and contents_opacity == 0))
     return false if disposed?
     rx = MOUSE_EX.x - self.x 
     ry = MOUSE_EX.y - self.y 
@@ -252,29 +252,29 @@ end
 #===============================================================================
 # ○ 鼠标触发事件
 #===============================================================================
-class Sprite_Character < Sprite_Base
-  #--------------------------------------------------------------------------
-  # ● 更新其它内容
-  #--------------------------------------------------------------------------
-  alias eagle_mouse_ex_update_other update_other
-  def update_other
-    eagle_mouse_ex_update_other
-    # 当事件执行时，不判定
-    return if $game_map.interpreter.running?
-    # 当鼠标移动到事件上，且按下左键时，触发它
-    if MOUSE_EX.up?(:ML) && @character.is_a?(Game_Event) && mouse_in?(true, false)
-      @character.start
-      # 被触发的事件朝向玩家
-      @character.turn_to_character($game_player)
-      # 玩家朝向被触发的事件
-      $game_player.turn_to_character(@character)
-      # 计算了被触发事件与玩家之间的距离
-      d = @character.distance_to_character($game_player)
-      # 可传入变量中，然后在事件指令里判定距离，如果过大则提示太远并中止事件执行
-      #$game_variables[1] = d
-    end
-  end
-end
+#~ class Sprite_Character < Sprite_Base
+#~   #--------------------------------------------------------------------------
+#~   # ● 更新其它内容
+#~   #--------------------------------------------------------------------------
+#~   alias eagle_mouse_ex_update_other update_other
+#~   def update_other
+#~     eagle_mouse_ex_update_other
+#~     # 当事件执行时，不判定
+#~     return if $game_map.interpreter.running?
+#~     # 当鼠标移动到事件上，且按下左键时，触发它
+#~     if MOUSE_EX.up?(:ML) && @character.is_a?(Game_Event) && mouse_in?(true, false)
+#~       @character.start
+#~       # 被触发的事件朝向玩家
+#~       @character.turn_to_character($game_player)
+#~       # 玩家朝向被触发的事件
+#~       $game_player.turn_to_character(@character)
+#~       # 计算了被触发事件与玩家之间的距离
+#~       d = @character.distance_to_character($game_player)
+#~       # 可传入变量中，然后在事件指令里判定距离，如果过大则提示太远并中止事件执行
+#~       #$game_variables[1] = d
+#~     end
+#~   end
+#~ end
 class Game_Character
   #--------------------------------------------------------------------------
   # ● 朝向指定角色
@@ -321,6 +321,14 @@ class Window_Selectable < Window_Base
     #   该标记为 true 时，鼠标移出窗口时，执行一次 unselect，下次移入前不会重复执行
     #   该标记为 false 时，不管鼠标在哪里，窗口光标都正常处于选择中
     @flag_mouse_unselect_when_out = false
+    # 新增一个标识，用于隐藏RGSS的窗口光标
+    @flag_no_cursor = false
+    # 新增一个标识，用于判定鼠标滚轮是否需要在窗口内部，才能触发切换选项
+    @flag_mouse_scroll_in_win = false
+    
+    # 存储上一帧鼠标位置
+    @last_mouse_x = 0
+    @last_mouse_y = 0
     
     eagle_mouse_init(x, y, width, height)
   end
@@ -338,18 +346,23 @@ class Window_Selectable < Window_Base
     cursor_pagedown   if !handle?(:pagedown) && Input.trigger?(:R)
     cursor_pageup     if !handle?(:pageup)   && Input.trigger?(:L)
     # 新增鼠标滚轮
-    cursor_up   (true) if MOUSE_EX.scroll_up?
-    cursor_down (true) if MOUSE_EX.scroll_down?
+    f = mouse_in?
+    if !@flag_mouse_scroll_in_win || (@flag_mouse_scroll_in_win && f)
+      cursor_up   (true) if MOUSE_EX.scroll_up?
+      cursor_down (true) if MOUSE_EX.scroll_down?
+    end
     # 新增鼠标选择
-    process_eagle_mouse_selection
+    process_eagle_mouse_selection if f
+    return unselect if @flag_mouse_unselect_when_out && @index >= 0 && !f
     Sound.play_cursor if @index != last_index
   end
   #--------------------------------------------------------------------------
   # ● 处理鼠标选择光标
   #--------------------------------------------------------------------------
   def process_eagle_mouse_selection
-    last_index = @index
-    flag_select = false
+    # 如果鼠标没发生移动，则不重复处理
+    return if MOUSE_EX.x == @last_mouse_x && @last_mouse_y == MOUSE_EX.y
+    @last_mouse_x = MOUSE_EX.x; @last_mouse_y = MOUSE_EX.y
     # 逐个选项查看是否被鼠标选中
     item_max.times do |i|
       r = item_rect_for_text(i)
@@ -361,16 +374,15 @@ class Window_Selectable < Window_Base
       # 计算选项的RGSS全局坐标
       r.x += self.x - self.ox + standard_padding
       r.y += self.y - self.oy + standard_padding
-      if MOUSE_EX.in?(r)
-        flag_select = true
-        select(i)
-        break
-      end
+      break select(i) if MOUSE_EX.in?(r)
     end
-    if @flag_mouse_unselect_when_out && @index >= 0 && !flag_select
-      return unselect
-    end
-    Sound.play_cursor if @index != last_index
+  end
+  #--------------------------------------------------------------------------
+  # ● 解除项目的选择
+  #--------------------------------------------------------------------------
+  def unselect
+    return if @index == -1  # 不要重复处理
+    self.index = -1
   end
   #--------------------------------------------------------------------------
   # ● “确定”和“取消”的处理
@@ -402,6 +414,14 @@ class Window_Selectable < Window_Base
     if MOUSE_EX.up?(:MR)
       process_cancel if cancel_enabled?
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新光标
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_update_cursor update_cursor
+  def update_cursor
+    return cursor_rect.empty if @flag_no_cursor
+    eagle_mouse_update_cursor
   end
 end
 

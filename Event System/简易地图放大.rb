@@ -2,9 +2,9 @@
 # ■ 简易地图放大 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MapZoom"] = "1.0.1"
+$imported["EAGLE-MapZoom"] = "1.0.2"
 #==============================================================================
-# - 2023.4.2.19
+# - 2025.5.11.13 修改为以地图格子中心为放大基准点
 #==============================================================================
 # - 本插件新增了一个简单的地图放大功能
 #   本质为实时截图，并放大显示该截图
@@ -168,8 +168,8 @@ class Spriteset_Map
   def check_zoom_center
     v = $game_map.zoom_center
     if v.is_a?(Array)
-      _x = (v[0].to_i - $game_map.display_x) * 32
-      _y = (v[1].to_i - $game_map.display_y) * 32
+      _x = (v[0].to_i - $game_map.display_x) * 32 + 16
+      _y = (v[1].to_i - $game_map.display_y) * 32 + 16
       return _x, _y
     end
     case v

@@ -2,9 +2,9 @@
 # ■ 游戏运行倍速切换  by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SpeedUp"] = "1.1.1"
+$imported["EAGLE-SpeedUp"] = "1.1.2"
 #==============================================================================
-# - 2025.1.1.23 为每个scene独立保存了其运行倍速 
+# - 2025.5.25.12 倍率未变时，提示文本不显示
 #==============================================================================
 # - 新增在地图、战斗场景中，按下指定键后按顺序变更游戏运行倍速
 #
@@ -35,6 +35,7 @@ module EAGLE::SpeedUp
   # ● 改变倍率
   #--------------------------------------------------------------------------
   def self.change_index(i = nil)
+    last_index = @index
     if i.nil?
       @index += 1
       @index = 0 if @index >= TIMES.size
@@ -42,7 +43,7 @@ module EAGLE::SpeedUp
       @index = i.to_i
     end
     @count = 0
-    redraw_hint
+    redraw_hint if last_index != @index
   end
   #--------------------------------------------------------------------------
   # ● 获取当前倍率
@@ -58,9 +59,7 @@ module EAGLE::SpeedUp
   #--------------------------------------------------------------------------
   def self.reset_index
     return if @index == 0
-    @index = 0
-    @count = 0
-    redraw_hint
+    change_index(0)
   end
   #--------------------------------------------------------------------------
   # ● 初始化
@@ -86,7 +85,7 @@ module EAGLE::SpeedUp
   # ● 更新
   #--------------------------------------------------------------------------
   def self.ui_update
-    @sprite_hint.opacity -= 1
+    @sprite_hint.opacity -= 2
   end
   #--------------------------------------------------------------------------
   # ● 提示文本显隐
@@ -146,7 +145,11 @@ class Scene_Base
     eagle_speed_up_post_start
     $game_system.scene2speedup ||= {}
     i = $game_system.scene2speedup[self.class]
-    EAGLE::SpeedUp.change_index(i) if i
+    if i
+      EAGLE::SpeedUp.change_index(i) 
+    else
+      EAGLE::SpeedUp.reset_index
+    end
   end
   #--------------------------------------------------------------------------
   # ● 更新画面（基础）
@@ -174,7 +177,6 @@ class Scene_Base
     eagle_speed_up_pre_terminate
     $game_system.scene2speedup ||= {}
     $game_system.scene2speedup[self.class] = EAGLE::SpeedUp.index
-    EAGLE::SpeedUp.reset_index
   end
 end
 

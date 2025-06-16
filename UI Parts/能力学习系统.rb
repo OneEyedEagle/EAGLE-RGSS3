@@ -6,17 +6,23 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.6.7"
+$imported["EAGLE-AbilityLearn"] = "1.7.0"
 #==============================================================================
-# - 2025.4.22.19 测试游戏时，将显示网格坐标
+# - 2025.5.25.10 新增Scene呼叫方法；新增单个能力的背景图片设置
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
 # 【使用】
 #
-#    利用全局脚本 ABILITY_LEARN.call 呼叫能力学习界面。
+#  方式一：利用全局脚本 ABILITY_LEARN.call 在任意时刻呼叫能力学习界面。
 #
-#    特别的，在战斗测试中，将默认激活全部能力 1 级。
+#  方式二：利用 SceneManager.call(Scene_AbilityLearn) 打开能力学习界面。
+#          可以提前调用 Scene_AbilityLearn::set_actor(id) 来设置显示的角色的id
+#
+#------------------------------------------------------------------------------
+# 【注意】
+#
+#    在战斗测试中，将默认激活全部能力 1 级。
 #
 #------------------------------------------------------------------------------
 # 【兼容】
@@ -67,6 +73,11 @@ ACTORS[0] = {  # 不要漏了花括号
   # -【可选】还可以指定为 Graphics\System 路径下的一张图片进行显示
   #  （只会显示在解锁界面，不会显示在帮助窗口里）
     :pic => "",
+  #------------------------------------------------------------------------
+  # -【可选】为这个能力的图标设置背景图片
+  #  （若传入 字符串，则为 Graphics\System 路径下的图片）
+  #  （若传入 数字，则为 Iconset 图标的ID）
+    :bg => "",
   #------------------------------------------------------------------------
   # -【可选】设置这个能力学习一次后，角色增加的基础属性值
   #  （编写 属性=数字 的字符串，用空格分隔不同属性，
@@ -577,6 +588,24 @@ module ABILITY_LEARN
     b
   end
   #--------------------------------------------------------------------------
+  # ● 获取指定id的对应背景bitmap
+  #--------------------------------------------------------------------------
+  def self.get_token_bg(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    return nil if ps[:bg] == nil
+    if ps[:bg].is_a?(Integer)
+      icon_index = ps[:bg]
+      bitmap = Cache.system("Iconset")
+      rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
+      b = Bitmap.new(24,24)
+      b.blt(x, y, bitmap, rect, 255)
+      return b
+    elsif ps[:bg].is_a?(String)
+      return Cache.system(ps[:bg]) rescue nil
+    end
+    return nil
+  end
+  #--------------------------------------------------------------------------
   # ● 获取指定id的属性值Hash（利用paras_params进行解析）
   #--------------------------------------------------------------------------
   def self.get_token_params(actor_id, token_id)
@@ -951,7 +980,6 @@ class << ABILITY_LEARN
   # ● UI-开启
   #--------------------------------------------------------------------------
   def call
-    @flag_ui = true
     begin
       init_ui
       update_ui
@@ -960,13 +988,13 @@ class << ABILITY_LEARN
     ensure
       dispose_ui
     end
-    @flag_ui = false
     $game_map.need_refresh = true  # 结束后，刷新下地图
   end
   #--------------------------------------------------------------------------
   # ● UI-结束并释放
   #--------------------------------------------------------------------------
   def dispose_ui
+    @flag_ui = false
     instance_variables.each do |varname|
       ivar = instance_variable_get(varname)
       if ivar.is_a?(Sprite)
@@ -989,7 +1017,9 @@ class << ABILITY_LEARN
   #--------------------------------------------------------------------------
   # ● UI-初始化
   #--------------------------------------------------------------------------
-  def init_ui
+  def init_ui(actor_id=nil)
+    @flag_ui = true
+    
     # 暗色背景
     @sprite_bg = Sprite.new
     @sprite_bg.z = 200
@@ -1002,12 +1032,12 @@ class << ABILITY_LEARN
 
     # 底部按键提示
     @sprite_hint = Sprite.new
-    @sprite_hint.z = @sprite_bg.z + 20
+    @sprite_hint.z = @sprite_bg.z + 30
     set_sprite_hint(@sprite_hint)
 
-    # 视图
+    # 存储全部能力的视图
     @viewport_bg = Viewport.new(0,0,Graphics.width,Graphics.height-24)
-    @viewport_bg.z = @sprite_bg.z + 10
+    @viewport_bg.z = @sprite_bg.z + 20
 
     # 网格背景
     @sprite_grid = Sprite.new(@viewport_bg)
@@ -1055,18 +1085,22 @@ class << ABILITY_LEARN
 
     # 角色信息文本
     @sprite_actor_info = Sprite_AbilityLearn_ActorInfo.new
-    @sprite_actor_info.z = @sprite_hint.z + 1
+    @sprite_actor_info.z = @sprite_bg.z + 40
 
     # 说明文本
     @sprite_help = Sprite_AbilityLearn_TokenHelp.new
-    @sprite_help.z = @sprite_hint.z + 2
+    @sprite_help.z = @sprite_bg.z + 50
 
     # 角色背景图片
     @sprite_actor_bg = Sprite.new(@viewport_bg)
-    @sprite_actor_bg.z = 1
+    @sprite_actor_bg.z = @sprite_grid.z + 1
 
     # 重置当前角色
-    @actor = $game_party.menu_actor
+    if actor_id && actor_id > 0
+      @actor = $game_actors[actor_id]
+    else
+      @actor = $game_party.menu_actor
+    end
     reset_actor(@actor.id)
   end
   #--------------------------------------------------------------------------
@@ -1125,6 +1159,7 @@ class << ABILITY_LEARN
   #--------------------------------------------------------------------------
   def reset_actor(actor_id)
     @actor_id = actor_id
+    $game_party.menu_actor = $game_actors[@actor_id]
     check_params
     redraw_tokens
     redraw_lines
@@ -1165,7 +1200,7 @@ class << ABILITY_LEARN
         next if ps[:if] && ABILITY_LEARN.process_token_if(ps[:if]) != true
       end
       s = Sprite_AbilityLearn_Token.new(@viewport_bg, @actor_id, id, ps)
-      s.z = @sprite_grid.z + 20
+      s.set_z(@sprite_grid.z + 20)
       @sprites_token[id] = s
     end
   end
@@ -1522,9 +1557,11 @@ class Sprite_AbilityLearn_Token < Sprite
   #--------------------------------------------------------------------------
   def initialize(vp, actor_id, token_id, ps)
     super(vp)
+    @sprite_bg = nil
     @sprite_unlock = nil
     @actor_id = actor_id
     @id = token_id
+    reset_bg
     refresh
     pos = ps[:pos] || [0, 0]
     reset_position(pos[0], pos[1])
@@ -1538,6 +1575,10 @@ class Sprite_AbilityLearn_Token < Sprite
       @sprite_unlock.bitmap.dispose
       @sprite_unlock.dispose
     end
+    if @sprite_bg
+      @sprite_bg.bitmap.dispose if @sprite_bg.bitmap
+      @sprite_bg.dispose
+    end
     self.bitmap.dispose
     super
   end
@@ -1547,17 +1588,27 @@ class Sprite_AbilityLearn_Token < Sprite
   def refresh
     reset_bitmap
     self.color = Color.new(0,0,0,0)
+    @sprite_bg.color = Color.new(0,0,0,0) if @sprite_bg
     data = $game_actors[@actor_id].eagle_ability_data
     if data.unlock?(id) || data.no_unlock?(id)
       draw_level
     else
       self.color = Color.new(0,0,0,120)
+      @sprite_bg.color = Color.new(0,0,0,120) if @sprite_bg
     end
     @sprite_unlock ||= Sprite.new(self.viewport)
     @sprite_unlock.bitmap.dispose if @sprite_unlock.bitmap
     @sprite_unlock.bitmap = self.bitmap.dup
     @sprite_unlock.color = Color.new(0,0,0,120)
     @sprite_unlock.opacity = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 重设背景位图
+  #--------------------------------------------------------------------------
+  def reset_bg
+    @sprite_bg ||= Sprite.new(self.viewport)
+    @sprite_bg.bitmap.dispose if @sprite_bg.bitmap
+    @sprite_bg.bitmap = ABILITY_LEARN.get_token_bg(@actor_id, @id)
   end
   #--------------------------------------------------------------------------
   # ● 重设位图
@@ -1616,8 +1667,21 @@ class Sprite_AbilityLearn_Token < Sprite
       @sprite_unlock.oy = @sprite_unlock.height / 2
       @sprite_unlock.x = self.x
       @sprite_unlock.y = self.y
-      @sprite_unlock.z = self.z + 1
     end
+    if @sprite_bg
+      @sprite_bg.ox = @sprite_bg.width / 2
+      @sprite_bg.oy = @sprite_bg.height / 2
+      @sprite_bg.x = self.x 
+      @sprite_bg.y = self.y
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置z值
+  #--------------------------------------------------------------------------
+  def set_z(_z)
+    self.z = _z
+    @sprite_unlock.z = self.z + 1 if @sprite_unlock
+    @sprite_bg.z = self.z - 1 if @sprite_bg
   end
   #--------------------------------------------------------------------------
   # ● 指定sprite位于当前精灵上？
@@ -2037,6 +2101,43 @@ class Game_Party < Game_Unit
   #--------------------------------------------------------------------------
   def have_ap?(v=0)
     members.any? { |a| a.eagle_ability_data.have_ap?(v) }
+  end
+end
+
+#==============================================================================
+# ■ 以 SceneManager.call() 的方式呼叫
+#==============================================================================
+class Scene_AbilityLearn < Scene_MenuBase
+  #--------------------------------------------------------------------------
+  # ● 设置一开始显示的角色
+  #--------------------------------------------------------------------------
+  def self.set_actor(actor_id)
+    @@actor_id = actor_id
+  end
+  #--------------------------------------------------------------------------
+  # ● 开始后处理
+  #--------------------------------------------------------------------------
+  def post_start
+    super
+    ABILITY_LEARN.init_ui(@@actor_id)
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新画面
+  #--------------------------------------------------------------------------
+  def update 
+    super
+    ABILITY_LEARN.update_tokens
+    ABILITY_LEARN.update_player
+    ABILITY_LEARN.update_unlock
+    ABILITY_LEARN.update_actors
+    return_scene if ABILITY_LEARN.finish_ui?
+  end
+  #--------------------------------------------------------------------------
+  # ● 结束处理
+  #--------------------------------------------------------------------------
+  def terminate
+    ABILITY_LEARN.dispose_ui
+    super
   end
 end
 
