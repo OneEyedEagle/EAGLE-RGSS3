@@ -4,9 +4,9 @@
 # ※ 本插件需要放置在【组件-位图Marshal化（VX/VA）】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SaveScreenshot"] = "1.0.6"
+$imported["EAGLE-SaveScreenshot"] = "1.0.7"
 #==============================================================================
-# - 2025.6.16.24 新增全部存档通用的截图，新增删除截图
+# - 2025.6.17.20 新增全部存档通用的截图，新增删除截图；无截图时不生成文件
 #==============================================================================
 # - 本插件新增了截图的保存，并且可以利用事件指令-显示图片来调用这些截图
 #--------------------------------------------------------------------------
@@ -113,6 +113,7 @@ module SAVE_MEMORY
         Marshal.dump(SAVE_MEMORY.data_global, file)
       end
     else 
+      return if SAVE_MEMORY.data.empty?
       File.open(SAVE_MEMORY.screenshot_filename(index), "wb") do |file|
         Marshal.dump(SAVE_MEMORY.data, file)
       end
