@@ -2,9 +2,9 @@
 # ■ 对话框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "1.12.8" 
+$imported["EAGLE-MessageEX"] = "1.12.9" 
 #=============================================================================
-# - 2025.2.24.13 修复 temp 失效的问题；pop 和 win 的w、h设置互相独立
+# - 2025.7.21.0 修复自动对话期间关闭自动对话后报错的bug
 #=============================================================================
 # 【兼容模式】
 # - 本模式用于与其他对话框兼容，确保其他对话框正常使用，同时可以用本对话框及扩展
@@ -5017,6 +5017,10 @@ class Window_EagleMessage < Window_Base
   # ● 等待按键时，自动继续的处理
   #--------------------------------------------------------------------------
   def process_input_pause_auto
+    if win_params[:auto_t] == nil # 如果中途关闭了自动对话，则直接隐藏
+      @eagle_auto_continue_c = nil
+      @eagle_sprite_pause.reset_auto_countdown_position
+    end
     if @eagle_auto_continue_c
       return @flag_input_loop = false if @eagle_auto_continue_c <= 0
       process_while_auto_wait_input_pause(@eagle_auto_continue_c)
