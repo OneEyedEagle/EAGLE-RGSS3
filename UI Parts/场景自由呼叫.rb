@@ -2,9 +2,9 @@
 # ■ 场景自由呼叫 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CallScene"] = "1.1.1"
+$imported["EAGLE-CallScene"] = "1.2.0"
 #=============================================================================
-# - 2024.11.22.18 修复 scene_class 报错
+# - 2025.7.29.23 
 #=============================================================================
 # - 新增在任意时刻呼叫指定场景的方法
 #
@@ -24,7 +24,7 @@ $imported["EAGLE-CallScene"] = "1.1.1"
 #  ·当调用 SceneManager.return 时，将回到上一级场景，最终返回原场景并继续正常更新
 #
 #  ·当调用 SceneManager.goto(scene) 时，将同时舍弃呼出场景与原场景，并直接跳转
-#      如：在地图上对话时呼叫菜单，再选择返回标题，最终只会剩下标题场景
+#      如：在地图上对话时呼叫菜单，再选择返回标题，会先回地图，再到标题
 #
 #-----------------------------------------------------------------------------
 # ○ 应用：仿AVG呼叫菜单
@@ -54,52 +54,97 @@ module EAGLE
   def self.check_avg_menu?
     false #Input.trigger?(:A) # SHIFT键
   end
-
   #--------------------------------------------------------------------------
   # ● 不结束当前场景的场景呼叫（预定）
   #--------------------------------------------------------------------------
-  @reserve_scene = nil
-  @flag_call_scene = false
   def self.call_scene(scene)
-    @reserve_scene = scene
     SceneManager.eagle_call(scene)
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新预定的场景呼叫
-  # 随 Scene_Base#update_basic 更新
-  #--------------------------------------------------------------------------
-  def self.update_call_scene
-    if @reserve_scene && @flag_call_scene == false
-      @flag_call_scene = true
-      call_scene_raw(@reserve_scene)
-      @reserve_scene = nil
-      @flag_call_scene = false
-    end
   end
   #--------------------------------------------------------------------------
   # ● 当前存在呼叫场景？
   #--------------------------------------------------------------------------
   def self.call_scene?
-    @reserve_scene != nil
+    SceneManager.eagle_scene != nil
+  end
+end
+#==============================================================================
+# ○ SceneManager
+#==============================================================================
+module SceneManager
+  #--------------------------------------------------------------------------
+  # ● 获取当前在自由呼叫的场景
+  #--------------------------------------------------------------------------
+  @eagle_scene = nil
+  def self.eagle_scene
+    @eagle_scene
+  end
+  #--------------------------------------------------------------------------
+  # ● 创建场景
+  #--------------------------------------------------------------------------
+  def self.eagle_call(scene_class)
+    if @eagle_scene
+      # 如果已经自由呼叫了场景，则直接按原本的呼叫场景处理
+      SceneManager.call(scene_class)
+      return 
+    end
+    @eagle_scene = scene_class.new
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新预定的场景呼叫
+  # 随 Scene_Base#update_basic 更新
+  #--------------------------------------------------------------------------
+  @flag_call_scene = false
+  @eagle_scene_class_reserve = nil
+  def self.update_call_scene
+    if @eagle_scene && @flag_call_scene == false
+      @flag_call_scene = true
+      call_scene_before(@eagle_scene)
+      SceneManager.eagle_save(@eagle_scene)
+      call_scene_raw(@eagle_scene)
+      SceneManager.eagle_load
+      call_scene_after(@eagle_scene)
+      @eagle_scene = nil
+      @flag_call_scene = false
+      if @eagle_scene_class_reserve
+        # 如果有预定的场景，则在处理完自由呼叫后，直接跳转
+        @scene = @eagle_scene_class_reserve.new
+        @eagle_scene_class_reserve = nil
+      end
+    end
   end
   #--------------------------------------------------------------------------
   # ● 不结束当前场景的场景呼叫
   #  不可在 Fiber 控制中调用，否则将报错 double yield
   #--------------------------------------------------------------------------
   def self.call_scene_raw(scene)
-    call_scene_before(scene)
-    SceneManager.eagle_save(scene)
-    SceneManager.scene.main while SceneManager.scene && SceneManager.eagle_scene
-    SceneManager.eagle_load
-    SceneManager.goto_reserve
-    call_scene_after(scene)
+    @scene = scene
+    @stack = []
+    SceneManager.scene.main while @scene && @eagle_scene
+  end
+  #--------------------------------------------------------------------------
+  # ● 执行备份
+  #--------------------------------------------------------------------------
+  def self.eagle_save(scene)
+    snapshot_for_background
+    @eagle_old_scene = @scene
+    @eagle_old_stack = @stack
+    clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取备份
+  #--------------------------------------------------------------------------
+  def self.eagle_load
+    @scene = @eagle_old_scene if @eagle_old_scene
+    @stack = @eagle_old_stack if @eagle_old_stack
+    @eagle_old_scene = nil
+    @eagle_old_stack = nil
   end
   #--------------------------------------------------------------------------
   # ● 场景切换前的额外处理
   #--------------------------------------------------------------------------
   def self.call_scene_before(scene)
     Graphics.transition(10)
-    if SceneManager.scene_is?(Scene_Map) && scene == Scene_Battle
+    if SceneManager.scene_is?(Scene_Map) && scene.class == Scene_Battle
       Graphics.update
       Graphics.freeze
       BattleManager.save_bgm_and_bgs
@@ -111,66 +156,30 @@ module EAGLE
   # ● 场景切换后的额外处理
   #--------------------------------------------------------------------------
   def self.call_scene_after(scene)
-    Graphics.transition(10)
+    # 如果有预定场景，则不淡入冻结画面，避免显示旧场景
+    if @eagle_scene_class_reserve
+      # 去掉当前场景的淡出方法
+      def @scene.perform_transition; end
+    else
+      Graphics.transition(10)
+    end
   end
-end
-#==============================================================================
-# ○ SceneManager
-#==============================================================================
-module SceneManager
+
   #--------------------------------------------------------------------------
-  # ● 创建场景
-  #--------------------------------------------------------------------------
-  def self.eagle_call(scene_class)
-    @eagle_scene = scene_class.new
-  end
-  #--------------------------------------------------------------------------
-  # ● 预定的场景
-  #--------------------------------------------------------------------------
-  def self.eagle_scene
-    @eagle_scene
-  end
-  #--------------------------------------------------------------------------
-  # ● 执行备份
-  #--------------------------------------------------------------------------
-  def self.eagle_save(scene_class)
-    snapshot_for_background
-    @eagle_old_scene = @scene
-    @eagle_old_stack = @stack
-    clear
-    @scene = @eagle_scene
-  end
-  #--------------------------------------------------------------------------
-  # ● 读取备份
-  #--------------------------------------------------------------------------
-  def self.eagle_load
-    @scene = @eagle_old_scene if @eagle_old_scene
-    @stack = @eagle_old_stack if @eagle_old_stack
-    @eagle_old_scene = nil
-    @eagle_old_stack = nil
-    @eagle_scene = nil
-  end
-  #--------------------------------------------------------------------------
-  # ● 直接切换某个场景（无过渡）
+  # ● 直接切换某个场景
   #--------------------------------------------------------------------------
   def self.goto(scene_class)
-    if @eagle_old_scene
-      eagle_load
-      @eagle_reserve_scene = scene_class
+    if @eagle_scene
+      # 去掉当前自由呼叫场景的淡出方法
+      def @eagle_scene.perform_transition; end
+      # 冻结画面
+      Graphics.freeze 
+      # 先预定，在处理完自由呼叫场景后跳转
+      @eagle_scene_class_reserve = scene_class
+      @eagle_scene = nil
       return
     end
     @scene = scene_class.new
-  end
-  #--------------------------------------------------------------------------
-  # ● 直接切换到预定场景（或只过渡）
-  #--------------------------------------------------------------------------
-  def self.goto_reserve
-    if @eagle_reserve_scene
-      goto(@eagle_reserve_scene)
-    else
-      Graphics.transition(1)
-    end
-    @eagle_reserve_scene = nil
   end
 end
 
@@ -183,7 +192,7 @@ class Scene_Base
   #--------------------------------------------------------------------------
   alias eagle_scene_base_call_scene_update_basic update_basic
   def update_basic
-    EAGLE.update_call_scene
+    SceneManager.update_call_scene
     eagle_scene_base_call_scene_update_basic
   end
 end

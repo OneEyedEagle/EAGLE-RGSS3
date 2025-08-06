@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "1.2.3"
+$imported["EAGLE-ChoiceEX"] = "1.2.5"
 #=============================================================================
-# - 2024.10.6.20 修复字体大小初始值未与对话框同步的bug
+# - 2025.8.5.13 新增 font 的设置；新增仅当前选中选项执行文字移出的设置
 #==============================================================================
 #------------------------------------------------------------------------------
 # 【优化】
@@ -177,6 +177,8 @@ $imported["EAGLE-ChoiceEX"] = "1.2.3"
 #     cit → 选项移入时，字与字的间隔帧数
 #
 #   （特殊）
+#     font   → 定义预设的文字绘制参数（同 对话框扩展 中 \font 的参数）
+#              （默认取 对话框扩展 中当前 \font 的设置，再读取该处设置覆盖）
 #     charas → 定义预设开启的文字特效（文字特效转义符sym 到 变量参数字符串 的hash）
 #              （只能在脚本中进行赋值）
 #              （如：$game_message.choice_params[:charas][:cin] = "1"
@@ -234,8 +236,11 @@ module MESSAGE_EX
     :cd => 0, # 倒计时结束后选择取消项（秒数）
     :ali => 0, # 选项对齐方式
     :cit => 0, # 文字显示的间隔帧数
+    # 文字绘制预设
+    # （具体见 对话框扩展 中的 FONT_PARAMS_INIT，各个选项将独立处理）
+    :font => {},
     # 文字特效预设
-    # （例如填入 :cin => "" 则启用默认的文字移入效果 ）
+    # （例如填入 :cin => "1" 则启用默认的文字移入效果 ）
     :charas => { },
   }
   #--------------------------------------------------------------------------
@@ -243,9 +248,15 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   CHOICE_LINE_MAX = 12
   #--------------------------------------------------------------------------
-  # ● 【常量】被选择过的带有名称的选择支，再次显示时的文字颜色
+  # ● 【常量】选择支的默认文字颜色
+  #  遵循对话框扩展中 \c[id] 的处理方式
   #--------------------------------------------------------------------------
-  CHOICE_CHOSEN_COLOR = 4
+  CHOICE_DEFAULT_COLOR_ID = 0
+  #--------------------------------------------------------------------------
+  # ● 【常量】带名称的选择支，被选择一次后的文字颜色
+  #  遵循对话框扩展中 \c[id] 的处理方式
+  #--------------------------------------------------------------------------
+  CHOICE_CHOSEN_COLOR_ID = 4
   #--------------------------------------------------------------------------
   # ● 【常量】不存在任何选项时，出现的额外选项的文本
   #--------------------------------------------------------------------------
@@ -254,6 +265,14 @@ module MESSAGE_EX
   # ● 【常量】en{}为false时，被替换成的文本
   #--------------------------------------------------------------------------
   CHOICE_TEXT_EN_HN = "？？？"
+  #--------------------------------------------------------------------------
+  # ● 【常量】嵌入对话框时，选择框宽度是否重置为对话框的文字宽度
+  #--------------------------------------------------------------------------
+  CHOICE_WIDTH_TO_MSG_CHARAS = false
+  #--------------------------------------------------------------------------
+  # ● 【常量】是否仅当前选中的选择支处理文字移出
+  #--------------------------------------------------------------------------
+  CHOICE_CHOSEN_FOR_COUT = true
 end
 #==============================================================================
 # ○ Game_Message
@@ -283,7 +302,7 @@ end
 # ○ Game_System
 #=============================================================================
 class Game_System
-  attr_reader  :eagle_choices  # 已经看过的选择支的名称数组
+  attr_accessor  :eagle_choices  # 已经看过的选择支的名称数组
   #--------------------------------------------------------------------------
   # ● 指定名称的选择支是否已经看过？
   #--------------------------------------------------------------------------
@@ -537,7 +556,9 @@ class Window_EagleChoiceList < Window_Command
           @flag_in_msg_window = false
         end
       else # 宽度 = 文字区域宽度
-        new_w = win_w + standard_padding * 2
+        if MESSAGE_EX::CHOICE_WIDTH_TO_MSG_CHARAS
+          new_w = win_w + standard_padding * 2 - choice_params[:dx]
+        end
       end
       win_h = @message_window.height - standard_padding * 2
       charas_h = @message_window.eagle_charas_y0 - @message_window.y - standard_padding +
@@ -823,6 +844,7 @@ class Window_EagleChoiceList < Window_Command
   # ● 调用“确定”的处理方法
   #--------------------------------------------------------------------------
   def call_ok_handler
+    @choices[index].set_confirmed(true)
     if @choices_info[index][:name]
       $game_system.choice_read(@choices_info[index][:name])
     end
@@ -886,12 +908,14 @@ class Spriteset_Choice
     @charas = []
     @chara_effect_params = choice_params[:charas].dup
     @chara_dwin_rect = nil
-    @font = message_window.contents.font.dup # 每个选项存储独立的font对象
+    # 每个选择支单独存一个文字绘制参数组
     @font_params = $game_message.font_params.dup # font转义符参数
+    @font_params.merge!(choice_params[:font])
     @active = false # 是否开始移入
     @visible = false # 是否可见
     @enabled = true
     @chosen = false
+    @confirmed = false
     @timer = nil
   end
   #--------------------------------------------------------------------------
@@ -954,21 +978,29 @@ class Spriteset_Choice
   #--------------------------------------------------------------------------
   def set_enabled(bool)
     @enabled = bool
-    change_color(@font.color)
   end
   #--------------------------------------------------------------------------
   # ● 设置选项的已经被选择过的状态
   #--------------------------------------------------------------------------
   def set_chosen(bool)
     @chosen = bool
-    change_color(@font.color)
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置选项本次被选择的状态
+  #--------------------------------------------------------------------------
+  def set_confirmed(bool)
+    @confirmed = bool
   end
   #--------------------------------------------------------------------------
   # ● 全部移出
   #--------------------------------------------------------------------------
   def move_out
     @fiber = nil
-    @charas.each { |s| s.opacity = 0 if !s.visible; s.move_out }
+    if MESSAGE_EX::CHOICE_CHOSEN_FOR_COUT
+      @charas.each { |s| s.opacity = 0 if !@confirmed or !s.visible }
+    else
+      @charas.each { |s| s.opacity = 0 if !s.visible }
+    end
     @charas.clear
     dispose_timer
   end
@@ -1054,21 +1086,11 @@ class Spriteset_Choice
   # ● 重置字体设置
   #--------------------------------------------------------------------------
   def reset_font_settings
-    c = MESSAGE_EX::DEFAULT_COLOR_INDEX
-    c = MESSAGE_EX::CHOICE_CHOSEN_COLOR if @chosen
+    c = MESSAGE_EX::CHOICE_DEFAULT_COLOR_ID
+    c = MESSAGE_EX::CHOICE_CHOSEN_COLOR_ID if @chosen
     @font_params[:c] = c
     @font_params[:ca] = 255
-    change_color(@choice_window.text_color(@font_params[:c]))
-  end
-  #--------------------------------------------------------------------------
-  # ● 更改内容绘制颜色
-  #--------------------------------------------------------------------------
-  def change_color(color)
-    @font.color.set(color)
-    if !@enabled
-      @font.color.alpha = 120
-      @font_params[:ca] = 120
-    end
+    @font_params[:ca] = 120 if !@enabled
   end
   #--------------------------------------------------------------------------
   # ● 文字的处理
@@ -1153,16 +1175,10 @@ class Spriteset_Choice
     when 'C'
       param = message_window.obtain_escape_param(text)
       @font_params[:c] = param
-      if param == 0
-        reset_font_settings
-      else
-        change_color( @choice_window.text_color(param) )
-      end
-    when 'F'
+      reset_font_settings if param == 0
+    when 'FONT'
       param = message_window.obtain_escape_param_string(text)
       MESSAGE_EX.parse_param(@font_params, param, :size)
-      MESSAGE_EX.apply_font_params(@font, @font_params)
-      change_color( @choice_window.text_color(@font_params[:c]) )
     when 'I'
       process_draw_icon(message_window.obtain_escape_param(text), pos)
       process_draw_success(pos)

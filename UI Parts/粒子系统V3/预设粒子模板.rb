@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【粒子系统V3 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PT-PreSet"] = "3.0.0"
+$imported["EAGLE-PT-PreSet"] = "3.1.0"
 #==============================================================================
-# - 2023.4.30.10 适配 粒子系统 3.0.0版本
+# - 2025.6.21.10 编写一些新范例
 #==============================================================================
 
 class << PARTICLE
@@ -30,15 +30,41 @@ class << PARTICLE
     setup("测试", f)  # 这个粒子模板的名称为 "测试"
     # 需要用时，使用全局脚本 PARTICLE.start("测试")
     
+    
+    # 能力待学习的特效
+    f = PT_Moveto.new
+    f.params[:total] = 40 
+    f.params[:new_wait] = 10 
+    b = Bitmap.new(6, 6)
+    b.fill_rect(b.rect, Color.new(255,255,255,200))
+    f.params[:bitmaps].push(b)
+    f.params[:xys] = [ [Graphics.width/2, Graphics.height/2] ]
+    f.params[:xys_type] = 10
+    f.params[:zoom] = 0.5
+    f.params[:opacity] = 0
+    f.params[:move_type] = "easeOutExpo"
+    setup("可学习", f)  # 这个粒子模板的名称为 "测试"
+    
+    # 能力完成学习的特效
+    f = PT_Emitter.new
+    f.flag_start_once = true
+    f.params[:total] = 30 
+    b = Bitmap.new(2, 2)
+    b.fill_rect(b.rect, Color.new(255,255,255,255))
+    f.params[:bitmaps].push(b) 
+    #f.params[:pos_rect] = Rect.new(0, 0, Graphics.width, Graphics.height)
+    f.params[:theta] = VarValue.new(0, 360) # 初速度方向（角度）
+    f.params[:speed] = VarValue.new(2, 1) # 初速度值（标量）
+    f.params[:life] = VarValue.new(60, 20) # 存在时间
+    f.params[:z] = 100
+    setup("能力学习完成", f) 
 
   end
-end
 
-module PARTICLE
   #--------------------------------------------------------------------------
   # ● （测试用）图片散开再聚拢
   #--------------------------------------------------------------------------
-  def self.test_img_split
+  def test_img_split
     # 导入 Graphics/System 下的图片，调用 组件-通用方法汇总 中的方法切割成n个矩形
     s = Sprite.new
     s.bitmap = Cache.system("face_eagle")
@@ -78,4 +104,5 @@ module PARTICLE
     setup("test-2", f)
     start("test-2")
   end
+  
 end

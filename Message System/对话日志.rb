@@ -3,30 +3,30 @@
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageLog"] = "1.1.0"
+$imported["EAGLE-MessageLog"] = "1.1.1"
 #==============================================================================
-# - 2024.2.3.13 兼容鼠标
+# - 2025.8.6.12 姓名兼容对话框扩展的\c
 #==============================================================================
 # - 本插件新增了对 $game_message 的对话文本的记录
 #------------------------------------------------------------------------------
 # 【使用】
 #
-#    在地图上时，按下 Q 键即可开启对话日志界面（注意此时地图将被暂停）
-#    在对话日志界面，再次按下 Q 键即可关闭，并继续之前的地图事件
+#    在地图上时，按下 Q 键即可开启对话日志界面（注意此时地图将被暂停）。
+#    在对话日志界面，再次按下 Q 键即可关闭，并继续之前的地图事件。
 #
 #----------------------------------------------------------------------------
 # 【注意】
 #
-#    对话日志将被存储到存档文件中，因此请不要将 LOG_MAX_NUM 设置过大
+#    对话日志将被存储到存档文件中，因此请不要将 LOG_MAX_NUM 设置过大。
 #
 #----------------------------------------------------------------------------
 # 【扩展】
 #
-#   ·已经兼容【对话框扩展 by老鹰】及其AddOn，请将本插件置于它们之下
-#   ·若想在地图以外的场景中调用，可在对应场景的update中增加 MSG_LOG.call_scene?
+#   ·已经兼容【对话框扩展 by老鹰】及其AddOn，请将本插件置于它们之下。
+#   ·若想在地图以外的场景中调用，可在对应场景的update中增加 MSG_LOG.call_scene? 。
 #
-#   ·已经兼容【鼠标扩展 by老鹰】，请将本插件置于其下
-#      如果想兼容其它鼠标，请搜索 $imported["EAGLE-MouseEX"] 并修改对应内容
+#   ·已经兼容【鼠标扩展 by老鹰】，请将本插件置于其下。
+#      如果想兼容其它鼠标，请搜索 $imported["EAGLE-MouseEX"] 并修改对应内容。
 #
 #==============================================================================
 module MSG_LOG
@@ -45,6 +45,16 @@ module MSG_LOG
     return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:MR)
     Input.trigger?(:L) || Input.trigger?(:B)
   end
+
+  #--------------------------------------------------------------------------
+  # ○【常量】对话文本中如果含有该字符，则不会存入日志。
+  #  如果你想用转义符来作为标识字符，则请将 \ 替换成 \e 以确保能识别。
+  #--------------------------------------------------------------------------
+  SYM_NO_LOG = "\enolog"
+  #--------------------------------------------------------------------------
+  # ○【常量】对于独立的取消分支，显示的日志文本
+  #--------------------------------------------------------------------------
+  LOG_CHOICE_CANCEL = "（取消）"
 
   #--------------------------------------------------------------------------
   # ○【常量】当该序号开关开启时，不记录对话日志
@@ -92,10 +102,6 @@ module MSG_LOG
   # ○【常量】显示于顶部的最旧的对话日志，所能到达的最底端的y值
   #--------------------------------------------------------------------------
   DOWN_LIMIT_Y = Graphics.height / 2 - 24
-  #--------------------------------------------------------------------------
-  # ○【常量】对于独立的取消分支，显示的日志文本
-  #--------------------------------------------------------------------------
-  LOG_CHOICE_CANCEL = "（取消）"
 
   #--------------------------------------------------------------------------
   # ● 设置背景精灵
@@ -190,7 +196,7 @@ class Data
     # 绘制主体文本（位于中心偏右位置）
     params = { :font_size => LOG_FONT_SIZE, :x0 => NAME_WIDTH, :lhd => 2 }
     params[:font_color] = LOG_FONT_COLOR
-    params[:w] = Graphics.width - OFFSET_X * 2
+    params[:w] = Graphics.width - OFFSET_X * 2 - NAME_WIDTH
     height_add = 12 # 额外增加的高度
     d = MSG_LOG_DrawTextEX.new(@text, params)
     s.bitmap = Bitmap.new(Graphics.width, d.height + height_add)
@@ -209,15 +215,15 @@ class Data
     end
     if @ex[:choice]
       s.bitmap.font.color = text_color(16)
-      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], "选择 >> ", 2)
+      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], "选择 > ", 2)
     end
     if @ex[:num_input]
       s.bitmap.font.color = text_color(16)
-      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], "输入 >> ", 2)
+      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], "输入 > ", 2)
     end
     if @ex[:item_choice]
       s.bitmap.font.color = text_color(16)
-      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], "物品 >> ", 2)
+      s.bitmap.draw_text(0,0,NAME_WIDTH,params[:font_size], "物品 > ", 2)
     end
 
     # 绘制底部分割线
@@ -246,12 +252,15 @@ end
     if $imported["EAGLE-MessageEX"] && $game_message.eagle_message == true
       if msg.name?  # 覆盖姓名
         t = msg.name_params[:name]
+        t = t.gsub(/\e/) { "\\" }  # 复原 \ec 转义符为 \c
         t = t.gsub(/<(.*?)>/) { "[" + $1 + "]" }
         params[:name] = t
       end
+      return if msg.eagle_text.include?(SYM_NO_LOG)
       new_log(msg.eagle_text, params)
       return
     end
+    return if msg.all_text.include?(SYM_NO_LOG)
     new_log(msg.all_text, params)
   end
   #--------------------------------------------------------------------------
@@ -355,7 +364,7 @@ class << self
   # ● UI-释放
   #--------------------------------------------------------------------------
   def ui_dispose
-    @sprites.each { |s| s.dispose }
+    @sprites.each { |s| s.bitmap.dispose if s.bitmap; s.dispose }
     instance_variables.each do |varname|
       ivar = instance_variable_get(varname)
       if ivar.is_a?(Sprite)
@@ -536,7 +545,7 @@ class MSG_LOG_DrawTextEX < Process_DrawTextEX
   # ● 获取控制符的参数（变量参数字符串形式）（这个方法会破坏原始数据）
   #--------------------------------------------------------------------------
   def obtain_escape_param_string(text)
-    text.slice!(/^\[[\|\$\-\d\w]+\]/)[1..-2] rescue ""
+    text.slice!(/^\[[ =\|\$\-\d\w]+\]/)[1..-2] rescue ""
   end
   #--------------------------------------------------------------------------
   # ● 控制符的处理
@@ -547,11 +556,21 @@ class MSG_LOG_DrawTextEX < Process_DrawTextEX
   def process_escape_character(code, text, pos)
     case code.upcase
     when 'C'
-      change_color(text_color(obtain_escape_param(text)))
+      c = obtain_escape_param_string(text)
+      if $imported["EAGLE-MessageEX"]
+        return change_color(MESSAGE_EX.text_color(c, Cache.system("Window")))
+      end
+      change_color(text_color(c.to_i), !@params[:trans])
     when 'I'
       process_draw_icon(obtain_escape_param(text), pos)
+    when '{'
+      make_font_bigger
+    when '}'
+      make_font_smaller
+    when 'LN'
+      process_new_line_with_line(text, pos)
     else
-      obtain_escape_param_string(text)
+      @escapes[code] = obtain_escape_param_string(text)
     end
   end
 end

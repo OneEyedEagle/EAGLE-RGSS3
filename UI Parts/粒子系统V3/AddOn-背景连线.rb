@@ -1,11 +1,11 @@
 #==============================================================================
-# ■ Add-On 背景连线 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
+# ■ Add-On 背景连线 by 老鹰（http://oneeyedeagle.lofter.com/）
 # ※ 本插件需要放置在【粒子模板-发射类 by老鹰】与【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Particle-BGLines"] = "3.0.0"
+$imported["EAGLE-Particle-BGLines"] = "3.1.0"
 #==============================================================================
-# - 2023.4.30.10 适配 粒子系统 3.0.0版本
+# - 2025.7.28.13 适配 粒子系统 3.1.0版本，兼容新版本 快捷功能界面
 #==============================================================================
 # - 本插件新增了四散移动、自动连线的粒子模板
 #----------------------------------------------------------------------------
@@ -24,7 +24,7 @@ $imported["EAGLE-Particle-BGLines"] = "3.0.0"
 #
 #    事件记录日志 by 老鹰
 #
-#    快捷功能界面 by 老鹰
+#    快捷功能场景 by 老鹰
 #
 #    能力学习系统 by 老鹰
 #
@@ -108,7 +108,10 @@ class << PARTICLE
   # ○ 结束
   #--------------------------------------------------------------------------
   def ui_bg_finish
-    PARTICLE.dispose(PARTICLE::TEMPLATE_UI_BG_NAME)
+    PARTICLE.finish(PARTICLE::TEMPLATE_UI_BG_NAME)
+    # 无限时间的粒子改为一定帧后消除
+    PARTICLE.apply(PARTICLE::TEMPLATE_UI_BG_NAME) { |s| 
+      s.eparams[:life] = 10 if s.eparams[:life] < 0 }
   end
 end
 
@@ -142,6 +145,7 @@ class PT_Emitter_Rebound_DrawLines < PT_Emitter_ReboundBox
     ps = PARTICLE::TEMPLATE_UI_BG_PARAMS
     @particles.each do |s1|
       @particles.each do |s2|
+        next if s1 == s2
         d = (s1.x - s2.x)**2 + (s1.y - s2.y)**2
         d_max = ps[:d_max]
         next if d >= d_max
@@ -251,10 +255,10 @@ end
 end
 
 #===============================================================================
-# □ 快捷功能界面
+# □ 快捷功能场景
 #===============================================================================
 if $imported["EAGLE-EventToolbar"]
-class << TOOLBAR
+class Scene_ToolBar
   #--------------------------------------------------------------------------
   # ● UI-初始化
   #--------------------------------------------------------------------------
@@ -264,12 +268,12 @@ class << TOOLBAR
     PARTICLE.ui_bg_start(@sprite_bg.z + 1)
   end
   #--------------------------------------------------------------------------
-  # ● UI-释放
+  # ● 结束前处理
   #--------------------------------------------------------------------------
-  alias eagle_particle_ui_bg_ui_dispose ui_dispose
-  def ui_dispose
-    eagle_particle_ui_bg_ui_dispose
+  alias eagle_particle_ui_bg_pre_terminate pre_terminate
+  def pre_terminate
     PARTICLE.ui_bg_finish
+    eagle_particle_ui_bg_pre_terminate
   end
 end
 end
