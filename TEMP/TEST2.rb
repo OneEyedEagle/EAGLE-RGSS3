@@ -24,6 +24,21 @@ module STORY_MAP
   def self.ease(x)
     x * x
   end
+
+  #--------------------------------------------------------------------------
+  # ● 计算最小包围盒
+  #--------------------------------------------------------------------------
+  def self.get_smallest_box(rects)
+    return Rect.new if rects.empty?
+    r = rects.pop
+    rects.each do |r2|
+      r.width = [r.x + r.width, r2.x + r2.width].max - [r.x, r2.x].min
+      r.height = [r.y + r.height, r2.y + r2.height].max - [r.y, r2.y].min
+      r.x = r2.x if r2.x < r.x  # 新矩形在现有矩形的左外侧，更新x位置
+      r.y = r2.y if r2.y < r.y  # 新矩形在现有矩形的上外侧，更新y位置
+    end
+    return r
+  end
 end
 
 #=============================================================================
@@ -202,12 +217,31 @@ class Sprite_StoryNode < Sprite
     return false if @params[:no_click] == true
     return true
   end
+  #--------------------------------------------------------------------------
+  # ● 被选中？（鼠标用）
+  #--------------------------------------------------------------------------
+  def selected_mouse?
+    return true if mouse_in?(true, false)
+    return true if @sprites[:bg] and @sprites[:bg].mouse_in?(true, false)
+    return false
+  end
+  #--------------------------------------------------------------------------
+  # ● 被选中？（键盘用）
+  #--------------------------------------------------------------------------
+  def selected_keyboard?(px, py)
+    rects = [Rect.new(x,y,width,height)]
+    rects.push(Rect.new(@sprites[:bg].x,@sprites[:bg].y,@sprites[:bg].width,@sprites[:bg].height)) if @sprites[:bg]
+    r = STORY_MAP.get_smallest_box(rects)
+    return false if r.x > px or px > r.x + r.width
+    return false if r.y > py or py > r.y + r.height
+    return true
+  end
 end
 
 #=============================================================================
 # ○ Scene_StoryMap
 #=============================================================================
-class Scene_StoryMap < Scene_Base
+class Scene_StoryMap < Scene_MenuBase
   #--------------------------------------------------------------------------
   # ● 开始
   #--------------------------------------------------------------------------
@@ -219,19 +253,50 @@ class Scene_StoryMap < Scene_Base
   # ● 初始化UI
   #--------------------------------------------------------------------------
   def init_ui 
+    
+    # 背景字
+    @sprite_bg_info = Sprite.new
+    @sprite_bg_info.z = 100
+    @sprite_bg_info.zoom_x = @sprite_bg_info.zoom_y = 3.0
+    @sprite_bg_info.bitmap = Bitmap.new(Graphics.height, Graphics.height)
+    @sprite_bg_info.bitmap.font.size = 48
+    @sprite_bg_info.bitmap.font.color = Color.new(255,255,255,10)
+    @sprite_bg_info.bitmap.draw_text(0,0,@sprite_bg_info.width,64, "STORY MAP", 0)
+    @sprite_bg_info.angle = -90
+    @sprite_bg_info.x = Graphics.width + 48
+    @sprite_bg_info.y = 0
+
+    # 显示的视图
     @viewport = STORY_MAP::VIEWPORT
     @viewport.z = 200
 
+    # 生成全部节点
     @nodes = {}
-
     STORY_MAP::DATA.each do |name, param|
       s = Sprite_StoryNode.new(@viewport, param)
+      s.z = 10
       @nodes[name] = s
     end 
+    # 是否已经选中某个节点并放大处理
+    @flag_current_select = false 
 
     # TODO 绘制连线
 
-    @flag_current = false 
+    # 暗色遮挡层
+    @sprite_layer = Sprite.new(@viewport)
+    @sprite_layer.opacity = 0
+    @sprite_layer.z = 50
+    @sprite_layer.bitmap = Bitmap.new(Graphics.width, Graphics.height)
+    @sprite_layer.bitmap.fill_rect(0, 0, @sprite_layer.width, @sprite_layer.height,
+      Color.new(0,0,0,200))
+    # 显示中心的光标
+    @sprite_cursor = Sprite.new(@viewport)
+    @sprite_cursor.z = 20
+    @sprite_cursor.bitmap = Bitmap.new(200,200)
+    @sprite_cursor.bitmap.fill_rect(0,100,200,4,Color.new(255,255,255,255))
+    @sprite_cursor.bitmap.fill_rect(100,0,4,200,Color.new(255,255,255,255))
+    @sprite_cursor.ox = @sprite_cursor.width / 2
+    @sprite_cursor.oy = @sprite_cursor.height / 2
   end
   #--------------------------------------------------------------------------
   # ● 结束
@@ -252,7 +317,7 @@ class Scene_StoryMap < Scene_Base
   #--------------------------------------------------------------------------
   def update 
     super 
-    return update_current if @flag_current
+    return update_current if @flag_current_select
     update_nodes 
     update_move
     update_key
@@ -261,10 +326,15 @@ class Scene_StoryMap < Scene_Base
   # ● 更新节点
   #--------------------------------------------------------------------------
   def update_nodes
-    @current = nil
+    @current_keyboard = @current_mouse = nil
     @nodes.each do |k, s|
       s.update
-      @current = s if s.mouse_in?(true, false)
+      if @current_keyboard == nil
+        @current_keyboard = s if s.selected_keyboard?(@sprite_cursor.x, @sprite_cursor.y)
+      end
+      if @current_mouse == nil 
+        @current_mouse = s if s.selected_mouse?
+      end
     end
   end
   #--------------------------------------------------------------------------
@@ -277,45 +347,71 @@ class Scene_StoryMap < Scene_Base
       @viewport.oy -= dy
       Input.update
     end
+    if INPUT_EX.press?(:LEFT)
+      @viewport.ox -= 1
+    elsif INPUT_EX.press?(:RIGHT)
+      @viewport.ox += 1
+    end
+    if INPUT_EX.press?(:UP)
+      @viewport.oy -= 1
+    elsif INPUT_EX.press?(:DOWN)
+      @viewport.oy += 1
+    end
+
+    # 位于视图显示中心的光标
+    r = @viewport.rect
+    @sprite_cursor.x = @viewport.ox + r.width / 2
+    @sprite_cursor.y = @viewport.oy + r.height / 2
+    
+    # 遮挡层
+    @sprite_layer.x = @viewport.ox
+    @sprite_layer.y = @viewport.oy
   end
   #--------------------------------------------------------------------------
   # ● 更新按键
   #--------------------------------------------------------------------------
   def update_key 
-    if @current && @current.clickable? && MOUSE_EX.up?(:ML)
-      process_current_zoomin
-      return 
+    @current = nil
+    if @current_keyboard && @current_keyboard.clickable? && Input.trigger?(:C)
+      @current = @current_keyboard
     end
+    if @current_mouse && @current_mouse.clickable? && MOUSE_EX.up?(:ML)
+      @current = @current_mouse
+    end
+    process_current_zoomin if @current
   end
   #--------------------------------------------------------------------------
   # ● 如果已经有选中的节点，更新它
   #--------------------------------------------------------------------------
   def update_current 
-    return process_current_zoomout if MOUSE_EX.up?(:MR)
+    return process_current_zoomout if MOUSE_EX.up?(:MR) || Input.trigger?(:B)
   end
   #--------------------------------------------------------------------------
-  # ● 处理选中节点的移至中心处并放大
+  # ● 选中的节点移至中心处并放大
   #--------------------------------------------------------------------------
   def process_current_zoomin
-    @flag_current = true
+    @flag_current_select = true
+    @current.z = 100
     ox = @current.x - (@viewport.rect.width/2)
     oy = @current.y - (@viewport.rect.height/2) 
     @nodes.each do |k, s|
       next if s == @current 
       s.set_oxy(@current.x - s.x, @current.y - s.y)
     end
-    update_nodes_zoom_until_end(3.0, 3.0, ox, oy)
+    update_nodes_zoom_until_end(3.0, 3.0, ox, oy) { @sprite_layer.opacity += 10 }
   end 
   #--------------------------------------------------------------------------
-  # ● 处理选中节点的缩小回原样
+  # ● 选中的节点缩小回原样
   #--------------------------------------------------------------------------
   def process_current_zoomout
-    update_nodes_zoom_until_end(1.0, 1.0, @viewport.ox, @viewport.oy)
+    update_nodes_zoom_until_end(1.0, 1.0, @viewport.ox, @viewport.oy) { @sprite_layer.opacity -= 10 }
     @nodes.each do |k, s|
       next if s == @current
       s.reset_oxy
     end
-    @flag_current = false
+    @current.z = 10
+    @flag_current_select = false
+    @current = nil
   end 
   #--------------------------------------------------------------------------
   # ● 处理整体缓动移动并结束
