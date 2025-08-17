@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.0.0"  # 2025.8.11.19
+$imported["EAGLE-MessageEX"] = "2.0.0"  # 2025.8.17.0
 =begin
 ===============================================================================
 
@@ -725,7 +725,7 @@ FONT_PARAMS_INIT = {
 #    cwo   → 文字移出后，下一个文字移出前的等待帧数（最小值0）
 #    cor   → 全部文字移出的顺序（0正序，1逆序，2乱序，默认0）
 #    cfast → 是否允许按键快进（默认1，可以按键快进）
-#    cdx/cdy/cdw/cdh → 文本绘制区域与窗口左侧/上侧/右侧/下侧的间距
+#    cdl/cdu/cdr/cdd → 文本与窗口左侧/上侧/右侧/下侧的间距
 #
 #  ◇ 常量设置：默认值
 WIN_PARAMS_INIT = {
@@ -765,10 +765,10 @@ WIN_PARAMS_INIT = {
   :cwo => 0, # 单个文字开始移出后的等待帧数（最小值0）
   :cor => 0, # 全部文字移出的顺序类型
   :cfast => 1, # 是否允许快进
-  :cdx => 0, # 文本左侧与窗口padding的间距
-  :cdy => 0, # 文本上边距
-  :cdw => 0, # 文本右边距
-  :cdh => 0, # 文本下边距
+  :cdl => 0, # 文本左边距
+  :cdu => 0, # 文本上边距
+  :cdr => 0, # 文本右边距
+  :cdd => 0, # 文本下边距
 }
 #  ◇ 常量设置：窗口背景的不透明度
   WINDOW_BACK_OPACITY = 200
@@ -976,10 +976,10 @@ POP_PARAMS_INIT = {
 #  |- 3x3规格，图片宽高无要求
 #  |- 根据气泡对话框所设置的 do 值，将使用图片中的指定区域作为指示箭头
 #  |  具体对应表如下
-#  |         ╔ 7 8 9 ╗
+#  |         ╔ 1 2 3 ╗
 #  |         ║ 4 5 6 ║ 
-#  |         ╚ 1 2 3 ╝
-#  |  比如 do=2 时，气泡对话框显示在事件头顶，则指示箭头显示在对话框底部中点，
+#  |         ╚ 7 8 9 ╝
+#  |  比如 do=2 时，气泡对话框显示在事件顶部，则指示箭头显示在对话框底部中点，
 #  |   使用图片中的 2 号区域图像作为指示箭头。
 #  |
 #  |- 指示箭头不会影响气泡对话框的位置，请自行设置d/dx/dy来微调气泡对话框位置。
@@ -1042,7 +1042,11 @@ POP_PARAMS_INIT = {
 #          （设置为 -1 时将被压在对话框下面，此时脸图不占用对话框宽度）
 #
 # ├------------------------------------------------------------------
-# ■ \face[param]  ▍ 在绘制到该转义符时动态设置脸图。
+# ■ \face[name|param]  ▍ 在绘制到该转义符时动态设置脸图。
+#
+#  ◇ name 为脸图文件名称
+#
+#    若没有 | 符号，则默认为未设置 name。
 #
 #  ◇ param“参数串”可设置变量一览
 #
@@ -1063,8 +1067,8 @@ POP_PARAMS_INIT = {
 #
 #  ◇ str“脸图动作名称”一览
 #
-#    in    → 脸图淡入（无可设置“参数串”）
-#    out   → 脸图淡出（无可设置“参数串”）
+#    in    → 脸图淡入（仅可设置 facep 中的 it）
+#    out   → 脸图淡出（仅可设置 facep 中的 ot）
 #    jump  → 脸图跳跃一次（无可设置“参数串”）
 #    move  → 脸图移动到指定位置
 #
@@ -3454,10 +3458,10 @@ class Window_EagleMessage < Window_Base
   # ● 窗口内容中，无法被用于文本绘制的宽高
   #--------------------------------------------------------------------------
   def eagle_window_w_empty
-    win_params[:cdx] + @eagle_sprite_pause_width_add + win_params[:cdw]
+    win_params[:cdl] + @eagle_sprite_pause_width_add + win_params[:cdr]
   end
   def eagle_window_h_empty
-    win_params[:cdy] + win_params[:cdh]
+    win_params[:cdu] + win_params[:cdd]
   end
 
   #--------------------------------------------------------------------------
@@ -4038,22 +4042,22 @@ class Window_EagleMessage < Window_Base
   # ● 文字显示区域的左上角位置（屏幕坐标系）
   #--------------------------------------------------------------------------
   def eagle_charas_x0
-    self.x + standard_padding + eagle_face_left_width + win_params[:cdx]
+    self.x + standard_padding + eagle_face_left_width + win_params[:cdl]
   end
   def eagle_charas_y0
-    self.y + standard_padding + eagle_name_height + win_params[:cdy]
+    self.y + standard_padding + eagle_name_height + win_params[:cdu]
   end
   #--------------------------------------------------------------------------
   # ● 计算文字显示区域的宽度和高度
   #--------------------------------------------------------------------------
   def eagle_charas_max_w
     v = self.width - standard_padding*2 - eagle_face_width 
-    v = v - win_params[:cdx] - win_params[:cdw]
+    v = v - win_params[:cdl] - win_params[:cdr]
     v
   end
   def eagle_charas_max_h
     v = self.height - standard_padding*2 - eagle_name_height
-    v = v - win_params[:cdy] - win_params[:cdh]
+    v = v - win_params[:cdu] - win_params[:cdd]
     v
   end
   #--------------------------------------------------------------------------
@@ -4478,6 +4482,9 @@ class Window_EagleMessage < Window_Base
     face_params[:m] = MESSAGE_EX.check_bool(face_params[:m])
     face_params[:name] = game_message.face_name
     face_params[:i] = game_message.face_index
+    reset_eagle_sprite_face
+  end
+  def reset_eagle_sprite_face
     return eagle_move_out_face if face_params[:name] == ""
     if @eagle_sprite_face
       return if @eagle_sprite_face.no_change?
@@ -4859,7 +4866,13 @@ class Window_EagleMessage < Window_Base
     return if !@flag_draw
     face_params[:ls] = -1 # 设置循环开始编号（+1直至le，再从ls循环）
     face_params[:le] = -1 # 设置循环结束编号
+    if param.include?('|')
+      params = param.split('|')
+      face_params[:name] = params[0]
+      param = params[1]
+    end
     parse_param(face_params, param, :i)
+    reset_eagle_sprite_face
     @eagle_sprite_face.apply_face_params if @eagle_sprite_face
   end
   #--------------------------------------------------------------------------
