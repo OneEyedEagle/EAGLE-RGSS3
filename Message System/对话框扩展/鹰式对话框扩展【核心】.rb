@@ -24,6 +24,12 @@
      
      更新历史
      ----------------------------------------------------------------------
+     - 2025.9.1.21  V2.0.0 修复文字居中时，错误把等待按键精灵宽度计入的bug
+     ----------------------------------------------------------------------
+     - 2025.8.31.11 V2.0.0 修复\{\}转义符导致对话框文字绘制宽度不正常的bug
+     ----------------------------------------------------------------------
+     - 2025.8.27.22 V2.0.0 新增 auto窗口颜色自定义
+     ----------------------------------------------------------------------
      - 2025.8.20.22 V2.0.0 新增 角色专属设置 字符串
      ----------------------------------------------------------------------
      - 2025.8.19.22 V2.0.0 修复对话框背景图片缩放异常的bug；兼容旧版本win的cdx/cdy
@@ -1706,8 +1712,8 @@ class Window_EagleMessage < Window_Base
     _do ||= 10 - pop_params[:do]
     MESSAGE_EX.set_windowtag(self, @eagle_sprite_pop_tag, i, o, _do)
     case i # 坐标距离事件格子中心的偏移量
-    when 1,4,7; @eagle_sprite_pop_tag.x -= pop_params[:td]
-    when 3,6,9; @eagle_sprite_pop_tag.x += pop_params[:td]
+    when 1,4,7; @eagle_sprite_pop_tag.x += pop_params[:td]
+    when 3,6,9; @eagle_sprite_pop_tag.x -= pop_params[:td]
     end
     case i
     when 1,2,3; @eagle_sprite_pop_tag.y -= pop_params[:td]
@@ -2087,7 +2093,7 @@ class Window_EagleMessage < Window_Base
     eagle_reset_env # 特殊：重置环境
     game_message.reset_child_window_wh_add  # 重置子窗口嵌入时占据的宽高
     pos[:x] = 0; pos[:y] = 0    # 重置pos参数
-    pos[:new_x] = 0; pos[:height] = line_height
+    pos[:new_x] = 0; pos[:height] = 0
     if @flag_next  # 旧页面不清空，继续绘制
       pos[:y] = @eagle_charas_h_final + win_params[:ld]  # 不要忘记加个行间距
       @flag_need_change_wh = true  # 如果是旧页面继续绘制，则需要更新宽高
@@ -2145,7 +2151,6 @@ class Window_EagleMessage < Window_Base
     @eagle_charas_h = last_c_h  # 复原当前文字区域宽高
     self.ox = self.oy = 0
     game_message.load_env(:pre_draw)  # 复原转义符环境
-    game_message.clear_applys
     @flag_draw = true
   end
   #--------------------------------------------------------------------------
@@ -2323,7 +2328,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_process_draw_end(c_w, c_h, pos)
     # 处理下一次绘制的参数
-    pos[:x] += (c_w + game_message.win_params[:ck])
+    pos[:x] += (c_w + win_params[:ck])
     pos[:height] = [pos[:height], c_h].max
     # 记录下一个文字绘制位置x
     @eagle_next_chara_x = pos[:x]
@@ -2359,8 +2364,9 @@ class Window_EagleMessage < Window_Base
     charas = [] # 存储当前迭代行的全部文字精灵
     # 存储当前迭代行的y值（同y的为同一行）（未考虑列排文字）
     charas_y = @eagle_chara_sprites[0].origin_y  # 初始为第一行
-    # 最大宽度 = [可供文字绘制区域的最大宽度, 文字占据宽度].max
-    max_w = [eagle_charas_max_w, @eagle_charas_w].max
+    # 最大宽度 = [可供文字绘制区域的最大宽度 - 等待按键精灵宽度, 文字宽度].max
+    max_w = [eagle_charas_max_w - @eagle_sprite_pause_width_add, 
+      @eagle_charas_w].max
     @eagle_chara_sprites.each do |s|
       next charas.push(s) if s.origin_y == charas_y # 第一行的首字符会存入
       # 对同一行的字符重排
@@ -2468,7 +2474,7 @@ class Window_EagleMessage < Window_Base
     @line_show_fast = false
     pos[:x] = pos[:new_x]
     pos[:y] += pos[:height]
-    pos[:height] = line_height
+    pos[:height] = 0
   end
 
   #--------------------------------------------------------------------------
@@ -2503,7 +2509,7 @@ class Window_EagleMessage < Window_Base
   # ● 设置env指令
   #--------------------------------------------------------------------------
   def eagle_check_env(text)
-    text.gsub!(/\eenv\[(.*?)\]/m) {
+    text.gsub!(/\eenv\[(.*?)\]/im) {
       t = $1; sym = t
       t.include?('|') ? sym = t.slice!(/.*?\|/).chop : t = "load"
       eagle_check_env_method(sym, t)
@@ -2597,7 +2603,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def eagle_check_eval(text)
     @eagle_evals.clear # 清除旧的
-    text.gsub!(/\eeval\{(.*?)\}/m) {
+    text.gsub!(/\eeval\{(.*?)\}/im) {
       @eagle_evals.push($1) # ID 从 1 开始，防止之后param传入nil出错
       "\eeval[#{@eagle_evals.size}]"
     }
@@ -2761,7 +2767,10 @@ class Window_EagleMessage < Window_Base
     when '|' ; wait(60);               return true
     when '!' ; input_pause;            return true
     when '>' ; @line_show_fast = true; return true
-    when '<' ; @line_show_fast = false;return true
+    when '<' ; 
+      @line_show_fast = false
+      eagle_process_draw_update  # 因为之前在快进，此处更新一次排版
+      return true
     when '^' ; @pause_skip = true;     return true
     when 'C'
       font_params[:c] = obtain_escape_param_string(text)
@@ -2782,7 +2791,7 @@ class Window_EagleMessage < Window_Base
   # ● 获取控制符的参数（变量参数字符串形式）（这个方法会破坏原始数据）
   #--------------------------------------------------------------------------
   def obtain_escape_param_string(text)
-    text.slice!(/^\[[ =\|\$\-\d\w]+\]/)[1..-2] rescue ""
+    text.slice!(/^\[[ =\|\$\-\d\w]+\]/i)[1..-2] rescue ""
   end
   #--------------------------------------------------------------------------
   # ● 清除暂存的指定文字特效
@@ -3108,7 +3117,11 @@ class Window_EagleMessage < Window_Base
     return if !@flag_draw
     # 如果在对话快速显示的中途进行等待，则执行一次绘制后处理，以进行排版等
     eagle_process_draw_update if show_fast?
-    duration.times { break if @eagle_force_close; Fiber.yield }
+    duration.times { 
+      break if @eagle_force_close
+      break if @pause_skip and check_input?
+      Fiber.yield
+    }
   end
   #--------------------------------------------------------------------------
   # ● 设置auto参数
@@ -3674,10 +3687,9 @@ class Window_EagleMsgName < Window_Base
   def reset_size(t)
     reset_font_settings
     w, h = MESSAGE_EX.calculate_text_wh(contents, t)
-    h = [h, contents.font.size].max
-    w = w + name_params[:cx]
-    h = h + name_params[:cy]
-    move(0, 0, w + standard_padding * 2, h + standard_padding * 2)
+    w = w + name_params[:cx] + standard_padding * 2
+    h = [h, contents.font.size].max + name_params[:cy] + standard_padding * 2
+    move(0, 0, w, h)
     create_contents
   end
   #--------------------------------------------------------------------------
@@ -3745,6 +3757,8 @@ class Window_EagleMsgName < Window_Base
       t = yp + @back_sprite.height - yw - hw
       @rect_real.height = 0
       @rect_real.height = t if t > 0
+    else
+      @rect_real = Rect.new(0, 0, 0, 0)
     end
   end
   #--------------------------------------------------------------------------
@@ -3848,6 +3862,8 @@ class Sprite_EaglePauseTag < Sprite
   def reset_source
     @s_bitmap.dispose if @s_bitmap
     @last_pause_index = params[:id]
+    params[:v] = @last_pause_index == -1 ? 0 :1
+    
     _params = MESSAGE_EX.pause_params(@last_pause_index)
     if _params[0].nil?
       _bitmap = @window_bind.windowskin
@@ -3938,12 +3954,12 @@ class Sprite_EaglePauseTag < Sprite
     @sprite_auto = Sprite.new
     @sprite_auto.bitmap = Bitmap.new(MESSAGE_EX::WIN_AUTO_W,
       MESSAGE_EX::WIN_AUTO_H)
-    @sprite_auto.bitmap.font.color = Color.new(0,0,0,255)
+    @sprite_auto.bitmap.font.color = MESSAGE_EX::WIN_AUTO_TEXT_COLOR1
     @sprite_auto.bitmap.font.shadow = false
     @sprite_auto.bitmap.font.outline = false
     # 用于复制的白色文字
     @auto_temp_bitmap = Bitmap.new(@sprite_auto.width, @sprite_auto.height)
-    @auto_temp_bitmap.font.color = Color.new(255,255,255,150)
+    @auto_temp_bitmap.font.color = MESSAGE_EX::WIN_AUTO_TEXT_COLOR2
     @auto_temp_bitmap.font.shadow = false
     @auto_temp_bitmap.font.outline = false
     t = MESSAGE_EX::WIN_AUTO_TEXT
@@ -3968,10 +3984,10 @@ class Sprite_EaglePauseTag < Sprite
     count_rate = cd * 1.0 / @window_bind.game_message.auto
     b = @sprite_auto.bitmap
     b.clear
-    b.fill_rect(0, 0, b.width, b.height, Color.new(255,255,255,150))
+    b.fill_rect(0, 0, b.width, b.height, MESSAGE_EX::WIN_AUTO_BG_COLOR1)
     _x = (b.width-2) * (1-count_rate)
     r = Rect.new(1+_x, 1, b.width-2-_x, b.height-2)
-    b.fill_rect(r, Color.new(0,0,0,150))
+    b.fill_rect(r, MESSAGE_EX::WIN_AUTO_BG_COLOR2)
     # 绘制黑色文字
     t = MESSAGE_EX::WIN_AUTO_TEXT
     b.draw_text(0, 0, b.width, b.height, t, 1)

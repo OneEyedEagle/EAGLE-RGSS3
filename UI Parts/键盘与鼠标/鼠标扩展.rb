@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.2.0"
+$imported["EAGLE-MouseEX"] = "1.2.1"
 #=============================================================================
-# - 2025.8.7.22 新增鼠标拖动的判定
+# - 2025.8.30.10 新增鼠标拖动的判定
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -319,29 +319,29 @@ end
 #===============================================================================
 # ○ 鼠标触发事件
 #===============================================================================
-#~ class Sprite_Character < Sprite_Base
-#~   #--------------------------------------------------------------------------
-#~   # ● 更新其它内容
-#~   #--------------------------------------------------------------------------
-#~   alias eagle_mouse_ex_update_other update_other
-#~   def update_other
-#~     eagle_mouse_ex_update_other
-#~     # 当事件执行时，不判定
-#~     return if $game_map.interpreter.running?
-#~     # 当鼠标移动到事件上，且按下左键时，触发它
-#~     if MOUSE_EX.up?(:ML) && @character.is_a?(Game_Event) && mouse_in?(true, false)
-#~       @character.start
-#~       # 被触发的事件朝向玩家
-#~       @character.turn_to_character($game_player)
-#~       # 玩家朝向被触发的事件
-#~       $game_player.turn_to_character(@character)
-#~       # 计算了被触发事件与玩家之间的距离
-#~       d = @character.distance_to_character($game_player)
-#~       # 可传入变量中，然后在事件指令里判定距离，如果过大则提示太远并中止事件执行
-#~       #$game_variables[1] = d
-#~     end
-#~   end
-#~ end
+class Sprite_Character < Sprite_Base
+  #--------------------------------------------------------------------------
+  # ● 更新其它内容
+  #--------------------------------------------------------------------------
+  alias eagle_mouse_ex_update_other update_other
+  def update_other
+    eagle_mouse_ex_update_other
+    # 当事件执行时，不判定
+    return if $game_map.interpreter.running?
+    # 当鼠标移动到事件上，且按下左键时，触发它
+    if MOUSE_EX.up?(:ML) && @character.is_a?(Game_Event) && mouse_in?(true, false)
+      @character.start
+      # 被触发的事件朝向玩家
+      @character.turn_to_character($game_player)
+      # 玩家朝向被触发的事件
+      $game_player.turn_to_character(@character)
+      # 计算了被触发事件与玩家之间的距离
+      d = @character.distance_to_character($game_player)
+      # 可传入变量中，然后在事件指令里判定距离，如果过大则提示太远并中止事件执行
+      #$game_variables[1] = d
+    end
+  end
+end
 class Game_Character
   #--------------------------------------------------------------------------
   # ● 朝向指定角色
@@ -519,6 +519,7 @@ module MOUSE_EX
   # ● 将鼠标移动到指定的指令窗口内
   #--------------------------------------------------------------------------
   def self.to_command_window(w)
+    return if w.nil?
     # 该窗口需要已激活
     return if w.active == false 
     # 把鼠标移动到窗口当前选项上

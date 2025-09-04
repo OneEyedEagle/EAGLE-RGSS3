@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.0.0"  # 2025.8.20.22
+$imported["EAGLE-MessageEX"] = "2.0.0"  # 2025.8.27.22
 =begin
 ===============================================================================
 
@@ -714,6 +714,10 @@ module MESSAGE_EX
 #  ◇ 启用时 显示窗 的设置
 
    WIN_AUTO_TEXT = "自动播放"   # 显示的文本
+   WIN_AUTO_TEXT_COLOR1 = Color.new(0,0,0,255)        # 文本颜色（初始）
+   WIN_AUTO_BG_COLOR1   = Color.new(255,255,255,150)  # 窗口颜色（初始）
+   WIN_AUTO_TEXT_COLOR2 = Color.new(255,255,255,150)  # 文本颜色（反色）
+   WIN_AUTO_BG_COLOR2   = Color.new(0,0,0,150)        # 窗口颜色（反色）
    WIN_AUTO_W  = 100            # 窗口宽度
    WIN_AUTO_H  = 40             # 窗口高度
    WIN_AUTO_O  = 9              # 窗口显示原点（对应小键盘九宫格 | 9 右上角）

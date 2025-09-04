@@ -5,9 +5,9 @@
 #  【组件-形状绘制 by老鹰】与【按键扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StroyMap"] = "0.5.0"
+$imported["EAGLE-StroyMap"] = "0.5.1"
 #==============================================================================
-# - 2025.8.25.0
+# - 2025.8.30.23
 #==============================================================================
 # - 本插件新增了能够查看剧情节点的系统（仿【死月妖花】）
 #------------------------------------------------------------------------------
@@ -16,6 +16,11 @@ $imported["EAGLE-StroyMap"] = "0.5.0"
 #    SceneManager.call(Scene_StroyMap)
 #
 #      → 打开剧情节点图。
+#
+#    Scene_StroyMap.set_init_node(name)
+#
+#      → 设置初始时将名称为 name 的节点居中显示。
+#        如果该节点不存在/未显示，改为脚本中的第一个节点居中显示
 #
 #    $game_system.story_node_unlock(name, save=false) 
 #
@@ -93,14 +98,21 @@ module STORY_MAP
       #  （如果该节点已经解锁，则不再判定）
       # :if => [""],
       #------------------------------------------------------------------------
-      # 【可选】该节点未解锁时，鼠标/键盘选择后的提示文本
+      # 【可选】该节点未解锁时，鼠标/键盘点击后的提示文本
       :hint => "完成<主线：一切的开始>后解锁",
       #------------------------------------------------------------------------
-      # 【可选】该节点解锁后，鼠标/键盘选择时能否查看详细信息
+      # 【可选】该节点解锁后，鼠标/键盘点击时能否查看详细信息
       #  （若不填写，默认 true，可以点击放大查看详细信息）
       # :no_click => true,
       #------------------------------------------------------------------------
-      # 【可选】该节点解锁后，鼠标/键盘选择查看详细信息时，显示的信息
+      # 【可选】该节点解锁后，鼠标/键盘点击后的显示位置和缩放倍率
+      #  （数字，若不填写或为nil，则取 NODE_X2 、NODE_Y2 、NODE_ZOOM2 ）
+      #  （该位置为 节点中心点 的屏幕上坐标）
+      :x2 => nil, 
+      :y2 => nil,
+      :zoom2 => 1.0,
+      #------------------------------------------------------------------------
+      # 【可选】该节点解锁后，鼠标/键盘点击后显示的详细信息
       #  （数组，其中每一项均为显示的精灵）
       :info => [ 
         #【插入文本】
@@ -160,20 +172,49 @@ module STORY_MAP
   #--------------------------------------------------------------------------
   VIEWPORT_RECT = Rect.new(0,0,Graphics.width,Graphics.height)
   #--------------------------------------------------------------------------
+  # ● 常量：视图移动时，上下左右的最小显示宽度/高度的增加值
+  # 如VIEWPORT_U数字越大，则最底下的节点往上移动时，可到达的y越大。
+  # 如VIEWPORT_R数字越大，则最左边的节点往右移动时，可到达的x越小。
+  #--------------------------------------------------------------------------
+  VIEWPORT_U = 0
+  VIEWPORT_D = 0
+  VIEWPORT_L = 0
+  VIEWPORT_R = 0
+
+  #--------------------------------------------------------------------------
   # ● 常量：节点未解锁时，节点名称显示为该字符串
   #--------------------------------------------------------------------------
   TEXT_LOCK = "<?>"
   #--------------------------------------------------------------------------
-  # ● 常量：如果解锁节点时选择了保存，对应存档文件所在路径
+  # ● 常量：解锁节点时若选择了保存，则存档文件所在路径
   #--------------------------------------------------------------------------
   SAVEFILE_DIR = "Saves_StoryMap/"
+  #--------------------------------------------------------------------------
+  # ● 默认值：节点被点击后，移动的新位置及缩放倍率
+  #--------------------------------------------------------------------------
+  NODE_X2 = VIEWPORT_RECT.width / 2
+  NODE_Y2 = VIEWPORT_RECT.height / 4
+  NODE_ZOOM2 = 2.0
+  #--------------------------------------------------------------------------
+  # ● 常量：节点被点击后，移动及缩放的时间
+  #--------------------------------------------------------------------------
+  NODE_T = 20
+
   #--------------------------------------------------------------------------
   # ● 函数：光标移动使用的缓动函数
   #  x 为 当前移动计时 ÷ 总移动时间 的小数（0~1）
   #  返回为该时刻的 移动距离/总距离 的比值
   #  若直接返回 x，则为直线移动
   #-------------------------------------------------------------------------
-  def self.ease(x)
+  def self.ease(type, x)
+    if $imported["EAGLE-EasingFunction"]
+      case type 
+      when :node_focus  # 节点点击放大时
+        return EasingFuction.call("easeInExpo", x) 
+      when :hint_opa    # 节点未解锁，点击显示的提示文本渐隐时
+        return EasingFuction.call("easeInExpo", x) 
+      end
+    end
     x * x
   end
 
@@ -232,6 +273,9 @@ module STORY_MAP
   end
 end
 
+#=============================================================================
+# ○ DataManager
+#=============================================================================
 class << DataManager
   attr_accessor :flag_story_map
   #--------------------------------------------------------------------------
@@ -269,8 +313,9 @@ class Game_System
   #--------------------------------------------------------------------------
   def story_node_unlock(name, save=false)
     @eagle_story_nodes ||= []
-    return if story_node_unlock?(name)
-    @eagle_story_nodes.push(name)
+    if !story_node_unlock?(name)
+      @eagle_story_nodes.push(name)
+    end
     if save
       DataManager.flag_story_map = name
       DataManager.save_game(0)
@@ -470,7 +515,7 @@ class Sprite_StoryNode < Sprite
   def set_oxy(_ox, _oy, change_xy=true)
     old_ox = self.ox
     old_oy = self.oy
-    self.ox = _ox + self.width / 2  # 默认0为原点，增加一般宽度改为中心点为原点
+    self.ox = _ox + self.width / 2  # 增加一半宽度改为中心点为原点
     self.oy = _oy + self.height / 2
     if change_xy
       self.x = self.x - old_ox + self.ox
@@ -620,7 +665,7 @@ class Sprite_StoryNode_Line < Sprite
   def set_oxy(_ox, _oy, change_xy=true)
     old_ox = self.ox
     old_oy = self.oy
-    self.ox = _ox + self.width / 2  # 默认0为原点，增加一般宽度改为中心点为原点
+    self.ox = _ox + self.width / 2
     self.oy = _oy + self.height / 2
     if change_xy
       self.x = self.x - old_ox + self.ox
@@ -696,7 +741,6 @@ class Sprite_StoryNode_Hint < Sprite
     @params[:opa0] = init_opa
     @params[:opa1] = 0
     @params[:dopa] = @params[:opa1] - @params[:opa0]
-    @params[:opa_ease] = "easeInExpo"
     @params[:opa_c] = 0
     @params[:opa_t] = 120
   end
@@ -711,7 +755,7 @@ class Sprite_StoryNode_Hint < Sprite
     end
     if @params[:opa_c]
       t = @params[:opa_c] * 1.0 / @params[:opa_t]
-      self.opacity = @params[:opa0] + EasingFuction.call(@params[:opa_ease], t) * @params[:dopa]
+      self.opacity = @params[:opa0] + STORY_MAP.ease(:hint_opa, t) * @params[:dopa]
       @params[:opa_c] += 1
       @params[:opa_c] = nil if @params[:opa_c] > @params[:opa_t]
     end
@@ -795,9 +839,16 @@ end
 #=============================================================================
 class Scene_StoryMap < Scene_MenuBase
   #--------------------------------------------------------------------------
+  # ● 设置初始时居中显示的节点的名称
+  #--------------------------------------------------------------------------
+  def self.set_init_node(name)
+    @@init_node = name 
+  end
+  #--------------------------------------------------------------------------
   # ● 开始
   #--------------------------------------------------------------------------
   def start 
+    @@init_node ||= nil
     super
     init_ui 
     # 是否已经选中某个节点并放大处理
@@ -807,8 +858,7 @@ class Scene_StoryMap < Scene_MenuBase
     @key_move_y = 0
     @key_move_c = 0
     # 初始化视图显示位置
-    @viewport.ox = -200
-    @viewport.oy = -200
+    init_viewport_oxy
     # 更新全部ui
     update_other_ui_xy
   end 
@@ -929,6 +979,21 @@ class Scene_StoryMap < Scene_MenuBase
     end
   end
   #--------------------------------------------------------------------------
+  # ● 初始化显示位置
+  #--------------------------------------------------------------------------
+  def init_viewport_oxy
+    name = @@init_node
+    name = @nodes.keys[0] if @nodes[name] == nil
+    set_node_center(@nodes[name])
+  end
+  #--------------------------------------------------------------------------
+  # ● 将指定node居中
+  #--------------------------------------------------------------------------
+  def set_node_center(node)
+    @viewport.ox = node.x - @viewport.rect.width/2
+    @viewport.oy = node.y - @viewport.rect.height/2
+  end
+  #--------------------------------------------------------------------------
   # ● 结束
   #--------------------------------------------------------------------------
   def terminate
@@ -982,7 +1047,6 @@ class Scene_StoryMap < Scene_MenuBase
   #--------------------------------------------------------------------------
   # ● 更新整体移动
   #--------------------------------------------------------------------------
-  OFFSET = 60
   def update_move 
     if MOUSE_EX.drag?
       dx, dy = MOUSE_EX.drag_dxy
@@ -995,13 +1059,13 @@ class Scene_StoryMap < Scene_MenuBase
     @viewport.oy += @key_move_y
     # 不能移出边界
     # 最右边精灵的x-ox > 0  最左边精灵的x-ox < @viewport.rect.width
-    v = @limit_rect.width-OFFSET
+    v = @limit_rect.width-STORY_MAP::VIEWPORT_L
     @viewport.ox = v if @viewport.ox > v
-    v = @limit_rect.x-@viewport.rect.width+OFFSET
+    v = @limit_rect.x-@viewport.rect.width+STORY_MAP::VIEWPORT_R
     @viewport.ox = v if @viewport.ox < v
-    v = @limit_rect.height-OFFSET
+    v = @limit_rect.height - STORY_MAP::VIEWPORT_U
     @viewport.oy = v if @viewport.oy > v
-    v = @limit_rect.y-@viewport.rect.height+OFFSET 
+    v = @limit_rect.y-@viewport.rect.height+STORY_MAP::VIEWPORT_D
     @viewport.oy = v if @viewport.oy < v
     # 更新其它在视图里的UI
     update_other_ui_xy
@@ -1087,8 +1151,8 @@ class Scene_StoryMap < Scene_MenuBase
     # 更改当前节点的z值，准备放大
     @current.set_z(100)
     # 以当前节点的xy，放大全部节点和连线
-    ox = @current.x - (@viewport.rect.width/2)
-    oy = @current.y - (@viewport.rect.height/4) 
+    ox = @current.x - (@current.params[:x2] || STORY_MAP::NODE_X2)
+    oy = @current.y - (@current.params[:y2] || STORY_MAP::NODE_Y2) 
     @nodes.each do |k, s|
       next if s == @current 
       s.set_oxy(@current.x - s.x, @current.y - s.y)
@@ -1097,9 +1161,11 @@ class Scene_StoryMap < Scene_MenuBase
       l.set_oxy(@current.x - l.x, @current.y - l.y)
     end
     # 处理放大
-    d_opa1 = 13
-    d_opa2 = 25
-    update_nodes_zoom_until_end(2.0, 2.0, ox, oy) { 
+    z = @current.params[:zoom2] || STORY_MAP::NODE_ZOOM2
+    t = STORY_MAP::NODE_T
+    d_opa1 = 255 / t + 1
+    d_opa2 = d_opa1 * 2
+    update_nodes_zoom_until_end(z, z, ox, oy, t) { 
       # 遮挡层、当前节点的详细信息精灵组 渐显
       @sprite_layer.opacity += d_opa1
       @info_sprites.each { |s| s.opacity += d_opa1 }
@@ -1124,9 +1190,10 @@ class Scene_StoryMap < Scene_MenuBase
     @key_move_x = @key_move_y = 0
     # 处理缩小
     ox ||= @viewport.ox; oy ||= @viewport.oy
-    d_opa1 = 13
-    d_opa2 = 25
-    update_nodes_zoom_until_end(1.0, 1.0, ox, oy) { 
+    t = STORY_MAP::NODE_T
+    d_opa1 = 255 / t + 1
+    d_opa2 = d_opa1 * 2
+    update_nodes_zoom_until_end(1.0, 1.0, ox, oy, t) { 
       # 遮挡层、当前节点的详细信息精灵组 渐隐
       @sprite_layer.opacity -= d_opa1
       @info_sprites.each { |s| s.opacity -= d_opa1 }
@@ -1168,7 +1235,7 @@ class Scene_StoryMap < Scene_MenuBase
         @viewport.oy = oy2
       else
         v = i * 1.0 / t
-        v = STORY_MAP.ease(v)
+        v = STORY_MAP.ease(:node_focus, v)
         zx = zx1 + v * dzx
         zy = zy1 + v * dzy
         @viewport.ox = ox1 + v * dox

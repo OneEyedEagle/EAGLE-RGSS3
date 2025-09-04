@@ -171,9 +171,9 @@ class Window_EagleMessage
       name_params[:name] = name_params[:preserve]
     end
     name_params[:preserve] = ""
-    if name_params[:name] == "" && game_message.face_name != ""
-      name_params[:name] = 
-    end
+    #if name_params[:name] == "" && game_message.face_name != ""
+    #  name_params[:name] = 
+    #end
     eagle_facename_process_draw_name
   end
 end
