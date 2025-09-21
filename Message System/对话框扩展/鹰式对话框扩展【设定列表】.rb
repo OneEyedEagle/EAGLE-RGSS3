@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.0.0"  # 2025.8.27.22
+$imported["EAGLE-MessageEX"] = "2.0.0"  # 2025.9.8.20
 =begin
 ===============================================================================
 
@@ -344,6 +344,7 @@ module MESSAGE_EX
 #  · sym → 环境序号。
 #            可以是上方[预设]环境没有的序号；若是[预设]环境中已有的序号，
 #            临时覆盖同序号配置，在读档后会重置回[预设]环境的配置。
+#            无法覆盖环境0，即\env[0|save]无效。
 
 #  ？ 示例
 #     \env[底部|save]\win[o2do-2dy-30] 
@@ -417,6 +418,7 @@ module MESSAGE_EX
    ALIAS_ESCAPE_CHARAS = {
    # 别名 => 转义符名称
      "na" => "name",   # 名称转义符别名 \na[] = \NA[] = \name[]
+     "pp" => "env[0]\\cin[dx0]\\cout[dy0]\\func[open2close2]\\pop"
    }
    
 # -────────────────────────────────────────-

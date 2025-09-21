@@ -96,9 +96,8 @@ end
 #
 #     如果_visible传入 true，则会首先检查精灵的 visible：
 #       visible为false 或 opacity为0 则直接返回 false
-#     如果_visible传入 true，则会判定所在位置的像素：
-#       如果 _pixel 传入 true，则在颜色像素上返回 true，在透明像素上返回 false
-#       如果 _pixel 传入 false，则统一返回 true
+#     如果_pixel传入 true，则会判定所在位置的像素：
+#       如果在颜色像素上则返回 true，在透明像素上返回 false
 #
 #  3.2 为 Window 类增加了实例方法，判定鼠标是否在该窗口内部
 #

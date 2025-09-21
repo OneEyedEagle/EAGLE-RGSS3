@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.7.1"
+$imported["EAGLE-AbilityLearn"] = "1.7.2"
 #==============================================================================
-# - 2025.8.22.22 修复ap=-1时，无法正常设置前置需求的bug
+# - 2025.9.6.14 现在可以贴更多图片到背景上了
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
@@ -225,14 +225,21 @@ ACTORS[0] = {  # 不要漏了花括号
 # 当然不设置也完全没问题
 PARAMS[0] = {  # 这里设置 0号角色 的一些参数
   #------------------------------------------------------------------------
-  #【可选】需要显示的背景图片（默认 nil 无图片，可填入字符串）
-  # （图片放置在 Graphics/System 目录下，比如0号角色背景图为 bg_ability_0.png，
-  #   则此处填写后应该为 :bg => "bg_ability_0" ）
-  # （图片的左上角与窗口左上角对齐）
-  :bg => nil,
+  #【可选】按格式在数组中填入需要额外显示的文本或图片
+  #【插入文本】
+  #   填入 [:text, "需要显示的字符串", [显示原点类型, x坐标, y坐标, z值], 样式]
+  #【插入图片】
+  # （图片放置在 Graphics/System 目录下）
+  #   填入 [:pic, "需要显示的图片的名称", [显示原点类型, x坐标, y坐标, z值], 样式]
+  # 其中 显示原点类型 为按照九宫格定位，哪个点作为显示的固定点，如5为中心点
+  # 其中 x坐标 和 y坐标 为网格区域中的坐标，非屏幕坐标
+  # 其中 z值 参考值：网格背景z=10，能力间连线z=30，能力z=50，光标z=100
+  # 其中 样式 请自行在 params_text_style 和 params_pic_style 中修改，默认传入 0 
+  # （如 :info => [ [:text,"关键能力！",[5,100,100,11]],0 ], ）
+  :info => [],
   #------------------------------------------------------------------------
   #【可选】是否显示网格背景（默认 true，若填 false 则不显示）
-  # （该网格背景显示在 :bg 上方，能力图标、连线的下方）
+  # （该网格背景显示在背景上方，能力图标、连线的下方）
   :grid => true,
   #------------------------------------------------------------------------
   #【可选】额外绘制的连线，不产生任何影响
@@ -327,11 +334,15 @@ module ABILITY_LEARN
   GRID_MAX_X = 20
   GRID_MAX_Y = 20
   #--------------------------------------------------------------------------
-  # ○【常量】（测试游戏中）是否绘制网格坐标
+  # ○【常量】暗色背景的z值
+  #--------------------------------------------------------------------------
+  GRID_Z = 200
+  #--------------------------------------------------------------------------
+  # ○【常量】（测试游戏中生效）是否绘制网格背景中，每一格的坐标
   #--------------------------------------------------------------------------
   DRAW_XY = false
   #--------------------------------------------------------------------------
-  # ○【常量】能力等级数字的字体大小
+  # ○【常量】能力等级的字体大小
   #--------------------------------------------------------------------------
   TOKEN_LEVEL_FONT_SIZE = 14
   
@@ -402,13 +413,36 @@ module ABILITY_LEARN
   INFO_TEXT_FONT_SIZE = 20
   # 预设高度
   INFO_TEXT_HEIGHT = 64
-  
   #--------------------------------------------------------------------------
-  # ○【常量】设置：底部按键提示文本
+  # ○【常量】设置：底部按键提示文本的字体大小
   # 具体请在 redraw_hint 方法中修改文本内容
   #--------------------------------------------------------------------------
-  # 字体大小
   HINT_FONT_SIZE = 16
+  
+  #--------------------------------------------------------------------------
+  # ○【常量】设置：PARAMS[:info]中额外贴到背景上的文字的样式
+  #--------------------------------------------------------------------------
+  def self.params_text_style(sprite, text, style)
+    case style
+    when 0
+      ps = { :font_size => 18, :font_color => Color.new(255,255,255,100) }
+      d = Process_DrawTextEX.new(text, ps)
+      d.run(false)
+      sprite.bitmap.dispose if sprite.bitmap
+      sprite.bitmap = Bitmap.new(d.width, d.height)
+      d.bind_bitmap(sprite.bitmap, true)
+      d.run
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ○【常量】设置：PARAMS[:info]中额外贴到背景上的图片的样式
+  #--------------------------------------------------------------------------
+  def self.params_pic_style(sprite, pic_name, style)
+    sprite.bitmap = Cache.system(pic_name) rescue Cache.empty_bitmap
+    case style
+    when 0
+    end
+  end
   
   #--------------------------------------------------------------------------
   # ○【常量】设置所有角色共有的能力数据
@@ -472,11 +506,6 @@ module ABILITY_LEARN
 # ■ 数据读取
 #==============================================================================
   #--------------------------------------------------------------------------
-  # ○【常量】角色数据
-  #--------------------------------------------------------------------------
-  ACTORS ||= {}
-  PARAMS ||= {}
-  #--------------------------------------------------------------------------
   # ○【常量】基础属性与对应ID
   #--------------------------------------------------------------------------
   PARAMS_TO_ID = {
@@ -484,13 +513,12 @@ module ABILITY_LEARN
     :mat => 4, :mdf => 5, :agi => 6, :luk => 7,
   }
   #--------------------------------------------------------------------------
-  # ● 获取指定角色的特别设置
+  # ○【常量】角色数据
   #--------------------------------------------------------------------------
-  def self.get_params(actor_id)
-    PARAMS[actor_id] || {}
-  end
+  ACTORS ||= {}
+  PARAMS ||= {}
   #--------------------------------------------------------------------------
-  # ● 获取指定角色的全部数据
+  # ● 获取指定角色的全部能力数据
   #--------------------------------------------------------------------------
   def self.get_tokens(actor_id)
     ACTORS[actor_id] || {}
@@ -499,7 +527,13 @@ module ABILITY_LEARN
     ALL_ACTORS
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定角色的全部tokens（增加通用并剔除除外）
+  # ● 获取指定角色的设置
+  #--------------------------------------------------------------------------
+  def self.get_params(actor_id)
+    PARAMS[actor_id] || {}
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定角色的全部能力（增加通用能力并删去被除外的能力）
   #--------------------------------------------------------------------------
   def self.get_actor_tokens(actor_id)
     tokens = get_tokens(actor_id)
@@ -509,7 +543,7 @@ module ABILITY_LEARN
     tokens
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定角色的指定id的数据hash
+  # ● 获取指定角色的指定id能力的数据hash
   #--------------------------------------------------------------------------
   def self.get_token(actor_id, token_id)
     return ALL_ACTORS[token_id] if ALL_ACTORS[token_id]
@@ -519,14 +553,14 @@ module ABILITY_LEARN
     return {}
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的对应技能
+  # ● 获取指定id能力的对应技能
   #--------------------------------------------------------------------------
   def self.get_token_skill(actor_id, token_id)
     ps = get_token(actor_id, token_id)
     ps[:skill] || nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的武器的数据
+  # ● 获取指定id能力的对应武器的数据
   #--------------------------------------------------------------------------
   def self.get_token_weapon(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -534,7 +568,7 @@ module ABILITY_LEARN
     return nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的护甲的数据
+  # ● 获取指定id能力的对应护甲的数据
   #--------------------------------------------------------------------------
   def self.get_token_armor(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -542,14 +576,14 @@ module ABILITY_LEARN
     return nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的绑定开关
+  # ● 获取指定id能力的绑定开关
   #--------------------------------------------------------------------------
   def self.get_token_sid(actor_id, token_id)
     ps = get_token(actor_id, token_id)
     ps[:sid] || nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的名称
+  # ● 获取指定id能力的名称
   #--------------------------------------------------------------------------
   def self.get_token_name(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -566,7 +600,7 @@ module ABILITY_LEARN
     token_id.to_s
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的对应图标
+  # ● 获取指定id能力的图标
   #--------------------------------------------------------------------------
   def self.get_token_icon(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -583,7 +617,7 @@ module ABILITY_LEARN
     return 0
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的对应图片bitmap
+  # ● 获取指定id能力的图片bitmap（覆盖图标的设置）
   #--------------------------------------------------------------------------
   def self.get_token_pic(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -591,7 +625,7 @@ module ABILITY_LEARN
     b
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的对应背景bitmap
+  # ● 获取指定id能力的背景图片bitmap
   #--------------------------------------------------------------------------
   def self.get_token_bg(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -609,7 +643,7 @@ module ABILITY_LEARN
     return nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的属性值Hash（利用paras_params进行解析）
+  # ● 获取指定id能力的属性值Hash（利用paras_params进行解析）
   #--------------------------------------------------------------------------
   def self.get_token_params(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -621,21 +655,21 @@ module ABILITY_LEARN
     return {}
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的ap消耗量
+  # ● 获取指定id能力的ap消耗量
   #--------------------------------------------------------------------------
   def self.get_token_ap(actor_id, token_id)
     ps = get_token(actor_id, token_id)
     ps[:ap] || 0
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id是否可以再次学习
+  # ● 获取指定id能力是否可以再次学习
   #--------------------------------------------------------------------------
   def self.get_token_level(actor_id, token_id)
     ps = get_token(actor_id, token_id)
     ps[:level] || 1
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的on/off时的触发脚本
+  # ● 获取指定id能力在on/off时触发的脚本
   #--------------------------------------------------------------------------
   def self.get_token_eval_on(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -646,14 +680,14 @@ module ABILITY_LEARN
     ps[:eval_off] || nil
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的前置id们
+  # ● 获取指定id能力的前置需求能力
   #--------------------------------------------------------------------------
   def self.get_token_pre(actor_id, token_id)
     ps = get_token(actor_id, token_id)
     ps[:pre] || []
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的扩展前置条件
+  # ● 获取指定id能力的扩展前置需求
   #--------------------------------------------------------------------------
   def self.get_token_pre_ex(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -733,7 +767,7 @@ module ABILITY_LEARN
     end
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的升级前置条件
+  # ● 获取指定id能力的升级前置条件
   #--------------------------------------------------------------------------
   def self.get_token_lvup(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -754,7 +788,7 @@ module ABILITY_LEARN
   end
   
   #--------------------------------------------------------------------------
-  # ● 获取指定id的帮助文本
+  # ● 获取指定id能力的帮助文本
   #--------------------------------------------------------------------------
   def self.get_token_help(actor_id, token_id)
     t = ""
@@ -882,7 +916,7 @@ module ABILITY_LEARN
     return t
   end
   #--------------------------------------------------------------------------
-  # ● 获取指定id的附加帮助文本
+  # ● 获取指定id能力的附加帮助文本
   #--------------------------------------------------------------------------
   def self.get_token_help_raw(actor_id, token_id)
     ps = get_token(actor_id, token_id)
@@ -1005,6 +1039,7 @@ class << ABILITY_LEARN
       end
     end
     @sprites_token.each { |id, s| s.dispose }
+    @sprites_info.each { |id, s| s.dispose }
     @viewport_bg.dispose
   end
   #--------------------------------------------------------------------------
@@ -1024,7 +1059,7 @@ class << ABILITY_LEARN
     
     # 暗色背景
     @sprite_bg = Sprite.new
-    @sprite_bg.z = 200
+    @sprite_bg.z = ABILITY_LEARN::GRID_Z
     set_sprite_bg(@sprite_bg)
 
     # 背景字
@@ -1034,12 +1069,12 @@ class << ABILITY_LEARN
 
     # 底部按键提示
     @sprite_hint = Sprite.new
-    @sprite_hint.z = @sprite_bg.z + 30
+    @sprite_hint.z = @sprite_bg.z + 10
     set_sprite_hint(@sprite_hint)
 
     # 存储全部能力的视图
     @viewport_bg = Viewport.new(0,0,Graphics.width,Graphics.height-24)
-    @viewport_bg.z = @sprite_bg.z + 20
+    @viewport_bg.z = @sprite_bg.z + 50
 
     # 网格背景
     @sprite_grid = Sprite.new(@viewport_bg)
@@ -1057,7 +1092,7 @@ class << ABILITY_LEARN
       break if _y >= h
       @sprite_grid.bitmap.fill_rect(0, _y, w, 1, c)
     end
-    if $TEST and ABILITY_LEARN::DRAW_XY # 测试时绘制网格坐标
+    if $TEST and ABILITY_LEARN::DRAW_XY # 测试时绘制网格的坐标
       @sprite_grid.bitmap.font.size = 14
       @sprite_grid.bitmap.font.color = Color.new(255,255,255,80)
       ABILITY_LEARN::GRID_MAX_X.times do |_i|
@@ -1072,30 +1107,28 @@ class << ABILITY_LEARN
       end
     end
 
-    # 背景连线
+    # 连线
     @sprite_lines = Sprite.new(@viewport_bg)
-    @sprite_lines.z = @sprite_grid.z + 10
+    @sprite_lines.z = 30
     @sprite_lines.bitmap = Bitmap.new(ui_max_x, ui_max_y)
 
     # 光标
     @sprite_player = Sprite_AbilityLearn_Player.new(@viewport_bg)
-    @sprite_player.z = @sprite_grid.z + 100
+    @sprite_player.z = 100
     @params_player = { :last_input => nil, :last_input_c => 0, :d => 1 }
 
     # 全部能力
     @sprites_token = {}
+    # 其它信息
+    @sprites_info = []
 
-    # 角色信息文本
+    # 角色信息（角色切换）
     @sprite_actor_info = Sprite_AbilityLearn_ActorInfo.new
-    @sprite_actor_info.z = @sprite_bg.z + 40
+    @sprite_actor_info.z = @sprite_bg.z + 60
 
-    # 说明文本
+    # 能力说明文本的精灵
     @sprite_help = Sprite_AbilityLearn_TokenHelp.new
-    @sprite_help.z = @sprite_bg.z + 50
-
-    # 角色背景图片
-    @sprite_actor_bg = Sprite.new(@viewport_bg)
-    @sprite_actor_bg.z = @sprite_grid.z + 1
+    @sprite_help.z = @sprite_bg.z + 80
 
     # 重置当前角色
     if actor_id && actor_id > 0
@@ -1175,14 +1208,22 @@ class << ABILITY_LEARN
   #--------------------------------------------------------------------------
   def check_params
     ps = ABILITY_LEARN.get_params(@actor_id)
-    if ps[:bg]
-      @sprite_actor_bg.bitmap = Cache.system(ps[:bg]) rescue Cache.empty_bitmap
-      @sprite_actor_bg.visible = true
-    else
-      @sprite_actor_bg.visible = false
-    end
+    # 是否显示网格背景
     ps[:grid] ||= true
     @sprite_grid.visible = ps[:grid]
+    # 生成其它文本或图片的精灵们
+    @sprites_info.each { |s| s.bitmap.dispose; s.dispose } 
+    @sprites_info.clear
+    array = ps[:info] || []
+    array.each do |ps|
+      # [:text, "文本", [o, x, y, z], style ] 
+      # [:pic, "图片名", ...]
+      type = ps[0]; t = ps[1]; pos = ps[2]; style = ps[3]
+      s = Sprite_AbilityLearn_Info.new(@viewport_bg, type, t, style)
+      EAGLE_COMMON.reset_sprite_oxy(s, pos[0])
+      s.x = pos[1]; s.y = pos[2]; s.z = pos[3]
+      @sprites_info.push(s)
+    end
   end
   #--------------------------------------------------------------------------
   # ● 重绘全部能力
@@ -1200,7 +1241,7 @@ class << ABILITY_LEARN
         next if ps[:if] && ABILITY_LEARN.process_token_if(ps[:if]) != true
       end
       s = Sprite_AbilityLearn_Token.new(@viewport_bg, @actor_id, id, ps)
-      s.set_z(@sprite_grid.z + 20)
+      s.set_z(50)
       @sprites_token[id] = s
     end
   end
@@ -1720,6 +1761,43 @@ class Sprite_AbilityLearn_Token < Sprite
       @sprite_unlock.opacity = 255
       @sprite_unlock.zoom_x = @sprite_unlock.zoom_y = 1
     end
+  end
+end
+
+#=============================================================================
+# ○ 显示的其它文本或图片
+#=============================================================================
+class Sprite_AbilityLearn_Info < Sprite
+  #--------------------------------------------------------------------------
+  # ● 初始化
+  #--------------------------------------------------------------------------
+  def initialize(viewport, type, data, style)
+    super(viewport)
+    @type = type
+    @data = data
+    @style = style
+    reset_bitmap
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置位图
+  #--------------------------------------------------------------------------
+  def reset_bitmap
+    case @type 
+    when :text; redraw_text
+    when :pic ; redraw_pic
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制文本
+  #--------------------------------------------------------------------------
+  def redraw_text
+    ABILITY_LEARN.params_text_style(self, @data, @style)
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制图片
+  #--------------------------------------------------------------------------
+  def redraw_pic
+    ABILITY_LEARN.params_pic_style(self, @data, @style)
   end
 end
 

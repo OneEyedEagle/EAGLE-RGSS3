@@ -2,9 +2,9 @@
 # ■ 技能多段伤害 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SkillDamageEX"] = "1.0.2"
+$imported["EAGLE-SkillDamageEX"] = "1.0.3"
 #==============================================================================
-# - 2023.9.8.23 
+# - 2025.9.13.23 修复 abs_wait_short 未去除，导致伤害结算延迟的bug 
 #==============================================================================
 # - 新增跟随动画进行伤害结算，指定动画某一帧结算指定技能公式
 #----------------------------------------------------------------------------
@@ -25,33 +25,59 @@ $imported["EAGLE-SkillDamageEX"] = "1.0.2"
 #   <frame n: i2> 或 <frame n: i 2>
 #     → 在动画第n帧时结算2号物品的数据库中的公式（包含使用效果）
 #
-# - 若无任何设置，则会在动画的最后一帧结算原始伤害公式（若无动画则立即结算）
+# - 若无任何设置，则会在动画的最后一帧结算技能伤害公式。
+#   若无动画，则会立即结算。
+#
+#----------------------------------------------------------------------------
+# ● 高级
+#----------------------------------------------------------------------------
+#
+# - 在角色使用技能时，可以调用以下方法获取相关信息（注意，技能使用结束后将清零）：
+#
+#      battler.damage_total → 获取技能对全部对象造成的总伤
+#
+#      battler.damage_count → 获取技能对全部对象造成的伤害次数
+#
+#      battler.heal_total   → 获取技能对全部对象造成的总治疗量
+#
+#      battler.heal_count   → 获取技能对全部对象造成的治疗次数
 #
 #----------------------------------------------------------------------------
 # ● 警告
 #----------------------------------------------------------------------------
-#   数据库-技能/物品-“使用”栏-“连续次数”属性将无效，
-#   如果它被设置了 1 以外的值，可能出现不明的伤害处理BUG
+#
+# - 数据库-技能/物品-“使用”栏-“连续次数”属性将无效。
+#
+#   如果设置了 1 以外的值，可能出现不明的伤害处理BUG。
+#
 #----------------------------------------------------------------------------
 # ● 兼容
 #----------------------------------------------------------------------------
-# 1. 为了让伤害结算与动画同步，本插件覆盖了 Scene_Battle#wait_for_animation 方法，
-#   如需调用原方法，请使用别名方法 Scene_Battle#eagle_wait_for_animation。
 #
-# 2. 新增 显示动画+对目标应用物品 的方法
-#   如在原始脚本中，新增
+# 1. 为了让伤害结算与动画同步，本插件覆盖了 Scene_Battle#wait_for_animation 方法，
+#    如需调用原方法，请使用别名方法 Scene_Battle#eagle_wait_for_animation。
+#
+# 2. 本插件新增了 显示动画+对目标应用物品 的方法，为了兼容，请按以下步骤进行：
+#
+#    假如你在RGSS战斗中，这样写可达成目的：
+#
 #      show_animation(targets, anim_id)
 #      targets.each {|target| item.repeats.times{invoke_item(target, item)}}
-#   可达成目的（因为默认 invoke_item 方法中包含了 wait_for_animation），
-#   那在使用本插件后，需要在这两句后再加上
+#
+#    那在使用本插件后，需要在这两句后再加上：
+#
 #      eagle_wait_for_animation
-#   来等待 伤害计算与动画显示 的结束。
+#
+#    来等待 伤害计算与动画显示 的结束。
+#
+#   （因为默认 invoke_item 方法中包含了 wait_for_animation，而本插件中删除了。）
 #
 # 3. 默认 Window_BattleLog 的 wait 方法，会使显示动画与伤害处理不同步，
-#     因此本插件最后选择移除了战斗日志的等待，请选用并行处理的战斗日志
+#    因此本插件最后选择移除了战斗日志的等待，请选用并行处理的战斗日志。
 #
-# 4. 本插件最好与带有 伤害POPUP 的插件共同使用
+# 4. 本插件最好与带有 伤害POPUP 的插件共同使用。
 #     （如 YEA - Ace Battle Engine，将本插件置于其下即可）
+#
 #==============================================================================
 module EAGLE; end
 #==============================================================================
@@ -122,6 +148,7 @@ module EAGLE::SkillDamage_EX
     frame_to_item
   end
 end
+
 #==============================================================================
 # ○ 伤害处理类
 #==============================================================================
@@ -162,8 +189,8 @@ class Process_AnimDamage
   # ● 处理下一帧
   #--------------------------------------------------------------------------
   def add_frame
-    return if finish?
     @frame += 1
+    #p "frame:#{@frame}"
     apply_item_effects(@frame)
   end
   #--------------------------------------------------------------------------
@@ -174,6 +201,13 @@ class Process_AnimDamage
     if item
       @object.item_apply(@subject, item)
       SceneManager.scene.log_window.display_action_results(@object, item)
+      if @object.result.hp_damage > 0  # 伤害求和、计数
+        @subject.damage_total += @object.result.hp_damage
+        @subject.damage_count += 1
+      elsif @object.result.hp_damage < 0  # 治疗求和、计数
+        @subject.heal_total += -@object.result.hp_damage
+        @subject.heal_count += 1
+      end
     end
     end_apply_item_effects if finish?
   end
@@ -191,18 +225,30 @@ class Process_AnimDamage
     clear
   end
 end
+
 #==============================================================================
 # ○ Game_Battler
 #==============================================================================
 class Game_Battler < Game_BattlerBase
-  attr_accessor :process_anim_damage
+  attr_accessor   :process_anim_damage
+  attr_accessor   :damage_total, :damage_count, :heal_total, :heal_count
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
   alias eagle_skill_damage_ex_init initialize
   def initialize
     @process_anim_damage = Process_AnimDamage.new
+    clear_damage_count
     eagle_skill_damage_ex_init
+  end
+  #--------------------------------------------------------------------------
+  # ● 清除伤害计数
+  #--------------------------------------------------------------------------
+  def clear_damage_count
+    @damage_total = 0
+    @damage_count = 0
+    @heal_total   = 0
+    @heal_count   = 0
   end
   #--------------------------------------------------------------------------
   # ● 新增技能/物品应用
@@ -216,6 +262,7 @@ class Game_Battler < Game_BattlerBase
     @process_anim_damage.set(subject, self, frame_to_item, frame_max)
   end
 end
+
 #==============================================================================
 # ○ Sprite_Battler
 #==============================================================================
@@ -239,15 +286,22 @@ class Scene_Battle < Scene_Base
   # ● 等待动画显示的结束
   #--------------------------------------------------------------------------
   alias eagle_wait_for_animation wait_for_animation
-  def wait_for_animation
+  def wait_for_animation  # 去除该等待
+  end
+  #--------------------------------------------------------------------------
+  # ● 短时间等待（快进无效）
+  #--------------------------------------------------------------------------
+  def abs_wait_short  # 去除该等待
   end
   #--------------------------------------------------------------------------
   # ● 使用物品
   #--------------------------------------------------------------------------
   alias eagle_skill_damage_ex_use_item use_item
   def use_item
+    @subject.clear_damage_count
     eagle_skill_damage_ex_use_item
     eagle_wait_for_animation
+    @subject.clear_damage_count
   end
   #--------------------------------------------------------------------------
   # ● 发动技能／物品

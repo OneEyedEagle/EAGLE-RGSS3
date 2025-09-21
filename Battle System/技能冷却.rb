@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SkillCD"] = "1.0.1"
+$imported["EAGLE-SkillCD"] = "1.0.2"
 #==============================================================================
-# - 2022.11.3.22  
+# - 2025.9.20.0 调整为在Game_Battler中增加冷却  
 #==============================================================================
 # - 本插件新增了战斗中使用技能后的冷却时间
 #-----------------------------------------------------------------------------
@@ -217,6 +217,15 @@ class Game_Battler
     eagle_skill_cd_on_battle_end
     @skill_cds.clear
   end
+  #--------------------------------------------------------------------------
+  # ● 技能／使用物品
+  #    对使用目标使用完毕后，应用对于使用目标以外的效果。
+  #--------------------------------------------------------------------------
+  alias eagle_skill_cd_use_item use_item
+  def use_item(item)
+    add_cd(item) if item.is_a?(RPG::Skill)
+    eagle_skill_cd_use_item(item)
+  end
 end
 
 class Window_SkillList < Window_Selectable
@@ -243,17 +252,5 @@ class Window_SkillList < Window_Selectable
   def draw_current_cd(rect, skill)
     change_color(system_color)
     draw_text(rect, "#{@actor.get_cd(skill)} CD", 2)
-  end
-end 
-
-class Scene_Battle
-  #--------------------------------------------------------------------------
-  # ● 使用技能／物品
-  #--------------------------------------------------------------------------
-  alias eagle_skill_cd_use_item use_item
-  def use_item
-    eagle_skill_cd_use_item
-    item = @subject.current_action.item
-    @subject.add_cd(item) if item.is_a?(RPG::Skill)
   end
 end 

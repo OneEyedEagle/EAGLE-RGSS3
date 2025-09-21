@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CallEvent"] = "1.3.0"
+$imported["EAGLE-CallEvent"] = "1.3.1"
 #==============================================================================
-# - 2024.12.13.22 优化写法，增强扩展性
+# - 2025.9.8.21 修复小序号事件复制大序号事件时报错的bug
 #==============================================================================
 # - 本插件新增了在事件解释器中呼叫任意事件页并执行的事件脚本
 #   （与 呼叫公共事件 效果一致，会等待执行结束）
@@ -166,8 +166,8 @@ module EAGLE
       # 检查是否存在事件页替换
       t =~ EAGLE::COMMENT_PAGE_REPLACE
       if $1
-        ps = $1.strip  # tags string  # 去除前后空格
-        h = call_event_args([ps])
+        ps = [$1.strip]  # tags string  # 去除前后空格
+        h = call_event_args(ps)
         next if h == nil
         page = call_event_page(h)
         list2 = page.list
@@ -215,13 +215,14 @@ module EAGLE
     if h[:mid] == -1
       return $data_common_events[h[:eid]]
     end
-    if h[:mid] != $game_map.map_id
-      map = EAGLE_COMMON.get_map_data(h[:mid])
-      event_data = map.events[h[:eid]] rescue return
-      event = Game_Event.new(h[:mid], event_data)
-    else
-      event = $game_map.events[h[:eid]] rescue return
-    end
+    h[:mid] = $game_map.map_id if h[:mid] == 0
+    #if h[:mid] != $game_map.map_id
+    map = EAGLE_COMMON.get_map_data(h[:mid])
+    event_data = map.events[h[:eid]] rescue return
+    event = Game_Event.new(h[:mid], event_data)
+    #else # 如果是序号小的找序号大的，则序号大的事件可能还未生成，导致报错
+    #  event = $game_map.events[h[:eid]] rescue return
+    #end
     page = nil
     if h[:pid] == nil || h[:pid] == 0
       page = event.find_proper_page

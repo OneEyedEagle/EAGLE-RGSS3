@@ -3,9 +3,9 @@
 # 【此插件兼容VX和VX Ace】
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.1.11"
+$imported["EAGLE-CommonMethods"] = "1.1.13"
 #==============================================================================
-# - 2025.1.1.21 修复 parse_tags 未找到 属性=数字 匹配时报错的bug
+# - 2025.9.20.0 新增位图绘制中不透明度的设置
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #---------------------------------------------------------------------------
@@ -46,19 +46,21 @@ $imported["EAGLE-CommonMethods"] = "1.1.11"
 #      其中 o 为九宫格小键盘类型，
 #       比如7代表 b1和b2的左上角对齐，5代表b1和b2中点对齐，6代表b1和b2的右边中点对齐
 #
-#  EAGLE_COMMON.draw_icon(bitmap, icon, x, y, w=24, h=24)
+#  EAGLE_COMMON.draw_icon(bitmap, icon, x, y, w=24, h=24, opa=255)
 #   → 在bitmap位图的(x,y)位置绘制第icon号图标（该位置为绘制后图标的左上角）
 #      其中w和h传入预留的可供绘制区域的宽高，用于保证能够居中绘制图标
+#      其中opa为图标的不透明度
 #
-#  EAGLE_COMMON.draw_face(bitmap, face_name, face_index, x, y, flag_draw=true)
-#   → 在bitmap位图的(x,y)位置绘制文件名为face_name的第face_index号脸图
+#  EAGLE_COMMON.draw_face(bitmap, face_name, face_index, x, y, flag_draw=true, opa=255)
+#   → 在bitmap位图的(x,y)位置绘制文件名为face_name的第face_index号脸图，opa为脸图的不透明度
 #     （该位置为绘制后脸图的左上角）
 #      如果 face_name 中含有 _数字x数字，则为自定义的行数x列数（默认为2行4列）
 #      如果 flag_draw 传入 false，则不会进行绘制，可以只用于获取脸图宽高
 #     返回绘制脸图的宽和高两个数字
 #
-#  EAGLE_COMMON.draw_character(bitmap, character_name, character_index, x, y)
+#  EAGLE_COMMON.draw_character(bitmap, character_name, character_index, x, y, opa=255)
 #   → 在bitmap位图的(x,y)位置绘制文件名为character_name的第character_index号行走图
+#      其中opa为行走图的不透明度
 #     （如果文件名带有 $，则 character_index 只有 0 有效）
 #     （该位置为绘制行走图后的底部左端点的位置）
 #     （绘制的为方向朝下的静止时的行走图）
@@ -306,15 +308,15 @@ module EAGLE_COMMON
   #--------------------------------------------------------------------------
   # ● 绘制图标
   #--------------------------------------------------------------------------
-  def self.draw_icon(bitmap, icon, x, y, w=24, h=24)
+  def self.draw_icon(bitmap, icon, x, y, w=24, h=24, opa=255)
     _bitmap = Cache.system("Iconset")
     rect = Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24)
-    bitmap.blt(x+w/2-12, y+h/2-12, _bitmap, rect, 255)
+    bitmap.blt(x+w/2-12, y+h/2-12, _bitmap, rect, opa)
   end
   #--------------------------------------------------------------------------
   # ● 绘制角色肖像图
   #--------------------------------------------------------------------------
-  def self.draw_face(bitmap, face_name, face_index, x, y, flag_draw=true)
+  def self.draw_face(bitmap, face_name, face_index, x, y, flag_draw=true, opa=255)
     _bitmap = Cache.face(face_name)
     face_name =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
     num_line = $1 ? $1.to_i : 2
@@ -325,7 +327,7 @@ module EAGLE_COMMON
     if flag_draw
       rect = Rect.new(face_index % 4 * sole_w, face_index / 4 * sole_h, sole_w, sole_h)
       des_rect = Rect.new(x, y, sole_w, sole_h)
-      bitmap.stretch_blt(des_rect, _bitmap, rect)
+      bitmap.stretch_blt(des_rect, _bitmap, rect, opa)
     end
     return sole_w, sole_h
   end
@@ -333,7 +335,7 @@ module EAGLE_COMMON
   # ● 绘制人物行走图
   #  (x, y) 为行走图放置位置的底部左顶点的位置
   #--------------------------------------------------------------------------
-  def self.draw_character(bitmap, character_name, character_index, x, y)
+  def self.draw_character(bitmap, character_name, character_index, x, y, opa=255)
     return unless character_name
     _bitmap = Cache.character(character_name)
     sign = character_name[/^[\!\$]./]
@@ -346,7 +348,7 @@ module EAGLE_COMMON
     end
     n = character_index
     src_rect = Rect.new((n%4*3+1)*cw, (n/4*4)*ch, cw, ch)
-    bitmap.blt(x, y - ch, _bitmap, src_rect)
+    bitmap.blt(x, y - ch, _bitmap, src_rect, opa)
     return cw, ch
   end
   #--------------------------------------------------------------------------
@@ -561,7 +563,11 @@ module EAGLE_COMMON
   def self.cache_load_map(map_id)
     @cache_map ||= {}
     return @cache_map[map_id] if @cache_map[map_id]
-    @cache_map[map_id] = load_data(sprintf("Data/Map%03d.rvdata2", map_id))
+    if EAGLE_COMMON::MODE_VX
+      @cache_map[map_id] = load_data(sprintf("Data/Map%03d.rvdata", map_id))
+    elsif EAGLE_COMMON::MODE_VA
+      @cache_map[map_id] = load_data(sprintf("Data/Map%03d.rvdata2", map_id))
+    end
     @cache_map[map_id]
   end
   #--------------------------------------------------------------------------

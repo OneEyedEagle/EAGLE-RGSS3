@@ -24,6 +24,8 @@
      
      更新历史
      ----------------------------------------------------------------------
+     - 2025.9.8.20  V2.0.0 \env中修复默认环境无法重置的bug
+     ----------------------------------------------------------------------
      - 2025.9.1.21  V2.0.0 修复文字居中时，错误把等待按键精灵宽度计入的bug
      ----------------------------------------------------------------------
      - 2025.8.31.11 V2.0.0 修复\{\}转义符导致对话框文字绘制宽度不正常的bug
@@ -409,7 +411,7 @@ class Game_Message
   attr_accessor :chara_params      # 存储激活的文字特效 code_symbol => param_string
   attr_accessor :font_params, :win_params,  :pop_params
   attr_accessor :face_params, :name_params, :pause_params
-  attr_accessor :func_params, :ex_params, :env, :default_env, :auto
+  attr_accessor :func_params, :ex_params, :env, :auto
   attr_accessor :event_id, :child_window_w_des, :child_window_h_des
   attr_accessor :no_name_overlap_face, :no_input_pause, :active 
   attr_accessor :eagle_text    # 存储实际绘制的文本（去除预处理的转义符）
@@ -613,22 +615,15 @@ class Game_Message
   # ● 保存当前环境
   #--------------------------------------------------------------------------
   def save_env(sym = '0')
-    if sym == '0' # 如果是默认环境，则保存到自己，防止与子窗口的默认环境相互干扰
-      @default_env = self.clone2
-      return
-    end
+    return if sym == '0' # 如果是默认环境，则不保存
     $game_system.message_envs[sym] = self.clone2
   end
   #--------------------------------------------------------------------------
   # ● 读取指定环境
   #--------------------------------------------------------------------------
   def load_env(sym = '0')
-    if sym == '0'
-      t = @default_env 
-    else
-      $game_system.reset_game_message_env(sym)
-      t = $game_system.message_envs[sym]
-    end
+    $game_system.reset_game_message_env(sym)
+    t = $game_system.message_envs[sym]
     return false if t.nil?
     # 应用params
     eagle_params.each do |s|
@@ -673,7 +668,6 @@ class Game_System
       MESSAGE_EX.set_game_message(g, text)
       @message_envs[sym] = g
     end
-    $game_message.save_env if $game_message.default_env == nil
   end
   #--------------------------------------------------------------------------
   # ● 重置指定预设环境

@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.0.3"
+$imported["EAGLE-StateEX"] = "1.0.5"
 #==============================================================================
-# - 2025.5.27.18 细化注释
+# - 2025.9.11.22 增加扩展用方法
 #==============================================================================
 # - 本插件针对状态系统进行了扩展，可能需要一些脚本知识以兼容其他战斗系统
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -119,7 +119,8 @@ $imported["EAGLE-StateEX"] = "1.0.3"
 #     之后再调用你的 update_state_turns_ex(数字) 方法，
 #     最后调用 @result.added_states.clear 清除，
 #       这样你添加的时机也能让新附加状态不处理 计数-1 了。
-#
+
+
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # ● 全新设计！新的状态对象
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -206,7 +207,8 @@ $imported["EAGLE-StateEX"] = "1.0.3"
 #
 #   其中 ... 替换为伤害公式，
 #         可以用 a 代表施加该状态的战斗者，b 代表当前结算该状态的战斗者，
-#                s 代表开关组，v 代表变量组，l 代表当前状态的层数
+#                s 代表开关组，v 代表变量组，
+#               id 代表当前状态的id，l 代表当前状态的层数
 #
 #   如 <timing 1>a.atk * 0.5</timing> 代表
 #         战斗者行动结束时，受到施加状态者的0.5倍atk的伤害。
@@ -241,7 +243,8 @@ $imported["EAGLE-StateEX"] = "1.0.3"
 #
 # - 记得要自己在对应时机中调用战斗者的 update_state_turns_ex(数字) 方法哦！
 #   不然状态永远也不会自动消除了。
-#
+
+
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # ● 一些便捷用方法
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -401,11 +404,24 @@ module STATE_EX
     return t
   end
   
+  #--------------------------------------------------------------------------
+  # ● 【扩展用】方便撰写popup
+  #--------------------------------------------------------------------------
+  def self.state_ex_when_add(state_ex)  # 状态附加时执行的内容
+  end
+  def self.state_ex_when_remove(state_ex) # 状态解除时执行的内容
+  end
+  def self.state_ex_when_trigger(state_ex) # 状态被触发时执行的内容 
+    # 此时 state_ex.battler.result.hp_damage 为已经造成的伤害值或治疗值
+    # 兼容：YEA战斗系统的伤害pop
+    state_ex.battler.make_damage_popups(a) if $imported["YEA-BattleEngine"]
+  end
+  
 #==============================================================================
 # ■ 数据类
 #==============================================================================
 class Data_StateEX
-  attr_reader  :id, :level, :count, :count_type
+  attr_reader  :id, :level, :count, :count_type, :battler_from, :battler
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -538,19 +554,29 @@ class Data_StateEX
   # ● 处理指定时机的结算公式
   #--------------------------------------------------------------------------
   def process_timing_formula(timing)
+    STATE_EX.state_ex_when_add(self)    if timing == -1 # 状态附加时执行的内容
+    STATE_EX.state_ex_when_remove(self) if timing == -2 # 状态解除时执行的内容
     formula = state.timing_evals[timing]
     return if formula.nil?
     a = @battler_from 
     b = @battler
     v = $game_variables
     s = $game_switches
-    l = @level
-    value = Kernel.eval(formula).floor rescue 0
-    @battler.result.hp_damage = value
-    @battler.hp -= value
-    if $imported["YEA-BattleEngine"]
-      @battler.make_damage_popups(a)
+    l = @level 
+    id = @id
+    begin
+      value = Kernel.eval(formula).floor
+    rescue
+      p "【错误】处理 #{@battler.name} 的 #{id} 号状态[#{state.name}]的 timing 脚本时报错：" 
+      p $!
+      value = 0
     end
+    if value != 0
+      @battler.result.clear_damage_values
+      @battler.result.hp_damage = value
+      @battler.hp -= value
+    end
+    STATE_EX.state_ex_when_trigger(self)
   end
 end
 
@@ -599,6 +625,7 @@ class RPG::State
     @param_rate[param_id]
   end
 end
+
 #==============================================================================
 # ■ DataManager
 #==============================================================================
@@ -618,6 +645,14 @@ end
 #==============================================================================
 class Game_BattlerBase
   attr_reader  :state_turns, :states_ex
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  alias eagle_states_ex_initialize initialize
+  def initialize
+    eagle_states_ex_initialize
+    @hp = 1  # 避免在初始化时 refresh 后附加死亡状态
+  end
   #--------------------------------------------------------------------------
   # ● 获取普通能力
   #--------------------------------------------------------------------------
