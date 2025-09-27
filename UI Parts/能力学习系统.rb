@@ -6,14 +6,14 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.7.2"
+$imported["EAGLE-AbilityLearn"] = "1.7.3"
 #==============================================================================
-# - 2025.9.6.14 现在可以贴更多图片到背景上了
+# - 2025.9.27.13 新增更多对帮助窗口的设置
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
 # 【使用】
-#
+# 
 #  方式一：利用全局脚本 ABILITY_LEARN.call 在任意时刻呼叫能力学习界面。
 #
 #  方式二：利用 SceneManager.call(Scene_AbilityLearn) 打开能力学习界面。
@@ -49,7 +49,7 @@ ALL_ACTORS ||= {} # 确保常量存在，不要删除
 ACTORS[0] = {  # 不要漏了花括号
 #--------------------------------------------------------------------------
 # 然后定义各个能力，把它的名称（建议数字或字符串，1 和 "1" 为不同名称）写在箭头前
-#   不同能力的脚本中名称需要不同，比如这个能力的脚本中名称是 1
+#   不同能力的名称需要不同，比如这个能力的名称是 1
   1 => {
   #------------------------------------------------------------------------
   # 之后定义这个能力的各个属性
@@ -62,19 +62,19 @@ ACTORS[0] = {  # 不要漏了花括号
     :skill => 1,
   #------------------------------------------------------------------------
   # -【可选】如果这个能力等价一件武器或护甲，可以绑定它的ID
-  #  （不影响平时的装备，只是把对应武器的基础能力和特性进行了提取）
+  #  （不影响实际的装备，只是复制了其基础八维能力和特性栏）
     :weapon => 0,
     :armor => 0,
   #------------------------------------------------------------------------
-  # -【可选】也可以直接设定一个图标ID进行显示
-  #  （图标优先级为 :pic > :icon > :skill > :weapon > :armor）
+  # -【可选】也可以不设置:skill或:weapon或:armor，直接设定图标ID
+  #  （图标显示的优先级为 :pic > :icon > :skill > :weapon > :armor）
     :icon => 0,
   #------------------------------------------------------------------------
-  # -【可选】还可以指定为 Graphics\System 路径下的一张图片进行显示
-  #  （只会显示在解锁界面，不会显示在帮助窗口里）
+  # -【可选】还可以不显示图标，而是指定为 Graphics\System 路径下的图片
+  #  （该图片只会显示在界面中，帮助窗口里不会显示）
     :pic => "",
   #------------------------------------------------------------------------
-  # -【可选】为这个能力的图标设置背景图片
+  # -【可选】设置该能力的背景图片
   #  （若传入 字符串，则为 Graphics\System 路径下的图片）
   #  （若传入 数字，则为 Iconset 图标的ID）
     :bg => "",
@@ -87,7 +87,7 @@ ACTORS[0] = {  # 不要漏了花括号
   #  （如果该能力能够被反复学习，该属性也会反复增加多次）
     :params => "",
   #------------------------------------------------------------------------
-  # -【可选】帮助窗口中这个能力的名称
+  # -【可选】帮助窗口中这个能力的显示名称
   #  （名称优先级为 :name > :skill > :weapon > :armor > 脚本中该能力的名称）
     :name => "",
   #------------------------------------------------------------------------
@@ -97,30 +97,23 @@ ACTORS[0] = {  # 不要漏了花括号
   #  （特别的，可以用 {{text}} 来编写只有在显示时才执行 eval(text) 并替换的文本 ）
     :help => "",
   #------------------------------------------------------------------------
-  # -【可选】学习一次这个能力，需要消耗的AP点数
+  # -【可选】学习一次这个能力时所需的AP点数
   #  （AP是本插件新增的一种资源，一般通过升级获得，也可以利用事件脚本直接增加）
-  #  （若不设置则默认取 0，即不消耗ap也可以学习）
-  #  （若设置为-1，则不再需要学习、若满足了前置条件可直接激活，可用作功能按钮，
-  #      且其:level固定为1，:skill、:params、:eval_off设置无效，
-  #      由于无需学习，无法作为其它能力的前置条件）
+  #  （若不设置则默认 0，即不消耗ap也可以学习）
+  #  （若设置为-1，满足前置条件时将直接激活，可制作能反复触发:eval_on的特殊按钮，
+  #     此时没有学习的概念，:level固定1，设置的:skill、:params、:eval_off均无效，
+  #     也无法作为其它能力的前置条件，如果想与其它能力连线，请在:lines中自行编写）
     :ap => 1,
   #------------------------------------------------------------------------
-  # -【可选】设置这个能力的最大等级，也就是可重复学习的最大次数
-  #  （若不设置，默认为1，即只能学习一次）
-    :level => 1,
-  #------------------------------------------------------------------------
-  # -【可选】设置这个能力所绑定的开关的ID
-  #  （当能力解锁时，开关将赋值为 true；重置后，开关将赋值为 false）
-  #  （只在能力解锁或重置时进行赋值，无法保证它在游戏中途是开还是关！）
-    :sid => 1,
-  #------------------------------------------------------------------------
-  # -【可选】设置这个能力的学习前置要求
-  #  （数组，其中填写其他能力的脚本中名称，比如 [1,2,3] 或 [1,1, "1"]）
-  #  （可以重复填写同一个能力的名称，此时作为那个能力的已学习等级）
-  #  （注意，:ap=-1的能力是无法学习的，如果填入，则永远无法满足学习要求！）
+  # -【可选】学习这个能力的前置要求
+  #  （数组，其中填写其他能力的脚本中名称，不是填:name设置的名称！
+  #     比如 [1,2,3] 或 [1,1, "1"]）
+  #  （其中填写的能力，将自动与当前能力绘制直线进行连接）
+  #  （可以重复填写同一个能力的名称，此时需要那个能力的已学习等级>=填写数量）
+  #  （注意，:ap=-1的能力是无法学习的，如果填入，当前能力将永远无法满足前置要求！）
     :pre => [1],
   #------------------------------------------------------------------------
-  # -【可选】设置这个能力的学习前置要求（扩展内容）
+  # -【可选】学习这个能力的前置要求（扩展）
   #  （数组，其中每一项依然为数组，数组内容依次为：
   #     [类型, 参数...] 或 [判定脚本, 学习时执行脚本, 说明文本] ）
   #  （其中已经支持的类型如下：
@@ -150,6 +143,10 @@ ACTORS[0] = {  # 不要漏了花括号
   #  （比如前置要求为 已经投入3点AP，则可以写为
   #     :pre_ex=>[[:apc, 3]] ）
     :pre_ex => [ [:lv, 5] ],
+  #------------------------------------------------------------------------
+  # -【可选】设置这个能力的最大等级，也就是可重复学习的最大次数
+  #  （若不设置，默认为1，即只需要学习一次）
+    :level => 1,
   #------------------------------------------------------------------------
   # -【可选】设置这个能力升到指定等级时所需的前置条件
   #  （数组，其中每一项依然为数组，数组内容依次为：
@@ -185,6 +182,11 @@ ACTORS[0] = {  # 不要漏了花括号
   #  （每次重置，都会执行一次这个脚本）
   #  （可用缩写同 :if）
     :eval_off => "", # 重置时执行的脚本
+  #------------------------------------------------------------------------
+  # -【可选】设置这个能力所绑定的开关的ID
+  #  （当能力解锁时，开关将赋值为 true；重置后，开关将赋值为 false）
+  #  （只在能力解锁或重置时进行赋值，无法保证它在游戏中途是开还是关！）
+    :sid => 1,
   #------------------------------------------------------------------------
   }, # 别忘了花括号，与能力 1 相对应；如果有多个能力，需要加个英语逗号进行分隔
 
@@ -342,38 +344,56 @@ module ABILITY_LEARN
   #--------------------------------------------------------------------------
   DRAW_XY = false
   #--------------------------------------------------------------------------
-  # ○【常量】能力等级的字体大小
+  # ○【常量】能力当前等级的字体大小
   #--------------------------------------------------------------------------
   TOKEN_LEVEL_FONT_SIZE = 14
   
   #--------------------------------------------------------------------------
   # ○【常量】设置：能力介绍文本的帮助窗口
   #--------------------------------------------------------------------------
-  # 使用的窗口皮肤的文件名
+  # 帮助窗口使用的窗口皮肤
   HELP_TEXT_WINDOWSKIN = "Window"
-  # 帮助窗口的空白边框宽度
-  HELP_TEXT_BORDER_WIDTH = 12
+  # 帮助窗口的显示文本的宽度（若为0，则随文本变化）
+  HELP_TEXT_WIDTH = 0
+  # 帮助窗口的左右留空宽度
+  HELP_TEXT_BORDER_LR = 12
+  # 帮助窗口的上下留空宽度
+  HELP_TEXT_BORDER_UD = 8
   # 帮助窗口中文本的字体大小
   HELP_TEXT_FONT_SIZE = 20
   #--------------------------------------------------------------
   # 帮助窗口的位置类型
-  # （0 代表随光标移动，1 代表使用固定值，-1~-9代表屏幕上的位置
-  #    如 -1 代表屏幕左下角，-9 代表屏幕右上角）
+  # （0 代表随光标移动，1 代表使用固定值，-1~-9代表屏幕上的位置）
   HELP_TEXT_POS = 0
   #--------------------------------------------------------------
   # - HELP_TEXT_POS为 1 时生效，
   #   先设置显示原点（九宫格小键盘，如 5 代表中点，7 左上角，2 底部中点）
-  #   再设置屏幕坐标
-  HELP_TEXT_POS1_O = 2
-  HELP_TEXT_POS1_X = Graphics.width / 2
-  HELP_TEXT_POS1_Y = Graphics.height - 30 - 64
+  #   再设置显示原点的屏幕坐标
+  HELP_TEXT_POS1_O = 6
+  HELP_TEXT_POS1_X = Graphics.width - 10
+  HELP_TEXT_POS1_Y = Graphics.height / 2
   #--------------------------------------------------------------
   # - HELP_TEXT_POS为 -1~-9 时生效，
-  #   设置显示原点（九宫格小键盘），再放到屏幕上对应位置
-  HELP_TEXT_POS_1_O = 5
+  #   先设置显示原点（九宫格小键盘，如 5 代表中点），
+  #   再将显示原点放到HELP_TEXT_POS对应位置，
+  #   如 HELP_TEXT_POS=-1 屏幕左下角，HELP_TEXT_POS=-9 屏幕右上角
+  HELP_TEXT_POS2_O = 5
+  #--------------------------------------------------------------
+  # 是否开启位置镜像
+  # （HELP_TEXT_POS=0 时无效）
+  # （如果开启，当帮助窗口盖住能力图标时，会将帮助窗口镜像移动到另一侧）
+  HELP_TEXT_MIRROR_X = true
+  HELP_TEXT_MIRROR_Y = false
+  #--------------------------------------------------------------
+  # 帮助窗口的位置偏移值
+  # （HELP_TEXT_POS=0 时无效）
+  # （HELP_TEXT_POS=1 时给xy坐标分别增加该值）
+  # （如果开启了位置镜像，且发生了镜像，则变成xy坐标分别减少该值）
+  HELP_TEXT_POS_DX = 0
+  HELP_TEXT_POS_DY = 0
   #--------------------------------------------------------------
   # 帮助窗口中，对应:ap>=0的能力，要求前的标题文本
-  HELP_TEXT_REQUIRE = " >> 学习要求："
+  HELP_TEXT_REQUIRE  = " >> 学习要求："
   # 帮助窗口中，对于:level>1的能力，升级要求前的标题文本
   HELP_TEXT_REQUIRE2 = " >> 升级要求："
   # 帮助窗口中，对应:ap=-1的能力，要求前的标题文本
@@ -383,14 +403,16 @@ module ABILITY_LEARN
   HELP_TEXT_OK1 = "[可学习]"
   # 帮助窗口中，无条件，可直接升级该能力的文本
   HELP_TEXT_OK2 = "[可升级]"
+  # 帮助窗口中，无条件，可直接激活该能力的文本
+  HELP_TEXT_OK3 = "[可激活]"
   #--------------------------------------------------------------
   # 帮助窗口中，满足条件的文本的前置符号
-  HELP_TEXT_COND_OK = "[已满足]"
+  HELP_TEXT_COND_OK  = "[已满足]"
   # 帮助窗口中，满足条件的文本的颜色
   HELP_TEXT_COLOR_OK = 8
   #--------------------------------------------------------------
   # 帮助窗口中，不满足条件的文本的前置符号
-  HELP_TEXT_COND_NO = "[未满足]"
+  HELP_TEXT_COND_NO   = "[未满足]"
   # 帮助窗口中，不满足条件的文本的颜色
   HELP_TEXT_COLOR_NOT = 10
   #--------------------------------------------------------------
@@ -412,7 +434,8 @@ module ABILITY_LEARN
   # 其中文本的字体大小
   INFO_TEXT_FONT_SIZE = 20
   # 预设高度
-  INFO_TEXT_HEIGHT = 64
+  INFO_TEXT_HEIGHT    = 64
+
   #--------------------------------------------------------------------------
   # ○【常量】设置：底部按键提示文本的字体大小
   # 具体请在 redraw_hint 方法中修改文本内容
@@ -469,6 +492,7 @@ module ABILITY_LEARN
     :eval_on => "$game_party.add_ap(10); ABILITY_LEARN.redraw_actor_info",
     :if => "$TEST",
   }
+
   #--------------------------------------------------------------------------
   # ● 获取当前角色已解锁属性和技能一览文本
   #--------------------------------------------------------------------------
@@ -792,32 +816,49 @@ module ABILITY_LEARN
   #--------------------------------------------------------------------------
   def self.get_token_help(actor_id, token_id)
     t = ""
-    data = $game_actors[actor_id].eagle_ability_data
-
+    # 第一行显示图标和名称
     icon = get_token_icon(actor_id, token_id)
     t += "\\i[#{icon}]" if icon > 0
     name = get_token_name(actor_id, token_id)
-    t += "#{name} "
-
+    t += "#{name}"
+    # 第二行显示绑定对象的帮助
     skill_id = get_token_skill(actor_id, token_id)
     weapon_id = get_token_weapon(actor_id, token_id)
     armor_id = get_token_armor(actor_id, token_id)
     obj = nil
     if skill_id && skill_id > 0
       obj = $data_skills[skill_id]
-      stype = $data_system.skill_types[obj.stype_id]
-      t += "\\c[8]#{stype}\\c[0]"
     elsif weapon_id && weapon_id > 0
       obj = $data_weapons[weapon_id]
     elsif armor_id && armor_id > 0
       obj = $data_armors[armor_id]
-    else
     end
-    t += "\n >> " + obj.description.gsub("\r\n") { "\n    " } if obj
-
+    t += "\\ln >> " + obj.description.gsub("\r\n") { "\n    " } if obj
+    # 第三行显示附加的八维属性值
+    _t = get_token_help_params(actor_id, token_id)
+    t += "\\ln >> " + _t if _t != ""
+    # 第四行显示脚本中的:help
+    _t = get_token_help_raw(actor_id, token_id)
+    t += "\\ln >> " + _t if _t != ""
+    # 第五行以后显示学习或升级的前置要求
+    #  对于 ap=-1 的能力，如果不满足前置条件，则显示 激活要求
+    #  对于 ap>=0 的能力，如果还没解锁，则显示 学习要求
+    if (no_unlock?(token_id) ? !can_unlock?(token_id) : !unlock?(token_id))
+      _t = get_token_help_pre(actor_id, token_id)
+      t += "\\ln" + _t if _t != ""
+    else
+      _t = get_token_help_levelup(actor_id, token_id)
+      t += "\\ln" + _t if _t != ""
+    end
+    return t
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定id能力的八维属性的帮助文本
+  #--------------------------------------------------------------------------
+  def self.get_token_help_params(actor_id, token_id)
+    t = ""
     params_hash = get_token_params(actor_id, token_id)
     if !params_hash.empty?
-      t += "\\ln "
       params_hash.each do |sym, v|
         param_id = ABILITY_LEARN::PARAMS_TO_ID[sym]
         _v = v.to_i
@@ -826,94 +867,7 @@ module ABILITY_LEARN
         end
       end
     end
-
-    _t = get_token_help_raw(actor_id, token_id)
-    t += "\\ln >> " + _t if _t != ""
-
-    v = get_token_ap(actor_id, token_id)
-    # 对于 ap=-1 的能力，如果不满足前置条件，则显示 激活要求
-    # 对于 ap>=0 的能力，如果还没解锁，则显示 学习要求
-    if (no_unlock?(token_id) ? !can_unlock?(token_id) : !unlock?(token_id))
-      t += "\\ln"
-      t += no_unlock?(token_id) ? "#{HELP_TEXT_REQUIRE3}\n" : "#{HELP_TEXT_REQUIRE}\n"
-      t_temp = ""
-      pres_all = ABILITY_LEARN.get_token_pre(actor_id, token_id)
-      pres = pres_all | pres_all
-      # 前置需求
-      pres.each do |id2|
-        name = get_token_name(actor_id, id2)
-        icon = get_token_icon(actor_id, id2)
-        l = pres_all.count(id2)
-        lv = level(id2)
-        t_temp += (lv >= l ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}" : \
-              "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
-        t_temp += "\\i[#{icon}]#{name} lv.#{l}\\c[0]\n"
-      end
-      # 扩展的前置需求
-      pres_ex = get_token_pre_ex(actor_id, token_id)
-      pres_ex.each do |ps|
-        f = process_pre_ex(actor_id, token_id, ps, :cond)
-        t_temp += (f ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}" : \
-              "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
-        t_temp += "#{process_pre_ex(actor_id, token_id, ps, :text)}\\c[0]\n"
-      end
-      # ap消耗
-      if v > 0
-        if data.ap < v
-          t_temp += "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}" 
-        else
-          t_temp += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}"
-        end
-        t_temp += "#{AP_TEXT} x #{v}\\c[0]\n"
-      end
-      # 总结前置要求
-      if t_temp == "" # 如果什么条件都没有，则可以直接学习
-        t += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_OK1}\\c[0]"
-      else
-        t += t_temp
-      end
-    else
-      level = data.level(token_id)
-      level_max = get_token_level(actor_id, token_id)
-      if level_max > 1 # 如果最大等级大于 1 ，则显示升级相关信息
-        t += "\\ln"
-        if level < level_max # 还可以升级
-          t += "\\c[#{HELP_TEXT_UPGRADE_1_COLOR}]#{HELP_TEXT_UPGRADE_1}\\c[0]"
-          t += "lv.#{level} / #{level_max}\n"
-          t += "#{HELP_TEXT_REQUIRE2}\n"
-          t_temp = ""
-          # 升级需求
-          l_next = level + 1  # 下一等级
-          lvup = get_token_lvup(@actor_id, token_id)
-          lvup.each do |ps|
-            f = process_lvup(@actor_id, token_id, l_next, ps, :cond)
-            next if f == nil
-            t_temp += (f ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK} " : \
-                "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
-            t_temp += "#{process_lvup(actor_id, token_id, l_next, ps, :text)}\\c[0]\n"
-          end
-          # ap消耗
-          if v > 0
-            if data.ap < v
-              t_temp += "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}" 
-            else
-              t_temp += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}"
-            end
-            t_temp += "#{AP_TEXT} x #{v}\\c[0]\n"
-          end
-          # 总结升级要求
-          if t_temp == "" # 如果为空，则没有要求，可以直接升级
-            t += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_OK2}\\c[0]"
-          else
-            t += t_temp
-          end
-        else  # 显示已经满级
-          t += "\\c[#{HELP_TEXT_UPGRADE_2_COLOR}]#{HELP_TEXT_UPGRADE_2}\\c[0]"
-          t += "lv.#{level}\n"
-        end
-      end
-    end
-    return t
+    return t 
   end
   #--------------------------------------------------------------------------
   # ● 获取指定id能力的附加帮助文本
@@ -927,7 +881,105 @@ module ABILITY_LEARN
     end
     return _t
   end
-  
+  #--------------------------------------------------------------------------
+  # ● 获取指定id能力的前置要求中AP消耗的帮助文本
+  #--------------------------------------------------------------------------
+  def self.get_token_help_pre_ap(actor_id, token_id)
+    data = $game_actors[actor_id].eagle_ability_data
+    v = get_token_ap(actor_id, token_id)
+    t = ""
+    # ap消耗
+    if v > 0
+      if data.ap < v
+        t += "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}" 
+      else
+        t += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}"
+      end
+      t += "#{AP_TEXT} x #{v}\\c[0]\n"
+    end
+    return t
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定id能力的前置要求的帮助文本
+  #--------------------------------------------------------------------------
+  def self.get_token_help_pre(actor_id, token_id)
+    data = $game_actors[actor_id].eagle_ability_data
+    # 第一行标题 如果为不需要学习的则显示激活要求，否则显示学习要求
+    flag_no_unlock = no_unlock?(token_id)
+    t = flag_no_unlock ? "#{HELP_TEXT_REQUIRE3}\n" : "#{HELP_TEXT_REQUIRE}\n"
+    t_temp = ""
+    pres_all = ABILITY_LEARN.get_token_pre(actor_id, token_id)
+    pres = pres_all | pres_all
+    # 前置需求
+    pres.each do |id2|
+      name = get_token_name(actor_id, id2)
+      icon = get_token_icon(actor_id, id2)
+      l = pres_all.count(id2)
+      lv = level(id2)
+      t_temp += (lv >= l ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}" : \
+            "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
+      t_temp += "\\i[#{icon}]#{name} lv.#{l}\\c[0]\n"
+    end
+    # 扩展的前置需求
+    pres_ex = get_token_pre_ex(actor_id, token_id)
+    pres_ex.each do |ps|
+      f = process_pre_ex(actor_id, token_id, ps, :cond)
+      t_temp += (f ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK}" : \
+            "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
+      t_temp += "#{process_pre_ex(actor_id, token_id, ps, :text)}\\c[0]\n"
+    end
+    # ap消耗
+    _t = get_token_help_pre_ap(actor_id, token_id)
+    t_temp += _t if _t != ""
+    # 总结前置要求
+    if t_temp == "" # 如果什么条件都没有，则可以直接学习
+      _t = flag_no_unlock ? HELP_TEXT_OK3 : HELP_TEXT_OK1
+      t += "\\c[#{HELP_TEXT_COLOR_OK}]#{_t}\\c[0]"
+    else
+      t += t_temp
+    end
+    return t
+  end 
+  #--------------------------------------------------------------------------
+  # ● 获取指定id能力的升级的前置要求的帮助文本
+  #--------------------------------------------------------------------------
+  def self.get_token_help_levelup(actor_id, token_id)
+    data = $game_actors[actor_id].eagle_ability_data
+    level = data.level(token_id)
+    level_max = get_token_level(actor_id, token_id)
+    t = ""
+    if level_max > 1 # 如果最大等级大于 1 ，则显示升级相关信息
+      if level < level_max # 还可以升级
+        t += "\\c[#{HELP_TEXT_UPGRADE_1_COLOR}]#{HELP_TEXT_UPGRADE_1}\\c[0]"
+        t += "lv.#{level} / #{level_max}\\ln#{HELP_TEXT_REQUIRE2}\n"
+        t_temp = ""
+        # 升级需求
+        l_next = level + 1  # 下一等级
+        lvup = get_token_lvup(@actor_id, token_id)
+        lvup.each do |ps|
+          f = process_lvup(@actor_id, token_id, l_next, ps, :cond)
+          next if f == nil
+          t_temp += (f ? "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_COND_OK} " : \
+            "\\c[#{HELP_TEXT_COLOR_NOT}]#{HELP_TEXT_COND_NO}")
+          t_temp += "#{process_lvup(actor_id, token_id, l_next, ps, :text)}\\c[0]\n"
+        end
+        # ap消耗
+        _t = get_token_help_pre_ap(actor_id, token_id)
+        t_temp += _t if _t != ""
+        # 总结升级要求
+        if t_temp == "" # 如果为空，则没有要求，可以直接升级
+          t += "\\c[#{HELP_TEXT_COLOR_OK}]#{HELP_TEXT_OK2}\\c[0]"
+        else
+          t += t_temp
+        end
+      else  # 显示已经满级
+        t += "\\c[#{HELP_TEXT_UPGRADE_2_COLOR}]#{HELP_TEXT_UPGRADE_2}\\c[0]"
+        t += "lv.#{level}\n"
+      end
+    end
+    return t
+  end
+
 #==============================================================================
 # ■ 便捷使用
 #==============================================================================
@@ -1039,7 +1091,7 @@ class << ABILITY_LEARN
       end
     end
     @sprites_token.each { |id, s| s.dispose }
-    @sprites_info.each { |id, s| s.dispose }
+    @sprites_info.each { |s| s.dispose }
     @viewport_bg.dispose
   end
   #--------------------------------------------------------------------------
@@ -1415,14 +1467,16 @@ class << ABILITY_LEARN
   # ● 解锁当前能力后重绘
   #--------------------------------------------------------------------------
   def refresh
+    data = $game_actors[@actor_id].eagle_ability_data
     if @selected_token
       @selected_token.refresh
       @sprite_help.redraw(@selected_token)
+      # 如果是不需要解锁的能力，则激活一次动画
+      @selected_token.show_unlock_anim if data.no_unlock?(@selected_token.id)
     end
-    data = $game_actors[@actor_id].eagle_ability_data
     @sprites_token.each do |id, st|
       # 刷新一次ap=-1的能力，有可能其前置条件已经满足，需自动激活
-      st.refresh if data.no_unlock?(id)
+      st.refresh if st != @selected_token and data.no_unlock?(id)
     end
     redraw_lines
     redraw_actor_info
@@ -1737,30 +1791,39 @@ class Sprite_AbilityLearn_Token < Sprite
   # ● 更新
   #--------------------------------------------------------------------------
   def update
-    update_can_unlock
+    update_unlock_anim
+    update_show_unlock_anim if @count_can_unlock <= 0
   end
   #--------------------------------------------------------------------------
   # ● 更新表示可解锁/升级的动画
   #--------------------------------------------------------------------------
-  def update_can_unlock
-    if (@count_can_unlock -= 1) > 0
-      return if @sprite_unlock.opacity == 0
-      @sprite_unlock.opacity -= 7
-      @sprite_unlock.zoom_x += 0.03
-      @sprite_unlock.zoom_y += 0.03
-    else
-      @count_can_unlock = 40
-      data = $game_actors[@actor_id].eagle_ability_data
-      if data.no_unlock?(@id) || (!data.can_levelup?(@id) && data.unlock?(@id) ) 
-        # 如果不用解锁，或 已经解锁 且 不能升级，则不显示动画
-        return @sprite_unlock.opacity = 0
-      end
-      if !data.can_unlock?(@id)  # 如果不满足解锁条件，则不显示动画
-        return @sprite_unlock.opacity = 0
-      end
-      @sprite_unlock.opacity = 255
-      @sprite_unlock.zoom_x = @sprite_unlock.zoom_y = 1
-    end
+  def update_unlock_anim
+    return if @count_can_unlock <= 0
+    @count_can_unlock -= 1
+    @sprite_unlock.opacity -= 7
+    @sprite_unlock.zoom_x += 0.03
+    @sprite_unlock.zoom_y += 0.03
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新是否显示可解锁/升级的动画
+  #--------------------------------------------------------------------------
+  def update_show_unlock_anim
+    data = $game_actors[@actor_id].eagle_ability_data
+    # 如果不用解锁，则不显示动画
+    return if data.no_unlock?(@id)
+    # 如果已解锁但不满足升级条件，则不显示动画
+    return if data.unlock?(@id) && !data.can_levelup?(@id)
+    # 如果不满足解锁条件，则不显示动画
+    return if !data.can_unlock?(@id) 
+    show_unlock_anim
+  end
+  #--------------------------------------------------------------------------
+  # ● 启用一次可解锁/升级的动画
+  #--------------------------------------------------------------------------
+  def show_unlock_anim
+    @count_can_unlock = 40
+    @sprite_unlock.opacity = 255
+    @sprite_unlock.zoom_x = @sprite_unlock.zoom_y = 1
   end
 end
 
@@ -1802,7 +1865,7 @@ class Sprite_AbilityLearn_Info < Sprite
 end
 
 #==============================================================================
-# ■ 帮助文本精灵
+# ■ 帮助文本的精灵
 #==============================================================================
 class Sprite_AbilityLearn_TokenHelp < Sprite
   include ABILITY_LEARN
@@ -1815,46 +1878,57 @@ class Sprite_AbilityLearn_TokenHelp < Sprite
 
     text = ABILITY_LEARN.get_token_help(s.actor_id, s.id)
     return if text == ""
+    self.visible = true
 
     ps = { :font_size => HELP_TEXT_FONT_SIZE, :x0 => 0, :y0 => 0, :lhd => 4 }
+    ps[:w] = HELP_TEXT_WIDTH if HELP_TEXT_WIDTH and HELP_TEXT_WIDTH > 0
+
     d = Process_DrawTextEX.new(text, ps)
     d.run(false)
 
-    w = d.width + HELP_TEXT_BORDER_WIDTH * 2
-    h = d.height + HELP_TEXT_BORDER_WIDTH * 2
-    self.bitmap = Bitmap.new(w, h)
+    w = ps[:w] ? ps[:w] : d.width
+    h = d.height
+    self.bitmap = Bitmap.new(w+HELP_TEXT_BORDER_LR*2, h+HELP_TEXT_BORDER_UD*2)
 
     skin = HELP_TEXT_WINDOWSKIN
     EAGLE.draw_windowskin(skin, self.bitmap,
       Rect.new(0, 0, self.width, self.height))
 
-    ps[:x0] = HELP_TEXT_BORDER_WIDTH
-    ps[:y0] = HELP_TEXT_BORDER_WIDTH
+    ps[:x0] = HELP_TEXT_BORDER_LR
+    ps[:y0] = HELP_TEXT_BORDER_UD
     d.bind_bitmap(self.bitmap)
     d.run(true)
 
-    # 设置位置
-    self.visible = true
     case HELP_TEXT_POS
     when 0
-      if s.x + s.width / 2 - s.viewport.ox > Graphics.width / 2
-        # 显示在左侧
+      if s.x-s.viewport.ox > Graphics.width/2  # 显示在能力图标的左侧
         self.x = s.x - s.width / 2 - s.viewport.ox - self.width
-      else
-        # 显示在右侧
+      else  # 显示在能力图标的右侧
         self.x = s.x + s.width / 2 - s.viewport.ox
       end
       self.y = s.y - s.height / 2 - s.viewport.oy
       # 确保完整显示
       self.x = [[self.x, 0].max, Graphics.width-self.width].min
       self.y = [[self.y, 0].max, Graphics.height-self.height].min
+      return 
     when 1
       EAGLE_COMMON.reset_sprite_oxy(self, HELP_TEXT_POS1_O)
-      self.x = HELP_TEXT_POS1_X
-      self.y = HELP_TEXT_POS1_Y
+      self.x = HELP_TEXT_POS1_X + HELP_TEXT_POS_DX
+      self.y = HELP_TEXT_POS1_Y + HELP_TEXT_POS_DY
     when -9..-1
-      EAGLE_COMMON.reset_sprite_oxy(self, HELP_TEXT_POS_1_O)
+      EAGLE_COMMON.reset_sprite_oxy(self, HELP_TEXT_POS2_O)
       EAGLE_COMMON.reset_xy_dorigin(self, nil, HELP_TEXT_POS)
+      self.x += HELP_TEXT_POS_DX
+      self.y += HELP_TEXT_POS_DY
+    end
+    # 对于 1 和 -1~-9，如果可能盖住能力图标，则镜像位置
+    if HELP_TEXT_MIRROR_X and self.x-self.ox < s.x-s.viewport.ox and 
+       self.x-self.ox+self.width > s.x-s.viewport.ox
+      self.x = Graphics.width - self.x + self.ox
+    end
+    if HELP_TEXT_MIRROR_Y and self.y-self.oy < s.y-s.viewport.oy and 
+       self.y-self.oy+self.height > s.y-s.viewport.oy
+      self.y = Graphics.height - self.y + self.oy
     end
   end
 end
