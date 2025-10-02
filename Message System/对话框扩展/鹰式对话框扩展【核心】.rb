@@ -24,6 +24,8 @@
      
      更新历史
      ----------------------------------------------------------------------
+     - 2025.9.28.21 V2.0.1 \cin和\cout现在可以设置启用ctog了
+     ----------------------------------------------------------------------
      - 2025.9.8.20  V2.0.0 \env中修复默认环境无法重置的bug
      ----------------------------------------------------------------------
      - 2025.9.1.21  V2.0.0 修复文字居中时，错误把等待按键精灵宽度计入的bug
@@ -4828,12 +4830,16 @@ class Sprite_EagleCharacter < Sprite
     self.zoom_x = self.zoom_y = 1.0 + @_zoom/100.0
     self.angle -= params[:vd] * params[:va]
     self.opacity += params[:vo]
+    
+    update_effect_ctog(params)
+    
     move_end(sym) if params[:tc] == params[:t]
   end
   def move_end(sym = :cin)
     @flag_move = nil
     rebind_viewport
     reset_oxy(7)
+    finish_effect_ctog(@effect_params[sym])
     if sym == :cin
       @dx = @dy = 0
       update_position
@@ -4872,6 +4878,10 @@ class Sprite_EagleCharacter < Sprite
     params[:rxc] = 0; params[:ryc] = 0
     params[:rxt] = 1 if params[:rxt] < 1
     params[:ryt] = 1 if params[:ryt] < 1
+    
+    charas = MESSAGE_EX.get_charas_array(:ctog, params[:togi], params[:togn])
+    init_charas_tog(params, charas, params[:togt], params[:togr])
+    
     move_in if flag_move_in
   end
   #--------------------------------------------------------------------------
@@ -5172,9 +5182,23 @@ class Sprite_EagleCharacter < Sprite
   #--------------------------------------------------------------------------
   def start_effect_ctog(params, param_s)
     parse_param(params, param_s)
-    params[:bitmaps] = []
-    params[:bitmaps].push(self.bitmap)
     charas = MESSAGE_EX.get_charas_array(:ctog, params[:i], params[:n])
+    init_charas_tog(params, charas, params[:t], params[:r])
+  end
+  def init_charas_tog(params, charas, t, r)
+    return if charas == nil or charas.empty?
+    # t 为每次切换的时间间隔，r=0为顺序切换，r=1为随机切换
+    params[:bitmaps] = get_charas_bitmaps(charas)
+    params[:bitmaps].unshift(self.bitmap)
+    params[:tog_i_cur] = 0
+    params[:tog_i_max] = params[:bitmaps].size
+    params[:tog_tc] = 0
+    params[:tog_t] = t
+    params[:tog_r] = r
+    params[:flag_tog] = true
+  end
+  def get_charas_bitmaps(charas)  # 绘制字符数组中每个文字的位图（数字为图标）
+    bitmaps = []
     charas.each do |c|
       s = Bitmap.new(self.width, self.height)
       if c.is_a?(Integer)
@@ -5184,24 +5208,24 @@ class Sprite_EagleCharacter < Sprite
         @eagle_font.draw(s, (self.width-r.width)/2, (self.height-r.height)/2,
           self.width, self.height, c, 0)
       end
-      params[:bitmaps].push(s)
+      bitmaps.push(s)
     end
-    params[:i_cur] = 0
-    params[:i_max] = params[:bitmaps].size
-    params[:tc] = 0
+    return bitmaps
   end
   def update_effect_ctog(params)
-    return if (params[:tc] += 1) < params[:t]
-    params[:tc] = 0
-    if(params[:r] > 0)
-      params[:i_cur] = rand(params[:i_max])
+    return if params[:flag_tog] != true
+    return if (params[:tog_tc] += 1) < params[:tog_t]
+    params[:tog_tc] = 0
+    if(params[:tog_r] > 0)
+      params[:tog_i_cur] = rand(params[:tog_i_max])
     else
-      params[:i_cur] += 1
-      params[:i_cur] %= params[:i_max]
+      params[:tog_i_cur] += 1
+      params[:tog_i_cur] %= params[:tog_i_max]
     end
-    self.bitmap = params[:bitmaps][params[:i_cur]]
+    self.bitmap = params[:bitmaps][params[:tog_i_cur]]
   end
   def finish_effect_ctog(params)
+    return if params[:flag_tog] != true
     self.bitmap = params[:bitmaps].shift
     params[:bitmaps].each { |b| b.dispose }
     params[:bitmaps].clear
