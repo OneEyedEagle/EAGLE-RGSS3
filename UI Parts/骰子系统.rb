@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Dice"] = "1.2.0"
+$imported["EAGLE-Dice"] = "1.3.0"
 #==============================================================================
-# - 2025.5.3.15 新增返回最大值最小值，新增加值骰子
+# - 2025.10.4.16 重新设计UI
 #==============================================================================
 # - 本插件增加了一套独立的骰子系统，能够在任意时刻投掷并返回结果
 #------------------------------------------------------------------------------
@@ -20,23 +20,24 @@ $imported["EAGLE-Dice"] = "1.2.0"
 #   （传入参数）
 #     :ui => 布尔量,    # 若传入 false，则不显示投掷界面，直接返回结果（默认 true）
 #     :t => 字符串,     # 显示在屏幕顶端的文字，转义符请用 \\ 代替 \
-#     :show_stat => 布尔量,# 是否显示左上角统计信息（默认 true）
 #     :auto => 布尔量,  # 若传入 true，则不可操作，自动投掷结束（默认 false）
 #     :reroll => 数字,  # 允许进行重投掷的次数（默认0）
-#     :type => 数字,  # 返回结果的类型，默认返回和
-#                   传入 0 返回和，1 返回最大值，2 返回最小值
-#                   注意：类型为 1 的骰子不参与统计，而是直接在结果中增加
+#     :type => 数字,    # 投掷结果的计算方式，默认 0 计算和
+#                         0 计算和，1 计算最大值，2 计算最小值
+#     :num => 数字,     # 在最终结果中参与计算的骰子的数量
+#                         默认取骰子总数，若小于总数，则需要选取相应数量的骰子
 #     :in_x => 字符串,    # 骰子的初始位置（eval后需要返回数字）
 #     :in_y => 字符串,
 #     :in_dx => 字符串,   # 骰子的初始位置增量（eval后需要返回数字）
 #     :in_dy => 字符串,
 #     :in_t => 字符串，   # 骰子从初始位置移动到增量后位置的时间（每颗骰子独立计算）
-#     :out_x => 字符串,   # 投掷完成后骰子的移出位置（eval后需要返回数字）
-#     :out_y => 字符串, 
 #     :out_t => 字符串，  # 骰子移出的时间（每颗骰子独立计算）
+#     :fin_x => 字符串,   # 骰子结算UI的位置（eval后需要返回数字）
+#     :fin_y => 字符串, 
 #
 #   （传出参数）
-#     :results => 数组, # 在投掷完成后，所有骰子的值将存入该数组，方便后续使用
+#     :results => 数组,   # 在投掷完成后，生效的全部骰子的值
+#     :value   => 数字，  # 在投掷完成后，依据 :type 类型计算得到的最终结果值
 #
 # - 示例：
 #
@@ -82,8 +83,6 @@ $imported["EAGLE-Dice"] = "1.2.0"
 #                     但如果设置了该项，则为查找 Dice_BG_字符串 的图片。
 #                   同理，对于被选中骰子的遮挡图片，默认使用 Dice_Chosen 图片，
 #                     但如果设置了该项，则为查找 Dice_Chosen_字符串 的图片。
-#      type=数字  # 骰子的类型，默认 0
-#                  0 代表一般骰子，1 代表加值骰子（不参与统计，仅在最后结果中增加）
 #
 # - 注意：
 #
@@ -123,8 +122,10 @@ $imported["EAGLE-Dice"] = "1.2.0"
 #    其中 params 为变量参数字符串，由以下项任意组成（空格分隔）
 # 
 #      reroll=数字   → 增加可重投掷的次数
-#      type=数字     → 返回结果的类型（取最后一个的设置）
+#      type=数字     → 返回结果的类型（取第一个查找到的设置）
 #                       0 为和，1 为最大值，2 为最小值
+#      num=数字      → 在最终结果中参与计算的骰子的数量（取第一个查找到的设置）
+#                      默认取骰子总数，若小于总数，则需要选取相应数量的骰子
 #
 # - 示例：
 #
@@ -178,21 +179,22 @@ module DICE
   INIT_DX = "rand(241) - 120"
   INIT_DY = "rand(201) - 100"
   #--------------------------------------------------------------------------
-  # ●【常量】骰子移入所需帧数
-  #  如果未设置 :in_t ，则使用此处设置
+  # ●【常量】骰子移入移出所需帧数
+  #  如果未设置 :in_t 和 :out_t，则使用此处设置
   #--------------------------------------------------------------------------
   TIME_MOVE_IN  = 15
-  #--------------------------------------------------------------------------
-  # ●【常量】骰子的结束位置
-  #  如果未设置 :out_x 和 :out_y ，则使用此处设置
-  #--------------------------------------------------------------------------
-  END_X = "Graphics.width / 2"
-  END_Y = "Graphics.height / 2"
-  #--------------------------------------------------------------------------
-  # ●【常量】骰子移出所需帧数
-  #  如果未设置 :out_t ，则使用此处设置
-  #--------------------------------------------------------------------------
   TIME_MOVE_OUT = 15
+  #--------------------------------------------------------------------------
+  # ●【常量】骰子结算UI的位置
+  #  如果未设置 :fin_x 和 :fin_y ，则使用此处设置
+  #--------------------------------------------------------------------------
+  FIN_X = "Graphics.width / 2"
+  FIN_Y = "Graphics.height / 2"
+  #--------------------------------------------------------------------------
+  # ●【常量】重投掷UI的位置
+  #--------------------------------------------------------------------------
+  REROLL_X = "Graphics.width - 120"
+  REROLL_Y = "Graphics.height / 2"
   #--------------------------------------------------------------------------
   # ●【常量】骰子的背景图片
   #  可省略后缀名，需放置于 Graphics/System 目录下
@@ -210,7 +212,7 @@ module DICE
   #  如果图片不存在，则自动绘制所设置的纯色
   #--------------------------------------------------------------------------
   BG_CHOSEN = "Dice_Chosen"
-  BG_CHOSEN_OPACITY = 160  # 该前景图片的不透明度
+  BG_CHOSEN_OPACITY = 255  # 该前景图片的不透明度
   #--------------------------------------------------------------------------
   # ●【常量】骰子被选择时，如果图片不存在，则绘制该纯色遮挡
   #--------------------------------------------------------------------------
@@ -219,10 +221,6 @@ module DICE
   # ●【常量】骰子中文字的颜色
   #--------------------------------------------------------------------------
   TEXT_COLOR = Color.new(0,0,0)
-  #--------------------------------------------------------------------------
-  # ●【常量】自动投掷时，投掷后的等待帧数
-  #--------------------------------------------------------------------------
-  AUTO_WAIT = 40
   #--------------------------------------------------------------------------
   # ●【常量】重投掷次数为0时，结束投掷前的等待帧数
   #--------------------------------------------------------------------------
@@ -338,12 +336,15 @@ module DICE
       end
     end
     # 获取投掷参数
-    params = { :reroll => 0, :type => 0 }
+    ps = { :reroll => 0, :type => nil, :num => nil }
     params_array.each do |h|
-      params[:reroll] += h[:reroll].to_i if h[:reroll]
-      params[:type]    = h[:type].to_i   if h[:type]
+      ps[:reroll] += h[:reroll].to_i if h[:reroll]
+      ps[:type]    = h[:type].to_i   if h[:type] and ps[:type].nil?
+      ps[:num]     = h[:num].to_i    if h[:num]  and ps[:num].nil?
     end
-    return datas, params
+    ps[:type] ||= 0
+    ps[:num]  ||= 0
+    return datas, ps
   end
 
   #--------------------------------------------------------------------------
@@ -361,12 +362,7 @@ module DICE
       break if s.finish?
     end
     s.dispose
-    ps[:result] = s.results
-    case ps[:type]
-    when 1; return s.max
-    when 2; return s.min
-    end
-    return s.sum
+    return ps[:value] || 0
   end
   #--------------------------------------------------------------------------
   # ● 基础更新
@@ -380,7 +376,7 @@ module DICE
 #==============================================================================
 class Spriteset_Dices
   include DICE
-  attr_reader   :results, :sum, :max, :min
+  attr_reader   :results
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -389,7 +385,6 @@ class Spriteset_Dices
     @ps = {}
     @sprite_dices = []
     @results = []
-    @sum = 0
     @active = false  # 玩家可操作？
   end
   #--------------------------------------------------------------------------
@@ -412,6 +407,7 @@ class Spriteset_Dices
   def setup(data, ps)
     @data = data
     @ps = ps
+    @ps[:num] = data.size if @ps[:num].nil? or @ps[:num] <= 0
     return fiber_no_ui if @ps[:ui] == false
     @fiber = Fiber.new { fiber_main }
   end
@@ -425,7 +421,9 @@ class Spriteset_Dices
   # ● 自动模式？
   #--------------------------------------------------------------------------
   def auto?
-    @ps[:auto] == true || @max_reroll == 0
+    return true if @ps[:auto] == true 
+    return false if @ps[:num] < @data.size
+    return @max_reroll == 0
   end
   #--------------------------------------------------------------------------
   # ● 最大重投掷次数
@@ -433,44 +431,36 @@ class Spriteset_Dices
   def num_reroll
     @ps[:reroll].to_i rescue 0
   end
-  #--------------------------------------------------------------------------
-  # ● 显示左上角统计信息？
-  #--------------------------------------------------------------------------
-  def show_stat?
-    return @ps[:show_stat] == true if @ps[:show_stat] != nil
-    return true
-  end
   
   #--------------------------------------------------------------------------
   # ● 主线程（无UI）
   #--------------------------------------------------------------------------
   def fiber_no_ui
-    data = @data.collect { |d| [d.ids.sample(1)[0], d.type] }
-    get_statistics(data)
+    # 每个骰子获得一个随机值
+    vs = @data.collect { |d| d.ids.sample(1)[0] }
+    # 挑选出指定数量的骰子
+    vs = vs.sample(@ps[:num]) if @ps[:num] < vs.size
+    @results = vs
+    process_result
     @fiber = nil
   end
   #--------------------------------------------------------------------------
-  # ● 计算统计量
+  # ● 处理结果@results
   #--------------------------------------------------------------------------
-  def get_statistics(data) # data=[[v, dice_type]]
-    # type=0的一般骰子
-    s1 = data.select { |s| s[1] == 0 }
-    r1 = s1.collect { |s| s[0] }
-    sum1 = r1.inject(0) { |v, s| s += v }
-    max1 = r1.max
-    min1 = r1.min
-    
-    # type=1的加值骰子
-    s2 = data.select { |s| s[1] == 1 }
-    r2 = s2.collect { |s| s[0] }
-    sum2 = r2.inject(0) { |v, s| s += v }
-    
-    @results = r1 + [sum2]
-    @sum = sum1 + sum2
-    @max = max1 + sum2
-    @min = min1 + sum2
+  def process_result
+    result_value = 0
+    case @ps[:type]
+    when 1  # 返回最大值
+      result_value = @results.max
+    when 2  # 返回最小值
+      result_value = @results.min
+    else    # 返回的和
+      result_value = @results.inject(0) { |v, s| s += v }
+    end
+    @ps[:results] = @results
+    @ps[:value] = result_value || 0
   end
-
+  
   #--------------------------------------------------------------------------
   # ● 主线程
   #--------------------------------------------------------------------------
@@ -481,7 +471,7 @@ class Spriteset_Dices
     move_in
     process_start
     process_key
-    process_finish
+    process_result
     move_out
     dispose_dices
     dispose_ui
@@ -493,140 +483,8 @@ class Spriteset_Dices
   def init_data
     @max_reroll = num_reroll
     @n_reroll = @max_reroll
+    @n_finish = 0  # 已经确定的骰子数量
   end
-  #--------------------------------------------------------------------------
-  # ● 初始化骰子
-  #--------------------------------------------------------------------------
-  def init_dices
-    @sprite_dices = @data.collect { |d| Sprite_Dice.new(d) }
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新骰子
-  #--------------------------------------------------------------------------
-  def update_dices
-    @sprite_dices.each { |s| s.update }
-  end
-  #--------------------------------------------------------------------------
-  # ● 释放骰子
-  #--------------------------------------------------------------------------
-  def dispose_dices
-    @sprite_dices.each { |s| s.dispose }
-    @sprite_dices.clear
-  end
-  #--------------------------------------------------------------------------
-  # ● 骰子移入
-  #--------------------------------------------------------------------------
-  def move_in
-    ts = []
-    @sprite_dices.each do |s|
-      s.z = BASE_Z + 10
-      _t = @ps[:in_t] ? @ps[:in_t] : TIME_MOVE_IN 
-      t = EAGLE_COMMON.eagle_eval(_t).to_i
-      ts.push(t)
-      _x = @ps[:in_x] ? @ps[:in_x] : INIT_X
-      _y = @ps[:in_y] ? @ps[:in_y] : INIT_Y
-      x = EAGLE_COMMON.eagle_eval(_x).to_i
-      y = EAGLE_COMMON.eagle_eval(_y).to_i
-      s.set_xy(x, y)
-      s.set_des_opa(255, t)
-      _dx = @ps[:in_dx] ? @ps[:in_dx] : INIT_DX
-      _dy = @ps[:in_dy] ? @ps[:in_dy] : INIT_DY
-      dx = EAGLE_COMMON.eagle_eval(_dx).to_i
-      dy = EAGLE_COMMON.eagle_eval(_dy).to_i
-      s.set_des_xy(x + dx, y + dy, t)
-    end
-    ts.max.times { Fiber.yield }
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理骰子第一次投掷
-  #--------------------------------------------------------------------------
-  def process_start
-    TIME_BEFORE_ROLL.times { Fiber.yield }
-    roll
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理玩家按键
-  #--------------------------------------------------------------------------
-  def process_key
-    if auto?
-      AUTO_WAIT.times { Fiber.yield }
-      return
-    end
-    process_player_start
-    while true
-      Fiber.yield
-      f = Input.trigger?(:C)
-      f |= MOUSE_EX.up?(:ML) if $imported["EAGLE-MouseEX"]
-      if @selected_token && f
-        if @n_reroll > 0
-          process_player_finish
-          @n_reroll -= 1
-          redraw_hint(@sprite_hint)
-          roll(@selected_token)
-          if @n_reroll == 0
-            REROLL_END_WAIT.times { Fiber.yield }
-            break
-          end
-          process_player_start
-        else
-          Sound.play_buzzer
-        end
-      end
-      f = Input.trigger?(:B)
-      f |= MOUSE_EX.up?(:MR) if $imported["EAGLE-MouseEX"]
-      break Sound.play_cancel if f
-    end
-    process_player_finish
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理骰子第一次投掷结束
-  #--------------------------------------------------------------------------
-  def process_finish
-  end
-  #--------------------------------------------------------------------------
-  # ● 骰子移出
-  #--------------------------------------------------------------------------
-  def move_out
-    ts = []
-    @sprite_dices.each do |s|
-      _t = @ps[:out_t] ? @ps[:out_t] : TIME_MOVE_OUT 
-      t = EAGLE_COMMON.eagle_eval(_t).to_i
-      ts.push(t)
-      s.set_des_opa(0, t)
-      _x = @ps[:out_x] ? @ps[:out_x] : END_X
-      _y = @ps[:out_y] ? @ps[:out_y] : END_Y
-      x = EAGLE_COMMON.eagle_eval(_x).to_i
-      y = EAGLE_COMMON.eagle_eval(_y).to_i
-      s.set_des_xy(x, y, t)
-    end
-    ts.max.times { Fiber.yield }
-  end
-  #--------------------------------------------------------------------------
-  # ● 指定骰子投掷
-  #--------------------------------------------------------------------------
-  def roll(s = nil)
-    f = @active
-    @active = false
-    if s == nil
-      @sprite_dices.each { |s| s.run }
-    else
-      s.unchoose
-      s.run
-    end
-    Fiber.yield until waiting?
-    @active = f
-    get_statistics(@sprite_dices.collect{|s| [s.v, s.type]})
-    redraw_info
-    redraw_dice_info
-  end
-  #--------------------------------------------------------------------------
-  # ● 全部骰子均投掷完成？
-  #--------------------------------------------------------------------------
-  def waiting?
-    f = @sprite_dices.any? { |s| !s.waiting? }
-    !f
-  end
-
   #--------------------------------------------------------------------------
   # ● UI-最大的宽高
   #--------------------------------------------------------------------------
@@ -663,21 +521,39 @@ class Spriteset_Dices
     @sprite_player.visible = false
     @params_player = { :last_input => nil, :last_input_c => 0, :d => 1 }
     @selected_token = nil
-
-    # 信息展示（投掷结果）
-    @sprite_info1 = Sprite.new
-    @sprite_info1.z = BASE_Z + 3
-    @sprite_info1.x = 16
-    @sprite_info1.y = 16
+    @drag_token = nil
+    @drag_dx = @drag_dy = 0
 
     # 信息展示（当前选中骰子）
     @sprite_info2 = Sprite.new
-    @sprite_info2.z = BASE_Z + 4
+    @sprite_info2.z = BASE_Z + 5
 
     # 信息展示（投掷目的文本，由 ps[:t] 传入）
     @sprite_info3 = Sprite.new
-    @sprite_info3.z = BASE_Z + 4
+    @sprite_info3.z = BASE_Z + 5
     set_sprite_info3(@sprite_info3)
+
+    # 互动按钮：重投
+    @sprite_reroll = Sprite.new 
+    @sprite_reroll.x = EAGLE_COMMON.eagle_eval(REROLL_X).to_i
+    @sprite_reroll.y = EAGLE_COMMON.eagle_eval(REROLL_Y).to_i
+    @sprite_reroll.z = BASE_Z + 3
+    @sprite_reroll.bitmap = Bitmap.new(96, 96)
+    @sprite_reroll.ox = @sprite_reroll.width / 2
+    @sprite_reroll.oy = @sprite_reroll.height / 2
+    redraw_reroll if @max_reroll > 0
+
+    # 互动按钮：结算
+    @sprite_finish = Sprite.new 
+    _x = @ps[:fin_x] ? @ps[:fin_x] : FIN_X
+    _y = @ps[:fin_y] ? @ps[:fin_y] : FIN_Y
+    @sprite_finish.x = EAGLE_COMMON.eagle_eval(_x).to_i
+    @sprite_finish.y = EAGLE_COMMON.eagle_eval(_y).to_i
+    @sprite_finish.z = BASE_Z + 3
+    @sprite_finish.bitmap = Bitmap.new(96, 96)
+    @sprite_finish.ox = @sprite_finish.width / 2
+    @sprite_finish.oy = @sprite_finish.height / 2
+    redraw_finish
   end
   #--------------------------------------------------------------------------
   # ● UI-设置右侧标题精灵
@@ -706,11 +582,11 @@ class Spriteset_Dices
   # ● UI-重绘按键提示
   #--------------------------------------------------------------------------
   def redraw_hint(sprite)
-    t = "方向键 - 移动 | "
+    t = "方向键 - 移动光标 | "
     if @selected_token
-      t += "确定键 - 重投掷（剩 #{@n_reroll} 次） | "
+      t += "确定键 - 拿起/放下 | "
     end
-    t += "取消键 - 结束投掷"
+    t += "取消键 - 自动完成投掷"
     if auto?
       t = "- 自动投掷，不可操作 -"
     end
@@ -718,6 +594,57 @@ class Spriteset_Dices
     sprite.bitmap.draw_text(0, 2, sprite.width, sprite.height, t, 1)
     sprite.bitmap.fill_rect(0, 0, sprite.width, 1,
       Color.new(255,255,255,120))
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-重绘骰子信息
+  #--------------------------------------------------------------------------
+  def redraw_dice_info
+    s = @sprite_info2
+    s.bitmap.clear if s.bitmap
+    return if @selected_token == nil
+
+    text = "全部面："
+    @selected_token.data.ids.each do |v|
+      text += v.to_s
+      text += "|"
+    end
+    text[-1] = '\\ln'
+    
+    text += "当前面：#{@selected_token.v}"
+    change = @selected_token.data.changes[@selected_token.index]
+    if change
+      # change = [old_id, new_id, obj]
+      icon = change[2].icon_index rescue return
+      text = "\n\\i[#{icon}]#{change[2].name} 效果："
+      text += "由 #{change[0]} 变为了 #{change[1]}"
+    end
+
+    ps = { :font_size => 18, :x0 => 8, :y0 => 8, :lhd => 2}
+    ps[:font_color] = Color.new(255,255,255)
+    d = Process_DrawTextEX.new(text, ps)
+    d.run(false)
+    
+    s.bitmap.dispose if s.bitmap
+    s.bitmap = Bitmap.new(d.width+ps[:x0]*2, d.height+ps[:y0])
+    s.bitmap.fill_rect(0,0,s.width,s.height,Color.new(0,0,0,150))
+    
+    d.bind_bitmap(s.bitmap)
+    d.run(true)
+    update_dice_info_position(@selected_token)
+  end
+  def update_dice_info_position(dice_sprite)
+    s = @sprite_info2
+    return @sprite_info2.visible = false if dice_sprite == nil
+    @sprite_info2.visible = true
+    if dice_sprite.x > Graphics.width / 2
+      s.ox = s.width
+      s.x = dice_sprite.x - dice_sprite.ox 
+      s.y = dice_sprite.y - dice_sprite.oy
+    else
+      s.ox = 0
+      s.x = dice_sprite.x + dice_sprite.ox
+      s.y = dice_sprite.y - dice_sprite.oy
+    end
   end
   #--------------------------------------------------------------------------
   # ● UI-重绘投掷目的提示
@@ -739,24 +666,207 @@ class Spriteset_Dices
     d.run(true)
   end
   #--------------------------------------------------------------------------
+  # ● UI-重绘重投掷精灵
+  #--------------------------------------------------------------------------
+  def redraw_reroll
+    s = @sprite_reroll
+    s.bitmap.clear
+    d = 8
+    s.bitmap.fill_rect(d, d, s.width-d*2, s.height-d*2, Color.new(255,255,255,255))
+    b = 2
+    r = Rect.new(d+b,d+b,s.width-d*2-b*2,s.height-d*2-b*2)
+    s.bitmap.fill_rect(r, Color.new(0,0,0,180))
+
+    s.bitmap.font.size = 18
+    s.bitmap.draw_text(b, 0, s.width-b*2, 18, "重新投掷", 1)
+    s.bitmap.font.size = 24
+    s.bitmap.draw_text(b, b, s.width-b*2, s.height-b*2, " #{@n_reroll} 次", 1)
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-重绘结算精灵
+  #--------------------------------------------------------------------------
+  def redraw_finish
+    process_result
+
+    t = ""
+    case @ps[:type]
+    when 1  # 返回最大值
+      t = "（最大值）"
+    when 2  # 返回最小值
+      t = "（最小值）"
+    else    # 返回指定数量的骰子的和
+      t = "（和）"
+    end 
+    s = @sprite_finish
+    s.bitmap.clear
+    d = 8
+    s.bitmap.fill_rect(d, d, s.width-d*2, s.height-d*2, Color.new(255,255,255,255))
+    b = 2
+    r = Rect.new(d+b,d+b,s.width-d*2-b*2,s.height-d*2-b*2)
+    s.bitmap.fill_rect(r, Color.new(0,0,0,180))
+
+    s.bitmap.font.size = 18
+    s.bitmap.draw_text(b, 0, s.width-b*2, 18, "结算", 1)
+    s.bitmap.draw_text(b, 18, s.width-b*2, 18, t, 1)
+    s.bitmap.draw_text(b, s.height-d-b-18, s.width-b*2, 18, "(#{@n_finish}/#{@ps[:num]})", 1)
+    s.bitmap.font.size = 24
+    s.bitmap.draw_text(b, b, s.width-b*2, s.height-b*2, "#{@ps[:value]}", 1)
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化骰子
+  #--------------------------------------------------------------------------
+  def init_dices
+    @sprite_dices = @data.collect { |d| Sprite_Dice.new(d) }
+  end
+  #--------------------------------------------------------------------------
+  # ● 全部骰子均投掷完成？
+  #--------------------------------------------------------------------------
+  def waiting?
+    f = @sprite_dices.any? { |s| !s.waiting? }
+    !f
+  end
+  #--------------------------------------------------------------------------
   # ● UI-更新
   #--------------------------------------------------------------------------
   def update_ui
     update_player if @sprite_player.visible
   end
   #--------------------------------------------------------------------------
-  # ● UI-释放
+  # ● 更新骰子
   #--------------------------------------------------------------------------
-  def dispose_ui
-    instance_variables.each do |varname|
-      ivar = instance_variable_get(varname)
-      if ivar.is_a?(Sprite) && !ivar.disposed?
-        ivar.bitmap.dispose if ivar.bitmap
-        ivar.dispose
-      end
-    end
+  def update_dices
+    @sprite_dices.each { |s| s.update }
   end
-
+  #--------------------------------------------------------------------------
+  # ● 骰子移入
+  #--------------------------------------------------------------------------
+  def move_in
+    ts = []
+    @sprite_dices.each do |s|
+      s.z = BASE_Z + 10
+      _t = @ps[:in_t] ? @ps[:in_t] : TIME_MOVE_IN 
+      t = EAGLE_COMMON.eagle_eval(_t).to_i
+      ts.push(t)
+      _x = @ps[:in_x] ? @ps[:in_x] : INIT_X
+      _y = @ps[:in_y] ? @ps[:in_y] : INIT_Y
+      x = EAGLE_COMMON.eagle_eval(_x).to_i
+      y = EAGLE_COMMON.eagle_eval(_y).to_i
+      s.set_xy(x, y)
+      s.set_des_opa(255, t)
+      _dx = @ps[:in_dx] ? @ps[:in_dx] : INIT_DX
+      _dy = @ps[:in_dy] ? @ps[:in_dy] : INIT_DY
+      dx = EAGLE_COMMON.eagle_eval(_dx).to_i
+      dy = EAGLE_COMMON.eagle_eval(_dy).to_i
+      s.set_des_xy(x + dx, y + dy, t)
+    end
+    ts.max.times { Fiber.yield }
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理骰子第一次投掷
+  #--------------------------------------------------------------------------
+  def process_start
+    TIME_BEFORE_ROLL.times { Fiber.yield }
+    roll
+  end
+  #--------------------------------------------------------------------------
+  # ● 指定骰子投掷
+  #--------------------------------------------------------------------------
+  def roll(s = nil)
+    f = @active
+    @active = false
+    if s == nil
+      @sprite_dices.each { |s| s.run }
+    else
+      s.unchoose
+      s.run
+    end
+    Fiber.yield until waiting?
+    @active = f
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理玩家按键
+  #--------------------------------------------------------------------------
+  def process_key
+    if auto?
+      process_auto
+      return
+    end
+    flag_finish = false
+    process_player_start
+    while true
+      Fiber.yield
+      f = Input.trigger?(:C)
+      f |= MOUSE_EX.up?(:ML) if $imported["EAGLE-MouseEX"]
+      if @drag_token && f
+        if EAGLE_COMMON.point_in_sprite?(@sprite_player.x, @sprite_player.y, @sprite_reroll) and @n_reroll > 0
+          process_dice_reroll(@drag_token) # 处理重投掷
+          @selected_token.unchoose 
+          @selected_token = nil
+        elsif EAGLE_COMMON.point_in_sprite?(@sprite_player.x, @sprite_player.y, @sprite_finish)
+          @selected_token.unchoose 
+          @selected_token = nil
+          process_dice_finish(@drag_token) # 处理结算
+          flag_finish = true if @n_finish >= @ps[:num]
+        end
+        @drag_token = nil
+      elsif @selected_token && f
+        @drag_token = @selected_token
+        @drag_dx = @sprite_player.x - @drag_token.x
+        @drag_dy = @sprite_player.y - @drag_token.y
+      end
+      f = Input.trigger?(:B)
+      f |= MOUSE_EX.up?(:MR) if $imported["EAGLE-MouseEX"]
+      if f  # 处理自动结算
+        process_auto
+        flag_finish = true
+      end
+      break if flag_finish
+    end
+    process_player_finish
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理指定骰子的重投掷
+  #--------------------------------------------------------------------------
+  def process_dice_reroll(dice_sprite)
+    process_player_finish
+    @n_reroll -= 1
+    roll(dice_sprite)
+    redraw_reroll
+    process_player_start
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理指定骰子的结算
+  #--------------------------------------------------------------------------
+  def process_dice_finish(dice_sprite)
+    process_player_finish
+    dice_sprite.finish
+    @results.push(dice_sprite.v)
+    @n_finish += 1
+    redraw_finish
+    loop do
+      Fiber.yield
+      dice_sprite.update_finish
+      break if !dice_sprite.visible
+    end
+    process_player_start
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理自动结算
+  #--------------------------------------------------------------------------
+  def process_auto
+    v = @ps[:num] - @n_finish
+    s = @sprite_dices.select { |s| s.waiting? }
+    s_results = s.sample(v)
+    t = 20
+    s_results.each { |s| 
+      s.set_des_xy(@sprite_finish.x, @sprite_finish.y, t)
+      @results.push(s.v)
+      @n_finish += 1
+    }
+    t.times { Fiber.yield }
+    redraw_finish
+    s_results.each { |s| s.finish }
+  end
   #--------------------------------------------------------------------------
   # ● UI-处理玩家操作开始/结束
   #--------------------------------------------------------------------------
@@ -767,12 +877,12 @@ class Spriteset_Dices
   def process_player_finish
     @active = false
     @sprite_player.visible = false
+    update_dice_info_position(nil)
   end
   #--------------------------------------------------------------------------
   # ● UI-更新光标
   #--------------------------------------------------------------------------
   def update_player
-    # 更新移动
     s = @sprite_player
     if @params_player[:last_input] == Input.dir4
       @params_player[:last_input_c] += 1
@@ -796,12 +906,17 @@ class Spriteset_Dices
       s.x += d
       s.x = ui_max_x - s.width + s.ox if s.x - s.ox + s.width > ui_max_x
     end
-    
+    # 更新鼠标
     if $imported["EAGLE-MouseEX"] && MOUSE_EX.in?
       s.x = MOUSE_EX.x
       s.y = MOUSE_EX.y
     end
-
+    # 更新拖拽中
+    if @drag_token
+      @drag_token.set_xy(@sprite_player.x - @drag_dx, @sprite_player.y - @drag_dy)
+      update_dice_info_position(@drag_token)
+      return
+    end
     # 更新是否有选中的token
     if @selected_token && @selected_token.point_in?(s.x, s.y)
       # 之前的还是被选中的状态
@@ -820,62 +935,41 @@ class Spriteset_Dices
         redraw_hint(@sprite_hint)
       end
       redraw_dice_info
+      update_dice_info_position(@selected_token)
     end
   end
   #--------------------------------------------------------------------------
-  # ● UI-重绘左上角统计信息
+  # ● 骰子移出
   #--------------------------------------------------------------------------
-  def redraw_info
-    s = @sprite_info1
-    s.bitmap ||= Bitmap.new(160, 100)
-    s.bitmap.clear
-    return if !show_stat?
-
-    w = 48
-    s.bitmap.draw_text(0,0,w,32,"统计", 1)
-    s.bitmap.fill_rect(w,16-1,s.width-w,1, Color.new(255,255,255))
-    s.bitmap.fill_rect(16,32,1,s.height-32, Color.new(255,255,255))
-
-    text = ""
-    text += @results.inject("") { |s, v| s = s + " " + v.to_s }
-    text += "\n"
-    text += "和 = #{@sum}"
-
-    ps = { :font_size => 16, :x0 => 32, :y0 => 32, :w => s.width-32, :lhd => 2}
-    ps[:font_color] = Color.new(255,255,255)
-    ps[:ali] = 1
-    d = Process_DrawTextEX.new(text, ps, s.bitmap)
-    d.run(true)
+  def move_out(t_min=40)
+    ts = [t_min]
+    @sprite_dices.each do |s|
+      next if s.finish?
+      _t = @ps[:out_t] ? @ps[:out_t] : TIME_MOVE_OUT 
+      t = EAGLE_COMMON.eagle_eval(_t).to_i
+      ts.push(t)
+      s.set_des_opa(0, t)
+    end
+    ts.max.times { Fiber.yield }
   end
   #--------------------------------------------------------------------------
-  # ● UI-重绘骰子信息
+  # ● 释放骰子
   #--------------------------------------------------------------------------
-  def redraw_dice_info
-    s = @sprite_info2
-    s.bitmap ||= Bitmap.new(300, 32)
-    s.bitmap.clear
-    return if @selected_token == nil
-
-    s.x = Graphics.width / 2
-    s.y = Graphics.height - 32
-    s.ox = s.width / 2
-    s.oy = s.height
-
-    text = "当前面：#{@selected_token.v}"
-
-    change = @selected_token.data.changes[@selected_token.index]
-    if change
-      # change = [old_id, new_id, obj]
-      icon = change[2].icon_index rescue return
-      text = "\n\\i[#{icon}]#{change[2].name} 效果："
-      text += "由 #{change[0]} 变为了 #{change[1]}"
+  def dispose_dices
+    @sprite_dices.each { |s| s.dispose }
+    @sprite_dices.clear
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-释放
+  #--------------------------------------------------------------------------
+  def dispose_ui
+    instance_variables.each do |varname|
+      ivar = instance_variable_get(varname)
+      if ivar.is_a?(Sprite) && !ivar.disposed?
+        ivar.bitmap.dispose if ivar.bitmap
+        ivar.dispose
+      end
     end
-
-    ps = { :font_size => 16, :x0 => 0, :y0 => 0, :w => s.width, :lhd => 2}
-    ps[:font_color] = Color.new(255,255,255)
-    ps[:ali] = 1
-    d = Process_DrawTextEX.new(text, ps, s.bitmap)
-    d.run(true)
   end
 end
 
@@ -884,7 +978,7 @@ end
 #==============================================================================
 class Data_Dice
   attr_reader   :ids_init, :ids, :changes
-  attr_accessor :params, :type
+  attr_accessor :params
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -894,8 +988,6 @@ class Data_Dice
     @ids = ids.dup # 最终id数组
     @changes = {} # 面index => [old_id, new_id, obj]
     @params = params # 存储一些额外的参数
-    @type = @params[:type] || 0
-    @type = @type.to_i
   end
   #--------------------------------------------------------------------------
   # ● 增加指定面的修改
@@ -916,13 +1008,6 @@ class Data_Dice
   def changed_with_icon?(index)
     changed?(index) && @changes[index][2].icon_index
   end
-  #--------------------------------------------------------------------------
-  # ● 判断骰子的类型
-  # 0 为一般骰子，作为最后统计的基准值
-  # 1 为最终加值骰子，在最后算出的结果后再加值
-  #--------------------------------------------------------------------------
-  def type_normal?; @type == 0; end
-  def type_add?;    @type == 1; end
 end
 
 #==============================================================================
@@ -931,7 +1016,6 @@ end
 class Sprite_Dice < Sprite
   include DICE
   attr_reader  :data
-  def type;  @data.type;  end
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -953,6 +1037,7 @@ class Sprite_Dice < Sprite
     @state = :init
     @chosen = false # 光标停留？（spriteset内变更该flag）
     # 移动用变量
+    @pos = {}
     @x_f = @y_f = @opa_f = 0.0
     @des_x = @des_y = @des_opa = 0
     @v_x = @v_y = @v_opa = 0
@@ -990,11 +1075,7 @@ class Sprite_Dice < Sprite
       t_bitmap.font.color = TEXT_COLOR
       t_bitmap.font.outline = false
       t_bitmap.font.shadow = false
-      if @data.type_add?
-        t = id >= 0 ? "+#{id}" : "#{id}"
-      else
-        t = "#{id}"
-      end
+      t = "#{id}"
       # 如果存在数值变动
       if @data.changed_with_icon?(index)
         t2 = @data.changes[index][0].to_s
@@ -1063,6 +1144,8 @@ class Sprite_Dice < Sprite
       update_frame
       update_up_and_drop
     when :wait
+    when :finish 
+      update_finish
     end
     update_position
   end
@@ -1072,38 +1155,60 @@ class Sprite_Dice < Sprite
   def set_xy(x = self.x, y = self.y)
     self.x = @x_f = @des_x = x
     self.y = @y_f = @des_y = y
+    update_layer
   end
   #--------------------------------------------------------------------------
-  # ● 设置目标xy与移速
+  # ● 设置目标xy
   #--------------------------------------------------------------------------
   def set_des_xy(x = self.x, y = self.y, t = 30)
-    # 确保骰子的移动不会出屏幕
-    @des_x = [[x, 0+self.width/2].max, Graphics.width-self.width/2].min
-    @des_y = [[y, 0+self.height/2].max, Graphics.height-self.height/2].min
-    @v_x = (@des_x - @x_f) * 1.0 / t
-    @v_y = (@des_y - @y_f) * 1.0 / t
+    @pos[:x0] = self.x
+    @pos[:x1] = [[x, 0+self.width/2].max, Graphics.width-self.width/2].min
+    @pos[:dx] = @pos[:x1] - @pos[:x0]
+    @pos[:y0] = self.y
+    @pos[:y1] = [[y, 0+self.height/2].max, Graphics.height-self.height/2].min
+    @pos[:dy] = @pos[:y1] - @pos[:y0]
+    @pos[:t] = t.to_i
+    @pos[:c] = 0
+    @pos[:ease] = "easeInSine"
   end
   #--------------------------------------------------------------------------
   # ● 设置目标透明度与增量
   #--------------------------------------------------------------------------
   def set_des_opa(opa = 0, t = 30)
-    @des_opa = opa
-    @opa_f = self.opacity
-    @v_opa = (@des_opa - @opa_f) * 1.0 / t
+    @pos[:opa0] = self.opacity
+    @pos[:opa1] = opa 
+    @pos[:dopa] = @pos[:opa1] - @pos[:opa0]
+    @pos[:opat] = t.to_i
+    @pos[:opac] = 0
+    @pos[:opa_ease] = "easeInSine"
   end
   #--------------------------------------------------------------------------
   # ● 更新xy与透明度
   #--------------------------------------------------------------------------
   def update_position
-    @v_x = 0 if (@des_x - @x_f).abs < 1
-    @v_y = 0 if (@des_y - @y_f).abs < 1
-    @v_opa = 0 if @des_opa == @opa_f.to_i
-    @x_f += @v_x
-    @y_f += @v_y
-    @opa_f += @v_opa
-    self.x = @x_f.to_i
-    self.y = @y_f.to_i
-    self.opacity = @opa_f.to_i
+    if @pos[:c]
+      @pos[:c] += 1
+      x = @pos[:c] * 1.0 / @pos[:t]
+      if $imported["EAGLE-EasingFunction"]
+        v = EasingFuction.call(@pos[:ease], x)
+      else
+        v = 1 - 2**(-10 * x)
+      end
+      self.x = @pos[:x0] + @pos[:dx] * v
+      self.y = @pos[:y0] + @pos[:dy] * v
+      @pos[:c] = nil if @pos[:c] == @pos[:t] 
+    end
+    if @pos[:opac]
+      @pos[:opac] += 1
+      x = @pos[:opac] * 1.0 / @pos[:opat]
+      if $imported["EAGLE-EasingFunction"]
+        v = EasingFuction.call(@pos[:opa_ease], x)
+      else
+        v = 1 - 2**(-10 * x)
+      end
+      self.opacity = @pos[:opa0] + @pos[:dopa] * v
+      @pos[:opac] = nil if @pos[:opac] == @pos[:opat] 
+    end
     update_layer
   end
   #--------------------------------------------------------------------------
@@ -1195,13 +1300,11 @@ class Sprite_Dice < Sprite
     return if @chosen
     @chosen = true
     self.z += 10
-    @opa_f = 120  # 如果被选中，则半透明化
   end
   def unchoose
     return if !@chosen
     @chosen = false
     self.z -= 10
-    @opa_f = 255
   end
   #--------------------------------------------------------------------------
   # ● 获取当前面的序号
@@ -1215,6 +1318,27 @@ class Sprite_Dice < Sprite
   def v
     @data.ids[@index_cur]
   end
+
+  #--------------------------------------------------------------------------
+  # ● 更新结算移出
+  #--------------------------------------------------------------------------
+  def update_finish
+    return if !self.visible
+    self.angle += 13
+    self.zoom_x -= 0.05
+    self.zoom_y -= 0.05
+    self.visible = false if self.zoom_x <= 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 已结算？
+  #--------------------------------------------------------------------------
+  def finish
+    @state = :finish 
+  end 
+  def finish?
+    @state == :finish 
+  end
+
   #--------------------------------------------------------------------------
   # ● 与指定精灵重叠？
   #--------------------------------------------------------------------------
