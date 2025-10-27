@@ -2,9 +2,9 @@
 # ■ 游戏运行倍速切换  by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SpeedUp"] = "1.1.2"
+$imported["EAGLE-SpeedUp"] = "1.2.0"
 #==============================================================================
-# - 2025.5.25.12 倍率未变时，提示文本不显示
+# - 2025.10.24.0 修复存档后发生 insecureError 的问题
 #==============================================================================
 # - 新增在地图、战斗场景中，按下指定键后按顺序变更游戏运行倍速
 #
@@ -113,7 +113,7 @@ class << Graphics
 end
 
 class Game_System
-  attr_accessor  :scene2speedup  # scene_class => speed up index
+  attr_accessor  :scene2speedup  # scene_class_str => speed up index
 end
 
 class << SceneManager
@@ -144,7 +144,7 @@ class Scene_Base
   def post_start
     eagle_speed_up_post_start
     $game_system.scene2speedup ||= {}
-    i = $game_system.scene2speedup[self.class]
+    i = $game_system.scene2speedup["#{self.class}"]
     if i
       EAGLE::SpeedUp.change_index(i) 
     else
@@ -176,7 +176,7 @@ class Scene_Base
   def pre_terminate
     eagle_speed_up_pre_terminate
     $game_system.scene2speedup ||= {}
-    $game_system.scene2speedup[self.class] = EAGLE::SpeedUp.index
+    $game_system.scene2speedup["#{self.class}"] = EAGLE::SpeedUp.index
   end
 end
 
