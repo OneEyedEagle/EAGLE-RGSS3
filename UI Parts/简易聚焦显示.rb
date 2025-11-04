@@ -2,9 +2,9 @@
 # ■ 简易聚焦显示 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-FocusOn"] = "1.0.1"
+$imported["EAGLE-FocusOn"] = "1.0.2"
 #==============================================================================
-# - 2024.11.29.17 
+# - 2025.10.31.23 修复 params 设置无效的bug
 #==============================================================================
 # - 本插件新增了在画面上显示遮挡、并挖空其中矩形的简易聚焦演出
 #------------------------------------------------------------------------------
@@ -181,7 +181,7 @@ module FOCUS
     y = y1 * 32
     w = mw * 32
     h = mh * 32
-    set_xywh(x, y, w, h)
+    set_xywh(x, y, w, h, params)
   end
   #--------------------------------------------------------------------------
   # ● 设置聚焦：事件
@@ -192,7 +192,7 @@ module FOCUS
     return if s.nil?
     x = s.x - s.ox
     y = s.y - s.oy
-    set_xywh(x, y, s.width, s.height)
+    set_xywh(x, y, s.width, s.height, params)
   end
   #--------------------------------------------------------------------------
   # ● 设置聚焦：图片
@@ -203,7 +203,7 @@ module FOCUS
     return if s.nil?
     x = s.x - s.ox
     y = s.y - s.oy
-    set_xywh(x, y, s.width, s.height)
+    set_xywh(x, y, s.width, s.height, params)
   end
   #--------------------------------------------------------------------------
   # ● 设置聚焦：战斗中角色
@@ -216,7 +216,7 @@ module FOCUS
     y = s.y - s.oy
     w = s.width
     h = s.height
-    set_xywh(x, y, w, h)
+    set_xywh(x, y, w, h, params)
   end
   
   #--------------------------------------------------------------------------
@@ -244,10 +244,10 @@ module FOCUS
     opa = @params_move[:opa] + @params_move[:dopa] * per
     @rect.set(x, y, w, h)
 
-    params = {}
-    params[:color] ||= FOCUS_BG_COLOR
-    params[:z] ||= FOCUS_Z
-    @sprite_bg.redraw(x, y, w, h, params)
+    @params ||= {}
+    @params[:color] ||= FOCUS_BG_COLOR
+    @params[:z] ||= FOCUS_Z
+    @sprite_bg.redraw(x, y, w, h, @params)
     @sprite_bg.opacity = opa
     
     @params_move[:tc] += 1
