@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【场景自由呼叫 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventToolbar"] = "2.1.0"
+$imported["EAGLE-EventToolbar"] = "2.1.1"
 #==============================================================================
-# - 2025.11.8.1 新增词条系统的嵌入 
+# - 2025.11.8.9 新增词条系统的嵌入 
 #==============================================================================
 # - 本插件新增了剧情演出时可供开启的快捷功能场景
 #------------------------------------------------------------------------------
@@ -108,6 +108,7 @@ module TOOLBAR
         "跳过当前阶段的剧情，并显示关键要点"
       )
       w.set_handler(:msg_skip, COMMAND_SKIP.method(:call))
+      w.set_param(:msg_skip, :sort_v, 10) 
     end
 
     if $imported["EAGLE-MessageLog"]
@@ -119,6 +120,7 @@ module TOOLBAR
         t
       )
       w.set_handler(:msg_log, MSG_LOG.method(:call))
+      w.set_param(:msg_log, :sort_v, 15) 
     end
 
     if $imported["EAGLE-EventLog"]
@@ -129,6 +131,7 @@ module TOOLBAR
         "开启事件日志界面，查看已发生的大事件"
       )
       w.set_handler(:event_log, EVENT_LOG.method(:call))
+      w.set_param(:event_log, :sort_v, 20) 
     end
 
     if $imported["EAGLE-Dictionary"]
@@ -140,6 +143,7 @@ module TOOLBAR
         t
       )
       w.set_handler(:dict, DICT.method(:start))
+      w.set_param(:dict, :sort_v, 25) 
     end
 
     if $imported["EAGLE-QuestList"]
@@ -150,6 +154,7 @@ module TOOLBAR
         "开启任务列表界面，查看全部任务"
       )
       w.set_handler(:quest, QUEST.method(:start_list))
+      w.set_param(:quest, :sort_v, 30) 
     end
 
     if $imported["EAGLE-FastSL"]
@@ -161,6 +166,7 @@ module TOOLBAR
       )
       w.set_handler(:fast_save, FastSL.method(:save))
       w.set_param(:fast_save, :no_close, true)
+      w.set_param(:fast_save, :sort_v, 40) 
       w.add_command(
         ">> 快速读取",
         :fast_load,
@@ -168,6 +174,7 @@ module TOOLBAR
         "从第\\v[#{$game_variables[FastSL::V_ID_FILE_INDEX]}]号档位读取"
       )
       w.set_handler(:fast_load, FastSL.method(:load))
+      w.set_param(:fast_load, :sort_v, 41) 
     end
 
     if $game_message.visible
@@ -183,6 +190,7 @@ module TOOLBAR
       )
       w.set_handler(:msg_vi, TOOLBAR.method(:toggle_msg_visible))
       w.set_param(:msg_vi, :no_close, true)
+      w.set_param(:msg_vi, :sort_v, 50) 
     end
 
     if $imported["EAGLE-MessageEX"]
@@ -197,6 +205,7 @@ module TOOLBAR
         t
       )
       w.set_handler(:msg_auto, TOOLBAR.method(:toggle_msg_auto))
+      w.set_param(:msg_auto, :sort_v, 51) 
       # 给该选项增加属性：选择后不退出当前界面
       w.set_param(:msg_auto, :no_close, true)
     end
