@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【对话框扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MsgSetFace"] = "1.0.0"
+$imported["EAGLE-MsgSetFace"] = "1.1.0"
 #=============================================================================
-# - 2022.9.14.23
+# - 2025.11.9.17 随对话框更新
 #==============================================================================
 # - 本插件新增了预设脸图、姓名的方式，方便进行事件编写
 #------------------------------------------------------------------------------
@@ -23,6 +23,7 @@ module MESSAGE_EX
 #--------------------------------------------------------------------------
 # 这是一个示例，推荐不要变动，方便之后复制
 
+# 这个是为角色 艾里克 设置的文本对应脸图
 PRESERVE_FACES["艾里克"] = {
 
   # 设置一下默认的脸图文件名，如果表情没有设置文件名的话，就用这张脸图了
@@ -63,7 +64,7 @@ end  # 必须的模块结尾，不要漏掉
 #     【姓名#表情】
 #
 #   其中 【】 可在 PRESERVE_SYM1 和 PRESERVE_SYM2 中修改，为识别符号
-#   其中  #   可在 PRESERVE_SPLIT 中修改，为姓名和表情之间的分隔符号
+#   其中  #   可在 PRESERVE_SPLIT 中修改，作为姓名和表情之间的分隔符号
 #   其中 姓名 为显示在姓名框中的文本，也是用于查找脸图的索引
 #   其中 表情 为预设的表情名称，如果不存在，则不显示脸图
 #
@@ -80,9 +81,38 @@ end  # 必须的模块结尾，不要漏掉
 # - 如果在事件中为显示文本设置了脸图，则本插件的脸图设置无效
 #
 # - 如果在对话中编写了 \name 转义符设置姓名，则本插件的姓名设置无效
+#==============================================================================
+
+#==============================================================================
+# 【预设：脸图设置姓名】
+# 
+# - 在 FACE2NAME 常量中如下方式设置角色的脸图、索引号，及对应的姓名
+#
+# - 推荐在上面新增的“【对话框脸图预设】”脚本页中，
+#   复制如下的内容，进行修改和扩写：
+#
+=begin
+# --------复制以下的内容！--------
+module MESSAGE_EX
+#--------------------------------------------------------------------------
+# 这是一个示例，推荐不要变动，方便之后复制
+
+# 这个是为角色 艾里克 设置的脸图姓名
+FACE2NAME[ ["Actor1", 0] ] = "艾里克"
+
+# 这张脸图文件里的第二个角色不是艾里克了，再设置下
+FACE2NAME[ ["Actor1", 1] ] = "女主角"
+# 
+#--------------------------------------------------------------------------
+end  # 必须的模块结尾，不要漏掉
+
+# --------复制以上的内容！--------
+=end
 #
 #------------------------------------------------------------------------------
-# 【TODO：脸图设置姓名】
+# 【使用：脸图对应姓名】
+#
+# - 在对话文本中选好脸图后，若没有编写姓名，则会自动查找预设，并设置姓名。
 #
 #==============================================================================
 
@@ -116,8 +146,12 @@ module MESSAGE_EX
   }
   #--------------------------------------------------------------------------
   # ●【自定义：脸图设置姓名】
+  #  
   #--------------------------------------------------------------------------
   FACE2NAME = {}
+  #FACE2NAME[ [["脸图文件名称", 脸图索引号]] ] = "角色姓名"
+  FACE2NAME[ ["Actor1", 0] ] = "艾里克"
+  FACE2NAME[ ["Actor1", 1] ] = "女主角"
   #--------------------------------------------------------------------------
   # ● 读取对应的脸图设置
   #--------------------------------------------------------------------------
@@ -135,14 +169,22 @@ module MESSAGE_EX
     end
     return n, i
   end
+  #--------------------------------------------------------------------------
+  # ● 读取对应的姓名设置
+  #--------------------------------------------------------------------------
+  def self.get_name_by_face(face_name, face_index)
+    t = FACE2NAME[[face_name, face_index]]
+    return "" if t == nil
+    return t
+  end
 end
 
 class Window_EagleMessage
   #--------------------------------------------------------------------------
   # ● 替换转义符（此时依旧是 \\ 开头的转义符）
   #--------------------------------------------------------------------------
-  alias eagle_facename_process_conv eagle_process_conv
-  def eagle_process_conv(text)
+  alias eagle_facename_eagle_draw_face eagle_draw_face
+  def eagle_draw_face(text)
     fn = ""
     name_params[:preserve] = ""
     text.gsub!(/#{MESSAGE_EX::PRESERVE_SYM1}(.*?)#{MESSAGE_EX::PRESERVE_SYM2}/i) {
@@ -160,20 +202,21 @@ class Window_EagleMessage
       game_message.face_name = n
       game_message.face_index = i
     end
-    eagle_facename_process_conv(text)
+    if name_params[:preserve] == ""
+      t = MESSAGE_EX.get_name_by_face(game_message.face_name, game_message.face_index)
+      name_params[:preserve] = t if t 
+    end
+    eagle_facename_eagle_draw_face(text)
   end
   #--------------------------------------------------------------------------
   # ● 绘制姓名框
   #--------------------------------------------------------------------------
-  alias eagle_facename_process_draw_name process_draw_name
-  def process_draw_name
-    if name_params[:name] == "" && name_params[:preserve] != ""
-      name_params[:name] = name_params[:preserve]
+  alias eagle_facename_process_name_string process_name_string
+  def process_name_string(str)
+    if str == "" && name_params[:preserve] != ""
+      str = name_params[:preserve]
+      name_params[:preserve] = ""
     end
-    name_params[:preserve] = ""
-    #if name_params[:name] == "" && game_message.face_name != ""
-    #  name_params[:name] = 
-    #end
-    eagle_facename_process_draw_name
+    return eagle_facename_process_name_string(str)
   end
 end

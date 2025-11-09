@@ -921,8 +921,8 @@ class Window_EagleMessage < Window_Base
     pop_params[:with_tag] = false
     @eagle_sprite_pop_tag.visible = false  # 隐藏pop的tag
     @eagle_sprite_pause.visible   = false  # 隐藏pause精灵
-    face_params[:name] = ""   # 移出显示的脸图
-    eagle_move_out_face
+    face_params[:name] = ""
+    eagle_move_out_face                    # 移出显示的脸图
     # 关闭姓名框（因为对话框关闭后，姓名框不再更新，减小openness确保关闭）
     @eagle_window_name.close
     @eagle_window_name.openness -= 15
@@ -3059,9 +3059,9 @@ class Window_EagleMessage < Window_Base
   # ● 脸图占用的宽度
   #--------------------------------------------------------------------------
   def eagle_face_width
-    return 0 if !game_message.face?
+    #return 0 if !game_message.face?
     return 0 if face_params[:z] < 0
-    @eagle_face_w + face_params[:dw]
+    return @eagle_face_w > 0 ? @eagle_face_w + face_params[:dw] : 0
   end
   #--------------------------------------------------------------------------
   # ● 脸图在左侧占用的宽度（用于调整文字区域的左侧起始位置）
