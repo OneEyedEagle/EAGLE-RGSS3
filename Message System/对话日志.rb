@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageLog"] = "1.1.1"
+$imported["EAGLE-MessageLog"] = "1.2.0"
 #==============================================================================
-# - 2025.8.6.12 姓名兼容对话框扩展的\c
+# - 2025.11.7.23 结构修改，方便扩展
 #==============================================================================
 # - 本插件新增了对 $game_message 的对话文本的记录
 #------------------------------------------------------------------------------
@@ -34,7 +34,7 @@ module MSG_LOG
   # ● 呼叫日志？
   #--------------------------------------------------------------------------
   def self.call_scene?
-    # 如果使用了【快捷功能界面 by老鹰】，则不要占用按键
+    # 如果使用了【快捷功能场景 by老鹰】，则不要占用按键
     return if $imported["EAGLE-EventToolbar"]
     call if Input.trigger?(:L)
   end
@@ -138,21 +138,6 @@ module MSG_LOG
 
     sprite.oy = sprite.height
     sprite.y = Graphics.height
-  end
-  #--------------------------------------------------------------------------
-  # ● 设置读取更多日志提示精灵
-  #--------------------------------------------------------------------------
-  def self.set_sprite_more(sprite)
-    sprite.bitmap = Bitmap.new(Graphics.width, 24)
-    sprite.bitmap.font.size = HINT_FONT_SIZE
-
-    sprite.bitmap.draw_text(0, 0, sprite.width, sprite.height,
-      "- 再次按下 上方向键 读取更多日志 -", 1)
-    sprite.bitmap.fill_rect(0, sprite.height-4, sprite.width, 1,
-      Color.new(255,255,255,120))
-
-    sprite.oy = sprite.height
-    sprite.opacity = 0
   end
 
   #--------------------------------------------------------------------------
@@ -314,6 +299,7 @@ end
     ui_update
     ui_dispose
   end
+  
 #===============================================================================
 # ○ UI
 #===============================================================================
@@ -322,20 +308,7 @@ class << self
   # ● UI-初始化
   #--------------------------------------------------------------------------
   def ui_init
-    @log_index = -1 # 上一次绘制到的log的序号（已经绘制完的最后一个）
-    @sprites = [] # 0 => 存放初始的, 1..-1 => 之后读取加入的
-
-    # 当前移动速度
-    @speed = 0
-    # 速度逐渐归零用的计数 每@d_speed帧后速度绝对值减一
-    @d_speed = @d_speed_count = 10
-    # 速度累加用计数 每@ad_speed帧后如果依旧按住同一个键，速度绝对值加一
-    @ad_speed = @ad_speed_count = 6
-    # 上一帧按下的按键
-    @last_key = nil
-
     ui_init_sprites
-    ui_update_new
   end
   #--------------------------------------------------------------------------
   # ● UI-初始化精灵
@@ -349,22 +322,19 @@ class << self
     @sprite_bg_info.z = @sprite_bg.z + 1
     set_sprite_info(@sprite_bg_info)
 
-    @sprite_more = Sprite.new
-    @sprite_more.z = @sprite_bg.z + 20
-    set_sprite_more(@sprite_more)
-
     @sprite_hint = Sprite.new
     @sprite_hint.z = @sprite_bg.z + 20
     set_sprite_hint(@sprite_hint)
-
-    @viewport = Viewport.new(0,0,Graphics.width, Graphics.height-24)
-    @viewport.z = @sprite_bg.z + 10
+    
+    viewport = Viewport.new(0,0,Graphics.width, Graphics.height-24)
+    viewport.z = @sprite_bg.z + 10
+    @spriteset = Spriteset_MsgLog.new(viewport)
   end
   #--------------------------------------------------------------------------
   # ● UI-释放
   #--------------------------------------------------------------------------
   def ui_dispose
-    @sprites.each { |s| s.bitmap.dispose if s.bitmap; s.dispose }
+    @spriteset.dispose
     instance_variables.each do |varname|
       ivar = instance_variable_get(varname)
       if ivar.is_a?(Sprite)
@@ -386,143 +356,9 @@ class << self
   def ui_update
     while true
       update_basic
-      ui_update_speed_mouse
-      ui_update_speed
-      ui_update_speed_change if @speed != 0
-      ui_update_pos
-      ui_update_hint_more
-      ui_update_new if @sprite_more.opacity == 255 && Input.trigger?(:UP)
+      @spriteset.update
       break if close_scene?
     end
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-更新文本精灵位置
-  #--------------------------------------------------------------------------
-  def ui_update_pos
-    @sprites.each { |s| s.move_xy(0, @speed) }
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-更新提示读取精灵
-  #--------------------------------------------------------------------------
-  def ui_update_hint_more
-    @sprite_more.y = @sprites[-1].y - @sprites[-1].oy
-    @sprite_more.opacity = 255 * (@sprite_more.y + 0) / DOWN_LIMIT_Y
-    @sprite_more.opacity = 0 if @log_index >= logs.size-1
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-更新移动速度（鼠标）
-  #--------------------------------------------------------------------------
-  def ui_update_speed_mouse
-    if $imported["EAGLE-MouseEX"]
-      @last_pos ||= 0
-      pos = MOUSE_EX.pos_num(nil, 10, 40)
-      if @speed == 0
-        if MOUSE_EX.scroll_up? || pos == 8
-          @speed = +1
-          @d_speed_count = 0
-        elsif MOUSE_EX.scroll_down? || pos == 2
-          @speed = -1
-          @d_speed_count = 0
-        end
-        @ad_speed_count = @ad_speed
-      elsif (pos == 2 || pos == 8) && @last_pos == pos
-        @ad_speed_count -= 1
-        if @ad_speed_count <= 0
-          @ad_speed_count = @ad_speed
-          @speed += (@speed < 0 ? -1 : 1)
-          @d_speed_count = 0
-        end
-      end
-      @last_pos = pos
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-更新移动速度
-  #--------------------------------------------------------------------------
-  def ui_update_speed
-    if Input.trigger?(:DOWN)
-      @speed = -1
-      @d_speed_count = 0
-    elsif Input.trigger?(:UP)
-      @speed = +1
-      @d_speed_count = 0
-    end
-    if @sprites[0].y - @sprites[0].oy + @speed < UP_LIMIT_Y
-      @speed = 0
-      d = UP_LIMIT_Y - (@sprites[0].y - @sprites[0].oy)
-      @sprites.each { |s| s.move_xy(0, d) }
-    end
-    if @sprites[-1].y - @sprites[-1].oy + @speed > DOWN_LIMIT_Y
-      @speed = 0
-      d = DOWN_LIMIT_Y - (@sprites[-1].y - @sprites[-1].oy)
-      @sprites.each { |s| s.move_xy(0, d) }
-    end
-    if Input.press?(:DOWN)
-      if @last_key == :DOWN
-        @ad_speed_count -= 1
-        if @ad_speed_count <= 0
-          @ad_speed_count = @ad_speed
-          @speed -= 1
-          @d_speed_count = 0
-        end
-      else
-        @ad_speed_count = @ad_speed
-      end
-      @last_key = :DOWN
-    elsif Input.press?(:UP)
-      if @last_key == :UP
-        @ad_speed_count -= 1
-        if @ad_speed_count <= 0
-          @ad_speed_count = @ad_speed
-          @speed += 1
-          @d_speed_count = 0
-        end
-      else
-        @ad_speed_count = @ad_speed
-      end
-      @last_key = :UP
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-更新移动速度的逐渐减小
-  #--------------------------------------------------------------------------
-  def ui_update_speed_change
-    return if (@d_speed_count += 1) < @d_speed
-    @d_speed_count = 0
-    @speed += (@speed > 0 ? -1 : 1)
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-新生成一组文本精灵
-  #--------------------------------------------------------------------------
-  def ui_update_new # 新生成的精灵都会叠在上面
-    @sprite_more.opacity = 0
-
-    i_start = @log_index + 1
-    i_end = @log_index + LOG_READ_NUM
-    i_end = logs.size - 1 if i_end >= logs.size
-    while( i_start <= i_end )
-      data = logs[i_start]
-      s = new_sprite(data)
-      @sprites.push(s)
-      WAIT_COUNT.times { update_basic }
-      i_start += 1
-    end
-    @log_index = i_end
-  end
-  #--------------------------------------------------------------------------
-  # ● UI-创建1个文本精灵
-  #--------------------------------------------------------------------------
-  def new_sprite(data)
-    s = Sprite_MsgLog.new(@viewport)
-    data.draw(s)
-    if @sprites[-1]
-      s.set_xy(0, @sprites[-1].y - @sprites[-1].oy - s.height)
-    else
-      y0 = (Graphics.height - s.height) / 2 # UP_LIMIT_Y
-      s.set_xy(0, y0)
-    end
-    s.set_xy(OFFSET_X, nil)
-    s
   end
 end
 #===============================================================================
@@ -614,6 +450,207 @@ class Sprite_MsgLog < Sprite
     _x = self.x - self.ox + dx
     _y = self.y - self.oy + dy
     set_xy(_x, _y)
+  end
+end
+#===============================================================================
+# ○ 文本精灵组
+#===============================================================================
+class Spriteset_MsgLog
+  #--------------------------------------------------------------------------
+  # ● 初始化
+  #--------------------------------------------------------------------------
+  def initialize(viewport)
+    @viewport = viewport
+    @sprites = [] # 0 => 存放初始的, 1..-1 => 之后读取加入的
+    # 上一次绘制到的log的序号（已经绘制完的最后一个）
+    @log_index = -1
+    # 当前移动速度
+    @speed = 0
+    # 速度逐渐归零用的计数 每@d_speed帧后速度绝对值减一
+    @d_speed = @d_speed_count = 10
+    # 速度累加用计数 每@ad_speed帧后如果依旧按住同一个键，速度绝对值加一
+    @ad_speed = @ad_speed_count = 6
+    # 上一帧按下的按键
+    @last_key = nil
+
+    @sprite_more = Sprite.new
+    @sprite_more.z = viewport.z + 1
+    set_sprite_more(@sprite_more)
+    
+    ui_update_new(false)
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  def dispose
+    @sprites.each { |s| s.bitmap.dispose if s.bitmap; s.dispose }
+    @sprite_more.bitmap.dispose
+    @sprite_more.dispose
+    @viewport.dispose
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置读取更多日志提示精灵
+  #--------------------------------------------------------------------------
+  def set_sprite_more(sprite)
+    sprite.bitmap = Bitmap.new(Graphics.width, 24)
+    sprite.bitmap.font.size = MSG_LOG::HINT_FONT_SIZE
+
+    sprite.bitmap.draw_text(0, 0, sprite.width, sprite.height,
+      "- 再次按下 上方向键 读取更多日志 -", 1)
+    sprite.bitmap.fill_rect(0, sprite.height-4, sprite.width, 1,
+      Color.new(255,255,255,120))
+
+    sprite.oy = sprite.height
+    sprite.opacity = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置不透明度
+  #--------------------------------------------------------------------------
+  def opacity; @sprites[0].opacity; end
+  def opacity=(v)
+    @sprites.each_with_index do |s, i|
+      s.opacity = v
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    ui_update_speed_mouse
+    ui_update_speed
+    ui_update_speed_change if @speed != 0
+    ui_update_pos
+    ui_update_hint_more
+    ui_update_new if @sprite_more.opacity == 255 && Input.trigger?(:UP)
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-更新文本精灵位置
+  #--------------------------------------------------------------------------
+  def ui_update_pos
+    @sprites.each { |s| s.move_xy(0, @speed) }
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-更新提示读取精灵
+  #--------------------------------------------------------------------------
+  def ui_update_hint_more
+    @sprite_more.y = @sprites[-1].y - @sprites[-1].oy
+    @sprite_more.opacity = 255 * (@sprite_more.y + 0) / MSG_LOG::DOWN_LIMIT_Y
+    @sprite_more.opacity = 0 if @log_index >= MSG_LOG.logs.size-1
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-更新移动速度（鼠标）
+  #--------------------------------------------------------------------------
+  def ui_update_speed_mouse
+    if $imported["EAGLE-MouseEX"]
+      @last_pos ||= 0
+      pos = MOUSE_EX.pos_num(nil, 10, 40)
+      if @speed == 0
+        if MOUSE_EX.scroll_up? || pos == 8
+          @speed = +1
+          @d_speed_count = 0
+        elsif MOUSE_EX.scroll_down? || pos == 2
+          @speed = -1
+          @d_speed_count = 0
+        end
+        @ad_speed_count = @ad_speed
+      elsif (pos == 2 || pos == 8) && @last_pos == pos
+        @ad_speed_count -= 1
+        if @ad_speed_count <= 0
+          @ad_speed_count = @ad_speed
+          @speed += (@speed < 0 ? -1 : 1)
+          @d_speed_count = 0
+        end
+      end
+      @last_pos = pos
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-更新移动速度
+  #--------------------------------------------------------------------------
+  def ui_update_speed
+    if Input.trigger?(:DOWN)
+      @speed = -1
+      @d_speed_count = 0
+    elsif Input.trigger?(:UP)
+      @speed = +1
+      @d_speed_count = 0
+    end
+    if @sprites[0].y - @sprites[0].oy + @speed < MSG_LOG::UP_LIMIT_Y
+      @speed = 0
+      d = UP_LIMIT_Y - (@sprites[0].y - @sprites[0].oy)
+      @sprites.each { |s| s.move_xy(0, d) }
+    end
+    if @sprites[-1].y - @sprites[-1].oy + @speed > MSG_LOG::DOWN_LIMIT_Y
+      @speed = 0
+      d = DOWN_LIMIT_Y - (@sprites[-1].y - @sprites[-1].oy)
+      @sprites.each { |s| s.move_xy(0, d) }
+    end
+    if Input.press?(:DOWN)
+      if @last_key == :DOWN
+        @ad_speed_count -= 1
+        if @ad_speed_count <= 0
+          @ad_speed_count = @ad_speed
+          @speed -= 1
+          @d_speed_count = 0
+        end
+      else
+        @ad_speed_count = @ad_speed
+      end
+      @last_key = :DOWN
+    elsif Input.press?(:UP)
+      if @last_key == :UP
+        @ad_speed_count -= 1
+        if @ad_speed_count <= 0
+          @ad_speed_count = @ad_speed
+          @speed += 1
+          @d_speed_count = 0
+        end
+      else
+        @ad_speed_count = @ad_speed
+      end
+      @last_key = :UP
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-更新移动速度的逐渐减小
+  #--------------------------------------------------------------------------
+  def ui_update_speed_change
+    return if (@d_speed_count += 1) < @d_speed
+    @d_speed_count = 0
+    @speed += (@speed > 0 ? -1 : 1)
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-新生成一组文本精灵
+  #--------------------------------------------------------------------------
+  def ui_update_new(wait=true) # 新生成的精灵都会叠在上面
+    @sprite_more.opacity = 0
+
+    i_start = @log_index + 1
+    i_end = @log_index + MSG_LOG::LOG_READ_NUM
+    i_end = MSG_LOG.logs.size - 1 if i_end >= MSG_LOG.logs.size
+    while( i_start <= i_end )
+      data = MSG_LOG.logs[i_start]
+      s = new_sprite(data)
+      @sprites.push(s)
+      MSG_LOG::WAIT_COUNT.times { MSG_LOG.update_basic } if wait
+      i_start += 1
+    end
+    @log_index = i_end
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-创建1个文本精灵
+  #--------------------------------------------------------------------------
+  def new_sprite(data)
+    s = Sprite_MsgLog.new(@viewport)
+    data.draw(s)
+    if @sprites[-1]
+      s.set_xy(0, @sprites[-1].y - @sprites[-1].oy - s.height)
+    else
+      y0 = (@viewport.rect.height - s.height) / 2 # UP_LIMIT_Y
+      s.set_xy(0, y0)
+    end
+    s.set_xy(MSG_LOG::OFFSET_X, nil)
+    s
   end
 end
 end # end of MODULE

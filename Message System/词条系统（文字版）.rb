@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Dictionary"] = "1.1.0"
+$imported["EAGLE-Dictionary"] = "1.2.0"
 #==============================================================================
-# - 2024.2.3.13 兼容鼠标
+# - 2025.11.7.23 结构修改，方便扩展
 #==============================================================================
 # - 本插件新增了简易的文字版词条收集系统，并增加了一个简易的显示UI
 #------------------------------------------------------------------------------
@@ -41,13 +41,18 @@ $imported["EAGLE-Dictionary"] = "1.1.0"
 #
 # - 示例：
 #
-#    《新增词条 主角1》  → 解锁名称为 "主角1" 的词条
+#    《新增词条 主角1》  或   词条|主角1|
 #
-#    《新增词条 主角1 主角2》  → 解锁名称为 "主角1" 与 "主角2" 的词条
+#           → 解锁名称为 "主角1" 的词条
 #
-#    《新增词条 主角1|基本信息|介绍1》
-#       → 解锁名称为 "主角1" 的词条，同时解锁它的 "基本信息" 和 "介绍1" 的信息词
-#          如果文本中含有 {ifs 基本信息}...{/ifs}，则会显示其中文本
+#    《新增词条 主角1 主角2》 或  词条|主角1| （换行） 词条|主角2|
+#
+#           → 解锁名称为 "主角1" 与 "主角2" 的词条
+#
+#    《新增词条 主角1|基本信息|介绍1》 或  词条|主角1|基本信息 介绍1
+#
+#           → 解锁名称为 "主角1" 的词条，同时解锁它的 "基本信息" 和 "介绍1" 的信息词
+#              如果文本中含有 {ifs 基本信息}...{/ifs}，则会显示其中文本
 #
 #---------------------------------------------------------------------------
 # 【词条新增：全局脚本】
@@ -206,7 +211,7 @@ module DICT
   #--------------------------------------------------------------------------
   # ○【常量】UI - 详细信息文本绘制前的等待时间
   #--------------------------------------------------------------------------
-  TIME_WAIT = 40
+  TIME_WAIT = 30
 end
 
 #===============================================================================
@@ -298,6 +303,7 @@ module DICT
         t += "#{pre}：#{data[1]}\n"
       end
       MESSAGE_HINT.add({:text => t}, id="居中")
+      @data_hints.clear
       return
     end
     if $imported["EAGLE-MessagePara"]
@@ -356,6 +362,20 @@ class Game_System
   def eagle_dict_new
     @eagle_dict_new ||= []
     @eagle_dict_new
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取 类别 => [词条] 的hash
+  #--------------------------------------------------------------------------
+  def eagle_get_dict_with_category
+    data_category = {} 
+    eagle_dict.keys.each do |k|
+      cs = DICT.category(k)
+      cs.each do |c|
+        data_category[c] ||= []
+        data_category[c].push(k)
+      end
+    end
+    return data_category
   end
 end
 #===============================================================================
@@ -422,15 +442,7 @@ class << DICT
   # ● 初始化全部数据
   #--------------------------------------------------------------------------
   def init_data
-    data = $game_system.eagle_dict.keys
-    @data_category = {} # 类别 => [词条]
-    data.each do |k|
-      cs = self.category(k)
-      cs.each do |c|
-        @data_category[c] ||= []
-        @data_category[c].push(k)
-      end
-    end
+    @data_category = $game_system.eagle_get_dict_with_category
   end
   #--------------------------------------------------------------------------
   # ● 生成精灵
@@ -457,20 +469,11 @@ class << DICT
     @sprite_layer.z = @sprite_bg.z + 20
 
     # 生成类别组
-    @sprites_category = []; i = 0
-    i_w = Graphics.width / @data_category.keys.size
-    @data_category.each do |k, v|
-      s = Sprite_EagleDict_Category.new(k, i)
-      s.x = i_w /2 + i_w * i
-      s.y = 12 + s.height / 2
-      s.z = @sprite_bg.z + 10
-      @sprites_category.push(s)
-      i += 1
-    end
-    @index_category = 0
+    @spriteset_category = Spriteset_EagleDict_Category.new(@data_category)
+    @spriteset_category.set_pos(40, @sprite_bg.z + 10)
 
     # 绘制水平分割线
-    _y = @sprites_category[0].y + @sprites_category[0].height / 2
+    _y = @spriteset_category.y + @spriteset_category.height / 2
     @sprite_layer.bitmap.fill_rect(12, _y, @sprite_layer.width-24,1,
       Color.new(255,255,255,120))
 
@@ -489,25 +492,12 @@ class << DICT
 
     # 生成词条文本
     _w = Graphics.width - _x - 12
-    @viewport_info = Viewport.new(_x + 12, @window_list.y + 12, _w, _h)
-    @viewport_info.z = @sprite_bg.z + 12
-    @sprite_info = Sprite.new(@viewport_info)
-    @sprite_info.bitmap = Bitmap.new(_w, _h)
-
-    # 词条翻页提示
-    @sprite_info_hint = Sprite.new
-    @sprite_info_hint.z = @sprite_bg.z + 20
-    set_sprite_info_hint(@sprite_info_hint)
-
-    @data_last_draw = nil  # 上一次绘制的词条
-    @count_last_draw = 0   # 绘制倒计时计数，防止切换过快时立即绘制导致的卡顿
-    @sprite_info_view_h = @viewport_info.rect.height  # 可显示文本的高度
-    @type_info_page = :scroll # 文本翻页方式
-                          # :scroll为自动滚动，:page 为翻页
-    @count_last_view = 0 # 自动滚动用计数
-
-    @refresh = true
-    update_key_result
+    viewport = Viewport.new(_x + 12, @window_list.y + 12, _w, _h)
+    viewport.z = @sprite_bg.z + 12
+    @spriteset_info = Spriteset_EagleDict_Info.new(viewport, @window_list)
+    
+    @spriteset_category.window_list = @window_list
+    @spriteset_category.refresh
   end
   #--------------------------------------------------------------------------
   # ● 设置背景精灵
@@ -545,34 +535,11 @@ class << DICT
     sprite.y = Graphics.height
   end
   #--------------------------------------------------------------------------
-  # ● 设置翻页提示精灵
-  #--------------------------------------------------------------------------
-  def set_sprite_info_hint(sprite)
-    sprite.bitmap = Bitmap.new(@viewport_info.rect.width, 18)
-    sprite.bitmap.font.size = DICT::HINT_FONT_SIZE
-    sprite.oy = 0
-    sprite.x = @viewport_info.rect.x
-    sprite.y = @viewport_info.rect.y + @viewport_info.rect.height
-  end
-  #--------------------------------------------------------------------------
-  # ● 重绘翻页提示精灵
-  #--------------------------------------------------------------------------
-  def redraw_sprite_info_hint
-    s = @sprite_info_hint
-    s.bitmap.clear
-    t = nil
-    if @type_info_page == :scroll
-      t = "SHIFT键 - 手动翻页"
-    elsif @type_info_page == :page
-      t = "Q键 - 上一页 | SHIFT键 - 自动滚动 | W键 - 下一页"
-    end
-    s.bitmap.draw_text(0, 0, s.width, s.height, t, 1) if t
-  end
-  #--------------------------------------------------------------------------
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    @sprites_category.each { |s| s.bitmap.dispose; s.dispose }
+    @spriteset_info.dispose
+    @spriteset_category.dispose
     instance_variables.each do |varname|
       ivar = instance_variable_get(varname)
       if ivar.is_a?(Sprite)
@@ -580,7 +547,6 @@ class << DICT
         ivar.dispose
       end
     end
-    @viewport_info.dispose
     @window_list.dispose
   end
   #--------------------------------------------------------------------------
@@ -589,10 +555,7 @@ class << DICT
   def update
     loop do
       update_basic
-      update_key_mouse
       update_key
-      update_key_result
-      update_info
       break if update_exit?
     end
   end
@@ -604,130 +567,12 @@ class << DICT
     Input.update
   end
   #--------------------------------------------------------------------------
-  # ● 更新按键（鼠标）
-  #--------------------------------------------------------------------------
-  def update_key_mouse
-    if $imported["EAGLE-MouseEX"]
-      @sprites_category.each do |v|
-        if MOUSE_EX.up?(:ML) && v.mouse_in?
-          @index_category = v.i 
-          @refresh = true
-          break
-        end
-      end
-    end
-  end
-  #--------------------------------------------------------------------------
   # ● 更新按键
   #--------------------------------------------------------------------------
   def update_key
-    if Input.trigger?(:LEFT)
-      @refresh = true
-      @index_category -= 1
-      @index_category = @sprites_category.size - 1 if @index_category < 0
-    elsif Input.trigger?(:RIGHT)
-      @refresh = true
-      @index_category += 1
-      @index_category = 0 if @index_category >= @sprites_category.size
-    end
+    @spriteset_category.update
     @window_list.update
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新按键结果
-  #--------------------------------------------------------------------------
-  def update_key_result
-    if @refresh
-      @sprites_category.each_with_index do |s, i|
-        s.opacity = i == @index_category ? 255 : 130
-      end
-      k = @sprites_category[@index_category].key
-      @window_list.data = @data_category[k]
-      @window_list.category = k
-      @window_list.activate.select_last
-      @refresh = false
-    end
-    cur = @window_list.item
-    if @data_last_draw != cur
-      @data_last_draw = cur
-      draw_info(DICT::TEXT_WAIT)
-      @count_last_draw = DICT::TIME_WAIT
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新信息文本
-  #--------------------------------------------------------------------------
-  def update_info
-    @count_last_draw -= 1
-    if @count_last_draw == 0
-      cur = @window_list.item
-      $game_system.eagle_dict_new.delete(cur)
-      t = DICT.text(cur)
-      draw_info(t)
-      redraw_sprite_info_hint if @sprite_info_view_h < @sprite_info.height
-    end
-    if @count_last_draw < 0 && @sprite_info_view_h < @sprite_info.height
-      update_info_page
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制信息文本
-  #--------------------------------------------------------------------------
-  def draw_info(t)
-    @sprite_info.bitmap.clear
-    ps = { :font_size => DICT::INFO_FONT_SIZE,
-      :x0 => 0, :y0 => 0, :lhd => 2, :w => @sprite_info.width }
-    d = Process_DrawTextEX.new(t, ps, @sprite_info.bitmap)
-    d.run(false)
-    if d.height > @sprite_info.height
-      b = Bitmap.new(@sprite_info.width, d.height + 10)
-      d.bind_bitmap(b, true)
-      @sprite_info.bitmap = b
-    end
-    d.run(true)
-    @viewport_info.oy = 0
-    @count_last_view = 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新信息文本的翻页
-  #--------------------------------------------------------------------------
-  def update_info_page
-    if Input.trigger?(:A)
-      if @type_info_page == :scroll
-        @type_info_page = :page
-        @viewport_info.oy = 0
-        @count_last_view = 0
-      else
-        @type_info_page = :scroll
-        @count_last_view = 120
-      end
-      redraw_sprite_info_hint
-    end
-    if @type_info_page == :page
-      if Input.trigger?(:L)
-        return if @viewport_info.oy - @sprite_info_view_h < 0
-        @viewport_info.oy -= @sprite_info_view_h
-      elsif Input.trigger?(:R)
-        return if @viewport_info.oy + @sprite_info_view_h > @sprite_info.height
-        @viewport_info.oy += @sprite_info_view_h
-      end
-      return
-    end
-    if @type_info_page == :scroll # 更新自动滚动
-      @count_last_view += 1
-      # 当文字底移动到顶部位置时，重置回开头
-      if @viewport_info.oy + @sprite_info_view_h >
-         @sprite_info.height + @sprite_info_view_h - 24
-        @viewport_info.oy = 0
-        @count_last_view = 0
-      else
-        # 等待该帧数后，开始滚动
-        return if @count_last_view < 180
-        if @count_last_view % 4 == 0  # 每隔几帧滚动1像素
-          @viewport_info.oy += 1
-        end
-      end
-      return
-    end
+    @spriteset_info.update
   end
   #--------------------------------------------------------------------------
   # ● 退出
@@ -737,8 +582,9 @@ class << DICT
     Input.trigger?(:B)
   end
 end
+
 #===============================================================================
-# ○ Sprite_EagleDict_Category
+# ○ 显示单个类别的精灵
 #===============================================================================
 class Sprite_EagleDict_Category < Sprite
   attr_reader :key, :i
@@ -757,7 +603,132 @@ class Sprite_EagleDict_Category < Sprite
   end
 end
 #===============================================================================
-# ○ Window_EagleDict_List
+# ○ 显示全部类别的精灵组
+#===============================================================================
+class Spriteset_EagleDict_Category
+  attr_accessor  :index
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  def initialize(data_category)
+    @index = 0
+    @data_category = data_category
+    @sprites = []
+    i = 0
+    i_w = Graphics.width / @data_category.keys.size
+    @data_category.each do |k, v|
+      s = Sprite_EagleDict_Category.new(k, i)
+      s.x = i_w /2 + i_w * i  # 横向排列
+      @sprites.push(s)
+      i += 1
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置不透明度
+  #--------------------------------------------------------------------------
+  def opacity; @sprites[0].opacity; end
+  def opacity=(v)
+    @sprites.each_with_index do |s, i|
+      s.opacity = v
+      s.opacity = [v, max_opacity_unselect].min if i != @index
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置显示位置
+  #--------------------------------------------------------------------------
+  def set_pos(y, z)
+    @sprites.each do |s|
+      s.y = y if y
+      s.z = z if z
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取类别的y
+  #--------------------------------------------------------------------------
+  def y 
+    @sprites[0].y
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取类别的高度
+  #--------------------------------------------------------------------------
+  def height
+    @sprites[0].height
+  end
+  #--------------------------------------------------------------------------
+  # ● 绑定词条列表窗口
+  #--------------------------------------------------------------------------
+  def window_list=(w)
+    @window_list = w
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    i = @index
+    update_index
+    refresh if i != @index
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新选项切换
+  #--------------------------------------------------------------------------
+  def update_index
+    if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:ML)
+      @sprites.each do |s|
+        if s.mouse_in?
+          Sound.play_cursor
+          return @index = s.i 
+        end
+      end
+    end
+    if Input.trigger?(:LEFT)
+      Sound.play_cursor
+      @index -= 1
+      @index = @sprites.size - 1 if @index < 0
+    elsif Input.trigger?(:RIGHT)
+      Sound.play_cursor
+      @index += 1
+      @index = 0 if @index >= @sprites.size
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 刷新
+  #--------------------------------------------------------------------------
+  def refresh
+    @sprites.each_with_index do |s, i|
+      s.opacity = i == @index ? 255 : max_opacity_unselect
+    end
+    if @window_list
+      k = current_category
+      @window_list.data = @data_category[k]
+      @window_list.category = k
+      @window_list.activate.select_last
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 对于未被选择的分类，最大不透明度
+  #--------------------------------------------------------------------------
+  def max_opacity_unselect
+    130
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取当前类别的名称
+  #--------------------------------------------------------------------------
+  def current_category
+    @sprites[@index].key
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  def dispose
+    @sprites.each do |s|
+      s.bitmap.dispose
+      s.dispose
+    end
+  end
+end
+
+#===============================================================================
+# ○ 显示词条列表的窗口
 #===============================================================================
 class Window_EagleDict_List < Window_Selectable
   #--------------------------------------------------------------------------
@@ -875,5 +846,162 @@ class Window_EagleDict_List < Window_Selectable
     contents.font.size = 12
     draw_text(x + 4, y, 60, line_height, "新", 0)
     contents.font.size = s
+  end
+end
+
+#===============================================================================
+# ○ 显示词条具体内容的精灵组
+#===============================================================================
+class Spriteset_EagleDict_Info
+  #--------------------------------------------------------------------------
+  # ● 初始化
+  #--------------------------------------------------------------------------
+  def initialize(viewport, window_list)
+    @viewport_info = viewport
+    @window_list = window_list
+    
+    # 绘制内容的精灵
+    @sprite_info = Sprite.new(@viewport_info)
+    @sprite_info.bitmap = Bitmap.new(@viewport_info.rect.width, @viewport_info.rect.height)
+
+    # 绘制翻页提示的精灵
+    @sprite_info_hint = Sprite.new
+    @sprite_info_hint.z = @viewport_info.z + 1
+    set_sprite_info_hint(@sprite_info_hint)
+
+    @data_last_draw = nil  # 上一次绘制的词条
+    @count_last_draw = 0   # 绘制倒计时计数，防止切换过快时立即绘制导致的卡顿
+    @sprite_info_view_h = @viewport_info.rect.height  # 可显示文本的高度
+    @type_info_page = :scroll # 文本翻页方式
+                          # :scroll为自动滚动，:page 为翻页
+    @count_last_view = 0 # 自动滚动用计数
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置不透明度
+  #--------------------------------------------------------------------------
+  def opacity; @sprite_info.opacity; end
+  def opacity=(v)
+    @sprite_info.opacity = v
+    @sprite_info_hint.opacity = v
+  end
+  #--------------------------------------------------------------------------
+  # ● 释放
+  #--------------------------------------------------------------------------
+  def dispose
+    @sprite_info.bitmap.dispose
+    @sprite_info.dispose
+    @sprite_info_hint.bitmap.dispose
+    @sprite_info_hint.dispose
+    @viewport_info.dispose
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置翻页提示精灵
+  #--------------------------------------------------------------------------
+  def set_sprite_info_hint(sprite)
+    sprite.bitmap = Bitmap.new(@viewport_info.rect.width, 18)
+    sprite.bitmap.font.size = DICT::HINT_FONT_SIZE
+    sprite.oy = 0
+    sprite.x = @viewport_info.rect.x
+    sprite.y = @viewport_info.rect.y + @viewport_info.rect.height
+  end
+  #--------------------------------------------------------------------------
+  # ● 重绘翻页提示精灵
+  #--------------------------------------------------------------------------
+  def redraw_sprite_info_hint
+    s = @sprite_info_hint
+    s.bitmap.clear
+    t = nil
+    if @type_info_page == :scroll
+      t = "SHIFT键 - 手动翻页"
+    elsif @type_info_page == :page
+      t = "Q键 - 上一页 | SHIFT键 - 自动滚动 | W键 - 下一页"
+    end
+    s.bitmap.draw_text(0, 0, s.width, s.height, t, 1) if t
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新
+  #--------------------------------------------------------------------------
+  def update
+    # 检查当前需要显示内容的词条
+    cur = @window_list.item
+    if @data_last_draw != cur
+      @data_last_draw = cur
+      draw_info(DICT::TEXT_WAIT)
+      @count_last_draw = DICT::TIME_WAIT
+      return
+    end
+    # 倒计时结束时绘制词条内容
+    @count_last_draw -= 1
+    if @count_last_draw == 0
+      cur = @window_list.item
+      $game_system.eagle_dict_new.delete(cur)
+      t = DICT.text(cur)
+      draw_info(t)
+      redraw_sprite_info_hint if @sprite_info_view_h < @sprite_info.height
+    end
+    # 如果内容过长，开启翻页或自动滚动
+    if @count_last_draw < 0 && @sprite_info_view_h < @sprite_info.height
+      update_info_page
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制信息文本
+  #--------------------------------------------------------------------------
+  def draw_info(t)
+    @sprite_info.bitmap.clear
+    ps = { :font_size => DICT::INFO_FONT_SIZE,
+      :x0 => 0, :y0 => 0, :lhd => 2, :w => @sprite_info.width-12 }
+    d = Process_DrawTextEX.new(t, ps, @sprite_info.bitmap)
+    d.run(false)
+    if d.height > @sprite_info.height
+      b = Bitmap.new(@sprite_info.width, d.height + 10)
+      d.bind_bitmap(b, true)
+      @sprite_info.bitmap = b
+    end
+    d.run(true)
+    @viewport_info.oy = 0
+    @count_last_view = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新信息文本的翻页
+  #--------------------------------------------------------------------------
+  def update_info_page
+    if Input.trigger?(:A)
+      if @type_info_page == :scroll
+        @type_info_page = :page
+        @viewport_info.oy = 0
+        @count_last_view = 0
+      else
+        @type_info_page = :scroll
+        @count_last_view = 120
+      end
+      redraw_sprite_info_hint
+    end
+    if @type_info_page == :page
+      if Input.trigger?(:L)
+        return if @viewport_info.oy - @sprite_info_view_h < 0
+        @viewport_info.oy -= @sprite_info_view_h
+      elsif Input.trigger?(:R)
+        return if @viewport_info.oy + @sprite_info_view_h > @sprite_info.height
+        @viewport_info.oy += @sprite_info_view_h
+      end
+      return
+    end
+    if @type_info_page == :scroll # 更新自动滚动
+      @count_last_view += 1
+      # 当文字底移动到顶部位置时，重置回开头
+      if @viewport_info.oy + @sprite_info_view_h >
+         @sprite_info.height + @sprite_info_view_h - 24
+        @viewport_info.oy = 0
+        @count_last_view = 0
+      else
+        # 等待该帧数后，开始滚动
+        return if @count_last_view < 180
+        if @count_last_view % 4 == 0  # 每隔几帧滚动1像素
+          @viewport_info.oy += 1
+        end
+      end
+      return
+    end
   end
 end

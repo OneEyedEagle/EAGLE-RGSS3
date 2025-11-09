@@ -2,9 +2,9 @@
 # ■ 简易地图放大 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MapZoom"] = "1.0.2"
+$imported["EAGLE-MapZoom"] = "1.0.3"
 #==============================================================================
-# - 2025.5.11.13 修改为以地图格子中心为放大基准点
+# - 2025.11.6.0 修改以方便兼容
 #==============================================================================
 # - 本插件新增了一个简单的地图放大功能
 #   本质为实时截图，并放大显示该截图
@@ -61,6 +61,13 @@ $imported["EAGLE-MapZoom"] = "1.0.2"
 #
 #      $game_map.zoom = 100
 #
+#----------------------------------------------------------------------------
+# 【高级】
+#
+# - 获取地图放大的中心点坐标（不动点）（屏幕坐标）
+#
+#      x, y = $game_map.check_zoom_center
+#
 #==============================================================================
 
 module EAGLE
@@ -99,6 +106,31 @@ end
 
 class Game_Map
   attr_accessor  :zoom, :zoom_center
+  #--------------------------------------------------------------------------
+  # ● 获取放大的中心点
+  #--------------------------------------------------------------------------
+  def check_zoom_center
+    v = $game_map.zoom_center
+    if v.is_a?(Array)
+      _x = (v[0].to_i - $game_map.display_x) * 32 + 16
+      _y = (v[1].to_i - $game_map.display_y) * 32 + 16
+      return _x, _y
+    end
+    case v
+    when -1, nil
+      _x = Graphics.width / 2
+      _y = Graphics.height / 2
+    when 0
+      e = $game_player
+      _x = e.screen_x
+      _y = e.screen_y
+    else
+      e = $game_map.events[v] rescue $game_player
+      _x = e.screen_x
+      _y = e.screen_y
+    end
+    return _x, _y
+  end
 end
 
 class Spriteset_Map
@@ -150,7 +182,7 @@ class Spriteset_Map
       end
     end
     if @eagle_zoom[:v] > 100
-      _x, _y = check_zoom_center
+      _x, _y = $game_map.check_zoom_center
       if _x > Graphics.width ||_x < 0 || _y > Graphics.height || _y < 0
         $game_map.zoom = 100
         $game_map.zoom_center = nil
@@ -161,31 +193,6 @@ class Spriteset_Map
       s.bitmap.dispose if s.bitmap
       s.bitmap = SceneManager.snapshot_custom(get_snap_objs)
     end
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理放大中心点
-  #--------------------------------------------------------------------------
-  def check_zoom_center
-    v = $game_map.zoom_center
-    if v.is_a?(Array)
-      _x = (v[0].to_i - $game_map.display_x) * 32 + 16
-      _y = (v[1].to_i - $game_map.display_y) * 32 + 16
-      return _x, _y
-    end
-    case v
-    when -1, nil
-      _x = Graphics.width / 2
-      _y = Graphics.height / 2
-    when 0
-      e = $game_player
-      _x = e.screen_x
-      _y = e.screen_y
-    else
-      e = $game_map.events[v] rescue $game_player
-      _x = e.screen_x
-      _y = e.screen_y
-    end
-    return _x, _y
   end
   #--------------------------------------------------------------------------
   # ● 获取放大时应被截图的内容
