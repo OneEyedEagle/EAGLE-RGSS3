@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-MessageLog"] = "1.2.0"
 #==============================================================================
-# - 2025.11.7.23 结构修改，方便扩展
+# - 2025.11.11.19 结构修改，方便扩展
 #==============================================================================
 # - 本插件新增了对 $game_message 的对话文本的记录
 #------------------------------------------------------------------------------
@@ -568,10 +568,10 @@ class Spriteset_MsgLog
   # ● UI-更新移动速度
   #--------------------------------------------------------------------------
   def ui_update_speed
-    if Input.trigger?(:DOWN)
+    if Input.trigger?(:UP)
       @speed = -1
       @d_speed_count = 0
-    elsif Input.trigger?(:UP)
+    elsif Input.trigger?(:DOWN)
       @speed = +1
       @d_speed_count = 0
     end
@@ -585,8 +585,8 @@ class Spriteset_MsgLog
       d = DOWN_LIMIT_Y - (@sprites[-1].y - @sprites[-1].oy)
       @sprites.each { |s| s.move_xy(0, d) }
     end
-    if Input.press?(:DOWN)
-      if @last_key == :DOWN
+    if Input.press?(:UP)
+      if @last_key == :UP
         @ad_speed_count -= 1
         if @ad_speed_count <= 0
           @ad_speed_count = @ad_speed
@@ -596,9 +596,9 @@ class Spriteset_MsgLog
       else
         @ad_speed_count = @ad_speed
       end
-      @last_key = :DOWN
-    elsif Input.press?(:UP)
-      if @last_key == :UP
+      @last_key = :UP
+    elsif Input.press?(:DOWN)
+      if @last_key == :DOWN
         @ad_speed_count -= 1
         if @ad_speed_count <= 0
           @ad_speed_count = @ad_speed
@@ -608,7 +608,7 @@ class Spriteset_MsgLog
       else
         @ad_speed_count = @ad_speed
       end
-      @last_key = :UP
+      @last_key = :DOWN
     end
   end
   #--------------------------------------------------------------------------
