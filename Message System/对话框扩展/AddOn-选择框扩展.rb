@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "2.0.0"  # 2025.8.26.24
+$imported["EAGLE-ChoiceEX"] = "2.0.1"  # 2025.12.6.12
 =begin
 ===============================================================================
 
@@ -37,6 +37,8 @@ $imported["EAGLE-ChoiceEX"] = "2.0.0"  # 2025.8.26.24
         -                                                             -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2025.12.6.12 V2.0.1 修复 cdx 和 cdy 未使光标偏移的bug
      ----------------------------------------------------------------------
      - 2025.8.26.23 V2.0.0 优化注释
      ----------------------------------------------------------------------
@@ -203,7 +205,7 @@ module MESSAGE_EX
 #  ◇ 预设参数          ▼ [param]“参数串”一览（字母+数字组合）
 
   CHOICE_PARAMS_INIT = {
-    :i     => 0,      # 【快捷】【重置】选择框光标初始所在的选择支
+    :i     => -1,      # 【快捷】【重置】选择框光标初始所在的选择支
                       #  * 从0开始，-1代表初始不选择（按选择框中实际显示）
 #  ·窗口属性
     :opa   => 255,    # 选择框的背景不透明度（默认255）
@@ -217,7 +219,7 @@ module MESSAGE_EX
                       #  * 嵌入时显示原点固定为 7左上角
     :x     => nil,    # 所在屏幕坐标（x,y）（默认nil不设置）
     :y     => nil,
-    :do    => 0,      # 显示位置类型（设置后x、y将无效）
+    :do    => 9,      # 显示位置类型（设置后x、y将无效）
                       #  * 0 = 嵌入
                       #  * 1~9 = 对话框外边界的九宫格位置，对话框关闭时无效
                       #  * -1~-9 = 屏幕外框的九宫格位置
@@ -529,24 +531,24 @@ class Window_EagleChoiceList < Window_Command
     n_col  = col_max # 列数
     n_line = n / n_col + (n % n_col > 0 ? 1 : 0) # 行数
     n_line.times do |i|
-      v = 0
+      v = 0 
       n_col.times do |j|
         ci = i * n_col + j
         break if ci >= n
         h_ = @choices_info[ci][:height]
         v = h_ if h_ > v
       end
-      @win_info[:line_h][i] = v # 每一行的高度
+      @win_info[:line_h][i] = choice_params[:cdy] + v # 每一行的高度
     end
     n_col.times do |j|
-      v = 0
+      v = 0 
       n_line.times do |i|
         ci = i * n_col + j
         break if ci >= n
         w_ = @choices_info[ci][:width]
         v = w_ if w_ > v
       end
-      @win_info[:col_w][j] = v # 每一列的宽度
+      @win_info[:col_w][j] = choice_params[:cdx] + v # 每一列的宽度
     end
 
     # 窗口高度
@@ -703,7 +705,7 @@ class Window_EagleChoiceList < Window_Command
     begin
       i_line = index / col_max # 行号
       i_col = index % col_max # 列号
-      rect.width = @win_info[:col_w][i_col]  # 计算出的所需宽度
+      rect.width = @win_info[:col_w][i_col] # 计算出的所需宽度
       real_w = (self.width-standard_padding * 2)/col_max-spacing # 实际可用宽度
       if real_w > @max_col_w
         # 选项可用宽度大于最大的文本宽度，则每一列的宽度都一致
@@ -718,7 +720,7 @@ class Window_EagleChoiceList < Window_Command
         rect.y += spacing_line if rect.y > 0
         rect.height = @win_info[:line_h][i_line]
       else # 此时，每个选项都是最大的行高
-        rect.y = index * @max_line_h + index * spacing_line
+        rect.y = index * (@max_line_h + spacing_line)
         rect.height = @max_line_h
       end
     rescue
@@ -736,14 +738,16 @@ class Window_EagleChoiceList < Window_Command
     s.set_enabled(command_enabled?(index))
     s.set_chosen(command_chosen?(index))
     # 绘制选择支文本
-    dw = rect.width - @choices_info[index][:width]
+    #  ※ 往右偏移导致的新增宽度，不应计入文字居中显示的范畴
+    dw = rect.width - @choices_info[index][:width] - choice_params[:cdx]
     case @choices_info[index][:extra][:ali] || choice_params[:ali]
     when 0; x_ = 0
     when 1; x_ = dw / 2
     when 2; x_ = dw
     end
+    #  ※ 往下偏移导致的新增高度，不应计入文字居中显示的范畴
     s.draw_text_ex(x_ + choice_params[:cdx], choice_params[:cdy],
-      rect.height, command_name(index))
+      rect.height - choice_params[:cdy], command_name(index))
     # 设置计时器
     if @choices_info[index][:extra][:ri]
       t = @choices_info[index][:extra][:rt] || 5
