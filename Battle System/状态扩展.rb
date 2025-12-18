@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.3.0"
+$imported["EAGLE-StateEX"] = "1.3.1"
 #==============================================================================
-# - 2025.12.17.20 优化注释
+# - 2025.12.18.22 新增直接触发角色的状态对象的伤害计算
 #==============================================================================
 # - 本插件扩展了默认战斗中的状态，如需兼容其他战斗系统，请自行按注释修改
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -144,15 +144,11 @@ FLAG_NO_RGSS3_STATE = true
 #------------------------------------------------
 # - 战斗者Battler 新增方法：
 #
-#  对于默认状态：
-#
-#    .state_level(state_id)               →  获取状态已附加的层数
-#    .reduce_state_level(state_id, v)     →  指定状态减少 v 层
+#    .state_level(state_id)               →  获取 默认状态 的已附加层数
+#    .reduce_state_level(state_id, v)     →  指定 默认状态 减少 v 层
 #                              如果v为 nil 或不传入或大于已有层数，则消除全部层数
 #
-#  对于状态对象：
-#
-#    .state_ex_level(state_id)            →  获取状态已附加的层数
+#    .state_ex_level(state_id)            →  获取 状态对象 的已附加层数
 #
 #---------------------------------------------------------------------
 # △ 状态的最多同时存在个数                              【仅状态对象】
@@ -182,8 +178,6 @@ FLAG_NO_RGSS3_STATE = true
 #------------------------------------------------
 # - 战斗者Battler 新增方法：
 #
-#  对于状态对象：
-#  
 #    .state_ex_sum(state_id)         →  获取已附加的状态对象的个数
 #    .state_ex?(state_id, v=1)       →  是否已附加至少v个状态对象
 #
@@ -265,6 +259,17 @@ FLAG_NO_RGSS3_STATE = true
 #
 #  5. 当前仅兼容了YEA-Ace Battle Engine的伤害数字pop显示，
 #     如果你有其他显示伤害方式需要兼容，请在 process_timing_formula 方法中添加。
+#
+#------------------------------------------------
+# - 战斗者Battler 新增方法：
+#
+#    .trigger_state_ex(state_id, timing)   → 触发指定状态对象指定类型的伤害计算
+#            state_id 为 nil 时，将触发全部状态对象
+#                     为 数字 时，将触发ID为该数字的状态对象
+#                     为 数组 时，将触发ID在该数组内的状态对象
+#            timing   为 nil 时，将触发状态的全部类型的伤害计算
+#                     为 数字 时，将触发类型为该数字的伤害计算
+#                     为 数组 时，将触发类型在该数组内的伤害计算
 #
 #---------------------------------------------------------------------
 # △ 状态的自动减少时机                          【RGSS状态和状态对象】
@@ -557,7 +562,7 @@ module STATE_EX
   def self.state_ex_when_trigger(state_ex) # 状态被触发时执行的内容 
     # 此时 state_ex.battler.result.hp_damage 为已经造成的伤害值或治疗值
     # 兼容：YEA战斗系统的伤害pop
-    state_ex.battler.make_damage_popups(a) if $imported["YEA-BattleEngine"]
+    state_ex.battler.make_damage_popups(state_ex.battler_from) if $imported["YEA-BattleEngine"]
   end
   
 #==============================================================================
@@ -731,6 +736,12 @@ class Data_StateEX
       @battler.hp -= value
     end
     STATE_EX.state_ex_when_trigger(self)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取绑定了伤害计算的时机数字的数组
+  #--------------------------------------------------------------------------
+  def timings
+    state.timing_evals.keys
   end
 end
 
@@ -1028,6 +1039,24 @@ class Game_Battler < Game_BattlerBase
       @result.removed_states.push(state_id).uniq!
       if $imported["YEA-BattleEngine"]
         make_state_popup(state_id, :rem_state)
+      end
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 触发状态对象的伤害计算（计数不减少）
+  #--------------------------------------------------------------------------
+  def trigger_state_ex(state_id=nil, timing=nil)
+    @states_ex.each do |s|
+      if (state_id.is_a?(Integer) and state_id != s.id) or 
+         (state_id.is_a?(Array) and !state_id.include?(s.id))
+        next
+      end
+      s.timings.each do |t|
+        if timing == nil or
+          (timing.is_a?(Integer) and timing == t) or
+          (timing.is_a?(Array) and timing.include?(t))
+          s.process_timing_formula(t)
+        end
       end
     end
   end
