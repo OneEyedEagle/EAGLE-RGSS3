@@ -4,9 +4,9 @@
 # ※ 推荐同时使用【组件-位图绘制转义符文本 by老鹰】以获得更好的文本绘制效果
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MsgKeywordInfo"] = "1.1.4"
+$imported["EAGLE-MsgKeywordInfo"] = "1.1.5"
 #==============================================================================
-# - 2022.9.12.20 重命名
+# - 2026.1.5.23 本插件的词条设置修改为与词条系统共存
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细介绍
 #------------------------------------------------------------------------------
@@ -24,7 +24,7 @@ $imported["EAGLE-MsgKeywordInfo"] = "1.1.4"
 #
 # - 本插件已经兼容了【词条系统（文字版）by老鹰】。
 #
-#   当同时使用了该插件，将无视本插件的关键词预设信息，而使用词条的预设信息。
+#   当同时使用了该插件，将首先查找词条的预设信息，若未找到，则取本插件的关键词信息。
 #
 # - 为了解锁词条的信息词，可以使用\key[关键词|信息词1|信息词2]的方式进行转义符编写，
 #
@@ -129,7 +129,7 @@ module MESSAGE_EX
   # ● 获取关键词的信息文本
   #--------------------------------------------------------------------------
   def self.get_keyword_info(keyword)
-    if $imported["EAGLE-Dictionary"]
+    if $imported["EAGLE-Dictionary"] and DICT::DATA.has_key?(keyword)
       t = DICT.text(keyword)
       return t
     end
@@ -244,7 +244,7 @@ class Window_EagleMessage
         s = []; k = $1
       end
       c1 = k[0]; c2 = k[1..-1]; @eagle_keywords.push(k)
-      if $imported["EAGLE-Dictionary"]
+      if $imported["EAGLE-Dictionary"] and DICT::DATA.has_key?(k)
         DICT.add(k, s)
       end
       t =  MESSAGE_EX::KEYWORD_PREFIX

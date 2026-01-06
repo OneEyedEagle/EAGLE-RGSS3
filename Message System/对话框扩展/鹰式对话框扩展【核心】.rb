@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.0.4"
+$imported["EAGLE-MessageEX"] = "2.0.5"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.0.4"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.1.3.0   V2.0.5 修复因Addon预设脸图和姓名动画而导致脸图宽度未重置的bug
      ----------------------------------------------------------------------
      - 2025.11.13.0 V2.0.4 优化缺少前置的报错
      ----------------------------------------------------------------------
@@ -3059,12 +3061,13 @@ class Window_EagleMessage < Window_Base
     @eagle_sprite_face.motion(:fade_out)
     MESSAGE_EX.facepool_push(@eagle_sprite_face) # 由精灵池接管
     @eagle_sprite_face = nil
+    @eagle_face_w = @eagle_face_h = 0
   end
   #--------------------------------------------------------------------------
   # ● 脸图占用的宽度
   #--------------------------------------------------------------------------
   def eagle_face_width
-    #return 0 if !game_message.face?
+    return 0 if !game_message.face?
     return 0 if face_params[:z] < 0
     return @eagle_face_w > 0 ? @eagle_face_w + face_params[:dw] : 0
   end
