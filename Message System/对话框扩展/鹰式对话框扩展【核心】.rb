@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.0.5"
+$imported["EAGLE-MessageEX"] = "2.0.6"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.0.5"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.1.8.12  V2.0.6 新增对话框宽度最大值的设置，避免对话框宽度大于屏幕
      ----------------------------------------------------------------------
      - 2026.1.3.0   V2.0.5 修复因Addon预设脸图和姓名动画而导致脸图宽度未重置的bug
      ----------------------------------------------------------------------
@@ -1490,6 +1492,7 @@ class Window_EagleMessage < Window_Base
       w = [w, eagle_name_width].max  # 确保姓名框的嵌入
       w += eagle_face_width          # 确保脸图有地方显示
       w += standard_padding * 2      # 增加边框
+      w = [MESSAGE_EX::WINDOW_MAX_WIDTH, w].min  # 最大宽度
       return w
     end
     return window_width
@@ -2245,6 +2248,7 @@ class Window_EagleMessage < Window_Base
   #--------------------------------------------------------------------------
   def recreate_contents_for_charas
     w = @eagle_charas_w + eagle_window_w_empty
+    w = [eagle_charas_max_w, w].min if MESSAGE_EX::WINDOW_MAX_WIDTH > 0
     h = @eagle_charas_h + eagle_window_h_empty
     w = 1 if w == 0
     h = 1 if h == 0
