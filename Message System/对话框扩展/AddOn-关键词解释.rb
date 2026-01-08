@@ -4,9 +4,9 @@
 # ※ 推荐同时使用【组件-位图绘制转义符文本 by老鹰】以获得更好的文本绘制效果
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MsgKeywordInfo"] = "1.1.5"
+$imported["EAGLE-MsgKeywordInfo"] = "1.1.6"
 #==============================================================================
-# - 2026.1.5.23 本插件的词条设置修改为与词条系统共存
+# - 2026.1.8.12 增加对按键提示精灵位置的修改
 #==============================================================================
 # - 本插件新增 \key[word] 转义符，对话框绘制完成后，可以逐个查看 word 的详细介绍
 #------------------------------------------------------------------------------
@@ -32,6 +32,7 @@ $imported["EAGLE-MsgKeywordInfo"] = "1.1.5"
 #
 #------------------------------------------------------------------------------
 # 【高级：更改关键词的信息文本】
+# （仅对本插件设置的信息文本有效，词条系统的无法更改）
 #
 # - 利用脚本对指定关键词的信息文本进行增减（本质为将多个关键词的文本进行叠加）
 #
@@ -77,6 +78,18 @@ module MESSAGE_EX
   #--------------------------------------------------------------------------
   KEYWORD_HINT1 = "SHIFT"
   KEYWORD_HINT2 = "查看"
+  #--------------------------------------------------------------------------
+  # ● 【设置】提示文本的所在位置
+  #    0   → 按键时将显示帮助的提示词的词首
+  #  1 ~ 9 → 对话框的九宫格位置
+  # -1 ~-9 → 屏幕上的九宫格位置
+  #--------------------------------------------------------------------------
+  KEYWORD_HINT_POS = 0
+  # 所在位置的额外增加值
+  KEYWORD_HINT_DX  = 0
+  KEYWORD_HINT_DY  = 0
+  # 是否绘制小箭头 ( true / false )
+  KEYWORD_HINT_TAG = true
 
   #--------------------------------------------------------------------------
   # ● 【设置】定义关键词的信息文本
@@ -324,11 +337,13 @@ class Window_Keyword_Info < Window_Base
     @sprite_hint.bitmap.draw_text(4 + 2+r1.width+2 + 4, 4,
       r2.width * 2, r2.height, t2, 0)
     # 绘制底部箭头
-    @sprite_hint.bitmap.clear_rect(@sprite_hint.width / 2-3,
-      @sprite_hint.height-5, 7, 2)
-    [ [-3,1],[3,1], [-2,2],[2,2], [-1,3],[1,3], [0,4] ].each do |xy|
-      @sprite_hint.bitmap.set_pixel(@sprite_hint.width / 2 + xy[0],
-       @sprite_hint.height - 5 + xy[1], Color.new(255,255,255,255))
+    if MESSAGE_EX::KEYWORD_HINT_TAG
+      @sprite_hint.bitmap.clear_rect(@sprite_hint.width / 2-3,
+        @sprite_hint.height-5, 7, 2)
+      [ [-3,1],[3,1], [-2,2],[2,2], [-1,3],[1,3], [0,4] ].each do |xy|
+        @sprite_hint.bitmap.set_pixel(@sprite_hint.width / 2 + xy[0],
+         @sprite_hint.height - 5 + xy[1], Color.new(255,255,255,255))
+      end
     end
     # 底部中心为原点
     @sprite_hint.ox = @sprite_hint.width / 2
@@ -541,9 +556,7 @@ class Window_Keyword_Info < Window_Base
         return if i == i_old
       end
       @index_show = i
-      _x, _y = get_keyword_xy(@index_show)
-      @sprite_hint.x = _x
-      @sprite_hint.y = _y
+      set_hint_xy
       @sprite_hint.z = @message_window.z + 99
       @sprite_hint.opacity = 0
       @sprite_hint.visible = true
@@ -581,12 +594,31 @@ class Window_Keyword_Info < Window_Base
       end
     end
     if @index_show
-      _x, _y = get_keyword_xy(@index_show)
-      r = @message_window.eagle_chara_viewport.rect
-      @sprite_hint.x = [[_x, r.x-8].max, r.x + r.width+8].min
-      @sprite_hint.y = [[_y, r.y-8].max, r.y + r.height+8].min + @dy
+      set_hint_xy 
+      @sprite_hint.y += @dy
     end
     @count_hint += 1
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置提示按键的显示位置
+  #--------------------------------------------------------------------------
+  def set_hint_xy
+    o = MESSAGE_EX::KEYWORD_HINT_POS
+    case o
+    when 0 
+      _x, _y = get_keyword_xy(@index_show)
+      r = @message_window.eagle_chara_viewport.rect
+      _x = [[_x, r.x-8].max, r.x + r.width+8].min
+      _y = [[_y, r.y-8].max, r.y + r.height+8].min
+      @sprite_hint.x = _x
+      @sprite_hint.y = _y
+    when 1..9
+      MESSAGE_EX.reset_xy_dorigin(@sprite_hint, @message_window, o)
+    when -9..-1
+      MESSAGE_EX.reset_xy_dorigin(@sprite_hint, nil, o)
+    end
+    @sprite_hint.x += MESSAGE_EX::KEYWORD_HINT_DX
+    @sprite_hint.y += MESSAGE_EX::KEYWORD_HINT_DY
   end
   #--------------------------------------------------------------------------
   # ● 隐藏提示按键
