@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.7.3"
+$imported["EAGLE-AbilityLearn"] = "1.8.0"
 #==============================================================================
-# - 2025.9.27.13 新增更多对帮助窗口的设置
+# - 2026.1.23.22 更改为长按解锁能力，增加:active设置来允许启用/禁用已解锁的能力
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
@@ -173,19 +173,28 @@ ACTORS[0] = {  # 不要漏了花括号
   #  （注意：如果能力已经解锁，则不会再判定该出现条件。）
     :if => [] ,
   #------------------------------------------------------------------------
+  # -【可选】是否能够切换启用/禁用状态
+  #  （该设置仅对 ap>=0 的能力有效，即如果 ap=-1 则能力始终生效，无法禁用）
+  #  （若设置 false ，则解锁后始终生效）
+  #  （若设置 true ，则能点击切换启用/禁用，
+  #     每次启用将触发:eval_on，每次禁用将触发:eval_off，
+  #     但设置的 :skill、:weapon、:armor、:params 依然是始终生效，不受影响）
+  #  （对于禁用状态的能力，在判定 abi?(name) 时将返回 false ）
+    :active => false,
+  #------------------------------------------------------------------------
   # -【可选】学习后执行的脚本
-  #  （每次学习，都会执行一次这个脚本）
+  #  （每次能力解锁/启用，都会执行一次这个脚本）
   #  （可用缩写同 :if）
     :eval_on => "",
   #------------------------------------------------------------------------
   # -【可选】重置后执行的脚本
-  #  （每次重置，都会执行一次这个脚本）
+  #  （每次重置/禁用，都会执行一次这个脚本）
   #  （可用缩写同 :if）
     :eval_off => "", # 重置时执行的脚本
   #------------------------------------------------------------------------
   # -【可选】设置这个能力所绑定的开关的ID
-  #  （当能力解锁时，开关将赋值为 true；重置后，开关将赋值为 false）
-  #  （只在能力解锁或重置时进行赋值，无法保证它在游戏中途是开还是关！）
+  #  （当能力解锁/启用时，开关将赋值为 true；重置/禁用后，开关将赋值为 false）
+  #  （只在能力解锁、重置、切换启用/禁用时赋值，不保证在游戏中途是开还是关！）
     :sid => 1,
   #------------------------------------------------------------------------
   }, # 别忘了花括号，与能力 1 相对应；如果有多个能力，需要加个英语逗号进行分隔
@@ -230,6 +239,8 @@ PARAMS[0] = {  # 这里设置 0号角色 的一些参数
   #【可选】按格式在数组中填入需要额外显示的文本或图片
   #【插入文本】
   #   填入 [:text, "需要显示的字符串", [显示原点类型, x坐标, y坐标, z值], 样式]
+  #【插入矩形】
+  #   填入 [:rect, [矩形宽度,矩形高度], [显示原点类型, x坐标, y坐标, z值], 样式]
   #【插入图片】
   # （图片放置在 Graphics/System 目录下）
   #   填入 [:pic, "需要显示的图片的名称", [显示原点类型, x坐标, y坐标, z值], 样式]
@@ -364,7 +375,7 @@ module ABILITY_LEARN
   #--------------------------------------------------------------
   # 帮助窗口的位置类型
   # （0 代表随光标移动，1 代表使用固定值，-1~-9代表屏幕上的位置）
-  HELP_TEXT_POS = 0
+  HELP_TEXT_POS = -8
   #--------------------------------------------------------------
   # - HELP_TEXT_POS为 1 时生效，
   #   先设置显示原点（九宫格小键盘，如 5 代表中点，7 左上角，2 底部中点）
@@ -377,20 +388,20 @@ module ABILITY_LEARN
   #   先设置显示原点（九宫格小键盘，如 5 代表中点），
   #   再将显示原点放到HELP_TEXT_POS对应位置，
   #   如 HELP_TEXT_POS=-1 屏幕左下角，HELP_TEXT_POS=-9 屏幕右上角
-  HELP_TEXT_POS2_O = 5
+  HELP_TEXT_POS2_O = 8
   #--------------------------------------------------------------
   # 是否开启位置镜像
   # （HELP_TEXT_POS=0 时无效）
-  # （如果开启，当帮助窗口盖住能力图标时，会将帮助窗口镜像移动到另一侧）
-  HELP_TEXT_MIRROR_X = true
-  HELP_TEXT_MIRROR_Y = false
+  # （如果为 true ，则帮助窗口盖住能力图标时，会将帮助窗口镜像移动到另一侧）
+  HELP_TEXT_MIRROR_X = false
+  HELP_TEXT_MIRROR_Y = true
   #--------------------------------------------------------------
   # 帮助窗口的位置偏移值
   # （HELP_TEXT_POS=0 时无效）
   # （HELP_TEXT_POS=1 时给xy坐标分别增加该值）
   # （如果开启了位置镜像，且发生了镜像，则变成xy坐标分别减少该值）
   HELP_TEXT_POS_DX = 0
-  HELP_TEXT_POS_DY = 0
+  HELP_TEXT_POS_DY = +30
   #--------------------------------------------------------------
   # 帮助窗口中，对应:ap>=0的能力，要求前的标题文本
   HELP_TEXT_REQUIRE  = " >> 学习要求："
@@ -429,6 +440,47 @@ module ABILITY_LEARN
   HELP_TEXT_NO_LEARN = "未学习"
   
   #--------------------------------------------------------------------------
+  # ○【常量】设置：能力解锁/升级的按键提示UI
+  #--------------------------------------------------------------------------
+  # 按键提示文本的字体大小
+  KEYHINT_TEXT_FONT_SIZE = 16
+  # 按键提示文本的 左右留空 和 上下留空
+  KEYHINT_TEXT_MARGIN_LR = 8
+  KEYHINT_TEXT_MARGIN_UD = 4
+  # 能力可以解锁时，显示在能力图标下面的按键提示文本
+  KEYHINT_TEXT_UNLOCK  = "长按解锁"
+  # 能力可以升级时，显示在能力图标下面的按键提示文本
+  KEYHINT_TEXT_LEVELUP = "长按升级"
+  # 解锁/升级前需要长按蓄力的帧数
+  KEYHINT_COUNT = 60
+  # 解锁/升级时的背景默认颜色
+  KEYHINT_COLOR_BG   = Color.new(0,0,0,100)
+  # 解锁/升级时的背景填充颜色
+  KEYHINT_COLOR_FILL = Color.new(255,255,255,150)
+  
+  #--------------------------------------------------------------------------
+  # ○【常量】设置：能力启用/禁用的提示UI
+  # （若能力的 :active 为 true ，则解锁后显示在图标上，代表当前为启用还是禁用）
+  #--------------------------------------------------------------------------
+  # 能力启用/禁用的按键提示文本的字体大小
+  ACTIVEHINT_TEXT_FONT_SIZE = 16
+  # 能力可以切换启用/禁用时，显示在能力图标上面的按键提示文本
+  ACTIVEHINT_TEXT_ACTIVE    = "点击禁用"
+  ACTIVEHINT_TEXT_DEACTIVE  = "点击启用"
+  # 按键提示文本的背景颜色
+  ACTIVEHINT_TEXT_BG        = Color.new(0,0,0,100)
+  # 启用/禁用按钮的一半宽度
+  ACTIVEHINT_BUTTON_HALF_W  = 8
+  # 启用/禁用按钮的高度
+  ACTIVEHINT_BUTTON_H       = 8
+  # 启用/禁用按钮的背景默认颜色
+  ACTIVEHINT_COLOR_BG       = Color.new(255,255,255,255)
+  # 启用/禁用按钮在启用状态下的颜色
+  ACTIVEHINT_COLOR_ACTIVE   = Color.new(100,255,100,255)
+  # 启用/禁用按钮在禁用状态下的颜色
+  ACTIVEHINT_COLOR_DEACTIVE = Color.new(100,100,100,255)
+  
+  #--------------------------------------------------------------------------
   # ○【常量】设置：左下角的角色切换UI
   #--------------------------------------------------------------------------
   # 其中文本的字体大小
@@ -455,6 +507,23 @@ module ABILITY_LEARN
       sprite.bitmap = Bitmap.new(d.width, d.height)
       d.bind_bitmap(sprite.bitmap, true)
       d.run
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ○【常量】设置：PARAMS[:info]中额外贴到背景上的矩形的样式
+  #--------------------------------------------------------------------------
+  def self.params_rect_style(sprite, rect_array, style)
+    sprite.bitmap.dispose if sprite.bitmap
+    sprite.bitmap = Bitmap.new(rect_array[0], rect_array[1])
+    case style
+    when 0
+      if $imported["EAGLE-UtilsDrawing2"]
+        # 如果使用了【组件-形状绘制2】，则改为圆角矩形
+        sprite.bitmap.draw_rounded_rect(0,0,sprite.width,sprite.height, 10, Color.new(255,255,255,100))
+      else
+        sprite.bitmap.fill_rect(0,0,sprite.width,sprite.height,Color.new(255,255,255,100))
+        sprite.bitmap.clear_rect(2,2,sprite.width-4,sprite.height-4)
+      end
     end
   end
   #--------------------------------------------------------------------------
@@ -691,6 +760,13 @@ module ABILITY_LEARN
   def self.get_token_level(actor_id, token_id)
     ps = get_token(actor_id, token_id)
     ps[:level] || 1
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定id能力是否可以启用/禁用
+  #--------------------------------------------------------------------------
+  def self.get_token_active(actor_id, token_id)
+    ps = get_token(actor_id, token_id)
+    ps[:active] || false
   end
   #--------------------------------------------------------------------------
   # ● 获取指定id能力在on/off时触发的脚本
@@ -1058,6 +1134,21 @@ module ABILITY_LEARN
     end
     return true
   end
+  #--------------------------------------------------------------------------
+  # ● 判定点是否在精灵的矩形内
+  #--------------------------------------------------------------------------
+  def self.point_in_sprite?(x, y, sprite)
+    r = Rect.new
+    r.x = sprite.x - sprite.ox
+    r.x += sprite.viewport.rect.x if sprite.viewport
+    r.y = sprite.y - sprite.oy
+    r.y += sprite.viewport.rect.y if sprite.viewport
+    r.width = sprite.width
+    r.height = sprite.height
+    return false if x > r.x + r.width or x < r.x
+    return false if y > r.y + r.height or y < r.y
+    return true
+  end
 end
 
 #==============================================================================
@@ -1181,6 +1272,16 @@ class << ABILITY_LEARN
     # 能力说明文本的精灵
     @sprite_help = Sprite_AbilityLearn_TokenHelp.new
     @sprite_help.z = @sprite_bg.z + 80
+    
+    # 能力解锁提示文本的精灵
+    @sprite_unlock = Sprite_AbilityLearn_Unlock.new
+    @sprite_unlock.z = @sprite_bg.z + 90
+    @count_unlock = 0
+    @max_unlock = ABILITY_LEARN::KEYHINT_COUNT
+    
+    # 能力激活状态提示文本的精灵
+    @sprite_active = Sprite_AbilityLearn_Activation.new
+    @sprite_active.z = @sprite_bg.z + 90
 
     # 重置当前角色
     if actor_id && actor_id > 0
@@ -1269,6 +1370,7 @@ class << ABILITY_LEARN
     array = ps[:info] || []
     array.each do |ps|
       # [:text, "文本", [o, x, y, z], style ] 
+      # [:rect, [w,h], ...]
       # [:pic, "图片名", ...]
       type = ps[0]; t = ps[1]; pos = ps[2]; style = ps[3]
       s = Sprite_AbilityLearn_Info.new(@viewport_bg, type, t, style)
@@ -1347,10 +1449,7 @@ class << ABILITY_LEARN
   def update_ui
     loop do
       update_basic
-      update_tokens
-      update_player
-      update_unlock
-      update_actors
+      update_main
       break if finish_ui?
     end
   end
@@ -1360,6 +1459,16 @@ class << ABILITY_LEARN
   def update_basic
     Graphics.update
     Input.update
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-内容更新
+  #--------------------------------------------------------------------------
+  def update_main
+    update_tokens
+    update_player
+    update_unlock
+    update_activate
+    update_actors
   end
   #--------------------------------------------------------------------------
   # ● UI-退出？
@@ -1425,55 +1534,157 @@ class << ABILITY_LEARN
     # 更新是否有选中的token
     if @selected_token && @selected_token.overlap?(s)
       # 之前的还是被选中的状态
+      process_token_selecting
     else
       @selected_token = nil
-      @sprites_token.each do |id, st|
-        break @selected_token = st if st.overlap?(s)
-      end
+      @sprites_token.each {|id, st| break @selected_token = st if st.overlap?(s) }
       if @selected_token # 选中
-        Sound.play_cursor
-        @sprite_help.redraw(@selected_token)
-        redraw_hint(@sprite_hint)
-      elsif @sprite_help.visible  # 从选中变成没有选中任何能力
-        redraw_hint(@sprite_hint)
-        @sprite_help.visible = false
+        process_token_select
+      elsif @sprite_help.visible # 从选中变成没有选中任何能力
+        process_token_unselect
       end
     end
   end
   #--------------------------------------------------------------------------
-  # ● UI-更新解锁
+  # ● UI-处理指定能力一直被选中
   #--------------------------------------------------------------------------
-  def update_unlock
-    if @selected_token && key_unlock?
-      data = $game_actors[@actor_id].eagle_ability_data
-      id = @selected_token.id
-      if data.unlock?(id) ? data.can_levelup?(id) : data.can_unlock?(id)
-        Sound.play_ok
-        data.unlock(id)
-        refresh
+  def process_token_selecting
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-处理指定能力从未选中到选中
+  #--------------------------------------------------------------------------
+  def process_token_select
+    Sound.play_cursor
+    @sprite_help.redraw(@selected_token)
+    redraw_hint(@sprite_hint)
+    
+    data = @selected_token.data
+    id = @selected_token.id
+    # 如果是不用解锁的 ap=-1 的能力
+    return if data.no_unlock?(id)
+    # 如果是需要解锁或能够升级的能力
+    if data.unlock?(id)
+      if data.can_deactive?(id)  # 如果能够变更启用/禁用
+        @sprite_active.redraw(@selected_token)
+        @sprite_active.visible = true
       else
-        Sound.play_buzzer
+        @sprite_active.visible = false
       end
+      f = data.can_levelup?(id)
+      @type_unlock = :lvup
+    else
+      f = data.can_unlock?(id)
+      @type_unlock = :unlock
     end
+    if f 
+      @sprite_unlock.redraw(@selected_token, 0, @type_unlock)
+      @sprite_unlock.reset_position(@selected_token)
+      @sprite_unlock.visible = true
+      @count_unlock = 0
+    else
+      @sprite_unlock.visible = false
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-处理指定能力从选中到未选中
+  #--------------------------------------------------------------------------
+  def process_token_unselect
+    redraw_hint(@sprite_hint)
+    @sprite_help.visible = false
+    @sprite_unlock.visible = false
+    @sprite_active.visible = false
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-按键激活？
+  #--------------------------------------------------------------------------
+  def key_activate?
+    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:ML)
+    Input.trigger?(:C)
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-更新激活
+  #--------------------------------------------------------------------------
+  def update_activate
+    # 如果没有能力被选中，则不处理
+    return if @selected_token == nil
+    data = @selected_token.data
+    id = @selected_token.id
+    if data.no_unlock?(id) and key_activate?
+      process_activate(@selected_token)
+    end
+    if @sprite_active.visible == true and key_activate?
+      data.active?(id) ? data.deactivate(id) : data.activate(id)
+      @selected_token.refresh
+      @sprite_active.redraw(@selected_token)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理激活
+  #--------------------------------------------------------------------------
+  def process_activate(sprite_token)
+    data = sprite_token.data
+    id = sprite_token.id
+    data.unlock(id)
+    @sprite_help.redraw(sprite_token) if @selected_token == sprite_token
+    sprite_token.show_unlock_anim  # 激活一次动画
+    refresh
+    Sound.play_ok
   end
   #--------------------------------------------------------------------------
   # ● UI-按键解锁？
   #--------------------------------------------------------------------------
   def key_unlock?
-    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.up?(:ML)
-    Input.trigger?(:C)
+    return true if $imported["EAGLE-MouseEX"] && MOUSE_EX.press?(:ML)
+    Input.press?(:C)
   end
   #--------------------------------------------------------------------------
-  # ● 解锁当前能力后重绘
+  # ● UI-更新解锁
+  #--------------------------------------------------------------------------
+  def update_unlock
+    # 如果没有能力被选中，则不处理
+    return if @selected_token == nil
+    return if @sprite_unlock.visible == false
+    if key_unlock?
+      @count_unlock += 1
+    elsif @count_unlock > 0
+      @count_unlock -= 5
+    end
+    data = @selected_token.data
+    id = @selected_token.id
+    if @count_unlock > @max_unlock
+      @count_unlock = 0
+      process_unlock(@selected_token)
+      if data.can_levelup?(id)  # 如果解锁后能升级，则更改提示文本
+        @type_unlock = :lvup
+        @sprite_unlock.redraw(@selected_token, 0, @type_unlock)
+      else # 否则隐藏解锁的按键提示
+        @sprite_unlock.visible = false
+      end
+      if data.can_deactive?(id)  # 如果能够变更启用/禁用
+        @sprite_active.redraw(@selected_token)
+        @sprite_active.visible = true
+      end
+    else
+      @sprite_unlock.redraw(@selected_token, @count_unlock * 1.0 / @max_unlock, @type_unlock)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理解锁
+  #--------------------------------------------------------------------------
+  def process_unlock(sprite_token)
+    data = sprite_token.data
+    id = sprite_token.id
+    data.unlock(id)
+    sprite_token.refresh
+    @sprite_help.redraw(sprite_token) if @selected_token == sprite_token
+    refresh
+    Sound.play_ok
+  end
+  #--------------------------------------------------------------------------
+  # ● 解锁能力后的重绘
   #--------------------------------------------------------------------------
   def refresh
     data = $game_actors[@actor_id].eagle_ability_data
-    if @selected_token
-      @selected_token.refresh
-      @sprite_help.redraw(@selected_token)
-      # 如果是不需要解锁的能力，则激活一次动画
-      @selected_token.show_unlock_anim if data.no_unlock?(@selected_token.id)
-    end
     @sprites_token.each do |id, st|
       # 刷新一次ap=-1的能力，有可能其前置条件已经满足，需自动激活
       st.refresh if st != @selected_token and data.no_unlock?(id)
@@ -1657,6 +1868,7 @@ class Sprite_AbilityLearn_Token < Sprite
     pos = ps[:pos] || [0, 0]
     reset_position(pos[0], pos[1])
     @count_can_unlock = 0
+    @flag_show_unlock_anim = false
   end
   #--------------------------------------------------------------------------
   # ● 释放
@@ -1666,6 +1878,10 @@ class Sprite_AbilityLearn_Token < Sprite
       @sprite_unlock.bitmap.dispose if @sprite_unlock.bitmap
       @sprite_unlock.dispose
     end
+    if @sprite_active
+      @sprite_active.bitmap.dispose
+      @sprite_active.dispose
+    end
     if @sprite_bg
       @sprite_bg.bitmap.dispose if @sprite_bg.bitmap
       @sprite_bg.dispose
@@ -1674,13 +1890,18 @@ class Sprite_AbilityLearn_Token < Sprite
     super
   end
   #--------------------------------------------------------------------------
+  # ● 获取原始数据
+  #--------------------------------------------------------------------------
+  def data
+    $game_actors[@actor_id].eagle_ability_data
+  end
+  #--------------------------------------------------------------------------
   # ● 刷新（解锁后调用）
   #--------------------------------------------------------------------------
   def refresh
     reset_bitmap
     self.color = Color.new(0,0,0,0)
     @sprite_bg.color = Color.new(0,0,0,0) if @sprite_bg
-    data = $game_actors[@actor_id].eagle_ability_data
     if data.unlock?(id) || # 已解锁
        (data.no_unlock?(id) and data.can_unlock?(id)) # 不用解锁，满足前置条件
       draw_level
@@ -1688,11 +1909,20 @@ class Sprite_AbilityLearn_Token < Sprite
       self.color = Color.new(0,0,0,120)
       @sprite_bg.color = Color.new(0,0,0,120) if @sprite_bg
     end
+    
     @sprite_unlock ||= Sprite.new(self.viewport)
     @sprite_unlock.bitmap.dispose if @sprite_unlock.bitmap
     @sprite_unlock.bitmap = self.bitmap.dup
     @sprite_unlock.color = Color.new(0,0,0,120)
     @sprite_unlock.opacity = 0
+    
+    @sprite_active ||= Sprite.new(self.viewport)
+    @sprite_active.bitmap = Bitmap.new(20, 10)
+    @sprite_active.visible = false
+    if data.unlock?(self.id) and data.can_deactive?(self.id)
+      draw_activation
+      @sprite_active.visible = true
+    end
   end
   #--------------------------------------------------------------------------
   # ● 重设背景位图
@@ -1747,6 +1977,31 @@ class Sprite_AbilityLearn_Token < Sprite
     self.bitmap.draw_text(0,self.height-s,self.width,s, level, 1)
   end
   #--------------------------------------------------------------------------
+  # ● 绘制启用/禁用状态
+  #--------------------------------------------------------------------------
+  def draw_activation
+    w = ACTIVEHINT_BUTTON_HALF_W; h = ACTIVEHINT_BUTTON_H
+    _x = (@sprite_active.width - w*2) / 2; _y = 0
+    if data.active?(self.id)
+      if $imported["EAGLE-UtilsDrawing2"]
+        # 如果使用了【组件-形状绘制2】，则改为圆角矩形
+        @sprite_active.bitmap.fill_rounded_rect(_x,_y,w*2,h, 2, ACTIVEHINT_COLOR_BG)
+        @sprite_active.bitmap.fill_rounded_rect(_x,_y,w,  h, 2, ACTIVEHINT_COLOR_ACTIVE)
+      else
+        @sprite_active.bitmap.fill_rect(_x,_y,w*2,h,ACTIVEHINT_COLOR_BG)
+        @sprite_active.bitmap.fill_rect(_x,_y,w,  h,ACTIVEHINT_COLOR_ACTIVE)
+      end
+    else
+      if $imported["EAGLE-UtilsDrawing2"]
+        @sprite_active.bitmap.fill_rounded_rect(_x,_y,w*2,h, 2, ACTIVEHINT_COLOR_BG)
+        @sprite_active.bitmap.fill_rounded_rect(_x+w,_y,w,h, 2, ACTIVEHINT_COLOR_DEACTIVE)
+      else
+        @sprite_active.bitmap.fill_rect(_x,_y,w*2,h,ACTIVEHINT_COLOR_BG)
+        @sprite_active.bitmap.fill_rect(_x+w,_y,w,h,ACTIVEHINT_COLOR_DEACTIVE)
+      end
+    end
+  end
+  #--------------------------------------------------------------------------
   # ● 重置位置
   #--------------------------------------------------------------------------
   def reset_position(grid_x, grid_y)
@@ -1759,6 +2014,12 @@ class Sprite_AbilityLearn_Token < Sprite
       @sprite_unlock.oy = @sprite_unlock.height / 2
       @sprite_unlock.x = self.x
       @sprite_unlock.y = self.y
+    end
+    if @sprite_active
+      @sprite_active.ox = @sprite_active.width / 2
+      @sprite_active.oy = @sprite_active.height / 2
+      @sprite_active.x = self.x
+      @sprite_active.y = self.y - self.height / 2
     end
     if @sprite_bg
       @sprite_bg.ox = @sprite_bg.width / 2
@@ -1773,6 +2034,7 @@ class Sprite_AbilityLearn_Token < Sprite
   def set_z(_z)
     self.z = _z
     @sprite_unlock.z = self.z + 1 if @sprite_unlock
+    @sprite_active.z = self.z + 2 if @sprite_active
     @sprite_bg.z = self.z - 1 if @sprite_bg
   end
   #--------------------------------------------------------------------------
@@ -1792,7 +2054,7 @@ class Sprite_AbilityLearn_Token < Sprite
   #--------------------------------------------------------------------------
   def update
     update_unlock_anim
-    update_show_unlock_anim if @count_can_unlock <= 0
+    process_show_unlock_anim if @count_can_unlock <= 0 and show_unlock_anim?
   end
   #--------------------------------------------------------------------------
   # ● 更新表示可解锁/升级的动画
@@ -1807,23 +2069,32 @@ class Sprite_AbilityLearn_Token < Sprite
   #--------------------------------------------------------------------------
   # ● 更新是否显示可解锁/升级的动画
   #--------------------------------------------------------------------------
-  def update_show_unlock_anim
-    data = $game_actors[@actor_id].eagle_ability_data
+  def show_unlock_anim?
+    return true if @flag_show_unlock_anim
     # 如果不用解锁，则不显示动画
-    return if data.no_unlock?(@id)
+    return false if data.no_unlock?(@id)
     # 如果已解锁但不满足升级条件，则不显示动画
-    return if data.unlock?(@id) && !data.can_levelup?(@id)
+    return false if data.unlock?(@id) && !data.can_levelup?(@id)
     # 如果不满足解锁条件，则不显示动画
-    return if !data.can_unlock?(@id) 
-    show_unlock_anim
+    return false if !data.can_unlock?(@id) 
+    return true
   end
   #--------------------------------------------------------------------------
   # ● 启用一次可解锁/升级的动画
   #--------------------------------------------------------------------------
-  def show_unlock_anim
+  def process_show_unlock_anim
     @count_can_unlock = 40
-    @sprite_unlock.opacity = 255
-    @sprite_unlock.zoom_x = @sprite_unlock.zoom_y = 1
+    if @sprite_unlock
+      @sprite_unlock.opacity = 255
+      @sprite_unlock.zoom_x = @sprite_unlock.zoom_y = 1
+    end
+    @flag_show_unlock_anim = false
+  end
+  #--------------------------------------------------------------------------
+  # ● 启用一次可解锁/升级的动画（外部用）
+  #--------------------------------------------------------------------------
+  def show_unlock_anim
+    @flag_show_unlock_anim = true
   end
 end
 
@@ -1847,6 +2118,7 @@ class Sprite_AbilityLearn_Info < Sprite
   def reset_bitmap
     case @type 
     when :text; redraw_text
+    when :rect; redraw_rect
     when :pic ; redraw_pic
     end
   end
@@ -1855,6 +2127,12 @@ class Sprite_AbilityLearn_Info < Sprite
   #--------------------------------------------------------------------------
   def redraw_text
     ABILITY_LEARN.params_text_style(self, @data, @style)
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制矩形
+  #--------------------------------------------------------------------------
+  def redraw_rect
+    ABILITY_LEARN.params_rect_style(self, @data, @style)
   end
   #--------------------------------------------------------------------------
   # ● 绘制图片
@@ -1921,17 +2199,125 @@ class Sprite_AbilityLearn_TokenHelp < Sprite
       self.x += HELP_TEXT_POS_DX
       self.y += HELP_TEXT_POS_DY
     end
-    # 对于 1 和 -1~-9，如果可能盖住能力图标，则镜像位置
-    if HELP_TEXT_MIRROR_X and self.x-self.ox < s.x-s.viewport.ox and 
-       self.x-self.ox+self.width > s.x-s.viewport.ox
-      self.x = Graphics.width - self.x + self.ox
+    # 对于 1 和 -1~-9，如果盖住了能力图标，则镜像位置
+    _x = s.x + s.viewport.rect.x
+    _y = s.y + s.viewport.rect.y
+    if HELP_TEXT_MIRROR_X and ABILITY_LEARN.point_in_sprite?(_x, _y, self)
+      self.x = Graphics.width - self.x + self.ox - self.width
     end
-    if HELP_TEXT_MIRROR_Y and self.y-self.oy < s.y-s.viewport.oy and 
-       self.y-self.oy+self.height > s.y-s.viewport.oy
-      self.y = Graphics.height - self.y + self.oy
+    if HELP_TEXT_MIRROR_Y and ABILITY_LEARN.point_in_sprite?(_x, _y, self)
+      self.y = Graphics.height - self.y + self.oy - self.height
     end
   end
 end
+
+#==============================================================================
+# ■ 显示解锁进度条的精灵
+#==============================================================================
+class Sprite_AbilityLearn_Unlock < Sprite
+  include ABILITY_LEARN
+  #--------------------------------------------------------------------------
+  # ● 重绘
+  #--------------------------------------------------------------------------
+  def redraw(s, per=0, type=:unlock)
+    @last_type = nil
+    if @last_type != type and self.bitmap
+      self.bitmap.dispose 
+      self.bitmap = nil
+    end
+    case type 
+    when :unlock;  text = KEYHINT_TEXT_UNLOCK
+    when :lvup;    text = KEYHINT_TEXT_LEVELUP
+    end
+    
+    ps = { :font_size => KEYHINT_TEXT_FONT_SIZE, :x0 => 0, :y0 => 0, :lhd => 4 }
+    d = Process_DrawTextEX.new(text, ps)
+    d.run(false)
+    
+    lr_d = KEYHINT_TEXT_MARGIN_LR
+    ud_d = KEYHINT_TEXT_MARGIN_UD
+    w = ps[:w] ? ps[:w] : d.width
+    w += lr_d * 2
+    h = d.height + ud_d * 2
+    if self.bitmap 
+      if (self.bitmap.width != w or self.bitmap.height != h)
+        self.bitmap.dispose
+      else
+        self.bitmap.clear
+      end
+    else
+      self.bitmap = Bitmap.new(w, h)
+    end
+    
+    per_w = self.width * per
+    if $imported["EAGLE-UtilsDrawing2"]
+      # 如果使用了【组件-形状绘制2】，则改为圆角矩形
+      self.bitmap.fill_rounded_rect(0,0,self.width,self.height, 5, KEYHINT_COLOR_BG)
+      self.bitmap.fill_rounded_rect(0,0,per_w,self.height, 5, KEYHINT_COLOR_FILL)
+    else
+      self.bitmap.fill_rect(0,0,self.width,self.height,KEYHINT_COLOR_BG)
+      self.bitmap.fill_rect(0,0,per_w,self.height,KEYHINT_COLOR_FILL)
+    end
+
+    ps[:x0] = lr_d
+    ps[:y0] = ud_d
+    d.bind_bitmap(self.bitmap)
+    d.run(true)
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置位置
+  #--------------------------------------------------------------------------
+  def reset_position(s)
+    self.ox = self.width / 2
+    # 显示在能力图标的下面
+    self.x = s.x - s.viewport.ox
+    self.y = s.y + s.height / 2 - s.viewport.oy
+    # 确保完整显示
+    self.x = [[self.x, 0].max, Graphics.width-self.width].min
+    self.y = [[self.y, 0].max, Graphics.height-self.height].min
+  end
+end
+
+#==============================================================================
+# ■ 显示启用状态的精灵
+#==============================================================================
+class Sprite_AbilityLearn_Activation < Sprite
+  include ABILITY_LEARN
+  #--------------------------------------------------------------------------
+  # ● 重绘
+  #--------------------------------------------------------------------------
+  def redraw(s)
+    self.bitmap ||= Bitmap.new(90, ACTIVEHINT_TEXT_FONT_SIZE+2)
+    self.bitmap.clear
+    self.bitmap.font.size = ACTIVEHINT_TEXT_FONT_SIZE
+    
+    if $imported["EAGLE-UtilsDrawing2"]
+      self.bitmap.fill_rounded_rect(0,0,self.width,self.height, 5, ACTIVEHINT_TEXT_BG)
+    else
+      self.bitmap.fill_rect(0,0,self.width,self.height,ACTIVEHINT_TEXT_BG)
+    end
+    if s.data.active?(s.id)
+      self.bitmap.draw_text(0,0,self.width, 18, ACTIVEHINT_TEXT_ACTIVE, 1)
+    else
+      self.bitmap.draw_text(0,0,self.width, 18, ACTIVEHINT_TEXT_DEACTIVE, 1)
+    end
+    reset_position(s)
+  end
+  #--------------------------------------------------------------------------
+  # ● 重置位置
+  #--------------------------------------------------------------------------
+  def reset_position(s)
+    self.ox = self.width / 2
+    self.oy = self.height
+    # 显示在能力图标的上面
+    self.x = s.x - s.viewport.ox
+    self.y = s.y - s.height / 2 - s.viewport.oy - ACTIVEHINT_BUTTON_H
+    # 确保完整显示
+    self.x = [[self.x, 0].max, Graphics.width-self.width].min
+    self.y = [[self.y, 0].max, Graphics.height-self.height].min
+  end
+end
+
 
 #==============================================================================
 # ■ 数据类
@@ -1944,6 +2330,7 @@ class Data_AbilityLearn
   def initialize(actor_id)
     @actor_id = actor_id
     @unlocks = [] # 已经解锁的token的id
+    @deactives = [] # 禁用了的token
     @ap = 0  # 当前能力点数目
     @ap_max = 0  # 全部能力点数目（用于重置）
     @skill_ids = []  # 已经解锁的技能的ID
@@ -1982,17 +2369,49 @@ class Data_AbilityLearn
     # 清空武器护甲
     @weapon_ids = []
     @armor_ids = []
-    # 对每个已解锁的，进行额外处理
-    @unlocks.each do |token_id|
-      # 绑定开关
-      sid = ABILITY_LEARN.get_token_sid(@actor_id, token_id)
-      $game_switches[sid] = false if sid
-      # 触发脚本
-      str = ABILITY_LEARN.get_token_eval_off(@actor_id, token_id)
-      ABILITY_LEARN.eagle_eval(str, @actor_id) if str
-    end
+    # 对每个已解锁的，进行额外的禁用处理
+    @unlocks.each { |token_id| deactivate(token_id) }
     # 清空已解锁的数组
     @unlocks.clear
+    # 清空已禁用的数组
+    @deactives.clear
+  end
+  #--------------------------------------------------------------------------
+  # ● 启用/禁用指定ID
+  #--------------------------------------------------------------------------
+  def activate(token_id)
+    # 绑定开关
+    sid = ABILITY_LEARN.get_token_sid(@actor_id, token_id)
+    $game_switches[sid] = true if sid
+    # 触发脚本
+    str = ABILITY_LEARN.get_token_eval_on(@actor_id, token_id)
+    ABILITY_LEARN.eagle_eval(str, @actor_id) if str
+    # 在已禁用数组中删去
+    @deactives.delete(token_id)
+  end
+  def deactivate(token_id)
+    # 绑定开关
+    sid = ABILITY_LEARN.get_token_sid(@actor_id, token_id)
+    $game_switches[sid] = false if sid
+    # 触发脚本
+    str = ABILITY_LEARN.get_token_eval_off(@actor_id, token_id)
+    ABILITY_LEARN.eagle_eval(str, @actor_id) if str
+    # 如果已经解锁，则查看是否需要放入已禁用开关
+    if unlock?(token_id) and can_deactive?(token_id)
+      @deactives.push(token_id)
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 指定ID启用中？
+  #--------------------------------------------------------------------------
+  def active?(token_id)
+    !@deactives.include?(token_id)
+  end
+  #--------------------------------------------------------------------------
+  # ● 指定ID能够变更启用/禁用？
+  #--------------------------------------------------------------------------
+  def can_deactive?(token_id)
+    ABILITY_LEARN.get_token_active(@actor_id, token_id)
   end
   #--------------------------------------------------------------------------
   # ● 解锁指定id
@@ -2029,13 +2448,9 @@ class Data_AbilityLearn
       @weapon_ids.push(wid) if wid && wid > 0
       aid = ABILITY_LEARN.get_token_armor(@actor_id, token_id)
       @armor_ids.push(aid) if aid && aid > 0
-      # 绑定开关
-      sid = ABILITY_LEARN.get_token_sid(@actor_id, token_id)
-      $game_switches[sid] = true if sid
     end
-    # 触发脚本
-    str = ABILITY_LEARN.get_token_eval_on(@actor_id, token_id)
-    ABILITY_LEARN.eagle_eval(str, @actor_id) if str
+    # 进行一次激活处理
+    activate(token_id)
   end
   #--------------------------------------------------------------------------
   # ● 指定id已经解锁？
@@ -2225,10 +2640,12 @@ class Game_Actor
     add_ap(ABILITY_LEARN::AP_LEVEL_UP)
   end
   #--------------------------------------------------------------------------
-  # ● 已习得指定能力？（已经解锁 or 不需要解锁）
+  # ● 已习得指定能力？（已经解锁 or 不需要解锁 且 启用中）
   #--------------------------------------------------------------------------
   def ability_unlock?(token_id)
-    @eagle_ability_data.unlock?(token_id) || @eagle_ability_data.no_unlock?(token_id)
+    (@eagle_ability_data.unlock?(token_id) or
+     @eagle_ability_data.no_unlock?(token_id)) and
+     @eagle_ability_data.active?(token_id)
   end
   def abi?(token_id); ability_unlock?(token_id); end
 end
@@ -2273,10 +2690,7 @@ class Scene_AbilityLearn < Scene_MenuBase
   #--------------------------------------------------------------------------
   def update 
     super
-    ABILITY_LEARN.update_tokens
-    ABILITY_LEARN.update_player
-    ABILITY_LEARN.update_unlock
-    ABILITY_LEARN.update_actors
+    ABILITY_LEARN.update_main
     return_scene if ABILITY_LEARN.finish_ui?
   end
   #--------------------------------------------------------------------------

@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.3.0"
+$imported["EAGLE-MessagePara2"] = "1.3.1"
 #==============================================================================
-# - 2025.2.28.0 现在可以设置不绑定在地图上了
+# - 2026.1.20.21 如果使用了【组件-形状绘制2】，则背景为-1时将绘制圆角矩形
 #==============================================================================
 # - 本插件新增了自动显示并消除的对话模式，以替换默认的 事件指令-显示文字
 #------------------------------------------------------------------------------
@@ -478,7 +478,12 @@ class Sprite_EagleMsg < Sprite
       w = self.bitmap.width
       h = self.bitmap.height
       rect = Rect.new(0, 2, w, h - 4)
-      self.bitmap.fill_rect(rect, back_color1)
+      if $imported["EAGLE-UtilsDrawing2"]
+        # 如果使用了【组件-形状绘制2】，则改为圆角矩形
+        self.bitmap.fill_rounded_rect(rect.x, rect.y, rect.width, rect.height, 4, back_color1)
+      else
+        self.bitmap.fill_rect(rect, back_color1)
+      end
     end
 
     # 绘制脸图

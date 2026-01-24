@@ -3,9 +3,9 @@
 #                  edited by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #=============================================================================
 $imported ||= {}
-$imported["EAGLE-UtilsDrawing2"] = "1.0.0"
+$imported["EAGLE-UtilsDrawing2"] = "1.0.1"
 #=============================================================================
-# - 2025.12.22.13 
+# - 2026.1.20.12 
 #=============================================================================
 # - 本插件提供了一部分Bitmap类中直接使用的形状绘制的方法
 # - 本插件已经兼容RPG Maker VX
@@ -44,31 +44,35 @@ $imported["EAGLE-UtilsDrawing2"] = "1.0.0"
 #
 #  7. 绘制矩形的轮廓
 #
-#   draw_rect(x, y, width, height, color)
+#   bitmap.draw_rect(x, y, width, height, color)
 #
-#  8. 绘制圆角矩形的轮廓
+#  8.1 绘制圆角矩形的轮廓
 #
-#   draw_rounded_rect(x, y, width, height, radius, color)
+#   bitmap.draw_rounded_rect(x, y, width, height, radius, color)
+#
+#  8.2 填充圆角矩形
+#
+#   bitmap.fill_rounded_rect(x, y, width, height, radius, color)
 #
 #  9. 绘制圆弧
 #
-#   draw_circle_arc(cx, cy, radius, start_angle, end_angle, color)
+#   bitmap.draw_circle_arc(cx, cy, radius, start_angle, end_angle, color)
 #
 #  10. 绘制三角形的轮廓
 #
-#   draw_triangle(x1, y1, x2, y2, x3, y3, color)
+#   bitmap.draw_triangle(x1, y1, x2, y2, x3, y3, color)
 #
 #  11. 填充三角形区域
 #
-#   fill_triangle(x1, y1, x2, y2, x3, y3, color)
+#   bitmap.fill_triangle(x1, y1, x2, y2, x3, y3, color)
 #
 #  12. 绘制多边形的轮廓
 #
-#   draw_polygon(points, color)
+#   bitmap.draw_polygon(points, color)
 #
 #  13. 填充多边形的区域
 #
-#   fill_polygon(points, color)
+#   bitmap.fill_polygon(points, color)
 #
 #=============================================================================
 
@@ -292,7 +296,7 @@ class Bitmap
   end
   
   #--------------------------------------------------------------------------
-  # * 绘制带圆角的矩形
+  # * 绘制带圆角的矩形轮廓
   #--------------------------------------------------------------------------
   def draw_rounded_rect(x, y, width, height, radius, color)
     x, y = x.to_i, y.to_i
@@ -326,7 +330,7 @@ class Bitmap
     cx, cy, radius = cx.to_i, cy.to_i, radius.to_i
     
     # 角度转弧度
-    start_rad = start_angle * Math::PI / 180
+    start_rad = start_angle * Math::PI * 1.0 / 180
     end_rad = end_angle * Math::PI / 180
     
     # 确保结束角度大于起始角度
@@ -340,8 +344,8 @@ class Bitmap
     # 绘制圆弧
     theta = start_rad
     while theta <= end_rad
-      x = (cx + radius * Math.cos(theta)).to_i
-      y = (cy + radius * Math.sin(theta)).to_i
+      x = cx + (radius * Math.cos(theta)).to_i
+      y = cy + (radius * Math.sin(theta)).to_i
       
       set_pixel(x, y, color) if in_bounds?(x, y)
       
@@ -349,6 +353,41 @@ class Bitmap
     end
   end
   
+  #--------------------------------------------------------------------------
+  # * 填充带圆角的矩形
+  #--------------------------------------------------------------------------
+  def fill_rounded_rect(x, y, width, height, radius, color)
+    x, y = x.to_i, y.to_i
+    width, height = width.to_i, height.to_i
+    radius = radius.to_i
+    
+    # 限制圆角半径不超过矩形尺寸的一半
+    radius = [radius, width / 2, height / 2].min
+    
+    # 填充中间矩形部分（除去上下圆角区域）
+    if height > 2 * radius
+      fill_rect(x, y + radius, width, height - 2 * radius, color)
+    end
+    
+    # 填充上下两个圆角区域
+    # 对于圆角区域，我们逐行填充
+    (0...radius).each do |row|
+      # 计算当前行在圆角中的水平偏移量
+      # 使用勾股定理计算圆在当前行的宽度
+      offset = Math.sqrt(radius**2 - (radius - row)**2).to_i
+      
+      # 填充上部的圆角行
+      if width > 2 * offset
+        fill_rect(x + radius - offset, y + row, width - 2 * radius + 2 * offset, 1, color)
+      end
+      
+      # 填充下部的圆角行
+      if height > 2 * radius && width > 2 * offset
+        fill_rect(x + radius - offset, y + height - row - 1, width - 2 * radius + 2 * offset, 1, color)
+      end
+    end
+  end
+
   #--------------------------------------------------------------------------
   # * 绘制三角形
   #--------------------------------------------------------------------------

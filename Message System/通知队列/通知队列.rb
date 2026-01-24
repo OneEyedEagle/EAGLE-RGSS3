@@ -4,9 +4,9 @@
 #   【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessageHint"] = "1.1.2"
+$imported["EAGLE-MessageHint"] = "1.1.3"
 #==============================================================================
-# - 2024.2.15.15 更新放到 Graphics 中，用于在其它系统中正常显示
+# - 2026.1.20.21 如果使用了【组件-形状绘制2】，则背景为-1时将绘制圆角矩形
 #==============================================================================
 # - 本插件新增了并行显示的竖直排列的通知队列
 #------------------------------------------------------------------------------
@@ -186,10 +186,10 @@ module MESSAGE_HINT
     "HINT_LINE_ALI" => 0,
     #----------------------------------------------------------------------
     # - 通知文本的左侧的额外留白宽度
-    "HINT_TEXT_W_ADD_L" => 0,
+    "HINT_TEXT_W_ADD_L" => 4,
     #----------------------------------------------------------------------
     # - 通知文本的右侧的额外留白宽度
-    "HINT_TEXT_W_ADD_R" => 0,
+    "HINT_TEXT_W_ADD_R" => 4,
     #----------------------------------------------------------------------
     # - 通知文本的下侧的额外留白宽度
     "HINT_TEXT_H_ADD_D" => 0,
@@ -670,7 +670,13 @@ class Sprite_EagleHint < Sprite
     elsif bg_type == 1  # 绘制纯色背景
       self.bitmap = Bitmap.new(w, h)
       c = @spriteset.params["HINT_BG1_COLOR"]
-      self.bitmap.fill_rect(self.bitmap.rect, c)
+      r = self.bitmap.rect
+      if $imported["EAGLE-UtilsDrawing2"]
+        # 如果使用了【组件-形状绘制2】，则改为圆角矩形
+        self.bitmap.fill_rounded_rect(r.x, r.y, r.width, r.height, 4, c)
+      else
+        self.bitmap.fill_rect(r, c)
+      end
     elsif bg_type == 2  # 透明背景
       self.bitmap = Bitmap.new(w, h)
     elsif bg_type.is_a?(String)  # 图片背景

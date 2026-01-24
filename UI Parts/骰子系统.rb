@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Dice"] = "1.4.0"
+$imported["EAGLE-Dice"] = "1.5.0"
 #==============================================================================
-# - 2025.11.1.19 修改返回值为 v 和 ps
+# - 2026.1.22.12 增强可扩展性
 #==============================================================================
 # - 本插件增加了一套独立的骰子系统，能够在任意时刻投掷并返回结果
 #------------------------------------------------------------------------------
@@ -193,8 +193,8 @@ module DICE
   #--------------------------------------------------------------------------
   # ●【常量】重投掷UI的位置
   #--------------------------------------------------------------------------
-  REROLL_X = "Graphics.width - 120"
-  REROLL_Y = "Graphics.height / 2"
+  REROLL_X = "Graphics.width / 2"
+  REROLL_Y = "Graphics.height / 2 - 200"
   #--------------------------------------------------------------------------
   # ●【常量】骰子的背景图片
   #  可省略后缀名，需放置于 Graphics/System 目录下
@@ -226,6 +226,10 @@ module DICE
   #--------------------------------------------------------------------------
   TEXT_OUT_COLOR = Color.new(255,255,255,255)
   #--------------------------------------------------------------------------
+  # ●【常量】初始的重投掷次数
+  #--------------------------------------------------------------------------
+  REROLL_INIT_COUNT = 0
+  #--------------------------------------------------------------------------
   # ●【常量】重投掷次数为0时，结束投掷前的等待帧数
   #--------------------------------------------------------------------------
   REROLL_END_WAIT = 20
@@ -256,6 +260,7 @@ module DICE
     else 
       b = id 
     end
+    ps[:actor] = b
     data, ps2 = get_dices(b, ps[:init])
     ps = ps2.merge!(ps)
     call(data, ps)
@@ -269,6 +274,7 @@ module DICE
     else 
       b = id 
     end
+    ps[:enemy] = b
     data, ps2 = get_dices(b, ps[:init])
     ps = ps2.merge!(ps)
     call(data, ps)
@@ -340,7 +346,7 @@ module DICE
       end
     end
     # 获取投掷参数
-    ps = { :reroll => 0, :type => nil, :num => nil }
+    ps = { :reroll => get_init_reroll(battler), :type => nil, :num => nil }
     params_array.each do |h|
       ps[:reroll] += h[:reroll].to_i if h[:reroll]
       ps[:type]    = h[:type].to_i   if h[:type] and ps[:type].nil?
@@ -349,6 +355,12 @@ module DICE
     ps[:type] ||= 0
     ps[:num]  ||= 0
     return datas, ps
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取战斗者的初始重投掷次数
+  #--------------------------------------------------------------------------
+  def self.get_init_reroll(battler)
+    REROLL_INIT_COUNT
   end
 
   #--------------------------------------------------------------------------
@@ -541,25 +553,11 @@ class Spriteset_Dices
     set_sprite_info3(@sprite_info3)
 
     # 互动按钮：重投
-    @sprite_reroll = Sprite.new 
-    @sprite_reroll.x = EAGLE_COMMON.eagle_eval(REROLL_X).to_i
-    @sprite_reroll.y = EAGLE_COMMON.eagle_eval(REROLL_Y).to_i
-    @sprite_reroll.z = BASE_Z + 3
-    @sprite_reroll.bitmap = Bitmap.new(96, 96)
-    @sprite_reroll.ox = @sprite_reroll.width / 2
-    @sprite_reroll.oy = @sprite_reroll.height / 2
+    init_sprite_reroll
     redraw_reroll if @max_reroll > 0
 
     # 互动按钮：结算
-    @sprite_finish = Sprite.new 
-    _x = @ps[:fin_x] ? @ps[:fin_x] : FIN_X
-    _y = @ps[:fin_y] ? @ps[:fin_y] : FIN_Y
-    @sprite_finish.x = EAGLE_COMMON.eagle_eval(_x).to_i
-    @sprite_finish.y = EAGLE_COMMON.eagle_eval(_y).to_i
-    @sprite_finish.z = BASE_Z + 3
-    @sprite_finish.bitmap = Bitmap.new(96, 96)
-    @sprite_finish.ox = @sprite_finish.width / 2
-    @sprite_finish.oy = @sprite_finish.height / 2
+    init_sprite_finish
     redraw_finish
   end
   #--------------------------------------------------------------------------
@@ -610,48 +608,66 @@ class Spriteset_Dices
     s.bitmap.clear if s.bitmap
     return if @selected_token == nil
 
-    text = "全部面："
-    @selected_token.data.ids.each do |v|
-      text += v.to_s
-      text += "|"
-    end
-    text[-1] = '\\ln'
-    
-    text += "当前面：#{@selected_token.v}"
-    change = @selected_token.data.changes[@selected_token.index]
-    if change
-      # change = [old_id, new_id, obj]
-      icon = change[2].icon_index rescue return
-      text = "\n\\i[#{icon}]#{change[2].name} 效果："
-      text += "由 #{change[0]} 变为了 #{change[1]}"
-    end
-
-    ps = { :font_size => 18, :x0 => 8, :y0 => 8, :lhd => 2}
+    text = get_dice_info_text(@selected_token)
+    ps = { :font_size => 18, :x0 => 8, :y0 => 8, :lhd => 2, :ali => 1 }
     ps[:font_color] = Color.new(255,255,255)
     d = Process_DrawTextEX.new(text, ps)
     d.run(false)
     
     s.bitmap.dispose if s.bitmap
-    s.bitmap = Bitmap.new(d.width+ps[:x0]*2, d.height+ps[:y0])
-    s.bitmap.fill_rect(0,0,s.width,s.height,Color.new(0,0,0,150))
+    s.bitmap = Bitmap.new(d.width+ps[:x0]*2, d.height+ps[:y0]+4)
+    if $imported["EAGLE-UtilsDrawing2"]
+      # 绘制圆角矩形
+      s.bitmap.fill_rounded_rect(0, 0, s.width, s.height-4, 4, Color.new(0,0,0,150))
+    else
+      # 绘制普通矩形
+      s.bitmap.fill_rect(0, 0, s.width, s.height-4, Color.new(0,0,0,150))
+    end
     
     d.bind_bitmap(s.bitmap)
     d.run(true)
+    
+    # 绘制底部箭头
+    [ [-3,1, 7], [-2,2, 5], [-1,3, 3], [0,4, 1] ].each do |xyw|
+      s.bitmap.fill_rect(s.width / 2 + xyw[0], s.height - 5 + xyw[1], xyw[2], 1, 
+        Color.new(0,0,0,150))
+    end
+    
     update_dice_info_position(@selected_token)
   end
+  #--------------------------------------------------------------------------
+  # ● UI-获取指定骰子的信息文本
+  #--------------------------------------------------------------------------
+  def get_dice_info_text(dice_sprite)
+    text = ""
+    t = ""
+    dice_sprite.data.ids.each_with_index do |_v, _i|
+      _c = _i == dice_sprite.index_cur ? 17 : 7
+      t += "\ec[#{_c}]#{_v}\ec[0] "
+    end
+    t[-1] = ''
+    text = " [" + t + "] \\ln"
+    
+    change = dice_sprite.data.changes[dice_sprite.index]
+    if change
+      # change = [old_id, new_id, obj]
+      icon = change[2].icon_index rescue 0
+      text += "\\i[#{icon}]#{change[2].name}"
+      text += " \ec[7]#{change[0]}\ec[0] → \ec[17]#{change[1]}\ec[0]"
+    end
+    return text
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-更新骰子信息精灵的位置
+  #--------------------------------------------------------------------------
   def update_dice_info_position(dice_sprite)
     s = @sprite_info2
     return @sprite_info2.visible = false if dice_sprite == nil
     @sprite_info2.visible = true
-    if dice_sprite.x > Graphics.width / 2
-      s.ox = s.width
-      s.x = dice_sprite.x - dice_sprite.ox 
-      s.y = dice_sprite.y - dice_sprite.oy
-    else
-      s.ox = 0
-      s.x = dice_sprite.x + dice_sprite.ox
-      s.y = dice_sprite.y - dice_sprite.oy
-    end
+    s.ox = s.width / 2
+    s.oy = s.height
+    s.x = dice_sprite.x - dice_sprite.ox + dice_sprite.width / 2
+    s.y = dice_sprite.y - dice_sprite.oy - 4
   end
   #--------------------------------------------------------------------------
   # ● UI-重绘投掷目的提示
@@ -673,28 +689,111 @@ class Spriteset_Dices
     d.run(true)
   end
   #--------------------------------------------------------------------------
+  # ● UI-初始化重投掷精灵
+  #--------------------------------------------------------------------------
+  def init_sprite_reroll
+    @sprite_reroll = Sprite.new 
+    @sprite_reroll.x = EAGLE_COMMON.eagle_eval(REROLL_X).to_i
+    @sprite_reroll.y = EAGLE_COMMON.eagle_eval(REROLL_Y).to_i
+    @sprite_reroll.z = BASE_Z + 3
+    @sprite_reroll.bitmap = Bitmap.new(160, 64)
+    @sprite_reroll.ox = @sprite_reroll.width / 2
+    @sprite_reroll.oy = @sprite_reroll.height / 2
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-初始化结算精灵
+  #--------------------------------------------------------------------------
+  def init_sprite_finish
+    @sprite_finish = Sprite.new 
+    _x = @ps[:fin_x] ? @ps[:fin_x] : FIN_X
+    _y = @ps[:fin_y] ? @ps[:fin_y] : FIN_Y
+    @sprite_finish.x = EAGLE_COMMON.eagle_eval(_x).to_i
+    @sprite_finish.y = EAGLE_COMMON.eagle_eval(_y).to_i
+    @sprite_finish.z = BASE_Z + 3
+    @sprite_finish.bitmap = Bitmap.new(96, 80)
+    @sprite_finish.ox = @sprite_finish.width / 2
+    @sprite_finish.oy = @sprite_finish.height / 2
+  end
+  #--------------------------------------------------------------------------
+  # ● UI-绘制按钮的矩形底，带有上下两个标题
+  #--------------------------------------------------------------------------
+  def draw_bitmap_rect(bitmap, text_top="", text_down="", 
+     border_color=Color.new(255,255,255,255), border_w=1, 
+     bg_color=Color.new(0,0,0,150), offset=8)
+    # text_top 为顶部居中显示的文字
+    # text_down 为底部居中显示的文字
+    # border_color 为矩形边框的颜色
+    # border_w 为矩形边框的宽度
+    # bg_color 为矩形背景的颜色
+    # offset 为上下左右的留空像素宽度
+    
+    # 先绘制一层边框颜色的底，再绘制中间的背景颜色
+    if $imported["EAGLE-UtilsDrawing2"]
+      # 绘制圆角矩形
+      bitmap.fill_rounded_rect(offset, offset, bitmap.width-offset*2, bitmap.height-offset*2, 4, border_color)
+      bitmap.fill_rounded_rect(offset+border_w, offset+border_w, 
+        bitmap.width-offset*2-border_w*2, bitmap.height-offset*2-border_w*2, 3, bg_color)
+    else
+      # 绘制普通矩形
+      bitmap.fill_rect(offset, offset, bitmap.width-offset*2, bitmap.height-offset*2,
+        border_color)
+      r_bg = Rect.new(offset + border_w, offset + border_w, 
+        bitmap.width - offset*2 - border_w*2, bitmap.height - offset*2 - border_w*2)
+      bitmap.fill_rect(r_bg, bg_color)
+    end
+    
+    if text_top and text_top != ""
+      # 计算文字宽度高度
+      r_t = bitmap.text_size(text_top)
+      _h = r_t.height
+      # 计算实际绘制位置，且左右增加点宽度
+      _d = 2
+      r_t.x = bitmap.width / 2 - r_t.width / 2 - _d
+      r_t.y = offset
+      r_t.width = r_t.width + _d * 2
+      r_t.height = border_w
+      # 清除文字区域的边框（背景颜色不清除）
+      bitmap.clear_rect(r_t)
+      # 文字绘制
+      bitmap.font.color = border_color
+      bitmap.draw_text(0, 0, bitmap.width, _h, text_top, 1)
+    end
+    if text_down and text_down != ""
+      # 计算文字宽度高度
+      r_t = bitmap.text_size(text_down)
+      _h = r_t.height
+      # 计算实际绘制位置，且左右增加点宽度
+      _d = 2
+      r_t.x = bitmap.width / 2 - r_t.width / 2 - _d
+      r_t.y = bitmap.height - offset - border_w
+      r_t.width = r_t.width + _d * 2
+      r_t.height = border_w
+      # 清除文字区域的边框（背景颜色不清除）
+      bitmap.clear_rect(r_t)
+      # 文字绘制
+      bitmap.font.color = border_color
+      bitmap.draw_text(0, bitmap.height-_h, bitmap.width, _h, text_down, 1)
+    end
+  end
+  #--------------------------------------------------------------------------
   # ● UI-重绘重投掷精灵
   #--------------------------------------------------------------------------
   def redraw_reroll
     s = @sprite_reroll
     s.bitmap.clear
-    d = 8
-    s.bitmap.fill_rect(d, d, s.width-d*2, s.height-d*2, Color.new(255,255,255,255))
-    b = 2
-    r = Rect.new(d+b,d+b,s.width-d*2-b*2,s.height-d*2-b*2)
-    s.bitmap.fill_rect(r, Color.new(0,0,0,180))
-
     s.bitmap.font.size = 18
-    s.bitmap.draw_text(b, 0, s.width-b*2, 18, "重新投掷", 1)
-    s.bitmap.font.size = 24
-    s.bitmap.draw_text(b, b, s.width-b*2, s.height-b*2, " #{@n_reroll} 次", 1)
+    draw_bitmap_rect(s.bitmap, "重新投掷", "剩 #{@n_reroll} 次", Color.new(255,255,153,255))
+    
+    _y = s.bitmap.height / 2 - 18 / 2
+    s.bitmap.font.color = normal_color
+    s.bitmap.font.color.alpha = 80
+    s.bitmap.draw_text(0, _y, s.width, 18, "拖动骰子到此处", 1)
   end
   #--------------------------------------------------------------------------
   # ● UI-重绘结算精灵
   #--------------------------------------------------------------------------
   def redraw_finish
     process_result
-
     t = ""
     case @ps[:type]
     when 1  # 返回最大值
@@ -706,20 +805,15 @@ class Spriteset_Dices
     else    # 返回指定数量的骰子的和
       t = "（和）"
     end 
+    
     s = @sprite_finish
     s.bitmap.clear
-    d = 8
-    s.bitmap.fill_rect(d, d, s.width-d*2, s.height-d*2, Color.new(255,255,255,255))
-    b = 2
-    r = Rect.new(d+b,d+b,s.width-d*2-b*2,s.height-d*2-b*2)
-    s.bitmap.fill_rect(r, Color.new(0,0,0,180))
-
     s.bitmap.font.size = 18
-    s.bitmap.draw_text(b, 0, s.width-b*2, 18, "结算", 1)
-    s.bitmap.draw_text(b, 18, s.width-b*2, 18, t, 1)
-    s.bitmap.draw_text(b, s.height-d-b-18, s.width-b*2, 18, "(#{@n_finish}/#{@ps[:num]})", 1)
+    draw_bitmap_rect(s.bitmap, "结算", "(#{@n_finish}/#{@ps[:num]})")
+    
+    s.bitmap.draw_text(0, 18, s.width, 18, t, 1)
     s.bitmap.font.size = 24
-    s.bitmap.draw_text(b, b, s.width-b*2, s.height-b*2, "#{@ps[:value]}", 1)
+    s.bitmap.draw_text(0, 20, s.width, s.height-20, "#{@ps[:value]}", 1)
   end
   #--------------------------------------------------------------------------
   # ● 初始化骰子
@@ -728,10 +822,24 @@ class Spriteset_Dices
     @sprite_dices = @data.collect { |d| Sprite_Dice.new(d) }
   end
   #--------------------------------------------------------------------------
+  # ● 新增一颗骰子，并等待移入完成
+  #--------------------------------------------------------------------------
+  def add_dice(data_dice, x, y, dx, dy, t=20)
+    s = Sprite_Dice.new(data_dice)
+    s.z = BASE_Z + 10
+    s.set_xy(x, y)
+    s.set_des_opa(255, t)
+    s.set_des_xy(x + dx, y + dy, t)
+    @sprite_dices.push(s)
+    @n_finish -= 1
+    t.times { Fiber.yield }
+    return s
+  end
+  #--------------------------------------------------------------------------
   # ● 全部骰子均投掷完成？
   #--------------------------------------------------------------------------
   def waiting?
-    f = @sprite_dices.any? { |s| !s.waiting? }
+    f = @sprite_dices.any? { |s| s.running? }
     !f
   end
   #--------------------------------------------------------------------------
@@ -800,23 +908,15 @@ class Spriteset_Dices
       process_auto
       return
     end
-    flag_finish = false
+    @flag_player_key_finish = false
     process_player_start
     while true
       Fiber.yield
+      break if @flag_player_key_finish
       f = Input.trigger?(:C)
       f |= MOUSE_EX.up?(:ML) if $imported["EAGLE-MouseEX"]
       if @drag_token && f
-        if EAGLE_COMMON.point_in_sprite?(@sprite_player.x, @sprite_player.y, @sprite_reroll) and @n_reroll > 0
-          process_dice_reroll(@drag_token) # 处理重投掷
-          @selected_token.unchoose 
-          @selected_token = nil
-        elsif EAGLE_COMMON.point_in_sprite?(@sprite_player.x, @sprite_player.y, @sprite_finish)
-          @selected_token.unchoose 
-          @selected_token = nil
-          process_dice_finish(@drag_token) # 处理结算
-          flag_finish = true if @n_finish >= @ps[:num]
-        end
+        process_dice_drag_end
         @drag_token = nil
       elsif @selected_token && f
         @drag_token = @selected_token
@@ -825,39 +925,87 @@ class Spriteset_Dices
       end
       f = Input.trigger?(:B)
       f |= MOUSE_EX.up?(:MR) if $imported["EAGLE-MouseEX"]
-      if f  # 处理自动结算
+      if process_key_check_finish? and f  # 处理自动结算
         process_auto
-        flag_finish = true
+        @flag_player_key_finish = true
       end
-      break if flag_finish
+      update_when_process_key
     end
     process_player_finish
   end
   #--------------------------------------------------------------------------
+  # ● 玩家处理时的每帧更新
+  #--------------------------------------------------------------------------
+  def update_when_process_key
+    @flag_player_key_finish = true if @n_finish >= @ps[:num]
+  end
+  #--------------------------------------------------------------------------
+  # ● 是否能够进行自动结算
+  #--------------------------------------------------------------------------
+  def process_key_check_finish?
+    return true
+  end
+  #--------------------------------------------------------------------------
+  # ● 拖动骰子并放下的处理
+  #--------------------------------------------------------------------------
+  def process_dice_drag_end
+    if @sprite_reroll.visible and @n_reroll > 0 and
+       EAGLE_COMMON.point_in_sprite?(@sprite_player.x, @sprite_player.y, @sprite_reroll)
+      if process_dice_reroll?(@drag_token)
+        process_dice_reroll(@drag_token) # 处理重投掷
+        process_dice_drag_end_success
+      end
+    elsif @sprite_finish.visible and
+       EAGLE_COMMON.point_in_sprite?(@sprite_player.x, @sprite_player.y, @sprite_finish)
+      process_dice_drag_end_success
+      process_dice_finish(@drag_token) # 处理结算
+    end
+  end
+  def process_dice_drag_end_success  # 骰子放下后触发了ui，取消选中
+    @selected_token.unchoose if @selected_token
+    @selected_token = nil
+  end
+  #--------------------------------------------------------------------------
   # ● 处理指定骰子的重投掷
   #--------------------------------------------------------------------------
+  def process_dice_reroll?(dice_sprite)
+    return true
+  end
   def process_dice_reroll(dice_sprite)
     process_player_finish
     @n_reroll -= 1
-    roll(dice_sprite)
+    reroll(dice_sprite)
     redraw_reroll
     process_player_start
+  end
+  def reroll(s, v=nil) # v 为重投掷后必定投出的值
+    f = @active
+    @active = false
+    s.unchoose
+    s.run(v)
+    Fiber.yield until waiting?
+    @active = f
   end
   #--------------------------------------------------------------------------
   # ● 处理指定骰子的结算
   #--------------------------------------------------------------------------
   def process_dice_finish(dice_sprite)
     process_player_finish
-    dice_sprite.finish
     @results.push(dice_sprite.v)
     @n_finish += 1
     redraw_finish
+    update_until_dice_finish(dice_sprite)
+    process_player_start
+  end
+  #--------------------------------------------------------------------------
+  # ● 等待指定骰子移出动画结束
+  #--------------------------------------------------------------------------
+  def update_until_dice_finish(dice_sprite)
+    dice_sprite.finish
     loop do
       Fiber.yield
-      dice_sprite.update_finish
       break if !dice_sprite.visible
     end
-    process_player_start
   end
   #--------------------------------------------------------------------------
   # ● 处理自动结算
@@ -1024,7 +1172,7 @@ end
 #==============================================================================
 class Sprite_Dice < Sprite
   include DICE
-  attr_reader  :data
+  attr_reader  :data,  :index_cur
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -1056,6 +1204,8 @@ class Sprite_Dice < Sprite
     # 骰子面参数
     @index_max = @data.ids.size # 最大面数
     @index_cur = rand(@index_max) # 初始面
+    # 投掷后的目标点数（如果nil则不设置，如果没有对应点数则无效）
+    @v_set = nil
 
     # 骰子面切换顺序类型
     @index_order = :rand
@@ -1068,23 +1218,7 @@ class Sprite_Dice < Sprite
   def init_bitmaps
     @bitmaps = [] # 按序存储各个面的位图
     @data.ids.each_with_index do |id, index|
-      begin
-        if @bg_surfix
-          t_bitmap = Cache.system(BG_DEFAULT+"_#{@bg_surfix}").dup
-        else
-          t_bitmap = Cache.system(BG_DEFAULT).dup
-        end
-      rescue
-        w = h = BG_DEFAULT_WH
-        b = BG_DEFAULT_BORDER_WH
-        t_bitmap = Bitmap.new(w, h)
-        t_bitmap.fill_rect(0,0,w,h, Color.new(0,0,0))
-        t_bitmap.fill_rect(b,b,w-2*b,h-2*b, Color.new(255,255,255))
-      end
-      t_bitmap.font.color = TEXT_COLOR
-      t_bitmap.font.outline = true
-      t_bitmap.font.out_color = TEXT_OUT_COLOR
-      t_bitmap.font.shadow = false
+      t_bitmap = get_dice_bg_bitmap
       t = "#{id}"
       # 如果存在数值变动
       if @data.changed_with_icon?(index)
@@ -1103,14 +1237,36 @@ class Sprite_Dice < Sprite
       @bitmaps.push(t_bitmap)
     end
   end
+  def get_dice_bg_bitmap
+    begin
+      if @bg_surfix
+        t_bitmap = Cache.system(BG_DEFAULT+"_#{@bg_surfix}").dup
+      else
+        t_bitmap = Cache.system(BG_DEFAULT).dup
+      end
+    rescue
+      w = h = BG_DEFAULT_WH
+      b = BG_DEFAULT_BORDER_WH
+      t_bitmap = Bitmap.new(w, h)
+      t_bitmap.fill_rect(0,0,w,h, Color.new(0,0,0))
+      t_bitmap.fill_rect(b,b,w-2*b,h-2*b, Color.new(255,255,255))
+    end
+    t_bitmap.font.color = TEXT_COLOR
+    t_bitmap.font.outline = true
+    t_bitmap.font.out_color = TEXT_OUT_COLOR
+    t_bitmap.font.shadow = false
+    t_bitmap
+  end
   #--------------------------------------------------------------------------
   # ● 初始化遮挡精灵
   #--------------------------------------------------------------------------
   def init_layer
     @sprite_layer_chosen = Sprite.new
     begin
-      @sprite_layer_chosen.bitmap = Cache.system(BG_CHOSEN)
-      @sprite_layer_chosen.bitmap = Cache.system(BG_CHOSEN+"_#{@bg_surfix}") if @bg_surfix
+      if @bg_surfix
+        @sprite_layer_chosen.bitmap = Cache.system(BG_CHOSEN+"_#{@bg_surfix}") rescue nil
+      end
+      @sprite_layer_chosen.bitmap = Cache.system(BG_CHOSEN) if @sprite_layer_chosen.bitmap == nil
     rescue
       w = h = BG_DEFAULT_WH
       b = BG_DEFAULT_BORDER_WH
@@ -1151,9 +1307,11 @@ class Sprite_Dice < Sprite
     super
     case @state
     when :run
-      update_frame
       update_up_and_drop
+      update_frame
     when :wait
+    when :start
+      update_start
     when :finish 
       update_finish
     end
@@ -1237,8 +1395,10 @@ class Sprite_Dice < Sprite
   #--------------------------------------------------------------------------
   # ● 开始投掷
   #--------------------------------------------------------------------------
-  def run
+  def run(v_set=nil)
     @state = :run
+    # 设置目标点数
+    @v_set = v_set
     # 设置抛起和掉落用到的参数
     @z_f = 0 # 用于计算放缩倍率
     @v_z = 9 + rand * 7 # 垂直向上的z值增速
@@ -1247,9 +1407,43 @@ class Sprite_Dice < Sprite
     set_des_xy(self.x + rand(51) - 25, self.y + rand(51) - 25, -(@v_z / @a_z)*2)
   end
   #--------------------------------------------------------------------------
+  # ● 更新抛起和掉落
+  #--------------------------------------------------------------------------
+  def update_up_and_drop
+    @z_f += @v_z
+    @v_z += @a_z
+    if @z_f <= 0 # 停止更新 进入选择
+      @z_f = 0
+      wait
+      process_dice_end
+    end
+    update_zoom_with_z
+    @sprite_layer_chosen.zoom_x = @sprite_layer_chosen.zoom_y = self.zoom_x
+  end
+  #--------------------------------------------------------------------------
+  # ● 投掷完成后的处理
+  #--------------------------------------------------------------------------
+  def process_dice_end
+    if @v_set
+      _i = @data.ids.index(@v_set)
+      @index_cur = _i if _i  # 如果找到了预设的点数，则置为其序号
+      update_bitmap
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新缩放
+  #--------------------------------------------------------------------------
+  def update_zoom_with_z
+    # @z_f → zoom
+    # 0 → 1.00； 100 → 2.00
+    zoom = @z_f * 0.01 + 1.0
+    self.zoom_x = self.zoom_y = zoom
+  end
+  #--------------------------------------------------------------------------
   # ● 更新面的显示
   #--------------------------------------------------------------------------
   def update_frame
+    return if waiting?
     @frame_count += 1
     return if @frame_count < @frame_max
     @frame_count = 0
@@ -1270,26 +1464,10 @@ class Sprite_Dice < Sprite
     end
   end
   #--------------------------------------------------------------------------
-  # ● 更新抛起和掉落
+  # ● 投掷中？
   #--------------------------------------------------------------------------
-  def update_up_and_drop
-    @z_f += @v_z
-    @v_z += @a_z
-    if @z_f <= 0 # 停止更新 进入选择
-      @z_f = 0
-      wait
-    end
-    update_zoom_with_z
-    @sprite_layer_chosen.zoom_x = @sprite_layer_chosen.zoom_y = self.zoom_x
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新缩放
-  #--------------------------------------------------------------------------
-  def update_zoom_with_z
-    # @z_f → zoom
-    # 0 → 1.00； 100 → 2.00
-    zoom = @z_f * 0.01 + 1.0
-    self.zoom_x = self.zoom_y = zoom
+  def running?
+    @state == :run
   end
   #--------------------------------------------------------------------------
   # ● 停止随机
@@ -1340,13 +1518,32 @@ class Sprite_Dice < Sprite
     self.visible = false if self.zoom_x <= 0
   end
   #--------------------------------------------------------------------------
-  # ● 已结算？
+  # ● 已在结算？
   #--------------------------------------------------------------------------
   def finish
     @state = :finish 
   end 
   def finish?
     @state == :finish 
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新旋转放大移入
+  #--------------------------------------------------------------------------
+  def update_start
+    return wait if self.zoom_x >= 1.00
+    self.angle -= 13
+    self.zoom_x += 0.05
+    self.zoom_y += 0.05
+  end
+  #--------------------------------------------------------------------------
+  # ● 已在移入？
+  #--------------------------------------------------------------------------
+  def start # 需已经执行了 finish
+    self.visible = true
+    @state = :start
+  end
+  def start?
+    @state == :start
   end
 
   #--------------------------------------------------------------------------
