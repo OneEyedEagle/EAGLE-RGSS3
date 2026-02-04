@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-形状绘制2 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-UtilsSpritesetRadar"] = "1.0.0"
+$imported["EAGLE-UtilsSpritesetRadar"] = "1.0.1"
 #=============================================================================
-# - 2025.12.22.23
+# - 2026.1.28.23
 #=============================================================================
 # - 本插件新增了用于显示雷达图的精灵组
 #-----------------------------------------------------------------------------
@@ -53,6 +53,9 @@ $imported["EAGLE-UtilsSpritesetRadar"] = "1.0.0"
 #
 #    ps_bg[:name_r] = 数字 或 数字的数组
 #        → 设置各个名称与中心点的距离。
+#
+#    ps_bg[:name_s] = 数字
+#        → 设置各个名称的文字大小。
 #
 #    ps_bg[:name_c] = Color.new 或 Color.new的数组
 #        → 设置各个名称的颜色。
@@ -247,6 +250,8 @@ class Spriteset_Radar
     @ps_bg[:names]  ||= [""]
     # 名称与中心点的距离
     @ps_bg[:name_r] ||= @r + 20
+    # 名称的文字大小
+    @ps_bg[:name_s] ||= Font.default_size
     # 名称的颜色
     @ps_bg[:name_c] ||= Color.new(255, 255, 255)
 
@@ -284,6 +289,7 @@ class Spriteset_Radar
       _y = @cy + label_radius * sin_v
       
       # 根据位置调整文本对齐方式
+      @sprite_bg.bitmap.font.size = get_param_value(@ps_bg[:name_s], i)
       @sprite_bg.bitmap.font.color = get_param_value(@ps_bg[:name_c], i)
       t = get_param_value(@ps_bg[:names], i)
       _r = @sprite_bg.bitmap.text_size(t); _r.width += 10
@@ -381,6 +387,8 @@ class Spriteset_Radar
       s.bitmap.dispose 
       s.dispose
     end
+    @sprite_bg = nil
+    @sprites_data.clear
   end
   #--------------------------------------------------------------------------
   # ● 更新

@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.3.1"
+$imported["EAGLE-StateEX"] = "1.3.2"
 #==============================================================================
-# - 2025.12.18.22 新增直接触发角色的状态对象的伤害计算
+# - 2026.1.31.0 方便扩展
 #==============================================================================
 # - 本插件扩展了默认战斗中的状态，如需兼容其他战斗系统，请自行按注释修改
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -431,6 +431,26 @@ module STATE_EX
   end
   
   #--------------------------------------------------------------------------
+  # ○ 根据传入的值，返回RGSS状态对象和StateEX状态对象
+  #  传入 RPG::State 或 STATE_EX::Data_StateEX 或 状态的数据库id
+  #--------------------------------------------------------------------------
+  def self.get_rgss_state_data_state(_state)
+    rgss_state = nil
+    data_state = nil
+    if _state.is_a?(Integer)
+      rgss_state = $data_states[_state]
+      data_state = nil
+    elsif _state.is_a?(RPG::State)
+      rgss_state = _state
+      data_state = nil
+    elsif _state.is_a?(STATE_EX::Data_StateEX)
+      rgss_state = _state.state
+      data_state = _state
+    end
+    return rgss_state, data_state
+  end
+  
+  #--------------------------------------------------------------------------
   # ○ 获取指定战斗者全部状态的帮助文本
   #--------------------------------------------------------------------------
   def self.get_states_help_text(battler)
@@ -450,19 +470,8 @@ module STATE_EX
   #--------------------------------------------------------------------------
   def self.get_state_help(_state, _battler=nil) 
     # RPG::State 或 STATE_EX::Data_StateEX 或 state_id
-    rgss_state = nil
-    if _state.is_a?(Integer)
-      rgss_state = $data_states[_state]
-      data_state = nil
-    elsif _state.is_a?(RPG::State)
-      rgss_state = _state
-      data_state = nil
-    elsif _state.is_a?(STATE_EX::Data_StateEX)
-      rgss_state = _state.state
-      data_state = _state
-    else
-      return ""
-    end
+    rgss_state, data_state = get_rgss_state_data_state(_state)
+    return "" if rgss_state == nil
     t = ""
     name = rgss_state.name
     # 特别的，状态名字中的 (..) 或 [..] 为备注信息，需要去除
