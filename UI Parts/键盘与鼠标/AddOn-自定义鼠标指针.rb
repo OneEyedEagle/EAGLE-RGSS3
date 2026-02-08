@@ -7,7 +7,7 @@
 $imported ||= {}
 $imported["EAGLE-MouseEXPointer"] = "1.0.0"
 #=============================================================================
-# - 2026.2.8.12
+# - 2026.2.8.14
 #=============================================================================
 # - 本插件新增了对鼠标指针的自定义
 #=============================================================================
@@ -18,7 +18,7 @@ $imported["EAGLE-MouseEXPointer"] = "1.0.0"
 #
 #  2. 对于一般情形下的鼠标指针：
 #
-#   - 使用 "默认" 名称的图像设置。
+#   - 通常情况下将使用 "默认" 名称的图像设置。
 #
 #   - 使用全局脚本 MOUSE_EX.set_pointer("名称") 修改为对应图像。
 #     使用全局脚本 MOUSE_EX.restore_pointer 重置为 "默认" 的图像。
@@ -40,18 +40,25 @@ $imported["EAGLE-MouseEXPointer"] = "1.0.0"
 #
 #   - 为窗口或精灵增加了以下方法：
 #
-#       window.set_mouse_type(name, rect=nil)
-#       sprite.set_mouse_type(name, rect=nil)
+#       window.set_mouse_type(name, rect=nil, method=nil)
+#       sprite.set_mouse_type(name, rect=nil, method=nil)
 #
 #           → 鼠标停留在窗口/精灵的rect区域时，更改为 name 名称的图像。
 #             若 rect 为 nil ，则鼠标在窗口/精灵内时即会更改。
 #             可以反复调用，以对不同区域增加不同鼠标图像，先放入将会先判定。
+#           → method 为传入的 method(:方法名称) 对象，鼠标点击左键时将调用该方法。
 #
 #       window.delete_mouse_type(name=nil)
 #       sprite.delete_mouse_type(name=nil)
 #
 #           → 删去更改鼠标指针为 name 名称的全部区域判定。
 #             若 name 为 nil ，则删去全部区域判定。
+#
+#  5. 对于鼠标停留在 地图/战斗 - 显示图片 上时的鼠标指针：
+#
+#   - 使用全局脚本 MOUSE_EX.set_pic_mouse(pid, name, rect=nil, method=nil) 
+#       对 pic 号显示图片进行设置，
+#     使用全局脚本 MOUSE_EX.delete_mouse_type(pid, name=nil) 进行删除。
 #
 #=============================================================================
 # ○ 隐藏系统鼠标
@@ -74,6 +81,10 @@ module MOUSE_EX
     "默认"  => ["Cursor",    0,0,         1,   1,          0],
     
     "查看"  => ["Cursor_look", 16,16,     1,   1,          0],
+    "调查"  => ["Cursor_navigate", 0,0,     1,   1,          0],
+    "移动"  => ["Cursor_move", 0,0,       1,   1,          0],
+    "问号"  => ["Cursor_question", 0,0,     1,   1,          0],
+    
     "交谈"  => ["Cursor_talk", 16,32,     6,   1,         15],
     "拿取"  => ["Cursor_hand", 0,0,       2,   1,         20],
   }
@@ -155,6 +166,36 @@ module MOUSE_EX
     s = get_mouse_sprite
     s.unlock_state if s 
   end
+  #--------------------------------------------------------------------------
+  # ● 获取指定图片的精灵
+  #--------------------------------------------------------------------------
+  def self.set_pic_mouse(pid, type, rect=nil, method=nil)
+    s = SceneManager.scene.spriteset.get_pic_sprite(pid)
+    if SceneManager.scene_is?(Scene_Map)
+      pics = $game_map.screen.pictures
+    elsif SceneManager.scene_is?(Scene_Battle)
+      pics = $game_troop.screen.pictures
+    else
+      return 
+    end
+    pics[pid].set_mouse_type(type, rect, method)
+    s.set_mouse_type(type, rect, method)
+  end
+  #--------------------------------------------------------------------------
+  # ● 获取指定图片的精灵
+  #--------------------------------------------------------------------------
+  def self.delete_pic_mouse(pid, type=nil)
+    s = SceneManager.scene.spriteset.get_pic_sprite(pid)
+    if SceneManager.scene_is?(Scene_Map)
+      pics = $game_map.screen.pictures
+    elsif SceneManager.scene_is?(Scene_Battle)
+      pics = $game_troop.screen.pictures
+    else
+      return 
+    end
+    pics[pid].delete_mouse_type(type)
+    s.delete_mouse_type(type)
+  end
 end
 
 #=============================================================================
@@ -165,10 +206,10 @@ module MOUSE_OBJECT
   # ● 设置鼠标指针样式
   #  rect 为 nil 时代表在窗口/精灵内时就生效
   #--------------------------------------------------------------------------
-  def set_mouse_type(type, rect=nil)
+  def set_mouse_type(type, rect=nil, method=nil)
     @mouse_type ||= []
-    @mouse_type.push([type, rect])
-    $game_temp.mouse_objects << self
+    @mouse_type.push([type, rect, method])
+    $game_temp.mouse_objects << self if !$game_temp.mouse_objects.include?(self)
   end
   #--------------------------------------------------------------------------
   # ● 获取鼠标指针样式
@@ -184,10 +225,10 @@ module MOUSE_OBJECT
     end
     @mouse_type.each do |a|
       r = a[1]
-      return a[0] if r == nil
+      return a if r == nil
       next if mouse_x < r.x || mouse_x > r.x + r.width-1 
       next if mouse_y < r.y || mouse_y > r.y + r.height-1
-      return a[0]
+      return a
     end
     return nil
   end
@@ -259,6 +300,8 @@ class Sprite_MousePointer < Sprite
     @default_state_raw = "默认"
     @default_state = @default_state_raw
     @current_state = @default_state
+    @current_obj = nil
+    @current_method = nil
     @flag_lock = false
     @detection_counter = 0
     update_bitmap
@@ -280,6 +323,7 @@ class Sprite_MousePointer < Sprite
     update_index
     update_position
     update_detection
+    update_object if @current_obj
   end
   #--------------------------------------------------------------------------
   # ● 更新位图
@@ -370,6 +414,8 @@ class Sprite_MousePointer < Sprite
     type = check_event_under_mouse
     return type if type
     # 默认状态
+    @current_obj = nil
+    @current_method = nil
     return @default_state
   end
   #--------------------------------------------------------------------------
@@ -384,8 +430,12 @@ class Sprite_MousePointer < Sprite
     mouse_objects.each do |obj|
       next if obj.is_a?(Sprite) and !obj.mouse_in?
       next if obj.is_a?(Window) and !obj.mouse_in?
-      type = obj.get_mouse_type(self.x, self.y)
-      return type if type
+      data = obj.get_mouse_type(self.x, self.y)
+      if data
+        @current_obj = obj
+        @current_method = data[2]
+        return data[0] 
+      end
     end
     return nil
   end
@@ -400,7 +450,10 @@ class Sprite_MousePointer < Sprite
       when "Game_Event"
         if s.mouse_in?(true, false)
           type = MOUSE_EX.get_event_pointer(character)
-          return type if type
+          if type
+            @current_obj = s
+            return type 
+          end
         end
       when "Game_Vehicle"
       when "Game_Follower"
@@ -408,6 +461,14 @@ class Sprite_MousePointer < Sprite
       end
     end
     return nil 
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新鼠标当前所选中的obj
+  #--------------------------------------------------------------------------
+  def update_object
+    if @current_method
+      @current_method.call if MOUSE_EX.up?(:ML)
+    end
   end
   #--------------------------------------------------------------------------
   # ● 记录状态变化（调试用）
@@ -465,6 +526,7 @@ class Scene_Base
   #--------------------------------------------------------------------------
   def create_mouse_pointer
     @mouse_pointer = Sprite_MousePointer.new
+    $game_temp.mouse_objects.clear
   end
   #--------------------------------------------------------------------------
   # ● 更新鼠标指针
@@ -496,16 +558,93 @@ end
 class Game_Event < Game_Character
   attr_reader  :event
 end
+
+#=============================================================================
+# ** 绑定显示图片
+#=============================================================================
+class Game_Picture
+  attr_reader   :mouse_type 
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  alias mouse_pointer_initialize initialize
+  def initialize(number)
+    mouse_pointer_initialize(number)
+    @mouse_type = []
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置鼠标指针样式
+  #  rect 为 nil 时代表在窗口/精灵内时就生效
+  #--------------------------------------------------------------------------
+  def set_mouse_type(type, rect=nil, method=nil)
+    @mouse_type.push([type, rect, method])
+  end
+  #--------------------------------------------------------------------------
+  # ● 清空设置的鼠标指针样式
+  #--------------------------------------------------------------------------
+  def delete_mouse_type(type=nil)
+    if type == nil
+      @mouse_type.clear
+    else
+      @mouse_type.delete_if { |a| a[0] == type }
+    end
+  end
+end
+#=============================================================================
+# ** Sprite_Picture
+#=============================================================================
+class Sprite_Picture < Sprite
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #     picture : Game_Picture
+  #--------------------------------------------------------------------------
+  alias mouse_pointer_initialize initialize
+  def initialize(viewport, picture)
+    mouse_pointer_initialize(viewport, picture)
+    rebind_mouse_type
+  end
+  #--------------------------------------------------------------------------
+  # ● 重新绑定鼠标指针样式
+  #--------------------------------------------------------------------------
+  def rebind_mouse_type
+    @picture.mouse_type.each do |a|
+      set_mouse_type(*a)
+    end
+  end
+end
 #=============================================================================
 # ** Spriteset_Map
 #=============================================================================
 class Spriteset_Map
   attr_reader   :character_sprites
+  #--------------------------------------------------------------------------
+  # ● 获取指定ID的图片精灵
+  #--------------------------------------------------------------------------
+  def get_pic_sprite(pid)
+    @picture_sprites[pid]
+  end
+end
+#=============================================================================
+# ** Spriteset_Battle
+#=============================================================================
+class Spriteset_Battle
+  #--------------------------------------------------------------------------
+  # ● 获取指定ID的图片精灵
+  #--------------------------------------------------------------------------
+  def get_pic_sprite(pid)
+    @picture_sprites[pid]
+  end
 end
 #=============================================================================
 # ** Scene_Map
 #=============================================================================
 class Scene_Map < Scene_Base
+  attr_reader   :spriteset
+end
+#=============================================================================
+# ** Scene_Battle
+#=============================================================================
+class Scene_Battle < Scene_Base
   attr_reader   :spriteset
 end
 
