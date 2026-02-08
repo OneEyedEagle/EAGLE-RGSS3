@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.8.0"
+$imported["EAGLE-AbilityLearn"] = "1.8.1"
 #==============================================================================
-# - 2026.1.23.22 更改为长按解锁能力，增加:active设置来允许启用/禁用已解锁的能力
+# - 2026.2.6.20 新增解锁时显示动画
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
@@ -457,6 +457,11 @@ module ABILITY_LEARN
   KEYHINT_COLOR_BG   = Color.new(0,0,0,100)
   # 解锁/升级时的背景填充颜色
   KEYHINT_COLOR_FILL = Color.new(255,255,255,150)
+  
+  #--------------------------------------------------------------------------
+  # ○【常量】设置：能力解锁时显示在能力图标上的动画
+  #--------------------------------------------------------------------------
+  ANIM_UNLOCK = 38
   
   #--------------------------------------------------------------------------
   # ○【常量】设置：能力启用/禁用的提示UI
@@ -1149,12 +1154,24 @@ module ABILITY_LEARN
     return false if y > r.y + r.height or y < r.y
     return true
   end
+  #--------------------------------------------------------------------------
+  # ● 显示动画
+  #--------------------------------------------------------------------------
+  def self.start_animation(animation_id, sprite)
+    sprite.start_animation($data_animations[animation_id])
+  end
 end
 
 #==============================================================================
 # ■ UI
 #==============================================================================
 class << ABILITY_LEARN
+  #--------------------------------------------------------------------------
+  # ● 绑定基础更新方法
+  #--------------------------------------------------------------------------
+  def update_basic=(method)
+    @method_update_basic = method
+  end
   #--------------------------------------------------------------------------
   # ● UI-开启
   #--------------------------------------------------------------------------
@@ -1457,13 +1474,18 @@ class << ABILITY_LEARN
   # ● UI-基础更新
   #--------------------------------------------------------------------------
   def update_basic
-    Graphics.update
-    Input.update
+    if @method_update_basic
+      @method_update_basic.call
+    else
+      Graphics.update
+      Input.update
+    end
   end
   #--------------------------------------------------------------------------
   # ● UI-内容更新
   #--------------------------------------------------------------------------
   def update_main
+    @viewport_bg.update
     update_tokens
     update_player
     update_unlock
@@ -1672,6 +1694,7 @@ class << ABILITY_LEARN
   # ● 处理解锁
   #--------------------------------------------------------------------------
   def process_unlock(sprite_token)
+    start_animation(ABILITY_LEARN::ANIM_UNLOCK, sprite_token)
     data = sprite_token.data
     id = sprite_token.id
     data.unlock(id)
@@ -1851,7 +1874,7 @@ end
 #==============================================================================
 # ■ 能力精灵
 #==============================================================================
-class Sprite_AbilityLearn_Token < Sprite
+class Sprite_AbilityLearn_Token < Sprite_Base
   attr_reader :actor_id, :id
   include ABILITY_LEARN
   #--------------------------------------------------------------------------
@@ -2053,6 +2076,7 @@ class Sprite_AbilityLearn_Token < Sprite
   # ● 更新
   #--------------------------------------------------------------------------
   def update
+    super
     update_unlock_anim
     process_show_unlock_anim if @count_can_unlock <= 0 and show_unlock_anim?
   end
@@ -2684,6 +2708,7 @@ class Scene_AbilityLearn < Scene_MenuBase
   def post_start
     super
     ABILITY_LEARN.init_ui(@@actor_id)
+    ABILITY_LEARN.update_basic = method(:update_basic)
   end
   #--------------------------------------------------------------------------
   # ● 更新画面
