@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEXPointer"] = "1.0.0"
+$imported["EAGLE-MouseEXPointer"] = "1.0.1"
 #=============================================================================
-# - 2026.2.8.14
+# - 2026.2.9.23
 #=============================================================================
 # - 本插件新增了对鼠标指针的自定义
 #=============================================================================
@@ -171,6 +171,7 @@ module MOUSE_EX
   #--------------------------------------------------------------------------
   def self.set_pic_mouse(pid, type, rect=nil, method=nil)
     s = SceneManager.scene.spriteset.get_pic_sprite(pid)
+    return nil if s == nil
     if SceneManager.scene_is?(Scene_Map)
       pics = $game_map.screen.pictures
     elsif SceneManager.scene_is?(Scene_Battle)
@@ -186,6 +187,7 @@ module MOUSE_EX
   #--------------------------------------------------------------------------
   def self.delete_pic_mouse(pid, type=nil)
     s = SceneManager.scene.spriteset.get_pic_sprite(pid)
+    return if s == nil
     if SceneManager.scene_is?(Scene_Map)
       pics = $game_map.screen.pictures
     elsif SceneManager.scene_is?(Scene_Battle)
