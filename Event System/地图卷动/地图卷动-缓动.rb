@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-缓动函数 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MapEaseScroll"] = "1.0.1"
+$imported["EAGLE-MapEaseScroll"] = "1.1.0"
 #==============================================================================
-# - 2023.10.18.2 兼容 Map Effects v1.4.1 for VX and VXace by Zeus81
+# - 2026.2.12.11 兼容 Map Effects v1.4.1 for VX and VXace by Zeus81 和 像素级移动
 #==============================================================================
 # - 本插件新增了地图中使用的缓动版地图卷动
 #-----------------------------------------------------------------------------
@@ -53,6 +53,11 @@ class Game_Map
   # ● 开始卷动
   #--------------------------------------------------------------------------
   def eagle_start_scroll(map_x, map_y, t=60, type="easeInSine")
+    if $imported["EAGLE-PixelMove"]
+      xy = PIXEL_MOVE.event_rgss2unit(map_x, map_y)
+      map_x = xy[0]
+      map_y = xy[1] 
+    end
     @eagle_scroll = {}
     @eagle_scroll["x1"] = @display_x
     @eagle_scroll["y1"] = @display_y
@@ -76,6 +81,11 @@ class Game_Map
     @display_y = @eagle_scroll["y1"] + @eagle_scroll["yd"] * v
     
     if $imported[:Zeus_Map_Effects]
+      if $imported["EAGLE-PixelMove"]
+        @display_x = limit_x_unit(@display_x)
+        @display_y = limit_y_unit(@display_y)
+        return
+      end
       @display_x = limit_x(@display_x)
       @display_y = limit_y(@display_y)
       return 
@@ -83,6 +93,13 @@ class Game_Map
     
     @display_x = [@display_x, 0].max
     @display_y = [@display_y, 0].max
+    
+    if $imported["EAGLE-PixelMove"]
+      @display_x = [@display_x, (width_unit - screen_unit_x)].min
+      @display_y = [@display_y, height_unit - screen_unit_y].min
+      return
+    end
+    
     @display_x = [@display_x, (width - screen_tile_x)].min
     @display_y = [@display_y, height - screen_tile_y].min
   end

@@ -2,9 +2,9 @@
 # ■ AStar寻路扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AStar"] = "1.5.2"
+$imported["EAGLE-AStar"] = "1.6.0"
 #==============================================================================
-# - 2023.7.2.22 新增寻路失败后往外扩展一圈移动、连续失败后结束寻路的设置
+# - 2026.2.12.15 兼容【像素级移动 1.5.0】
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -123,10 +123,11 @@ class Process
     x_init = @chara.x
     y_init = @chara.y
     if $imported["EAGLE-PixelMove"]
-      des_xp, des_yp = PIXEL_MOVE.event_rgss2unit(@des_x, @des_y)
+      des_xp, des_yp = PIXEL_MOVE.grid_rgss2unit(@des_x, @des_y)
       return true if @chara.pos?(des_xp, des_yp)
       x_init = @chara.rgss_x
       y_init = @chara.rgss_y
+      #p [x_init, y_init]
     else
       return true if @chara.pos?(@des_x, @des_y)
     end
@@ -200,7 +201,7 @@ class Process
   #--------------------------------------------------------------------------
   def passable?(chara, x, y, dir)
     if $imported["EAGLE-PixelMove"]
-      return chara.eagle_old_passable?(x, y, dir)
+      return chara._pixelmove_passable?(x, y, dir)
     end
     chara.passable?(x, y, dir)
   end
@@ -344,8 +345,8 @@ class Game_Character
     _x = self.x
     _y = self.y
     if $imported["EAGLE-PixelMove"]
-      _x= self.rgss_x
-      _y= self.rgss_y
+      _x = self.rgss_x
+      _y = self.rgss_y
     end
     (@astar_des_x - _x).abs + (@astar_des_y - _y).abs <= @astar_des_d
   end
