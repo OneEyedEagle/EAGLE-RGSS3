@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "2.0.1"  # 2025.12.6.12
+$imported["EAGLE-ChoiceEX"] = "2.0.2"  # 2026.2.13.22
 =begin
 ===============================================================================
 
@@ -37,6 +37,8 @@ $imported["EAGLE-ChoiceEX"] = "2.0.1"  # 2025.12.6.12
         -                                                             -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.2.13.20 V2.0.2 将 fdw 和 fdh 调整为 font 中的 w 和 h
      ----------------------------------------------------------------------
      - 2025.12.6.12 V2.0.1 修复 cdx 和 cdy 未使光标偏移的bug
      ----------------------------------------------------------------------
@@ -231,12 +233,6 @@ module MESSAGE_EX
     :col   => 1,      # 选择框的列数（默认1）
     :cwd   => 4,      # 每行之间的间距
     :lhd   => 4,      # 每列之间的间距
-#  ·调整字符宽高
-    :fdw   => 1,      # 计算宽度时，每个字符的宽度增量（默认0）
-    :fdh   => 4,      # 计算高度时，每个字符的高度增量（默认0）
-                      # * 由于字体计算宽高时可能存在误差，因此增加手工调整
-                      # * 如果发现文字超出了光标范围，可以试试调整这两个数值
-                      # * fdw 会增大光标的宽度，fdh会增大光标的高度。
 #  ·调整选项偏移
     :cdx   => 2,      # 选项绘制时，整体的x方向偏移增量
     :cdy   => 2,      # 选项绘制时，整体的y方向偏移增量
@@ -248,10 +244,17 @@ module MESSAGE_EX
                       # * 0=左对齐，1=居中，2=右对齐；默认0 左对齐
     :cit   => 0,      # 选项移入时，字与字的间隔帧数
 #  ·特殊
-    # 文字绘制预设
+    # ·文字绘制预设
     # （具体见【鹰式对话框扩展】中的 FONT_PARAMS_INIT，各个选择支将独立处理）
-    :font => {},
-    # 文字特效预设
+    :font => { 
+    #  ·调整字符宽高
+      :w   => 0,     # 计算宽度时，每个字符的宽度增量（默认0）
+      :h   => 0,     # 计算高度时，每个字符的高度增量（默认0）
+                     # * 由于字体计算宽高时可能存在误差，因此增加手工调整
+                     # * 如果发现文字超出了光标范围，可以试试调整这两个数值
+                     # * w 会增大光标的宽度，h会增大光标的高度。
+    },
+    # ·文字特效预设
     # （例如填入 :cin => "1" 则启用默认的文字移入效果）
     :charas => {},
   }
@@ -359,7 +362,7 @@ end
 # ○ Window_EagleChoiceList
 #==============================================================================
 class Window_EagleChoiceList < Window_Command
-  attr_reader :message_window, :skin
+  attr_reader :message_window, :skin, :font_params
   #--------------------------------------------------------------------------
   # ● 获取主参数组（方便子窗口修改成自己的game_message）
   #--------------------------------------------------------------------------
@@ -375,6 +378,9 @@ class Window_EagleChoiceList < Window_Command
   #--------------------------------------------------------------------------
   def initialize(message_window)
     @message_window = message_window
+    @font_params = game_message.font_params.dup
+    @font_params.merge!(choice_params[:font])
+    
     @choices = {} # 选择支的窗口序号 => 选择支精灵组
     @choices_info = {} # 选择支的窗口序号 => 信息组
 
@@ -515,10 +521,10 @@ class Window_EagleChoiceList < Window_Command
     # 存储绘制的原始文本（去除全部判定文本）
     @choices_info[i_w][:text] = text
     # 计算原始文本占用的绘制宽度
-    w, h = MESSAGE_EX.calculate_text_wh(@message_window.contents, text,
-      choice_params[:fdw], choice_params[:fdh])
-    @choices_info[i_w][:width] = w + choice_params[:fdw]
-    @choices_info[i_w][:height] = h + choice_params[:fdh]
+    w, h = MESSAGE_EX.calculate_text_wh(@message_window.contents, text, 
+      0, 0, @font_params)
+    @choices_info[i_w][:width] = w 
+    @choices_info[i_w][:height] = h
     return true # 成功设置一个需要显示的选项的信息
   end
 
@@ -926,8 +932,7 @@ class Spriteset_Choice
     @chara_effect_params = choice_params[:charas].dup
     @chara_dwin_rect = nil
     # 每个选择支单独存一个文字绘制参数组
-    @font_params = @choice_window.game_message.font_params.dup
-    @font_params.merge!(choice_params[:font])
+    @font_params = @choice_window.font_params.dup
     @ex_params = {}
     @active = false # 是否开始移入
     @visible = false # 是否可见
@@ -1102,6 +1107,7 @@ class Spriteset_Choice
     @font_params[:c] = c
     @font_params[:ca] = 255
     @font_params[:ca] = 120 if !@enabled
+    MESSAGE_EX.apply_font_params(@choice_window.contents.font, @font_params)
   end
   #--------------------------------------------------------------------------
   # ● 文字的处理
@@ -1114,7 +1120,7 @@ class Spriteset_Choice
     when "\r", "\f"   # 回车 # 翻页
       return
     when "\n" # 换行
-      process_new_line(text, pos)
+      #process_new_line(text, pos) # 不可换行
     when "\e"   # 控制符
       process_escape_character(message_window.obtain_escape_code(text), text, pos)
     else        # 普通文字
@@ -1133,24 +1139,21 @@ class Spriteset_Choice
   # ● 处理普通文字
   #--------------------------------------------------------------------------
   def process_normal_character(c, pos)
-    c_rect = message_window.text_size(c)
-    c_w = c_rect.width
-    c_h = c_rect.height
-    pos[:height] = c_h if c_h > pos[:height]
-    c_y = pos[:y] + (pos[:height] - c_h - 1) / 2
-    s = eagle_new_chara_sprite(pos[:x], c_y, c_w, c_h)
-    s.eagle_font.draw(s.bitmap, 0, 0, c_w*2, c_h, c, 0)
+    c_rect = @choice_window.text_size(c)
+    c_w = c_rect.width + @font_params[:w]
+    c_h = c_rect.height + @font_params[:h]
+    s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
+    s.eagle_font.draw(s.bitmap, 0, 0, c_w, c_h, c)
     pos[:x] += c_w
   end
   #--------------------------------------------------------------------------
   # ● 处理控制符指定的图标绘制
   #--------------------------------------------------------------------------
   def process_draw_icon(icon_index, pos)
-    c_w = c_h = 24
-    pos[:height] = c_h if c_h > pos[:height]
-    c_y = pos[:y] + (pos[:height] - c_h) / 2
-    s = eagle_new_chara_sprite(pos[:x], c_y, c_w, c_h)
-    s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index)
+    c_w = 24 + @font_params[:w]
+    c_h = 24 + @font_params[:h]
+    s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
+    s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index, c_w, c_h)
     pos[:x] += 24
   end
   #--------------------------------------------------------------------------
