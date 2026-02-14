@@ -26,7 +26,7 @@ $imported["EAGLE-MessageEX"] = "2.1.0"
      
      更新历史
      ----------------------------------------------------------------------
-     - 2026.2.13.23 V2.1.0 新增对文字宽高的增加量
+     - 2026.2.14.9  V2.1.0 新增对文字宽高的增加量
      ----------------------------------------------------------------------
      - 2026.1.9.12  V2.0.6 新增对话框宽度最大值的设置，避免对话框宽度大于屏幕
      ----------------------------------------------------------------------
@@ -267,6 +267,7 @@ end
     text_clone.gsub!(/\e\e/)    { "\\" }
     text_clone.gsub!(/\e[\.\|\^\!\$<>\{|\}]/i) { "" }
     # 每一行计算宽度高度
+    icon_height = 24
     text_clone.each_line do |line|
       icon_count = 0
       # 获取 \i[] 数目
@@ -276,11 +277,14 @@ end
       r = bitmap.text_size(line)
       if font_params # 特别的：应用 font_params 里的文字宽高增量
         r.width += (line.length + icon_count) * font_params[:w] if font_params[:w]
-        r.height += font_params[:h] if font_params[:h]
+        if font_params[:h]
+          r.height += font_params[:h] 
+          icon_height += font_params[:h]
+        end
       end
       w = r.width + icon_count * 24 + (line.length - 1 + icon_count) * k
       array_width.push(w)
-      h = icon_count > 0 ? [r.height, 24].max : r.height
+      h = icon_count > 0 ? [r.height, icon_height].max : r.height
       array_height.push(h)
     end
     return [array_width.max, array_height.inject{|sum, v| sum = sum + v + ld}]
@@ -2230,8 +2234,8 @@ class Window_EagleMessage < Window_Base
   # 绘制一个图标
   def process_draw_icon(icon_index, pos)
     pos[:c] = icon_index
-    c_w = c_rect.width  + font_params[:w]
-    c_h = c_rect.height + font_params[:h]
+    c_w = 24 + font_params[:w]
+    c_h = 24 + font_params[:h]
     eagle_auto_new_line(c_w, pos)
     if @flag_draw
       s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
@@ -2370,7 +2374,8 @@ class Window_EagleMessage < Window_Base
       when 2 # 右排列
         _x = c.origin_x + max_w - w_line
       end
-      _y = c.origin_y + h_line - c.height # 底部对齐
+      _y = c.origin_y + (h_line - c.height) / 2 # 居中对齐
+      #_y = c.origin_y + h_line - c.height # 底部对齐
       c.reset_xy(_x, _y)
     end
   end
@@ -4280,6 +4285,7 @@ end
 #=============================================================================
 class Font_EagleCharacter
   attr_reader   :text  # 绘制的文本
+  def text_color(n); MESSAGE_EX.text_color(n, MESSAGE_EX.windowskin(@params[:skin])); end
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -4292,13 +4298,6 @@ class Font_EagleCharacter
   #--------------------------------------------------------------------------
   def set_param(sym, value)
     @params[sym] = value
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取文字颜色
-  #     n : 文字颜色编号（0..31）
-  #--------------------------------------------------------------------------
-  def text_color(n)
-    MESSAGE_EX.text_color(n, MESSAGE_EX.windowskin(@params[:skin]))
   end
   #--------------------------------------------------------------------------
   # ● 获取渐变色数组
@@ -4325,7 +4324,7 @@ class Font_EagleCharacter
     MESSAGE_EX.apply_font_params(bitmap.font, @params)
 
     draw_param_p(bitmap, x, y, w, h) if @params[:p]
-    draw_param_l(bitmap, x, y, w, h, c, ali) if @params[:l]
+    draw_param_l(bitmap, x, y, w, h, c) if @params[:l]
     if defined?(Sion_GradientText) && @params[:ex_cg] && @params[:ex_cg] != ''
       grad_cs = get_gradient_color(@params[:ex_cg])
       Sion_GradientText.draw_text(bitmap,x+dx,y+dy,w*2,r.height,c,0,grad_cs)
@@ -4370,13 +4369,13 @@ class Font_EagleCharacter
   #--------------------------------------------------------------------------
   # ● 绘制外发光
   #--------------------------------------------------------------------------
-  def draw_param_l(bitmap, x, y, w, h, c, ali)
+  def draw_param_l(bitmap, x, y, w, h, c)
     bitmap.font.outline = false
     bitmap.font.shadow = false
     color = bitmap.font.color.dup
     bitmap.font.color = text_color(@params[:lc])
     @params[:lp].times do
-      bitmap.draw_text(x, y, w+4, h, c, ali)
+      bitmap.draw_text(x, y, w+4, h, c, 0)
       bitmap.blur
     end
     bitmap.font.color = color

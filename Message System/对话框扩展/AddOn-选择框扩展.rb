@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "2.0.2"  # 2026.2.13.22
+$imported["EAGLE-ChoiceEX"] = "2.1.0"  # 2026.2.14.10
 =begin
 ===============================================================================
 
@@ -221,7 +221,7 @@ module MESSAGE_EX
                       #  * 嵌入时显示原点固定为 7左上角
     :x     => nil,    # 所在屏幕坐标（x,y）（默认nil不设置）
     :y     => nil,
-    :do    => 9,      # 显示位置类型（设置后x、y将无效）
+    :do    => 0,      # 显示位置类型（设置后x、y将无效）
                       #  * 0 = 嵌入
                       #  * 1~9 = 对话框外边界的九宫格位置，对话框关闭时无效
                       #  * -1~-9 = 屏幕外框的九宫格位置
@@ -363,16 +363,12 @@ end
 #==============================================================================
 class Window_EagleChoiceList < Window_Command
   attr_reader :message_window, :skin, :font_params
+  def text_color(n); MESSAGE_EX.text_color(n, self.windowskin); end
   #--------------------------------------------------------------------------
   # ● 获取主参数组（方便子窗口修改成自己的game_message）
   #--------------------------------------------------------------------------
   def game_message;   @message_window.game_message;   end
   def choice_params;  game_message.choice_params;     end
-  #--------------------------------------------------------------------------
-  # ● 获取文字颜色
-  #     n : 文字颜色编号（0..31）
-  #--------------------------------------------------------------------------
-  def text_color(n); MESSAGE_EX.text_color(n, self.windowskin); end
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
@@ -393,7 +389,7 @@ class Window_EagleChoiceList < Window_Command
     @func_key_freeze = false # 冻结功能按键
     @skin = 0 # 当前所用窗口皮肤的index
     eagle_reset
-
+    
     super(0, 0)
     self.openness = 0
     deactivate
@@ -412,38 +408,50 @@ class Window_EagleChoiceList < Window_Command
     @message_window.eagle_text_control_font
   end
   #--------------------------------------------------------------------------
-  # ● 计算窗口内容的宽度
+  # ● 窗口内容的宽高
   #--------------------------------------------------------------------------
-  def contents_width
-    @final_w
+  def contents_width; @final_w; end
+  def contents_height; @final_h; end
+  
+  #--------------------------------------------------------------------------
+  # ● 兼容默认方法
+  #--------------------------------------------------------------------------
+  # 更新下端边距
+  def update_padding_bottom
+    self.padding_bottom = padding
   end
-  #--------------------------------------------------------------------------
-  # ● 计算窗口内容的高度
-  #--------------------------------------------------------------------------
-  def contents_height
-    @final_h
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取列数
-  #--------------------------------------------------------------------------
-  def col_max
-    v = choice_params[:col] || 1
-    return v if v > 0
-    return 1
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取列之间的间距宽度
-  #--------------------------------------------------------------------------
-  def spacing
-    choice_params[:cwd] || 4
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取行之间的间距宽度
-  #--------------------------------------------------------------------------
-  def spacing_line
-    choice_params[:lhd] || 4
+  
+  # 激活
+  def activate
+    @choices.each { |i, s| s.set_active(true) }
+    super
   end
 
+  # 打开
+  def open
+    @choices.each { |i, s| s.set_visible(true) }
+    super
+  end
+
+  # 关闭
+  def close
+    @choices.each { |i, s| s.move_out }
+    eagle_reset
+    if $imported["EAGLE-TimerEX"]
+      $game_timer[:choice_cd].stop
+    else
+      $game_timer.stop
+    end
+    super
+  end
+
+  # 释放
+  def dispose
+    super
+    @choices.each { |i, s| s.dispose }
+    @choices.clear
+  end
+  
   #--------------------------------------------------------------------------
   # ● 开始输入的处理（覆盖）
   #--------------------------------------------------------------------------
@@ -521,8 +529,11 @@ class Window_EagleChoiceList < Window_Command
     # 存储绘制的原始文本（去除全部判定文本）
     @choices_info[i_w][:text] = text
     # 计算原始文本占用的绘制宽度
+    _temp_game_message = self.game_message.clone2
+    _temp_game_message.font_params = @font_params.dup
+    MESSAGE_EX.set_game_message(_temp_game_message, text)
     w, h = MESSAGE_EX.calculate_text_wh(@message_window.contents, text, 
-      0, 0, @font_params)
+      0, 0, _temp_game_message.font_params)
     @choices_info[i_w][:width] = w 
     @choices_info[i_w][:height] = h
     return true # 成功设置一个需要显示的选项的信息
@@ -560,14 +571,18 @@ class Window_EagleChoiceList < Window_Command
     # 窗口高度
     @max_line_h = @win_info[:line_h].max
     @final_h = @win_info[:line_h].inject { |s, v| s = s+v+spacing_line }
-    @max_line_show_num = @choices_num
     self.height = @final_h
-    h = [choice_params[:h], MESSAGE_EX::CHOICE_LINE_MAX].min
-    if h > 0
-      @max_line_show_num = h
-      self.height = h * @max_line_h + (h - 1) * spacing_line
+    #  检查最大显示行数
+    m1 = choice_params[:h] > 0 ? choice_params[:h] : 999
+    m2 = MESSAGE_EX::CHOICE_LINE_MAX > 0 ? MESSAGE_EX::CHOICE_LINE_MAX : 999
+    @max_line_show_num = [@choices_num, m1, m2].min
+    if n_line > @max_line_show_num 
+      # 如果实际行数大于最大显示行数，则每一行都按最大行高处理
+      @max_line_show_num = n_line
+      self.height = n_line * @max_line_h + (n_line - 1) * spacing_line
     end
     self.height += standard_padding * 2
+    
     # 窗口宽度
     @max_col_w = @win_info[:col_w].max
     @final_w = @win_info[:col_w].inject { |s, v| s = s+v+spacing }
@@ -613,12 +628,6 @@ class Window_EagleChoiceList < Window_Command
 
     self.z = @message_window.z + 10 # 在文字绘制之前设置，保证文字精灵的z值
     self.ox = self.oy = 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新下端边距
-  #--------------------------------------------------------------------------
-  def update_padding_bottom
-    self.padding_bottom = padding
   end
   #--------------------------------------------------------------------------
   # ● 更新窗口的位置
@@ -683,26 +692,48 @@ class Window_EagleChoiceList < Window_Command
     return unselect if i < 0
     select(i)
   end
-
+  #--------------------------------------------------------------------------
+  # ● 重置全部选项的位置
+  #--------------------------------------------------------------------------
+  def reset_choice_positions
+    item_max.times {|i| @choices[i].set_rect(item_rect(i)) }
+  end
+  
   #--------------------------------------------------------------------------
   # ● 生成指令列表
   #--------------------------------------------------------------------------
   def make_command_list
     @choices_info.each { |i, v| add_command(v[:text], :choice, v[:enable]) }
   end
-  #--------------------------------------------------------------------------
-  # ● 获取指令相关属性
-  #--------------------------------------------------------------------------
+  
+  # 获取指令相关属性
   def command_name(index);      @choices_info[index][:text];   end
   def command_enabled?(index);  @choices_info[index][:enable]; end
   def command_chosen?(index);   @choices_info[index][:read];   end
 
   #--------------------------------------------------------------------------
-  # ● 获取行高
+  # ● 行列计算
   #--------------------------------------------------------------------------
-  def line_height
-    @max_line_h # game_message.font_params[:size] + 4
+  # 行高
+  def line_height; @max_line_h; end
+
+  # 列间距
+  def spacing; choice_params[:cwd] || 4; end
+  # 行间距
+  def spacing_line; choice_params[:lhd] || 4; end
+
+  # 显示列数
+  def col_max
+    v = choice_params[:col] || 1
+    return v if v > 0
+    return 1
   end
+
+  # 获取一页內显示的行数
+  def page_row_max
+    (height - padding - padding_bottom) / item_height
+  end
+
   #--------------------------------------------------------------------------
   # ● 获取项目的绘制矩形
   #--------------------------------------------------------------------------
@@ -725,7 +756,7 @@ class Window_EagleChoiceList < Window_Command
         rect.y = @win_info[:line_h][0...i_line].inject { |s, v| s = s+v+spacing_line } || 0
         rect.y += spacing_line if rect.y > 0
         rect.height = @win_info[:line_h][i_line]
-      else # 此时，每个选项都是最大的行高
+      else # 显示行高小于实际行数，那每个选项都是最大的行高
         rect.y = index * (@max_line_h + spacing_line)
         rect.height = @max_line_h
       end
@@ -762,69 +793,7 @@ class Window_EagleChoiceList < Window_Command
     s.update
     @choices[index] = s
   end
-  #--------------------------------------------------------------------------
-  # ● 重置全部选项的位置
-  #--------------------------------------------------------------------------
-  def reset_choice_positions
-    item_max.times {|i| @choices[i].set_rect(item_rect(i)) }
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新光标
-  #--------------------------------------------------------------------------
-  def update_cursor
-    super
-    return if !self.active
-    @choices.each do |i, s|
-      r = item_rect(i)
-      y_ = r.y - self.oy
-      s.set_visible(y_ >= 0 && y_ + @choices_info[i][:height] < self.height)
-      s.set_xywh( nil, y_ )
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 设置顶行位置
-  #--------------------------------------------------------------------------
-  def top_row=(row)
-    return if @max_line_show_num == @choices_num # 如果行数一致，则不用变动
-    row = 0 if row < 0
-    row = row_max - 1 if row > row_max - 1
-    self.oy = row * item_height + row * spacing_line
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取顶行位置
-  #--------------------------------------------------------------------------
-  def top_row
-    oy / item_height
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取一页內显示的行数
-  #--------------------------------------------------------------------------
-  def page_row_max
-    (height - padding - padding_bottom) / item_height
-  end
-
-  #--------------------------------------------------------------------------
-  # ● 用事件列表中i_e_new号选项分支替换窗口中i_w号选项
-  #--------------------------------------------------------------------------
-  def replace_choice(i_e_new, i_w)
-    @choices[i_w].move_out
-    if i_e_new < 0
-      i_e_old = @choices_info[i_w][:i_e]
-      process_choice(game_message.choices[i_e_old].dup, i_e_old, i_w, false)
-      @choices_info[i_w][:enable] = false
-      @list[i_w][:enabled] = false # 修改 add_command 中的数据
-      redraw_item(i_w)
-      @choices[i_w].dispose_timer # 防止二次倒计时
-    else
-      process_choice(game_message.choices[i_e_new].dup, i_e_new, i_w, false)
-      redraw_item(i_w)
-      reset_size; reset_choice_positions; update_placement
-    end
-    @choices[i_w].set_active(true)
-    @choices[i_w].set_visible(true)
-    select(self.index)
-  end
-
+  
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
@@ -849,23 +818,49 @@ class Window_EagleChoiceList < Window_Command
   end
 
   #--------------------------------------------------------------------------
+  # ● 更新光标
+  #--------------------------------------------------------------------------
+  def update_cursor
+    super
+    return if !self.active
+    @choices.each do |i, s|
+      r = item_rect(i)
+      y_ = r.y - self.oy
+      s.set_visible(y_ >= 0 && y_ + @choices_info[i][:height] < self.height)
+      s.set_xywh( nil, y_ )
+    end
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 顶行位置
+  #--------------------------------------------------------------------------
+  def top_row=(row)
+    return if @max_line_show_num == @choices_num # 如果行数一致，则不用变动
+    row = 0 if row < 0
+    row = row_max - 1 if row > row_max - 1
+    self.oy = row * item_height + row * spacing_line
+  end
+
+  def top_row
+    oy / item_height
+  end
+
+  #--------------------------------------------------------------------------
   # ● “确定”和“取消”的处理
   #--------------------------------------------------------------------------
   def process_handling
     return if @func_key_freeze
     super
   end
-  #--------------------------------------------------------------------------
-  # ● 获取“取消处理”的有效状态
-  #--------------------------------------------------------------------------
+
+  # 获取“取消处理”的有效状态
   def cancel_enabled?
     game_message.choice_cancel_i_e >= 0 &&  # 设置了取消分支
     (game_message.choice_cancel_i_w < 0 ||  # 取消分支为独立分支
     @choices_info[game_message.choice_cancel_i_w][:enable]) # 取消分支可选
   end
-  #--------------------------------------------------------------------------
-  # ● 调用“确定”的处理方法
-  #--------------------------------------------------------------------------
+
+  # 调用“确定”的处理方法
   def call_ok_handler
     @choices[index].set_confirmed(true)
     if @choices_info[index][:name]
@@ -874,49 +869,36 @@ class Window_EagleChoiceList < Window_Command
     game_message.choice_result = @choices_info[index][:i_e]
     close
   end
-  #--------------------------------------------------------------------------
-  # ● 调用“取消”的处理方法
-  #--------------------------------------------------------------------------
+
+  # 调用“取消”的处理方法
   def call_cancel_handler
     game_message.choice_result = game_message.choice_cancel_i_e
     close
   end
+
   #--------------------------------------------------------------------------
-  # ● 激活
+  # ● 用事件列表中i_e_new号选项分支替换窗口中i_w号选项
   #--------------------------------------------------------------------------
-  def activate
-    @choices.each { |i, s| s.set_active(true) }
-    super
-  end
-  #--------------------------------------------------------------------------
-  # ● 打开
-  #--------------------------------------------------------------------------
-  def open
-    @choices.each { |i, s| s.set_visible(true) }
-    super
-  end
-  #--------------------------------------------------------------------------
-  # ● 关闭
-  #--------------------------------------------------------------------------
-  def close
-    @choices.each { |i, s| s.move_out }
-    eagle_reset
-    if $imported["EAGLE-TimerEX"]
-      $game_timer[:choice_cd].stop
+  def replace_choice(i_e_new, i_w)
+    @choices[i_w].move_out
+    if i_e_new < 0
+      i_e_old = @choices_info[i_w][:i_e]
+      process_choice(game_message.choices[i_e_old].dup, i_e_old, i_w, false)
+      @choices_info[i_w][:enable] = false
+      @list[i_w][:enabled] = false # 修改 add_command 中的数据
+      redraw_item(i_w)
+      @choices[i_w].dispose_timer # 防止二次倒计时
     else
-      $game_timer.stop
+      process_choice(game_message.choices[i_e_new].dup, i_e_new, i_w, false)
+      redraw_item(i_w)
+      reset_size; reset_choice_positions; update_placement
     end
-    super
-  end
-  #--------------------------------------------------------------------------
-  # ● 释放
-  #--------------------------------------------------------------------------
-  def dispose
-    super
-    @choices.each { |i, s| s.dispose }
-    @choices.clear
+    @choices[i_w].set_active(true)
+    @choices[i_w].set_visible(true)
+    select(self.index)
   end
 end
+
 #==============================================================================
 # ○ Spriteset_Choice
 #==============================================================================
@@ -1142,7 +1124,9 @@ class Spriteset_Choice
     c_rect = @choice_window.text_size(c)
     c_w = c_rect.width + @font_params[:w]
     c_h = c_rect.height + @font_params[:h]
-    s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
+    # 如果行高大于当前文字高度，则发生偏移
+    c_y = pos[:y] + pos[:height] > c_h ? (pos[:height] - c_h) / 2 : 0
+    s = eagle_new_chara_sprite(pos[:x], c_y, c_w, c_h)
     s.eagle_font.draw(s.bitmap, 0, 0, c_w, c_h, c)
     pos[:x] += c_w
   end
@@ -1152,7 +1136,9 @@ class Spriteset_Choice
   def process_draw_icon(icon_index, pos)
     c_w = 24 + @font_params[:w]
     c_h = 24 + @font_params[:h]
-    s = eagle_new_chara_sprite(pos[:x], pos[:y], c_w, c_h)
+    # 如果行高大于当前文字高度，则发生偏移
+    c_y = pos[:y] + pos[:height] > c_h ? (pos[:height] - c_h) / 2 : 0
+    s = eagle_new_chara_sprite(pos[:x], c_y, c_w, c_h)
     s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index, c_w, c_h)
     pos[:x] += 24
   end
