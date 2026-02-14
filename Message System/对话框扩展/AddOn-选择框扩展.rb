@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "2.1.0"  # 2026.2.14.10
+$imported["EAGLE-ChoiceEX"] = "2.1.0"  # 2026.2.14.21
 =begin
 ===============================================================================
 
@@ -207,7 +207,7 @@ module MESSAGE_EX
 #  ◇ 预设参数          ▼ [param]“参数串”一览（字母+数字组合）
 
   CHOICE_PARAMS_INIT = {
-    :i     => -1,      # 【快捷】【重置】选择框光标初始所在的选择支
+    :i     => 0,      # 【快捷】【重置】选择框光标初始所在的选择支
                       #  * 从0开始，-1代表初始不选择（按选择框中实际显示）
 #  ·窗口属性
     :opa   => 255,    # 选择框的背景不透明度（默认255）
@@ -463,7 +463,6 @@ class Window_EagleChoiceList < Window_Command
     reset_params_ex
     reset_choice_positions
     set_init_select
-    self.cursor_rect.empty
     #open
     #activate
   end
