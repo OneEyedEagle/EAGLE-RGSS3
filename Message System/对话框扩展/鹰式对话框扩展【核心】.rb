@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.1.0"
+$imported["EAGLE-MessageEX"] = "2.1.1"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.1.0"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.2.15.21 V2.1.1 新增对换行时取文字高度的类型
      ----------------------------------------------------------------------
      - 2026.2.14.9  V2.1.0 新增对文字宽高的增加量
      ----------------------------------------------------------------------
@@ -2273,6 +2275,8 @@ class Window_EagleMessage < Window_Base
   #  由于自动对齐的存在，无需预先计算当前行高，text参数无效
   #--------------------------------------------------------------------------
   def process_new_line(text, pos)
+    # 行高固定为 line_height
+    pos[:height] = line_height if win_params[:lhnl] == 0
     pos[:height] += win_params[:ld] # 当前行增加一个行间距
     @line_show_fast = false
     pos[:x] = pos[:new_x]
@@ -2299,6 +2303,8 @@ class Window_EagleMessage < Window_Base
     # 处理下一次绘制的参数
     pos[:x] += (c_w + win_params[:ck])
     pos[:height] = [pos[:height], c_h].max
+    # 如果 win_params[:lhnl] 为 0 则行高固定为 line_height
+    pos[:height] = line_height if win_params[:lhnl] == 0
     # 记录下一个文字绘制位置x
     @eagle_next_chara_x = pos[:x]
     # 处理文字区域大小更改
@@ -2364,7 +2370,8 @@ class Window_EagleMessage < Window_Base
   # 重排列同一行上的文字精灵
   def eagle_charas_realign_line(charas, align, max_w)
     w_line = charas[-1].origin_x - charas[0].origin_x + charas[-1].width
-    h_line = charas.collect{ |c| c.height }.max
+    # 行高为 line_height 或为 整行文字的高度最大值
+    h_line = win_params[:lhnl] == 0 ? line_height : charas.collect{ |c| c.height }.max
     charas.each do |c|
       case align
       when 0 # 左对齐（默认对齐方式）
