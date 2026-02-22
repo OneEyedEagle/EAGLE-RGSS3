@@ -1,82 +1,95 @@
 #==============================================================================
 # ■ Add-On 数值输入框扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
-# ※ 本插件需要放置在【对话框扩展 by老鹰】之下
+# ※ 本插件需要放置在【鹰式对话框扩展 V2.0】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-NumberInputEX"] = "1.2.0"
+$imported["EAGLE-NumberInputEX"] = "2.2.0"
 #=============================================================================
-# - 2022.9.5.20 随对话框更新
-#==============================================================================
-# - 在对话框中利用 \numinput[param] 对数值输入框进行部分参数设置：
-#     o → 数值输入框的显示原点类型（九宫格小键盘）（默认7）（嵌入时固定为7）
-#     x/y → 直接指定数值输入框的坐标（默认nil）
-#     do → 数值输入框的显示位置类型（覆盖x/y）（-10为无效）
-#         （0为嵌入；1~9对话框外边界的九宫格位置；-1~-9屏幕外框的九宫格位置）
-#         （当对话框关闭时，0~9的设置均无效）
-#     dx/dy → x/y坐标的偏移增量（默认0）
-#     opa → 数值输入框的背景不透明度（默认255）（文字内容不透明度固定为255）
-#         （嵌入时不显示窗口背景）
-#     skin → 窗口皮肤类型（每次默认取对话框皮肤）（见index → windowskin名称 的映射）
+# - 2026.2.22.11 随对话框更新
+#=============================================================================
+# 【使用：设置数字样式】
 #
-#------------------------------------------------------------------------------
-# - 在 事件脚本 中利用 $game_message.set_numinput_t(str) 设置下一次的输入模式
-#   （无视编辑器中的最大位数的设置）
-#   其中 str 为字符串，用 * 代表可以变更的数字，用 \n 进行换行，其余内容均原样绘制
+# - 利用 事件脚本 设置下一次数值输入的模式：
 #
-#   示例：
+#      $game_message.set_numinput_t(str) 
+#
+#   其中 str 为字符串，用 * 代表可以变更的数字，用 \n 进行换行，可增加其余文本。
+#
+#   注意：设置后，编辑器中设置的最大位数将无效。
+#
+#     ---------------------------------------------------------------------
+#  ？ 示例
+#
 #     $game_message.set_numinput_t("**时**分")
-#     # 下一次数值输入时，将显示 00时00分 ，并对其中的四个数字进行输入
-#------------------------------------------------------------------------------
-# - 在 事件脚本 中对下一次的输入限制进行设置
 #
-# - 设置指定位的最大值最小值：
-#      $game_message.set_numinput_limit(index, min, max)
-#
-#   其中 index 为从 0 开始计数的数字位数，如 8010 中，数字 1 的 index 值为 2
-#   其中 min/max 为最小值和最大值，若传入 nil，则为无限制
-#
-# - 设置指定数位的最大值最小值：
-#      $game_message.set_numinput_mlimit(index1, index2, min, max)
-#
-#   将设置从 index1位置 到 index2位置 的数值限制
-#   如 index1 = 2, index2 = 3，则将设置 8010 中的 10 两位数字
+#     → 下一次数值输入时，将显示 00时00分 ，并对其中的四个0进行切换
 #
 #------------------------------------------------------------------------------
-# - 使用示例：
+# 【使用：设置数字上下限】
 #
-#   事件脚本：
-#     $game_message.set_numinput_t("**时**分")
-#     $game_message.set_numinput_mlimit(0,1,0,23)
-#     $game_message.set_numinput_mlimit(2,3,0,59)
-#   事件指令：数值输入（1号变量）（位数任意）
+# - 利用 事件脚本 设置下一次数值输入的限制：
 #
-#     → 则开始数值输入时，将显示 00时00分，且最多能输入到 23时59分
-#        当确认输入时，比如输入结果 12时31分，1号变量将存储 1231 数字
+#  1. 设置某一位的最大值最小值：
+#
+#     $game_message.set_numinput_limit(index, min, max)
+#
+#    其中 index 为从 0 开始计数的数字位数，如 8010 中，数字 1 的 index 值为 2
+#    其中 min/max 为最小值和最大值，若传入 nil，则为无限制，可输入 0~9
+#
+#  2. 设置多位的最大值最小值：
+#
+#     $game_message.set_numinput_mlimit(index1, index2, min, max)
+#
+#    如 index1 = 2, index2 = 3，则将设置 8010 中的 10 两位数字的最大值最小值
+#
+#     ---------------------------------------------------------------------
+#  ？ 示例
+#
+#    1. 在事件脚本中编写：
+#       $game_message.set_numinput_t("**时**分")
+#       $game_message.set_numinput_mlimit(0,1,0,23)
+#       $game_message.set_numinput_mlimit(2,3,0,59)
+#
+#    2. 设置事件指令：数值输入（1号变量）（任意位数）
+#
+#    → 开始数值输入时，将显示 00时00分
+#        且第一位和第二位的输入范围是 00 ~ 23
+#        且第三位和第四位的输入范围是 00 ~ 59
+#      当确认后，如输入结果 12时31分，1号变量将存储数字 1231 
 #
 #------------------------------------------------------------------------------
-# - 参数重置（具体见 对话框扩展 中的注释）
-#     $game_message.reset_params(:numinput, code_string)
-#==============================================================================
+module MESSAGE_EX
+#╔════════════════════════════════════════╗
+# A■ 数值输入框设置                                                \NUMINPUT ■
+#  ────────────────────────────────────────
+
+#  ● \numinput[param]
+
+#     ---------------------------------------------------------------------
+#  ◇ 预设参数         ▼ [param]“参数串”一览（字母+数字组合）
+  NUMINPUT_PARAMS_INIT = {
+
+    :o  => 7,     # 窗口的原点类型（对应小键盘九宫格 | 默认值为7 左上角）
+    :x  => nil,   # 窗口的显示位置（屏幕坐标）
+    :y  => nil,
+    :do => 0,     # 窗口的显示位置（覆盖 :x 和 :y 的设置）
+                  #  * 0 → 嵌入对话框，此时 :o 锁定为 7，:opa 锁定为 0
+                  #  * 1~9 → 对话框外边界的九宫格位置
+                  #  * -1~-9 → 屏幕外框的九宫格位置
+                  #（当对话框关闭时，0~9 的显示位置无效）
+    :dx => 0,     # 窗口位置的左右偏移值（正数往右、负数往左）
+    :dy => 0,     # 窗口位置的上下偏移值（正数往下、负数往上）
+    :opa => 255,  # 背景的不透明度（文字的不透明度固定为255）
+    :skin => nil, # 窗口皮肤（默认取对话框皮肤）
+                  #  * 具体见 INDEX_TO_WINDOWSKIN 
+  }
+#╚════════════════════════════════════════╝
 
 #==============================================================================
-# ○ 【设置部分】
+#                                 × 设定完毕 × 
 #==============================================================================
-module MESSAGE_EX
-  #--------------------------------------------------------------------------
-  # ● 【设置】定义转义符各参数的预设值
-  # （对于bool型变量，0与false等价，1与true等价）
-  #--------------------------------------------------------------------------
-  NUMINPUT_PARAMS_INIT = {
-    :o => 7, # 原点类型
-    :x => nil,
-    :y => nil,
-    :do => 0, # 显示位置类型
-    :dx => 0,
-    :dy => 0,
-    :opa => 255, # 背景不透明度
-    :skin => nil,
-  }
 end
+
 #==============================================================================
 # ○ Game_Message
 #==============================================================================
@@ -84,7 +97,7 @@ class Game_Message
   attr_accessor :numinput_pattern
   attr_accessor :numinput_params, :numinput_limits
   #--------------------------------------------------------------------------
-  # ● 获取全部可保存params的符号的数组
+  # ● 新增 numinput 的参数hash
   #--------------------------------------------------------------------------
   alias eagle_numinput_ex_params eagle_params
   def eagle_params
@@ -115,17 +128,14 @@ class Game_Message
     @numinput_limits[ [index1, index2] ] = [min, max]
   end
 end
-#==============================================================================
-# ○ Window_EagleMessage
-#==============================================================================
 class Window_EagleMessage
   #--------------------------------------------------------------------------
-  # ● 设置numinput参数
-  #--------------------------------------------------------------------------
+  # ● \numinput   #--------------------------------------------------------------------------
   def eagle_text_control_numinput(param = "")
     parse_param(game_message.numinput_params, param, :do)
   end
 end
+
 #==============================================================================
 # ○ Window_EagleNumberInput
 #==============================================================================
@@ -146,6 +156,7 @@ class Window_EagleNumberInput < Window_Base
     self.openness = 0
     deactivate
   end
+
   #--------------------------------------------------------------------------
   # ● 开始输入的处理
   #--------------------------------------------------------------------------
@@ -161,11 +172,11 @@ class Window_EagleNumberInput < Window_Base
     #open
     #activate
   end
-  #--------------------------------------------------------------------------
-  # ● 预处理
-  #--------------------------------------------------------------------------
+
+  # 预处理
   def pre_draw
     @numbers_rect.clear; @numbers.clear
+    # 获取位数
     @number = $game_variables[$game_message.num_input_variable_id]
     @number = [[@number, 0].max, 10 ** @digits_max - 1].min
     if $game_message.numinput_pattern.empty?
@@ -173,6 +184,7 @@ class Window_EagleNumberInput < Window_Base
     end
     @digits_max = $game_message.numinput_pattern.count("*")
 
+    # 计算窗口的最大宽高
     @width_max = 0; @height_max = 0
     _x = 0; _y = 0; _w = 0; _h = 0; _index = 0
     $game_message.numinput_pattern.each_char do |c|
@@ -197,9 +209,8 @@ class Window_EagleNumberInput < Window_Base
       @width_max = [@width_max, _x].max
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 更新大小
-  #--------------------------------------------------------------------------
+
+  # 更新窗口宽高
   def update_size
     self.width = @width_max + padding * 2
     self.height = @height_max + padding * 2
@@ -237,9 +248,8 @@ class Window_EagleNumberInput < Window_Base
     end
     self.width = new_w if @flag_in_msg_window
   end
-  #--------------------------------------------------------------------------
-  # ● 更新窗口的位置
-  #--------------------------------------------------------------------------
+
+  # 更新窗口位置
   def update_placement
     self.x = (Graphics.width - width) / 2
     if @message_window.y >= Graphics.height / 2
@@ -270,9 +280,8 @@ class Window_EagleNumberInput < Window_Base
     self.y += numinput_params[:dy]
     self.z = @message_window.z + 10
   end
-  #--------------------------------------------------------------------------
-  # ● 更新其他属性
-  #--------------------------------------------------------------------------
+
+  # 更新其他属性
   def update_params_ex
     skin = @message_window.get_cur_windowskin_index(numinput_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(skin)
@@ -284,26 +293,7 @@ class Window_EagleNumberInput < Window_Base
       self.openness = 255
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 处理数字的更改
-  #--------------------------------------------------------------------------
-  def process_digit_change
-    return unless active
-    if Input.repeat?(:UP) || Input.repeat?(:DOWN)
-      Sound.play_cursor
-      n = @numbers[@index]
-      n = (n + 1) % 10 if Input.repeat?(:UP)
-      n = (n + 9) % 10 if Input.repeat?(:DOWN)
-      @numbers[@index] = n
-      refresh
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 重置字体设置
-  #--------------------------------------------------------------------------
-  def reset_font_settings
-    change_color(text_color(MESSAGE_EX::DEFAULT_COLOR_INDEX))
-  end
+
   #--------------------------------------------------------------------------
   # ● 刷新
   #--------------------------------------------------------------------------
@@ -330,10 +320,9 @@ class Window_EagleNumberInput < Window_Base
       _h = rect.height
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 检查上下限
+
+  # 检查上下限
   # { [index, index2] => [min, max], index => [min, max] }
-  #--------------------------------------------------------------------------
   def check_limits
     $game_message.numinput_limits.each do |k, v|
       if k.is_a?(Integer)
@@ -359,32 +348,25 @@ class Window_EagleNumberInput < Window_Base
       end
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 获取项目的绘制矩形
-  #--------------------------------------------------------------------------
-  def item_rect(index)
-    @numbers_rect[index]
+
+  # 重置字体设置
+  def reset_font_settings
+    change_color(text_color(MESSAGE_EX::DEFAULT_COLOR_INDEX))
   end
-  #--------------------------------------------------------------------------
-  # ● 更新光标
-  #--------------------------------------------------------------------------
-  def update_cursor
-    cursor_rect.set(item_rect(@index)) if item_rect(@index)
-  end
+  
   #--------------------------------------------------------------------------
   # ● 更新
   #--------------------------------------------------------------------------
   def update
     super
     process_cursor_move
+    update_cursor
     process_digit_change
     process_handling
-    update_cursor
     update_placement if @message_window.open? && numinput_params[:do] == 0
   end
-  #--------------------------------------------------------------------------
-  # ● 处理光标的移动
-  #--------------------------------------------------------------------------
+
+  # 设置当前选中的项
   def process_cursor_move
     return unless active
     last_index = @index
@@ -392,35 +374,49 @@ class Window_EagleNumberInput < Window_Base
     cursor_left (Input.trigger?(:LEFT))  if Input.repeat?(:LEFT)
     Sound.play_cursor if @index != last_index
   end
-  #--------------------------------------------------------------------------
-  # ● 光标向右移动
+  # 光标向右移动
   #     wrap : 允许循环
-  #--------------------------------------------------------------------------
   def cursor_right(wrap)
     if @index < @digits_max - 1 || wrap
       @index = (@index + 1) % @digits_max
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 光标向左移动
+  # 光标向左移动
   #     wrap : 允许循环
-  #--------------------------------------------------------------------------
   def cursor_left(wrap)
     if @index > 0 || wrap
       @index = (@index + @digits_max - 1) % @digits_max
     end
   end
-  #--------------------------------------------------------------------------
-  # ● “确定”和“取消”的处理
-  #--------------------------------------------------------------------------
+  # 更新光标
+  def update_cursor
+    cursor_rect.set(item_rect(@index)) if item_rect(@index)
+  end
+  # 获取项目的绘制矩形
+  def item_rect(index)
+    @numbers_rect[index]
+  end
+
+  # 处理数字的改变
+  def process_digit_change
+    return unless active
+    if Input.repeat?(:UP) || Input.repeat?(:DOWN)
+      Sound.play_cursor
+      n = @numbers[@index]
+      n = (n + 1) % 10 if Input.repeat?(:UP)
+      n = (n + 9) % 10 if Input.repeat?(:DOWN)
+      @numbers[@index] = n
+      refresh
+    end
+  end
+
+  # “确定”和“取消”的处理
   def process_handling
     return unless active
     return process_ok     if Input.trigger?(:C)
     return process_cancel if Input.trigger?(:B)
   end
-  #--------------------------------------------------------------------------
-  # ● 按下确定键时的处理
-  #--------------------------------------------------------------------------
+  # 按下确定键时的处理
   def process_ok
     Sound.play_ok
     v = @numbers.inject("") {|s, v| s += "#{v}" }.to_i
@@ -428,9 +424,7 @@ class Window_EagleNumberInput < Window_Base
     deactivate
     close
   end
-  #--------------------------------------------------------------------------
-  # ● 按下取消键时的处理
-  #--------------------------------------------------------------------------
+  # 按下取消键时的处理
   def process_cancel
   end
 end

@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "2.1.0"  # 2026.2.14.21
+$imported["EAGLE-ChoiceEX"] = "2.2.0"  # 2026.2.22.11
 =begin
 ===============================================================================
 
@@ -37,6 +37,8 @@ $imported["EAGLE-ChoiceEX"] = "2.1.0"  # 2026.2.14.21
         -                                                             -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.2.22.11 V2.2.0 随对话框更新
      ----------------------------------------------------------------------
      - 2026.2.13.20 V2.0.2 将 fdw 和 fdh 调整为 font 中的 w 和 h
      ----------------------------------------------------------------------
@@ -207,7 +209,7 @@ module MESSAGE_EX
 #  ◇ 预设参数          ▼ [param]“参数串”一览（字母+数字组合）
 
   CHOICE_PARAMS_INIT = {
-    :i     => 0,      # 【快捷】【重置】选择框光标初始所在的选择支
+    :i     => 0,      # 【快捷】选择框光标初始所在的选择支
                       #  * 从0开始，-1代表初始不选择（按选择框中实际显示）
 #  ·窗口属性
     :opa   => 255,    # 选择框的背景不透明度（默认255）
@@ -402,8 +404,6 @@ class Window_EagleChoiceList < Window_Command
     @choices_info.clear
     # 存储各行列的宽高
     @win_info = { :line_h => [], :col_w => [] } # 行号 => 高  列号 => 宽
-    # 重置默认光标位置
-    choice_params[:i] = MESSAGE_EX.get_default_params(:choice)[:i]
     # 重置字体大小
     @message_window.eagle_text_control_font
   end
@@ -1116,44 +1116,51 @@ class Spriteset_Choice
     pos[:x] = pos[:x_new]
     pos[:y] += pos[:height]
   end
+  
   #--------------------------------------------------------------------------
-  # ● 处理普通文字
+  # ● 文字精灵
   #--------------------------------------------------------------------------
-  def process_normal_character(c, pos)
-    c_rect = @choice_window.text_size(c)
-    c_w = c_rect.width + @font_params[:w]
-    c_h = c_rect.height + @font_params[:h]
-    # 如果行高大于当前文字高度，则发生偏移
-    c_y = pos[:y] + pos[:height] > c_h ? (pos[:height] - c_h) / 2 : 0
-    s = eagle_new_chara_sprite(pos[:x], c_y, c_w, c_h)
-    s.eagle_font.draw(s.bitmap, 0, 0, c_w, c_h, c)
-    pos[:x] += c_w
-  end
-  #--------------------------------------------------------------------------
-  # ● 处理控制符指定的图标绘制
-  #--------------------------------------------------------------------------
-  def process_draw_icon(icon_index, pos)
-    c_w = 24 + @font_params[:w]
-    c_h = 24 + @font_params[:h]
-    # 如果行高大于当前文字高度，则发生偏移
-    c_y = pos[:y] + pos[:height] > c_h ? (pos[:height] - c_h) / 2 : 0
-    s = eagle_new_chara_sprite(pos[:x], c_y, c_w, c_h)
-    s.eagle_font.draw_icon(s.bitmap, 0, 0, icon_index, c_w, c_h)
-    pos[:x] += 24
-  end
-  #--------------------------------------------------------------------------
-  # ● （封装）生成一个新的文字精灵
-  #--------------------------------------------------------------------------
-  def eagle_new_chara_sprite(c_x, c_y, c_w, c_h)
+  def eagle_new_chara_sprite
     f = Font_EagleCharacter.new(@font_params)
     f.set_param(:skin, @choice_window.skin)
     f.set_param(:ex_cg, @ex_params[:cg]) if defined?(Sion_GradientText)
 
-    s = Sprite_EagleCharacter.new(self, f, c_x, c_y, c_w, c_h)
-    s.start_effects(@chara_effect_params)
+    s = Sprite_EagleCharacter.new(self, f)
     @charas.push(s)
     s
   end
+  
+  # 绘制一个普通文字
+  def process_normal_character(c, pos)
+    c_rect = @choice_window.text_size(c)
+    text_width  = c_rect.width ; bitmap_width  = text_width + @font_params[:w]
+    text_height = c_rect.height; bitmap_height = text_height + @font_params[:h]
+    # 如果行高大于当前文字高度，则发生偏移
+    c_y = pos[:y] + pos[:height] > text_height ? (pos[:height] - text_height) / 2 : 0
+    s = eagle_new_chara_sprite
+    s.reset_origin_xy(pos[:x], c_y)
+    s.eagle_font.bind(s, bitmap_width, bitmap_height, text_width, text_height)
+    s.eagle_font.draw(c)
+    s.start_effects(@chara_effect_params)
+    pos[:x] += bitmap_width
+  end
+
+  # 绘制一个图标
+  def process_draw_icon(icon_index, pos)
+    text_width  = 24; bitmap_width  = text_width + @font_params[:w]
+    text_height = 24; bitmap_height = text_height + @font_params[:h]
+    c_w = 24 + @font_params[:w]
+    c_h = 24 + @font_params[:h]
+    # 如果行高大于当前文字高度，则发生偏移
+    c_y = pos[:y] + pos[:height] > text_height ? (pos[:height] - text_height) / 2 : 0
+    s = eagle_new_chara_sprite
+    s.reset_origin_xy(pos[:x], c_y)
+    s.eagle_font.bind(s, bitmap_width, bitmap_height, text_width, text_height)
+    s.eagle_font.draw_icon(icon_index)
+    s.start_effects(@chara_effect_params)
+    pos[:x] += bitmap_width
+  end
+  
   #--------------------------------------------------------------------------
   # ● 控制符的处理
   #     code : 控制符的实际形式（比如“\C[1]”是“C”）

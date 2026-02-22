@@ -1,10 +1,10 @@
 #==============================================================================
-# ■ Add-On2 兼容鼠标 by 老鹰（http://oneeyedeagle.lofter.com/）
+# ■ Add-On2 兼容鼠标 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 # ※ 本插件需要放置在【鼠标扩展 by老鹰】以及各个被兼容脚本之下
 #==============================================================================
-# - 2024.2.3.14
+# - 2026.2.22.11 随对话框更新
 #==============================================================================
-# - 本插件对【对话框扩展 by老鹰】及其AddOn进行了简单的鼠标操作兼容
+# - 本插件对【鹰式对话框扩展  by老鹰】及其AddOn进行了简单的鼠标操作兼容
 #==============================================================================
 
 #===============================================================================
@@ -59,44 +59,55 @@ end
 #===============================================================================
 if $imported["EAGLE-NumberInputEX"]
 class Window_EagleNumberInput
-  #--------------------------------------------------------------------------
-  # ● 处理数字的更改
-  #--------------------------------------------------------------------------
-  alias eagle_mouse_ex_process_digit_change process_digit_change
-  def process_digit_change
-    eagle_mouse_ex_process_digit_change
-    return unless active
-    if MOUSE_EX.scroll_up? || MOUSE_EX.scroll_down?
-      Sound.play_cursor
-      n = @numbers[@index]
-      n = (n + 1) % 10 if MOUSE_EX.scroll_up?
-      n = (n + 9) % 10 if MOUSE_EX.scroll_down?
-      @numbers[@index] = n
-      refresh
-    end
+  # 鼠标在第i个数字的矩形范围内？
+  def is_mouse_in_rect?(i)
+    return false if @numbers_rect[i] == nil
+    r = @numbers_rect[i].dup
+    r.x += self.x + standard_padding
+    r.y += self.y + standard_padding
+    MOUSE_EX.in?(r)
   end
-  #--------------------------------------------------------------------------
-  # ● 处理光标的移动
-  #--------------------------------------------------------------------------
+
+  # 处理光标的移动
   alias eagle_mouse_ex_process_cursor_move process_cursor_move
   def process_cursor_move
     eagle_mouse_ex_process_cursor_move
     return unless active
     last_index = @index
+    @mouse_rect_i = nil
     @numbers_rect.each do |i, r|
-      _r = r.dup
-      _r.x += self.x + standard_padding; _r.y += self.y + standard_padding
-      break @index = i if MOUSE_EX.in?(_r)
+      if is_mouse_in_rect?(i)
+        @mouse_rect_i = i
+        break @index = i
+      end
     end
     Sound.play_cursor if @index != last_index
   end
-  #--------------------------------------------------------------------------
-  # ● “确定”和“取消”的处理
-  #--------------------------------------------------------------------------
+
+  # 处理数字的改变
+  alias eagle_mouse_ex_process_digit_change process_digit_change
+  def process_digit_change
+    eagle_mouse_ex_process_digit_change
+    return unless active
+    f = @mouse_rect_i == @index
+    flag_plus  = (f and MOUSE_EX.up?(:ML)) || MOUSE_EX.scroll_up?
+    flag_minus = (f and MOUSE_EX.up?(:MR)) || MOUSE_EX.scroll_down?
+    if flag_plus || flag_minus
+      Sound.play_cursor
+      n = @numbers[@index]
+      n = (n + 1) % 10 if flag_plus
+      n = (n + 9) % 10 if flag_minus
+      @numbers[@index] = n
+      refresh
+    end
+  end
+
+  # “确定”和“取消”的处理
   alias eagle_mouse_ex_process_handling process_handling
   def process_handling
     eagle_mouse_ex_process_handling
     return unless active
+    return if @mouse_rect_i != nil
     return process_ok     if MOUSE_EX.up?(:ML)
     return process_cancel if MOUSE_EX.up?(:MR)
   end

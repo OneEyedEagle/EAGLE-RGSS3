@@ -2,9 +2,9 @@
 # ■ AStar寻路扩展 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AStar"] = "1.6.0"
+$imported["EAGLE-AStar"] = "1.6.1"
 #==============================================================================
-# - 2026.2.12.15 兼容【像素级移动 1.5.0】
+# - 2026.2.22.12 兼容【像素级移动 1.5.0】
 #=============================================================================
 # - 本插件新增了经典的A*寻路算法
 # - 参考：https://taroxd.github.io/rgss/astar.html
@@ -329,9 +329,11 @@ class Game_Character
       @astar_wait = Eagle_AStar::WAIT_WHEN_FAIL_ASTAR 
       @astar_fail += 1
       if (v=Eagle_AStar::VALUE_ASTAR_UNTIL_FAIL) > 0 && @astar_fail > v
+        p "<AStar> 寻路(#{@astar_des_x},#{@astar_des_y})多次失败，未找到通路！停止寻路。"
         astar_stop
       end
     elsif f == "unreach"
+      p "<AStar> 目的地(#{@astar_des_x},#{@astar_des_y})不可通行！停止寻路。"
       astar_stop
     else
       @astar_fail = 0
@@ -386,14 +388,6 @@ class Game_Character
 end
 
 class Game_Event
-  #--------------------------------------------------------------------------
-  # ● 更新寻路
-  # 返回 true 代表寻路结束
-  #--------------------------------------------------------------------------
-  def update_astar_move
-    return false if $game_map.interpreter.event_id == self.id
-    super
-  end
   #--------------------------------------------------------------------------
   # ● 移动类型 : 接近
   #--------------------------------------------------------------------------
