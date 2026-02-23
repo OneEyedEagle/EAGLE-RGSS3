@@ -26,7 +26,7 @@ $imported["EAGLE-MessageEX"] = "2.2.0"
      
      更新历史
      ----------------------------------------------------------------------
-     - 2026.2.22.11 V2.2.0 优化代码
+     - 2026.2.23.10 V2.2.0 优化代码
      ----------------------------------------------------------------------
      - 2026.2.15.21 V2.1.1 新增对换行时取文字高度的类型
      ----------------------------------------------------------------------
@@ -808,6 +808,8 @@ class Window_EagleMessage < Window_Base
     @eagle_face_w = @eagle_face_h = 0
     # 对话框位置的强制增量（move转义符、对话框关闭时使用）
     @eagle_offset_x = @eagle_offset_y = 0
+    # 因为位置修正而产生的坐标偏移量（增加量）
+    @eagle_fix_dx = @eagle_fix_dy = 0
     eagle_check_func("")        # 预先执行一遍func，确保它们都是布尔量
   end
   
@@ -1738,9 +1740,13 @@ class Window_EagleMessage < Window_Base
   
   # 位置修正（确保对话框完整显示在屏幕中）
   def eagle_fix_position
+    # 因为位置修正而产生的坐标偏移量（增加量）
+    @eagle_fix_dx = @eagle_fix_dy = 0
     return if @flag_no_fix
+    old_x = self.x; old_y = self.y
     self.x = [[self.x, 0].max, Graphics.width - self.width].min
     self.y = [[self.y, 0].max, Graphics.height - self.height].min
+    @eagle_fix_dx = self.x - old_x; @eagle_fix_dy = self.y - old_y
   end
   
   # xy更新后的处理
@@ -2840,7 +2846,7 @@ class Window_EagleMessage < Window_Base
     when 1,4,7; self.x -= (params[:chara_w] / 2 + params[:d])
     when 3,6,9; self.x += (params[:chara_w] / 2 + params[:d])
     end
-    case pop_params[:do]
+    case params[:do]
     when 1,2,3; self.y += (params[:d])
     when 4,5,6; self.y -= (params[:chara_h] / 2)
     when 7,8,9; self.y -= (params[:chara_h] + params[:d])
@@ -2884,7 +2890,7 @@ class Window_EagleMessage < Window_Base
     @eagle_sprite_pop_tag.src_rect.height = h / 3
   end
   
-  # 更新pop的小箭头tag
+  # 更新pop的小箭头tag（在 eagle_after_update_xy 中调用）
   def eagle_pop_tag_update
     return if !pop_params[:with_tag]
     i = 10 - pop_params[:do] # tag的显示帧恰好与pop对话框的do值相对
@@ -2904,6 +2910,14 @@ class Window_EagleMessage < Window_Base
     when 1,2,3; @eagle_sprite_pop_tag.y -= pop_params[:td]
     when 7,8,9; @eagle_sprite_pop_tag.y += pop_params[:td]
     end
+    # 根据对话框的位置修正，对小箭头位置进行回滚
+    case o
+    when 2,8  # 小箭头在上下时，可以回滚左右位置，保证指向绑定对象
+      @eagle_sprite_pop_tag.x -= @eagle_fix_dx
+    when 4,6  # 小箭头在左右时，可以回滚上下位置，保证指向绑定对象
+      @eagle_sprite_pop_tag.y -= @eagle_fix_dy
+    end
+    # 其它情况就不管小箭头有没有指向对象了
   end
 
   #--------------------------------------------------------------------------
