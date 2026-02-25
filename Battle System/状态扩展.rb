@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.3.2"
+$imported["EAGLE-StateEX"] = "1.3.3"
 #==============================================================================
-# - 2026.1.31.0 方便扩展
+# - 2026.2.25.0 新增状态标签
 #==============================================================================
 # - 本插件扩展了默认战斗中的状态，如需兼容其他战斗系统，请自行按注释修改
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -361,6 +361,33 @@ FLAG_NO_RGSS3_STATE = true
 #
 #      STATE_EX.get_states_help_text(battler)
 #
+#---------------------------------------------------------------------
+# △ 状态的标签                                  【RGSS状态和状态对象】
+#---------------------------------------------------------------------
+#
+# - 现在可以给 状态 设置标签了，对拥有指定标签的状态可以进行统一处理。
+#
+# - 在 数据库-状态 的备注中填写（可多次填写）：
+#
+#      <标签: name> 或者 <tag: name>
+#
+# - 获取战斗者的包含指定标签的全部状态：
+#
+#     states_array = battler.get_states(tags, v=0)
+#
+#   其中 tags 为数组，其中是在状态备注栏中编写的 name。
+#   其中 v 为数字，代表挑选出含有tags中至少 v 个标签的状态，0代表状态要有全部tags。
+#   返回的 states_array 为 RGSS状态序号 与 状态对象 的数组。
+#
+# - 为战斗者的状态数组中的全部状态增减计数：
+#
+#     battler.add_states_count(states_array, v)
+#
+#   其中 states_array 为 RGSS状态序号 与 状态对象 的数组。
+#   其中 v 为计数的增减量。
+#
+#   注意：若计数减少到 0 或负数，将自动执行状态移除。
+#
 #==============================================================================
 
 module STATE_EX 
@@ -371,23 +398,23 @@ module STATE_EX
     :mhp => 0, :mmp => 1, :atk => 2, :def => 3,
     :mat => 4, :mdf => 5, :agi => 6, :luk => 7,
   }
+  
   #--------------------------------------------------------------------------
-  # ○ 读取数据库中设置的状态最大叠加层数
+  # ○【读取】数据库-状态 的备注栏
   #--------------------------------------------------------------------------
+  # 读取状态最大叠加层数
   def self.read_note_level(t)
     t =~ /<(层数|level) *(\d+)>/i
     return $2 ? $2.to_i : 0
   end
-  #--------------------------------------------------------------------------
-  # ○ 读取数据库中设置的状态最多同时存在个数
-  #--------------------------------------------------------------------------
+  
+  # 读取状态最多同时存在个数
   def self.read_note_max(t)
     t =~ /<(个数|max) *(\d+)>/i
     return $2 ? $2.to_i : 0
   end
-  #--------------------------------------------------------------------------
-  # ○ 读取数据库中设置的状态附加属性值
-  #--------------------------------------------------------------------------
+
+  # 读取状态附加的属性值
   def self.read_note_params(t, param_rate, param_plus)
     t.scan(/<params>(.*?)<\/params>/mi).each do |params|
       h = EAGLE_COMMON.parse_tags(params[0])
@@ -401,33 +428,38 @@ module STATE_EX
       end
     end
   end
-  #--------------------------------------------------------------------------
-  # ○ 读取数据库中设置的状态在指定时机执行的公式
-  #--------------------------------------------------------------------------
+
+  # 读取状态在指定时机执行的公式
   def self.read_note_timings(t, timing_evals)
     t.scan(/<timing ?([-\d]+)>(.*?)<\/timing>/mi).each do |params|
       timing = params[0].to_i
       timing_evals[timing] = params[1] 
     end
   end
-  #--------------------------------------------------------------------------
-  # ○ 读取数据库中设置的状态自动解除时机
-  #--------------------------------------------------------------------------
+
+  # 读取状态的自动解除时机
   def self.read_note_set_timing(t)
     t =~ /<set timing ?(\d+)>/i
     return $1 ? $1.to_i : 0
   end
-  #--------------------------------------------------------------------------
-  # ○ 读取数据库中设置的死亡后也保留状态的标志
-  #--------------------------------------------------------------------------
+
+  # 读取死亡后也保留状态的标志
   def self.read_note_reserve_when_die(t)
     return (t =~ /<死亡保留|reserve when die>/i) != nil
   end
-  #--------------------------------------------------------------------------
-  # ○ 读取数据库中设置的层数抵扣消除的标志
-  #--------------------------------------------------------------------------
+
+  # 读取状态层数抵扣消除的标志
   def self.read_note_level_reduce(t)
     return (t =~ /<层数抵扣消除|reduce one level>/i) != nil 
+  end
+
+  # 读取状态的标签数组
+  def self.read_note_tags(t)
+    a = []
+    t.scan(/<(标签|tag) *:? *(.*?)>/i).each do |_t|
+      a.push(_t[1])
+    end
+    a
   end
   
   #--------------------------------------------------------------------------
@@ -451,7 +483,7 @@ module STATE_EX
   end
   
   #--------------------------------------------------------------------------
-  # ○ 获取指定战斗者全部状态的帮助文本
+  # ○ 获取战斗者全部状态的帮助文本
   #--------------------------------------------------------------------------
   def self.get_states_help_text(battler)
     t = ""
@@ -465,9 +497,8 @@ module STATE_EX
     end
     return t
   end
-  #--------------------------------------------------------------------------
-  # ○ 获取指定战斗者全部状态的帮助文本
-  #--------------------------------------------------------------------------
+
+  # 获取指定状态的帮助文本
   def self.get_state_help(_state, _battler=nil) 
     # RPG::State 或 STATE_EX::Data_StateEX 或 state_id
     rgss_state, data_state = get_rgss_state_data_state(_state)
@@ -486,7 +517,11 @@ module STATE_EX
       else # 默认的状态
         v = _battler.state_level(rgss_state.id)
       end
-      t += get_state_help_text_level(v) 
+      t += get_state_help_text_level(v)
+    end
+    # 标签
+    t += get_state_tags(rgss_state)
+    if _battler
       # 自动解除时机
       v2 = 0  # 状态计数
       if data_state # 如果是状态对象
@@ -506,20 +541,43 @@ module STATE_EX
     t += get_state_help_text_note(rgss_state.note)
     return t
   end
-  #--------------------------------------------------------------------------
-  # ○ 获取状态各个属性的帮助文本
-  #--------------------------------------------------------------------------
-  def self.get_state_help_text_name(icon_index, name) # 图标和名称
+  
+  # 获取状态图标和名称的帮助文本
+  def self.get_state_help_text_name(icon_index, name) 
     "【\ei[#{icon_index}]#{name}】"
   end
-  def self.get_state_help_text_level(v) # 叠加层数
+  
+  # 获取状态层数的帮助文本
+  def self.get_state_help_text_level(v)
     if v > 1
       "(\ec[16]#{v}\ec[0]层)"
     else
       ""
     end
   end
-  def self.get_state_help_text_count(type, v) # 自动减少的时机
+  
+  # 获取状态的标签的帮助文本
+  def self.get_state_tags(rgss_state)
+    t = ""
+    rgss_state.tags.each do |tag|
+      _t = get_state_tag_text(tag)
+      t += "「#{_t}」"
+    end
+    t
+  end
+  
+  # 自定义标签的显示文本
+  def self.get_state_tag_text(tag)
+    case tag
+    when "buff"  ; return "\ec[1]有益类\ec[0]"
+    when "debuff"; return "\ec[10]有害类\ec[0]"
+    when "other" ; return "\ec[7]其它类\ec[0]"
+    else; return tag
+    end
+  end
+  
+  # 获取状态自动减少时机的帮助文本
+  def self.get_state_help_text_count(type, v) 
     if v > 0
       case type
       when 1; return "(\ec[16]#{v}\ec[0]次行动解除)"
@@ -533,7 +591,9 @@ module STATE_EX
     end
     return "(不自动解除)"
   end
-  def self.get_state_help_text_level_for_erase(v, rgss_state) # 自动减少时，用层数抵扣
+  
+  # 获取状态在自动减少时可以用层数抵扣的帮助文本
+  def self.get_state_help_text_level_for_erase(v, rgss_state)
     if v > 1
       if rgss_state.reduce_one_level
         return "（单次解除\ec[16]1\ec[0]层）"
@@ -543,14 +603,18 @@ module STATE_EX
     end
     return ""
   end
-  def self.get_state_help_text_on_damage(rgss_state) # 受伤概率解除
+  
+  # 获取状态受伤概率解除的帮助文本
+  def self.get_state_help_text_on_damage(rgss_state)
     if rgss_state.remove_by_damage
       v = rgss_state.chance_by_damage
       return "(受伤时\ec[16]#{v}%\ec[0]解除)"
     end
     return ""
   end
-  def self.get_state_help_text_note(note)  # 备注栏新增的帮助文本
+  
+  # 获取状态在备注栏中额外增加的帮助文本
+  def self.get_state_help_text_note(note)
     t = ""
     note.scan(/<help>(.*?)<\/help>/mi).each do |_params|
       _t = _params[0]
@@ -584,7 +648,6 @@ class Data_StateEX
   #--------------------------------------------------------------------------
   def initialize(state_id, battler_from, battler, count, ps={})
     @flag_new = true  # 是否为新附加状态
-    
     # 数据库中的状态ID原型
     @id = state_id
     # 附加该状态的来源战斗者
@@ -599,46 +662,55 @@ class Data_StateEX
     @level = 1
     # 其他扩展用
     @ps = ps
+  end
+  #--------------------------------------------------------------------------
+  # ● 数据
+  #--------------------------------------------------------------------------
+  # 获取 RGSS状态对象
+  def state;    $data_states[@id]; end
 
-    # 八项基础属性的倍率增减
-    @param_rate = [0] * 8  # 8维属性的增量
-    # 八项基础属性的数值增减
-    @param_plus = [0] * 8  # 8维属性的增量
-    STATE_EX.read_note_params(state.note, @param_rate, @param_plus)
+  # 获取特性计算时的对象
+  def feature_objects;  [state] * @level;  end
+  
+  # 获取 RGSS状态 的数据库特性数组
+  def features; state.features;    end
+  
+  # 获取 RGSS状态 的数据库备注
+  def note;     state.note;        end
+    
+  # 获取附加的属性（最后计算的增减值）
+  def param_plus(param_id); state.param_plus(param_id) * @level; end
+    
+  # 获取附加的属性倍率（与buff进行增量叠加）
+  def param_rate(param_id); state.param_rate(param_id) * @level; end
+
+  # 获取绑定了伤害计算的时机数字的数组
+  def timings;  state.timing_evals.keys; end
+  
+  #--------------------------------------------------------------------------
+  # ● 判定
+  #--------------------------------------------------------------------------
+  # 判定是否移除该状态？
+  def remove?
+    @count <= 0
   end
-  #--------------------------------------------------------------------------
-  # ● 获取该状态附加的属性（最后计算的增减值）
-  #--------------------------------------------------------------------------
-  def param_plus(param_id)
-    @param_plus[param_id] * @level
+  
+  # 判定计数自动减少时，是否可用层数抵消状态移除？
+  def reduce_level_for_erase?
+    self.state.reduce_one_level and @level > 1
   end
-  #--------------------------------------------------------------------------
-  # ● 获取该状态附加的属性倍率（与buff进行增量叠加）
-  #--------------------------------------------------------------------------
-  def param_rate(param_id)
-    @param_rate[param_id] * @level
+  # 处理用层数抵消状态移除
+  def reduce_level_for_erase
+    reset_count(@count_last)
+    reduce(1)
   end
+  
+  # 判定是否包含指定tag数组
+  def tag?(_tags, v=0); state.tags?(_tags, v); end
+    
   #--------------------------------------------------------------------------
-  # ● 获取对应的数据库状态及其数据
-  #--------------------------------------------------------------------------
-  def state
-    $data_states[@id]
-  end
-  def features
-    state.features
-  end
-  def note
-    state.note
-  end
-  #--------------------------------------------------------------------------
-  # ● 用于计算特性
-  #--------------------------------------------------------------------------
-  def feature_objects
-    [state] * @level
-  end
-  #--------------------------------------------------------------------------
-  # ● 叠加一层该状态
-  #  如果已经最高层数了，则只更新计数
+  # ● 增加一层该状态
+  #  （如果已经最高层数，则只更新计数）
   #--------------------------------------------------------------------------
   def add_up(battler_from, count, ps)
     @flag_new = true
@@ -652,17 +724,34 @@ class Data_StateEX
     @ps = ps
     return f  # 返回是否成功叠加了一层
   end
-  #--------------------------------------------------------------------------
-  # ● 可以再叠加？
-  #--------------------------------------------------------------------------
+
+  # 可以再叠加？
   def add_up?
     state.level > @level
   end
+  
+  #--------------------------------------------------------------------------
+  # ● 增减计数
+  #--------------------------------------------------------------------------
+  def add_count(v)
+    @count += v
+  end
+  
+  # 重置计数
+  def reset_count(v)
+    @count = v
+    @count_last = v
+    if @count == nil
+      variance = 1 + [state.max_turns - state.min_turns, 0].max
+      @count = state.min_turns + rand(variance)
+    end
+  end
+  
   #--------------------------------------------------------------------------
   # ● 减少v层该状态
-  #  如果v为nil，则移除全部层数
-  #  如果已经0层了，则移除
-  #  返回实际减少的层数
+  #  如果 v 为 nil ，则减少全部层数。
+  #  如果已经 0 层了，则移除。
+  #  返回实际减少的层数。
   #--------------------------------------------------------------------------
   def reduce(v=nil)
     c = 0
@@ -674,33 +763,7 @@ class Data_StateEX
     end
     return c
   end
-  #--------------------------------------------------------------------------
-  # ● 自动减少时，可以用层数抵消移除？
-  #--------------------------------------------------------------------------
-  def reduce_level_for_erase?
-    self.state.reduce_one_level and @level > 1
-  end
-  def reduce_level_for_erase
-    reset_count(@count_last)
-    reduce(1)
-  end
-  #--------------------------------------------------------------------------
-  # ● 可以移除该状态？
-  #--------------------------------------------------------------------------
-  def remove?
-    @count <= 0
-  end
-  #--------------------------------------------------------------------------
-  # ● 重置计数
-  #--------------------------------------------------------------------------
-  def reset_count(v)
-    @count = v
-    @count_last = v
-    if @count == nil
-      variance = 1 + [state.max_turns - state.min_turns, 0].max
-      @count = state.min_turns + rand(variance)
-    end
-  end
+
   #--------------------------------------------------------------------------
   # ● 依据状态更新时机来更新计数
   #  如果传入的 timing 为 nil，则任意时刻的状态都要减少
@@ -718,6 +781,7 @@ class Data_StateEX
     return if f && added_states && added_states.include?(@id)
     @count -= 1
   end
+  
   #--------------------------------------------------------------------------
   # ● 处理指定时机的结算公式
   #--------------------------------------------------------------------------
@@ -746,12 +810,6 @@ class Data_StateEX
     end
     STATE_EX.state_ex_when_trigger(self)
   end
-  #--------------------------------------------------------------------------
-  # ● 获取绑定了伤害计算的时机数字的数组
-  #--------------------------------------------------------------------------
-  def timings
-    state.timing_evals.keys
-  end
 end
 
 end # end of module
@@ -761,6 +819,7 @@ end # end of module
 #==============================================================================
 class RPG::State
   attr_reader :level, :max, :timing_evals, :reserve_when_die, :reduce_one_level
+  attr_reader :param_rate, :param_plus, :tags
   #--------------------------------------------------------------------------
   # ● 进入游戏时读取备注栏
   #--------------------------------------------------------------------------
@@ -790,6 +849,9 @@ class RPG::State
 
     # 用层数来抵扣消除的标记
     @reduce_one_level = STATE_EX.read_note_level_reduce(note)
+    
+    # 标签数组
+    @tags = STATE_EX.read_note_tags(note)
   end
   #--------------------------------------------------------------------------
   # ● 获取该状态附加的属性（最后计算的增减值）
@@ -802,6 +864,18 @@ class RPG::State
   #--------------------------------------------------------------------------
   def param_rate(param_id)
     @param_rate[param_id]
+  end
+  #--------------------------------------------------------------------------
+  # ● 判断是否包含某些tags
+  #  any → 0-全部包含  正数-至少包含该数目个
+  #--------------------------------------------------------------------------
+  def tag?(_tags=[], any=0)
+    n = 0
+    any = _tags.size if any == 0
+    _tags.each do |_t|
+      n += 1 if @tags.include?(_t)
+    end
+    return true if n >= any
   end
 end
 
@@ -833,8 +907,9 @@ class Game_BattlerBase
     @hp = 1  # 避免在初始化时 refresh 后附加死亡状态
   end
   #--------------------------------------------------------------------------
-  # ● 获取普通能力
+  # ● 针对 普通能力 的扩展
   #--------------------------------------------------------------------------
+  # 获取 普通能力 的值
   def param(param_id)
     # 数据库-角色/敌人 中设置的基础数值
     value = param_base(param_id) 
@@ -853,9 +928,8 @@ class Game_BattlerBase
     # 确保在范围内
     [[value, param_max(param_id)].min, param_min(param_id)].max.to_i
   end
-  #--------------------------------------------------------------------------
-  # ● 获取普通能力的强化／弱化变化率
-  #--------------------------------------------------------------------------
+
+  # 获取普通能力的强化／弱化变化率
   alias eagle_state_ex_param_buff_rate param_buff_rate
   def param_buff_rate(param_id)
     v = eagle_state_ex_param_buff_rate(param_id)
@@ -866,59 +940,61 @@ class Game_BattlerBase
       r += item.param_rate(param_id) }
     v 
   end
-
+  
   #--------------------------------------------------------------------------
-  # ● 获取所有拥有特性的实例的数组
+  # ● 外部调用
   #--------------------------------------------------------------------------
-  alias eagle_states_ex_feature_objects feature_objects
-  def feature_objects
-    eagle_states_ex_feature_objects + @states_ex.collect { |s| s.feature_objects }.flatten
-  end
-  #--------------------------------------------------------------------------
-  # ● 清除状态信息
-  #--------------------------------------------------------------------------
-  alias eagle_states_ex_clear_states clear_states
-  def clear_states
-    eagle_states_ex_clear_states
-    @states_ex = [] # Data_StateEX
-  end
-  #--------------------------------------------------------------------------
-  # ● 检査是否含有某状态
-  #--------------------------------------------------------------------------
+  # 是否含有指定id的 RGSS状态 或 状态对象
   alias eagle_state_ex? state?
   def state?(state_id)
     eagle_state_ex?(state_id) || state_ex?(state_id)
   end
+  
+  # 是否含有至少 v 个指定id的状态对象
   def state_ex?(state_id, v=1)
     @states_ex = [] if @states_ex.nil?
     @states_ex.count {|s| s.id == state_id } >= v
   end
-  #--------------------------------------------------------------------------
-  # ● 获取指定id的状态，用于叠加层数
-  #--------------------------------------------------------------------------
+
+  # 获取指定id的状态对象
   def get_state_ex(state_id)
     @states_ex.each {|s| return s if s.id == state_id }
   end
-  #--------------------------------------------------------------------------
-  # ● 获取指定id的状态的已叠加层数
-  #--------------------------------------------------------------------------
+
+  # 获取指定id的RGSS状态的已叠加层数
   def state_level(state_id)
     @states.count(state_id)
   end
+  
+  # 获取指定id的状态对象的已叠加层数
   def state_ex_level(state_id)
     v = 0
     @states_ex.each {|s| v = s.level if s.id == state_id && s.level > v }
     return v
   end
-  #--------------------------------------------------------------------------
-  # ● 获取指定id的状态的已附加个数
-  #--------------------------------------------------------------------------
-  def state_ex_sum(state_id)
+
+  # 获取指定id的状态对象的已附加个数
+  def state_ex_sum(state_id)  # 状态对象
     return @states_ex.count {|s| s.id == state_id }
   end
+  
   #--------------------------------------------------------------------------
-  # ● 获取当前状态的图标编号数组
+  # ● 为 状态对象 兼容默认方法
   #--------------------------------------------------------------------------
+  # 清除状态信息
+  alias eagle_states_ex_clear_states clear_states
+  def clear_states
+    eagle_states_ex_clear_states
+    @states_ex = [] # Data_StateEX
+  end
+
+  # 获取所有拥有特性的实例的数组
+  alias eagle_states_ex_feature_objects feature_objects
+  def feature_objects
+    eagle_states_ex_feature_objects + @states_ex.collect { |s| s.feature_objects }.flatten
+  end
+  
+  # 获取当前状态的图标编号数组
   def state_icons
     # 先合到一起排序，再导出图标
     s1 = states.uniq
@@ -928,10 +1004,9 @@ class Game_BattlerBase
     icons.delete(0)
     icons
   end
-  #--------------------------------------------------------------------------
-  # ● 获取限制状态
-  #    从当前附加的状态中获取限制最大的状态 
-  #--------------------------------------------------------------------------
+
+  # 获取限制状态
+  #  从当前附加的状态中获取限制最大的状态 
   alias eagle_state_ex_restriction restriction
   def restriction
     v = eagle_state_ex_restriction
@@ -945,8 +1020,9 @@ end
 #==============================================================================
 class Game_Battler < Game_BattlerBase
   #--------------------------------------------------------------------------
-  # ● 附加状态
+  # ● 针对 RGSS状态
   #--------------------------------------------------------------------------
+  # 附加RGSS状态
   def add_state(state_id)
     if state_addable?(state_id)
       # 如果可以叠层，或者未附加
@@ -958,16 +1034,18 @@ class Game_Battler < Game_BattlerBase
       @result.added_states.push(state_id).uniq!
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 减少状态层数
-  #--------------------------------------------------------------------------
+
+  # 减少RGSS状态的层数
   def reduce_state_level(state_id, v=nil)
     if state?(state_id)
       revive if state_id == death_state_id
       if eagle_state_ex?(state_id) && $data_states[state_id].level > 1
         # 如果可以叠层，则减去对应层数
         v = state_level(state_id) if v.nil?
-        v.times { @states.delete(state_id) }
+        v.times do
+          _i = @states.find_index(state_id)
+          @states.delete_at(_i) if _i
+        end
       else # 否则，全部清除
         erase_state(state_id)
       end
@@ -978,9 +1056,28 @@ class Game_Battler < Game_BattlerBase
       end
     end
   end
+  
+  # 更新状态的计数
+  #  timing → 1-行动结束时  2-回合结束时
+  def update_state_turns_ex(timing = 1)  # 针对 RGSS状态
+    states.uniq.each do |state|
+      # 如果是本次行动增加的状态，则不减1
+      next if state.nil?
+      next if @result.added_states && @result.added_states.include?(state.id)
+      if state.auto_removal_timing == timing
+        @state_turns[state.id] -= 1
+        remove_state(state.id) if @state_turns[state.id] == 0
+      end
+    end
+    update_state_ex_counts(timing) # 增加针对 Data_StateEX 的，避免全部写两次
+  end
+  def update_state_turns # 不再需要默认的这个方法了，清空
+  end
+  
   #--------------------------------------------------------------------------
-  # ● 附加状态（扩展）
+  # ● 针对 状态对象
   #--------------------------------------------------------------------------
+  # 附加状态对象
   def add_state_ex(state_id, battler_from=nil, count=nil, ps={})
     if state_addable?(state_id)
       die if state_id == death_state_id
@@ -1005,26 +1102,13 @@ class Game_Battler < Game_BattlerBase
       end
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 行动受到限制时的处理
-  #--------------------------------------------------------------------------
-  alias eagle_state_ex_on_restrict on_restrict
-  def on_restrict
-    eagle_state_ex_on_restrict
-    @states_ex.each do |s|
-      remove_state_ex(s.state.id) if s.state.remove_by_restriction
-    end
-  end
-  #--------------------------------------------------------------------------
-  # ● 状态排序（扩展）
-  #    依照优先度排列数组 @states，高优先度显示的状态排在前面。
-  #--------------------------------------------------------------------------
+
+  # 状态对象排序（高优先度显示的状态排在前面）
   def sort_states_ex
     @states_ex = @states_ex.sort_by {|d| [-$data_states[d.id].priority, d.id] }
   end
-  #--------------------------------------------------------------------------
-  # ● 解除状态（扩展）
-  #--------------------------------------------------------------------------
+
+  # 解除 v 个或 v 层状态对象
   def remove_state_ex(state_id, v=nil)
     if state_ex?(state_id)
       revive if state_id == death_state_id
@@ -1051,9 +1135,8 @@ class Game_Battler < Game_BattlerBase
       end
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 触发状态对象的伤害计算（计数不减少）
-  #--------------------------------------------------------------------------
+  
+  # 触发状态对象的伤害计算（计数不减少）
   def trigger_state_ex(state_id=nil, timing=nil)
     @states_ex.each do |s|
       if (state_id.is_a?(Integer) and state_id != s.id) or 
@@ -1069,75 +1152,38 @@ class Game_Battler < Game_BattlerBase
       end
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 战斗行动结束时的处理
-  #--------------------------------------------------------------------------
-  alias eagle_state_ex_on_action_end on_action_end
-  def on_action_end
-    # 新增：对于按行动次数计数的状态，此处要减1
-    update_state_turns_ex(1)
-    @last_result_added_states = @result.added_states
-    eagle_state_ex_on_action_end  # 此处将 @result 中的 added_states 清空了
+  
+  # 更新状态的计数
+  #  timing → 1-行动结束时  2-回合结束时
+  #  在 update_state_turns_ex 中调用
+  def update_state_ex_counts(timing = 1)  # 针对 状态对象
+    @states_ex.each { |data| data.update_count(timing, @result.added_states) }
+    # 删去需要移除的状态
+    @states_ex.delete_if { |data| check_state_ex_remove?(data) }
   end
-  #--------------------------------------------------------------------------
-  # ● 将存储的附加状态信息重新应用
-  #--------------------------------------------------------------------------
-  def eagle_restore_added_states
-    @result.added_states = @last_result_added_states
-  end
-  #--------------------------------------------------------------------------
-  # ● 回合结束处理
-  #--------------------------------------------------------------------------
-  alias eagle_state_ex_on_turn_end on_turn_end
-  def on_turn_end
-    # 新增：对于按回合计数的状态，此处要减1
-    update_state_turns_ex(2)
-    eagle_state_ex_on_turn_end
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新状态的回合数
-  #--------------------------------------------------------------------------
-  def update_state_turns
-    # 不再需要该方法了，清空
-  end
-  #--------------------------------------------------------------------------
-  # ● 更新状态的计数（扩展）
-  #  1 行动结束时
-  #  2 回合结束时
-  #--------------------------------------------------------------------------
-  def update_state_turns_ex(timing = 1) # 针对rgss的状态
-    states.uniq.each do |state|
-      # 如果是本次行动增加的状态，则不减1
-      next if state.nil?
-      next if @result.added_states && @result.added_states.include?(state.id)
-      if state.auto_removal_timing == timing
-        @state_turns[state.id] -= 1
-        remove_state(state.id) if @state_turns[state.id] == 0
+  
+  # 处理指定 状态对象 的移除
+  #  返回 true 代表需要从 @states_ex 中删除
+  def check_state_ex_remove?(state)
+    f = state.remove?
+    if f  # 已达成移除条件
+      data.process_timing_formula(-2)
+      if $imported["YEA-BattleEngine"]
+        make_state_popup(data.id, :rem_state)
+      end
+      # 特殊：可以用 减少1层 替代 全部移除
+      if state.reduce_level_for_erase?
+        state.reduce_level_for_erase
+        f = false
       end
     end
-    update_state_ex_counts(timing)
+    return f
   end
-  def update_state_ex_counts(timing = 1) # 针对 Data_StateEX的状态对象
-    @states_ex.each { |data| data.update_count(timing, @result.added_states) }
-    # 删去计数为 0 的状态
-    @states_ex.delete_if { |data| 
-      f = data.remove?
-      if f
-        data.process_timing_formula(-2)
-        if $imported["YEA-BattleEngine"]
-          make_state_popup(data.id, :rem_state)
-        end
-        if data.reduce_level_for_erase?  # 用1层替代移除
-          data.reduce_level_for_erase
-          f = false
-        end
-      end
-      f
-    }
-  end
+  
   #--------------------------------------------------------------------------
-  # ● 死亡
+  # ● 针对 RGSS状态 和 状态对象
   #--------------------------------------------------------------------------
+  # 死亡时保留状态
   alias eagle_state_ex_die die
   def die
     # 对于RGSS状态
@@ -1152,9 +1198,60 @@ class Game_Battler < Game_BattlerBase
     @state_steps = s1_steps
     @states_ex = s2
   end
+  
+  # 根据标签获取状态
+  def get_states(tags, v=0)
+    s1 = @states.uniq.select { |sid| $data_states[sid].tag?(tags, v) }
+    s2 = @states_ex.select { |data| data.tag?(tags, v) }
+    s1 + s2
+  end
+  
+  # 增减状态数组中的全部状态的计数
+  def add_states_count(_states, v)
+    _states.each { |data| add_state_count(state, v) }
+  end
+  # 增减状态的计数
+  #  state →  数字（RGSS状态ID）或 状态对象
+  def add_state_count(state, v)
+    if state.is_a?(Integer)
+      @state_turns[state.id] += v
+      remove_state(state.id) if @state_turns[state.id] <= 0
+    elsif state.is_a?(STATE_EX::Data_StateEX)
+      state.add_count(v)
+      @states_ex.delete(state) if check_state_ex_remove?(state)
+    end
+  end
+  
   #--------------------------------------------------------------------------
-  # ● 战斗结束时解除状态
+  # ● 为 状态对象 兼容默认方法
   #--------------------------------------------------------------------------
+  # 行动受到限制时的处理
+  alias eagle_state_ex_on_restrict on_restrict
+  def on_restrict
+    eagle_state_ex_on_restrict
+    @states_ex.each do |s|
+      remove_state_ex(s.state.id) if s.state.remove_by_restriction
+    end
+  end
+  
+  # 战斗行动结束时的处理
+  alias eagle_state_ex_on_action_end on_action_end
+  def on_action_end
+    # 新增：对于按行动次数计数的状态，此处要减1
+    update_state_turns_ex(1)
+    @last_result_added_states = @result.added_states
+    eagle_state_ex_on_action_end  # 此处将 @result 中的 added_states 清空了
+  end
+  
+  # 回合结束处理
+  alias eagle_state_ex_on_turn_end on_turn_end
+  def on_turn_end
+    # 新增：对于按回合计数的状态，此处要减1
+    update_state_turns_ex(2)
+    eagle_state_ex_on_turn_end
+  end
+  
+  # 战斗结束时解除状态
   alias eagle_state_ex_remove_battle_states remove_battle_states
   def remove_battle_states
     eagle_state_ex_remove_battle_states
@@ -1162,12 +1259,11 @@ class Game_Battler < Game_BattlerBase
       remove_state_ex(data.state.id) if data.state.remove_at_battle_end
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 处理伤害
+  
+  # 处理伤害
   #    调用前需要设置好
   #    @result.hp_damage   @result.mp_damage 
   #    @result.hp_drain    @result.mp_drain
-  #--------------------------------------------------------------------------
   alias eagle_state_ex_execute_damage execute_damage
   def execute_damage(user)
     v = @result.hp_damage  # 提前记录下伤害值，避免pop后被清空
@@ -1179,9 +1275,8 @@ class Game_Battler < Game_BattlerBase
       update_state_turns_ex(4)
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 受到伤害时解除状态
-  #--------------------------------------------------------------------------
+
+  # 受到伤害时解除状态
   alias eagle_state_ex_remove_states_by_damage remove_states_by_damage
   def remove_states_by_damage
     eagle_state_ex_remove_states_by_damage
@@ -1190,6 +1285,13 @@ class Game_Battler < Game_BattlerBase
         remove_state_ex(data.state.id)
       end
     end
+  end
+  
+  #--------------------------------------------------------------------------
+  # ●（兼容用）读取存储的附加状态信息
+  #--------------------------------------------------------------------------
+  def eagle_restore_added_states
+    @result.added_states = @last_result_added_states
   end
 end
 
