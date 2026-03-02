@@ -1606,7 +1606,7 @@ class Sprite_Dice_Player < Sprite
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
-    self.bitmap.dispose
+    self.bitmap.dispose if self.bitmap
     super
   end
   #--------------------------------------------------------------------------

@@ -3,24 +3,24 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.3.3"
+$imported["EAGLE-StateEX"] = "1.4.0"
 #==============================================================================
-# - 2026.2.25.0 新增状态标签
+# - 2026.3.2.23 新增状态标签；优化注释
 #==============================================================================
-# - 本插件扩展了默认战斗中的状态，如需兼容其他战斗系统，请自行按注释修改
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #
-# - 由于在默认的 Game_BattlerBase 中，仅存储了状态ID，状态回合计数都是另外存储，
-#   这导致无法利用状态来计算伤害，只能依靠回合结束时的自动回复来做中毒。
+# - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
+#    @state_turns 存储了 状态ID到剩余计数 的数据，
+#   这导致无法利用状态处理伤害，只能依靠回合结束时的自动回复来处理中毒。
 #
-# - 本插件新增了全新设计的状态对象，与默认的状态分别处理，
-#   不仅兼容默认的全部功能，还可以各自独立计数，并编写伤害公式进行伤害处理。
+# - 本插件新增了全新的状态对象，与默认状态独立处理，
+#   不仅兼容默认状态的功能，还可以编写伤害公式进行伤害处理。
 #
+
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # ● 什么是 状态对象（Data_StateEX）
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #
-#  1. 状态对象 是能够处理更多样的 自动消除时机 与 中毒伤害计算 的状态。
+#  1. 状态对象 是本插件新增的，有 更多种自动减少时机 与 伤害计算 等功能的状态。
 #
 #  2. 为了最大限度保证兼容性，状态对象 与 默认状态 互相独立存在，互不冲突。
 #     你可以通过设置下面的常量自由决定是否要用 状态对象 覆盖 默认状态 。
@@ -34,7 +34,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 #    1) 默认系统中的全部 附加状态 都将改为附加 状态对象。
 #
-#    2) 对于 事件-附加状态，其 来源战斗者 为空，请不要在伤害计算中使用 a 。
+#    2) 对于 事件-附加状态，其 来源战斗者 为空，请不要在伤害计算公式中使用 a 。
 #
 #  若设置为 false ，则 默认状态 和 状态对象 互相独立存在。
 #
@@ -42,9 +42,10 @@ FLAG_NO_RGSS3_STATE = true
 #
 #    2) 请自行调用 .add_state_ex 方法来附加 状态对象。
 #
-#       例如，在技能公式中填写 b.add_state_ex(2, a) 来给目标b附加一个2号状态，
-#       同时在2号状态的数据库备注栏里写 <timing 1>a.atk</timing>，
-#       就会在 b 行动结束时受到一次 a的当前攻击力 的真实伤害。
+#       例如，在技能公式中填写 b.add_state_ex(2,a) 
+#         便会给目标b附加一个2号状态，其来源为 a 。
+#         在2号状态的数据库备注栏里写 <timing 1>a.atk</timing>，
+#         那么 b 行动结束时会受到一次 a的当前攻击力 的真实伤害。
 #
 #    3) 对于 事件-附加状态，其附加的依然是默认状态，无法进行本插件的伤害处理。
 #
@@ -60,32 +61,32 @@ FLAG_NO_RGSS3_STATE = true
 #
 #     .add_state_ex(state_id, battler_from=nil, count=nil, ps={})
 #
-#       其中 state_id 为数据库-状态的ID，
-#          本质还是基于数据库中的状态设置，但增加了一些在备注栏中编写的设置。
+#       其中 state_id 为数据库-状态的ID。
 #
-#       其中 battler_from 为该状态的来源战斗者，在伤害公式中可传入技能使用者 a，
-#          在设计基于状态来源的攻击等属性进行中毒伤害计算时会有用处。
+#       其中 battler_from 为该状态的来源战斗者。
+#          在伤害公式中编写时，可写为技能使用者 a 。
+#          在编写状态的伤害计算时，可以用来调用状态来源的八维属性。
 #
-#       其中 count 为计数，每次行动结束/回合结束时 -1 ，当为0时该状态解除，
-#           （注意：当状态最大层数为0时，将作为新的状态附加，并独立计数。）
+#       其中 count 为计数，每次行动结束/回合结束时 -1 ，计数为0时该状态自动解除。
+#           （注意：状态最大层数=0时，每次附加状态都将独立出一个新的，并各自计数。）
 #          如果传入 nil，则取 数据库-状态 中的预设回合数。
 #
 #       其中 ps 为后续扩展用Hash。
 #
-#    （与默认方法对比）附加 1 个默认状态：
+#   （与默认方法对比）附加 1 个默认状态：
 #
 #     .add_state(state_id) 
 #
 #       其中 state_id 为数据库-状态的ID。
 #
-#  3. 解除v 个或 v 层指定ID的状态对象：
+#  3. 解除 v 个或 v 层指定ID的状态对象：
 #
 #     .remove_state_ex(state_id, v=nil)
 #
 #       其中 state_id 为数据库-状态的ID。
 #
-#       其中 v 为解除的数量，如果传入 nil，则解除全部该ID的状态对象；
-#        （对于可叠加的状态）为解除的层数，nil时将解除该ID的状态对象的全部层数。
+#       其中 v 为解除的数量，nil 将解除全部该ID的状态对象；
+#        （对于可叠加的状态）v 为解除的层数，nil 将解除该ID的状态对象的全部层数。
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -96,35 +97,38 @@ FLAG_NO_RGSS3_STATE = true
 #
 #  如果标题后备注【仅状态对象】，代表仅对 状态对象 生效。
 #
-#---------------------------------------------------------------------
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # △ 死亡也保留的状态                            【RGSS状态和状态对象】
-#---------------------------------------------------------------------
 #
-# - 现在可以设置 状态 在角色死亡时是否保留了。
+#-----------------设置方式-----------------
 #
 # - 在 数据库-状态 的备注中填写：
 #
-#      <死亡保留> 或者 <reserve when die>
+#      <死亡保留>  或  <reserve when die>
 #
 #   则在角色死亡时，该状态将不会被清除。
 #
-#---------------------------------------------------------------------
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # △ 状态的最大叠加层数                          【RGSS状态和状态对象】
-#---------------------------------------------------------------------
 #
-# - 现在 状态 可以反复附加，直至达到预设的上限。
+# - 在默认系统中，状态同时只能存在一个，再次附加除了刷新计数，没有其他收益。
+#   本插件尝试设计了允许叠层的状态特性。
+#
+#-----------------设置方式-----------------
 #
 # - 在 数据库-状态 的备注中填写：
 # 
 #      <层数 数字> 或 <level 数字>
 #
-#   其中 数字 为 正整数，来设置该状态最多可被添加的层数。
+#   其中 数字 为 正整数，为该状态最多可被添加的层数。
 #
-# - 注意：
+#------------------注 意-------------------
 #
-#  1. 状态在成功叠加后，将刷新其回合计数。
+#  1. 状态在成功叠加后，将立即刷新其回合计数。
 # 
-#  2. 对于默认的状态（利用 add_state 添加的状态）：
+#  2. 对于默认状态（利用 add_state 添加的状态）：
 #
 #    1）同ID的状态共用一个回合计数。
 #
@@ -134,58 +138,61 @@ FLAG_NO_RGSS3_STATE = true
 #
 #  3. 对于状态对象（利用 add_state_ex 添加的状态）：
 #
-#    1）同一时刻只会有一个该状态存在。
+#    1）同一时刻只会有一个该ID的状态对象。
 #
 #    2) 再次附加时，不论层数是否成功增加，
-#       都将覆盖当前状态对象的 battler_from、count、ps 。
+#       都将覆盖当前状态对象的 来源战斗者battler_from、计数count、扩展参数ps 。
 #
 #  4. 数据库-状态的特殊能力、添加能力等都会按层数进行倍增、倍乘。
 #
-#------------------------------------------------
-# - 战斗者Battler 新增方法：
+#----------战斗者Battler 新增方法-----------
 #
 #    .state_level(state_id)               →  获取 默认状态 的已附加层数
+#
 #    .reduce_state_level(state_id, v)     →  指定 默认状态 减少 v 层
 #                              如果v为 nil 或不传入或大于已有层数，则消除全部层数
 #
 #    .state_ex_level(state_id)            →  获取 状态对象 的已附加层数
 #
-#---------------------------------------------------------------------
-# △ 状态的最多同时存在个数                              【仅状态对象】
-#---------------------------------------------------------------------
-# 
-# - 现在 状态 可以反复附加，直至达到同时存在的上限。
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# △ 状态的最多同时存在数量                              【仅状态对象】
+#
+#-----------------设置方式-----------------
 #
 # - 在 数据库-状态 的备注中填写：
 #
 #      <层数 0> 或 <level 0> 或 不填写
 #
-#   同时也在备注中填写：
+#   同时在备注中填写：
 #
 #      <个数 数字> 或 <max 数字>
 #
 #   来设置该状态的最多同时存在个数。
 #
-# - 注意：
+#------------------注 意-------------------
 #
 #  1. 状态在附加前会判定当前数量，如果已经达到数量上限，则附加失败。
 #
-#  2. 如果设置了 <层数 数字> ，且数字为正整数，则该功能失效。
-#     状态每次重复附加会变为给已有状态层数+1，而不会附加新的独立状态。
+#  2. 如果设置了 <层数 数字> ，且数字为正整数，则该功能失效，
+#     状态重复附加将变为给已有状态的层数+1，而不会附加新状态。
 #
-#  3. 如果未设置 <个数 数字>，则同时存在的数量无上限。
+#  3. 如果未设置 <个数 数字>，则同时存在的状态数量无限制。
 #
-#------------------------------------------------
-# - 战斗者Battler 新增方法：
+#----------战斗者Battler 新增方法-----------
 #
 #    .state_ex_sum(state_id)         →  获取已附加的状态对象的个数
+#
 #    .state_ex?(state_id, v=1)       →  是否已附加至少v个状态对象
 #
-#---------------------------------------------------------------------
-# △ 状态的附加属性                              【RGSS状态和状态对象】
-#---------------------------------------------------------------------
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# △ 状态的八维属性增加                          【RGSS状态和状态对象】
 #
-# - 现在 状态 可以像装备一样，给角色附加额外的属性值了。
+# - 在默认系统中，状态只能通过给角色增加 特性-能力-普通能力 来修改八维属性。
+#   本插件尝试设计了与角色装备一致的，通过状态增加角色八维属性具体数值的方式。
+#
+#-----------------设置方式-----------------
 #
 # - 在 数据库-状态 的备注中填写：
 #
@@ -193,7 +200,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 #   其中 ... 替换为 属性名=数字 的反复组合，各个属性只能写一次
 #
-#     1) 属性名 为 mhp mmp atk def mat mdf agi luk ，依次为八维属性。
+#     1) 属性名 为 mhp mmp atk def mat mdf agi luk ，依次为数据库-角色的八维属性。
 #
 #     2) 数字   为 正整数 或 负整数 或 带 % 的百分数。
 #
@@ -201,120 +208,72 @@ FLAG_NO_RGSS3_STATE = true
 #   如 <params>mhp=5%</params> 代表 最大生命值+5%
 #   如 <params>mat=5 luk=-3</params> 代表 魔法攻击+5点、幸运-3点
 #
-# - 注意：
+#------------------注 意-------------------
 #
-#  1. 状态如果存在多层，则每一层都会累加一次属性值。
+#  1. 状态如果有多层，则每一层都会累加一次属性值。
 #
 #  2. 状态附加的固定属性值，将在全部附加属性计算完成后增加，
-#     即不受到数据库中普通能力-属性倍率、战斗中属性buff的影响。
+#     即不受数据库中普通能力-属性倍率、战斗中属性buff的影响。
 #
 #  3. 状态附加的百分比属性值，将与 战斗中属性buff 进行累加，作为最终的倍率。
-#     即属性的倍率 = 1 + 该属性战斗中buff层数 x 0.25 + 状态的属性倍率和。
+#     即属性的倍率 = 1 + 该属性强化buff层数 x 0.25 + 全部状态的该属性倍率的和。
 #
 #     如 被附加了带有 <params>mhp=5%</params> 的状态A 和
 #        带有 <params>mhp=15</params>的状态B，且 MHP 的buff层数为 0，
 #        则该角色的最终MHP = 原始MHP * (1 + 0 x 0.25 + 0.05) + 15
 #
-#---------------------------------------------------------------------
-# △ 状态的伤害计算                                      【仅状态对象】
-#---------------------------------------------------------------------
-#
-# - 现在可以给中毒之类的状态设置更灵活的伤害数值了。
-#
-# - 在 数据库-状态 的备注中填写：
-#
-#    <timing 类型>...</timing>
-#
-#   其中 类型 为该伤害计算的触发时机的数字，
-#         1 → 行动结束时     2 → 回合结束时
-#         3 → 造成伤害时     4 → 受到伤害时
-#        -1 → 状态被附加时  -2 → 状态被解除时
-#
-#   其中 ... 替换为伤害公式，
-#         可以用 a 代表施加该状态的战斗者，b 代表当前结算该状态的战斗者，
-#                s 代表开关组，v 代表变量组，
-#               id 代表当前状态的id，l 代表当前状态的层数
-#
-#   如 <timing 1>a.atk * 0.5</timing> 代表
-#         战斗者行动结束时，受到施加状态者的0.5倍atk的伤害。
-#
-#   如 <timing 2>b.mhp * 0.05</timing> 代表
-#         战斗者回合结束时，受到自身最大生命值5%的伤害。
-#
-# - 注意：
-#
-#  1. 如果状态的最大层数为0，即不可叠加，则每个状态都会触发一次伤害计算。
-#
-#     如果状态的最大层数为正数，则只会触发一次伤害计算，
-#       请自己在伤害公式中利用 l 来处理状态层数对伤害的影响。
-#
-#  2. 可以反复填写多次，以对不同时机进行设置。
-#     对同一时机填写多次时，取最后一次的设置。
-#
-#  3. 状态的自动减少时机与该伤害计算互相独立处理，
-#     如状态设置为回合结束时消除，但备注栏设置 <timing 1>...</timing> ，
-#       那么在角色行动结束时同样会进行伤害计算。
-#
-#  4. 目前版本中，造成的伤害为真实伤害，不会暴击，不受其它减伤影响。
-#
-#  5. 当前仅兼容了YEA-Ace Battle Engine的伤害数字pop显示，
-#     如果你有其他显示伤害方式需要兼容，请在 process_timing_formula 方法中添加。
-#
-#------------------------------------------------
-# - 战斗者Battler 新增方法：
-#
-#    .trigger_state_ex(state_id, timing)   → 触发指定状态对象指定类型的伤害计算
-#            state_id 为 nil 时，将触发全部状态对象
-#                     为 数字 时，将触发ID为该数字的状态对象
-#                     为 数组 时，将触发ID在该数组内的状态对象
-#            timing   为 nil 时，将触发状态的全部类型的伤害计算
-#                     为 数字 时，将触发类型为该数字的伤害计算
-#                     为 数组 时，将触发类型在该数组内的伤害计算
-#
-#---------------------------------------------------------------------
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # △ 状态的自动减少时机                          【RGSS状态和状态对象】
-#---------------------------------------------------------------------
 #
 # - 在默认系统中，状态的自动减少时机仅有 行动结束时 和 回合结束时，
 #   受伤解除 和 战斗解除 都是无视计数直接消除状态，不属于自动减少。
+#   本插件尝试将自动减少时机进行扩展，方便设计更灵活多样的状态。
 #
-# - 现在可以给状态设置全新的自动减少时机了。
+#-----------------设置方式-----------------
 #
 # - 在 数据库-状态 的备注中填写：
 #
 #      <set timing 时机数字>
 #
-#  “时机数字”替换为下列数字，以设置该状态的计数自动减1的时机：
+#  “时机数字”为该状态计数自动减1的时机，替换为下列之一：
 #
 #       1 → 角色自身行动结束时   2 → 战斗回合结束时
 #       3 → 角色造成伤害时       4 → 角色受到伤害时
-#       （3和4都随 on_damage 方法计数，如果使用【技能多段伤害】，则会多次计数）
+#      13 → 角色造成暴击伤害时  14 → 角色受到暴击伤害时
+#      23 → 角色造成治疗时      24 → 角色受到治疗时
+#       5 → 角色攻击失误未命中时 6 → 角色受击成功闪避时
 #
-# - 注意：
+#------------------注 意-------------------
 #
-#  1. 数据库-状态中设置的 自动解除时机 将失效！
+#  1. 如果设置了这个，那数据库-状态中设置的 自动解除时机 将失效！
 #
+#  2. 时机数字的 3/4/5/6 都在 on_damage 方法里进行计数-1 ，
+#     如果用了比如【技能多段伤害 by老鹰】，则会多次触发计数-1 。
 #
-# - 高级-编写你的“时机数字”：
+#------------------高 级-------------------
 #
-#  1. “时机数字”不仅仅局限于上述 4 个，你也可以编写属于自己的时机。
+# - 编写你自己的“时机数字”：
+#
+#  1. “时机数字”不局限于上述 4 类，你也可以编写自己的特殊时机。
 #
 #    假如你想编写 时机数字5 ，代表 击杀敌人时 ，则需要以下几步：
 #
 #    1) 数据库-状态的备注栏中填写 <set timing 5>
 #
 #    2) 由于 Game_Battler 的 execute_damage(user) 方法应用了受到的伤害，
-#       可以在方法中的最后增加判定自身 hp 是否为 0，
-#       如果为0则调用 user.update_state_turns_ex(5) ，
-#       这样就会将攻击方的全部时机为5的状态 计数-1 ，且当计数为0时，将自动解除。
+#       可以在方法最后增加
+#             user.update_state_turns_ex(5) if self.hp <= 0
+#       如果角色hp<=0，攻击方的全部时机为5的状态 计数-1 ，且计数=0时自动解除。
 #
 #    3) 同样可以编写 <timing 5>...</timing> 来处理击杀敌人时的伤害公式。
 #
 #  2. 对于当前行动/回合中才附加的新状态，在行动结束/回合结束时不处理 计数-1 。
 #
-#     但如果你添加的时机在 battler.on_action_end 方法后，
-#       由于这个方法中清空了附加新状态的数组，
-#       导致会多执行一次 计数-1 ，即状态持续数额外少了 1。
+#     但如果你的时机在 battler.on_action_end 方法后处理，
+#       由于该方法中清除了附加新状态的数组，
+#       后续再调用 battler.update_state_turns_ex(时机数字) 时，
+#       就没法剔除当前行动/回合中才附加的新状态，导致多执行了一次 计数-1 。
 #
 #     为了避免该问题，你可以按以下顺序操作：
 #
@@ -325,14 +284,17 @@ FLAG_NO_RGSS3_STATE = true
 #
 #    3) 调用 battler.result.added_states.clear 重置“附加新状态信息”。
 #
-#---------------------------------------------------------------------
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # △ 状态的自动减少与最大叠加层数的交互                  【仅状态对象】
 #---------------------------------------------------------------------
 #
 # - 在默认系统中，状态的回合计数减少到 0 时，将消除全部同ID的状态。
 #   本插件中的默认状态同理，不管目前多少层，都会在回合计数归零时一起消除。
 #
-# - 现在 状态对象 可以用 减少层数 来代替 全部消除 了。
+# - 对于状态对象，本插件增加了一个特性：在计数归零时仅移除一层，并重置计数。
+#
+#-----------------设置方式-----------------
 #
 # - 在 数据库-状态 的备注中填写：
 #
@@ -341,9 +303,70 @@ FLAG_NO_RGSS3_STATE = true
 #   那么对于设置了 <层数 数字> 且数字为正数的状态，
 #     如果目前层数大于1，将在计数为0时，仅减少1层，而不消除全部层数，且计数重置。
 #
-#---------------------------------------------------------------------
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# △ 状态的伤害计算                                      【仅状态对象】
+#
+# - 在默认系统中，中毒状态只能通过给 回合结束时生命恢复 设置负值，来当做中毒。
+#   本插件尝试设计了与技能公式一致的能自定义触发时机的伤害计算。
+#
+#-----------------设置方式-----------------
+#
+# - 在 数据库-状态 的备注中填写：
+#
+#    <timing 类型>...</timing>
+#
+#   其中 类型 为该伤害计算的触发时机的数字，
+#        -1 → 状态被附加时  -2 → 状态被解除时
+#         1 → 行动结束时     2 → 回合结束时
+#        （其他可用类型请见 △ 状态的自动减少时机）
+#
+#   其中 ... 替换为伤害公式，
+#         可以用 a 代表施加该状态的来源战斗者，
+#                b 代表当前有该状态的战斗者，
+#                s 代表开关组，v 代表变量组，
+#               id 代表当前状态的id，l 代表当前状态的层数。
+#
+#   如 <timing 1>a.atk * 0.5</timing> 代表
+#         战斗者行动结束时，受到状态来源战斗者的 atk * 0.5 的伤害。
+#
+#   如 <timing 2>b.mhp * 0.05</timing> 代表
+#         战斗者回合结束时，受到自身最大生命值5%的伤害。
+#
+#------------------注 意-------------------
+#
+#  1. 如果状态的最大层数为0，即不可叠加，则每个状态都会触发一次伤害计算。
+#
+#     如果状态的最大层数为正数，则只会触发一次伤害计算，
+#       请自己在伤害公式中利用 l 来处理层数对伤害的影响。
+#
+#  2. 可以反复填写多次，以对不同时机进行设置。
+#     对同一时机填写多次时，取最后一次的设置。
+#
+#  3. 状态的自动减少时机与该伤害计算互相独立处理，
+#     如状态设置为回合结束时消除，但备注栏设置 <timing 1>...</timing> ，
+#       那么在角色行动结束时同样会进行伤害计算。
+#
+#  4. 目前版本中，造成的伤害为真实伤害，不会暴击，不受其它增伤减伤影响。
+#
+#  5. 当前仅兼容了YEA-Ace Battle Engine的伤害数字pop显示，
+#     如果你有其他显示伤害的方式，请在 process_timing_formula 方法中添加。
+#
+#----------战斗者Battler 新增方法-----------
+#
+#    .trigger_state_ex(state_id, timing)   → 触发指定状态对象指定类型的伤害计算。
+#            state_id 为 nil 时，触发全部状态对象；
+#                     为 数字 时，触发状态ID为该数字的状态对象；
+#                     为 数组 时，触发状态ID在该数组内的状态对象。
+#            timing   为 nil 时，触发状态的全部时机的伤害计算；
+#                     为 数字 时，触发时机为该数字的伤害计算；
+#                     为 数组 时，触发时机在该数组内的伤害计算。
+#
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # △ 状态的帮助文本                              【RGSS状态和状态对象】
-#---------------------------------------------------------------------
+#
+#-----------------使用方式-----------------
 #
 # - 利用全局方法获取指定状态的帮助文本：
 #
@@ -352,32 +375,46 @@ FLAG_NO_RGSS3_STATE = true
 #   其中 _state 为 数据库-状态 ID 或者 $data_states[id] 或者 Data_StateEX 对象。
 #   其中 _battler 为 战斗者，在战斗中将增加一些实时信息。
 #
-# - 注意：
-#
-#    1. 状态名字中的 (..) 或 [..] 将识别为备注信息，自动删去。
-#    2. 状态备注栏中可以编写 <help>...</help> 来增加帮助文本。
-#
 # - 获取指定战斗者全部状态的帮助文本：
 #
 #      STATE_EX.get_states_help_text(battler)
 #
-#---------------------------------------------------------------------
-# △ 状态的标签                                  【RGSS状态和状态对象】
-#---------------------------------------------------------------------
+#------------------注 意-------------------
 #
-# - 现在可以给 状态 设置标签了，对拥有指定标签的状态可以进行统一处理。
+#    1. 状态名字中的 (..) 或 [..] 将识别为备注信息，自动删去。
+#    2. 状态备注栏中可以编写 <help>...</help> 来增加帮助文本。
+#
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# △ 状态的标签                                  【RGSS状态和状态对象】
+#
+# - 在默认系统中，状态都是互相独立的，无法对某一类状态进行批量处理。
+#   本插件为状态增加了 标签，对拥有指定标签的状态能够进行统一处理。
+#
+#-----------------设置方式-----------------
 #
 # - 在 数据库-状态 的备注中填写（可多次填写）：
 #
 #      <标签: name> 或者 <tag: name>
 #
-# - 获取战斗者的包含指定标签的全部状态：
+#-----------------使用方式-----------------
 #
-#     states_array = battler.get_states(tags, v=0)
+# - 获取战斗者的包含指定标签的状态数组：
 #
-#   其中 tags 为数组，其中是在状态备注栏中编写的 name。
-#   其中 v 为数字，代表挑选出含有tags中至少 v 个标签的状态，0代表状态要有全部tags。
+#     states_array = battler.get_states(tag, timing=nil)
+#
+#   其中 tag 为字符串，是状态备注栏中编写的标签的 name。
+#   其中 timing 为筛选指定自动减少时机的状态：
+#                nil - 不筛选，返回全部含有 tag 标签的状态；
+#               数字 - 返回既含有 tag 标签，又是指定时机的状态；
+#               数组 - 返回既含有 tag 标签，自动减少时机又在该数组内的状态。
+#                  具体自动减少时机的数字请见  △ 状态的自动减少时机  的说明。
+#
 #   返回的 states_array 为 RGSS状态序号 与 状态对象 的数组。
+#
+#   示例：
+#     a = battler.get_states("debuff",1)
+#       → 获取战斗者带有 <tag:debuff> 并且 行动结束时计数减一 的全部状态的数组。
 #
 # - 为战斗者的状态数组中的全部状态增减计数：
 #
@@ -386,11 +423,184 @@ FLAG_NO_RGSS3_STATE = true
 #   其中 states_array 为 RGSS状态序号 与 状态对象 的数组。
 #   其中 v 为计数的增减量。
 #
-#   注意：若计数减少到 0 或负数，将自动执行状态移除。
+#   注意：若计数减少到 0 或负数，将自动移除状态。
 #
+#   示例：
+#     battler.add_states_count(a, -1)
+#       → 接上，战斗者带有 <tag:debuff> 并且 行动结束时计数减一 的全部状态直接减一计数。
+#
+# - 移除战斗者的状态数组中的全部状态：
+#
+#     battler.remove_states(states_array)
+#
+
+#==============================================================================
+#                                 × 帮助完毕 × 
 #==============================================================================
 
 module STATE_EX 
+  #--------------------------------------------------------------------------
+  # ○ 获取战斗者全部状态的帮助文本
+  #--------------------------------------------------------------------------
+  def self.get_states_help_text(battler)
+    t = ""
+    battler.states.uniq.each do |state|
+      t += get_state_help(state, battler)
+      t += "\n"
+    end
+    battler.states_ex.each do |state|
+      t += get_state_help(state, battler)
+      t += "\n"
+    end
+    return t
+  end
+
+  # 获取指定状态的帮助文本
+  def self.get_state_help(_state, _battler=nil) 
+    # RPG::State 或 STATE_EX::Data_StateEX 或 state_id
+    rgss_state, data_state = get_rgss_state_data_state(_state)
+    return "" if rgss_state == nil
+    t = ""
+    name = rgss_state.name
+    # 特别的，状态名字中的 (..) 或 [..] 为备注信息，需要去除
+    name.gsub!(/\(.*\)|\[.*\]/) { "" }
+    t += get_state_help_text_name(rgss_state.icon_index, name)
+    # 如果传入了battler，则增加层数、解除时机
+    if _battler
+      # 叠加层数
+      v = 0 
+      if data_state # 如果是状态对象
+        v = _battler.state_ex_level(rgss_state.id)
+      else # 默认的状态
+        v = _battler.state_level(rgss_state.id)
+      end
+      t += get_state_help_text_level(v)
+    end
+    # 标签
+    t += get_state_tags(rgss_state)
+    if _battler
+      # 自动解除时机
+      v2 = 0  # 状态计数
+      if data_state # 如果是状态对象
+        v2 = data_state.count
+        type = data_state.count_type
+      else # 默认的状态
+        v2 = _battler.state_turns[rgss_state.id] || 0
+        type = rgss_state.auto_removal_timing
+      end
+      t += get_state_help_text_count(type, v2)
+      # 层数大于1时，抵扣解除
+      t += get_state_help_text_level_for_erase(v, rgss_state)
+      # 受伤解除
+      t += get_state_help_text_on_damage(rgss_state) 
+    end
+    # 备注中的帮助文本
+    t += get_state_help_text_note(rgss_state.note)
+    return t
+  end
+  
+  # 获取状态图标和名称的帮助文本
+  def self.get_state_help_text_name(icon_index, name) 
+    "【\ei[#{icon_index}]#{name}】"
+  end
+  
+  # 获取状态层数的帮助文本
+  def self.get_state_help_text_level(v)
+    if v > 1
+      "(\ec[16]#{v}\ec[0]层)"
+    else
+      ""
+    end
+  end
+  
+  # 获取状态的标签的帮助文本
+  def self.get_state_tags(rgss_state)
+    t = ""
+    rgss_state.tags.each do |tag|
+      _t = get_state_tag_text(tag)
+      t += "「#{_t}」"
+    end
+    t
+  end
+  
+  # 自定义标签的显示文本
+  def self.get_state_tag_text(tag)
+    case tag
+    when "buff"  ; return "\ec[1]有益\ec[0]"
+    when "debuff"; return "\ec[10]有害\ec[0]"
+    when "other" ; return "\ec[7]其它\ec[0]"
+    else; return tag
+    end
+  end
+  
+  # 获取状态自动减少时机的帮助文本
+  def self.get_state_help_text_count(type, v) 
+    if v > 0
+      case type
+      when 1; return "(\ec[16]#{v}\ec[0]次行动解除)"
+      when 2; return "(\ec[16]#{v}\ec[0]回合解除)"
+      when 3; return "(造成\ec[16]#{v}\ec[0]次伤害解除)"
+      when 4; return "(受到\ec[16]#{v}\ec[0]次伤害解除)"
+      when 5; return "(\ec[16]#{v}\ec[0]次攻击失误后解除)"
+      when 6; return "(\ec[16]#{v}\ec[0]次闪避后解除)"
+      when 13; return "(暴击\ec[16]#{v}\ec[0]次解除)"
+      when 14; return "(受到\ec[16]#{v}\ec[0]次暴击解除)"
+      when 23; return "(治疗\ec[16]#{v}\ec[0]次解除)"
+      when 24; return "(受到\ec[16]#{v}\ec[0]次治疗解除)"
+      # 此为自定义的时机
+      #  需要自己把 battler.update_state_turns_ex(10) 放到脚本中对应位置
+      when 10; return "(\ec[16]#{v}\ec[0]次投掷解除)"
+      end
+    end
+    return "(不自动解除)"
+  end
+  
+  # 获取状态在自动减少时可以用层数抵扣的帮助文本
+  def self.get_state_help_text_level_for_erase(v, rgss_state)
+    if v > 1
+      if rgss_state.reduce_one_level
+        return "（单次解除\ec[16]1\ec[0]层）"
+      else
+        return "（单次全部解除）"
+      end
+    end
+    return ""
+  end
+  
+  # 获取状态受伤概率解除的帮助文本
+  def self.get_state_help_text_on_damage(rgss_state)
+    if rgss_state.remove_by_damage
+      v = rgss_state.chance_by_damage
+      return "(受伤时\ec[16]#{v}%\ec[0]解除)"
+    end
+    return ""
+  end
+  
+  # 获取状态在备注栏中额外增加的帮助文本
+  def self.get_state_help_text_note(note)
+    t = ""
+    note.scan(/<help>(.*?)<\/help>/mi).each do |_params|
+      _t = _params[0]
+      _t.gsub!(/\\n/i) { "\n" }
+      _t.gsub!(/\r/i) { "" }
+      t += _t
+    end
+    return t
+  end
+  
+  #--------------------------------------------------------------------------
+  # ● 【扩展用】方便撰写popup
+  #--------------------------------------------------------------------------
+  def self.state_ex_when_add(state_ex)  # 状态附加时执行的内容
+  end
+  def self.state_ex_when_remove(state_ex) # 状态解除时执行的内容
+  end
+  def self.state_ex_when_trigger(state_ex) # 状态被触发时执行的内容 
+    # 此时 state_ex.battler.result.hp_damage 为已经造成的伤害值或治疗值
+    # 兼容：YEA战斗系统的伤害pop
+    state_ex.battler.make_damage_popups(state_ex.battler_from) if $imported["YEA-BattleEngine"]
+  end
+
   #--------------------------------------------------------------------------
   # ○【常量】基础属性与对应ID
   #--------------------------------------------------------------------------
@@ -482,162 +692,6 @@ module STATE_EX
     return rgss_state, data_state
   end
   
-  #--------------------------------------------------------------------------
-  # ○ 获取战斗者全部状态的帮助文本
-  #--------------------------------------------------------------------------
-  def self.get_states_help_text(battler)
-    t = ""
-    battler.states.uniq.each do |state|
-      t += get_state_help(state, battler)
-      t += "\n"
-    end
-    battler.states_ex.each do |state|
-      t += get_state_help(state, battler)
-      t += "\n"
-    end
-    return t
-  end
-
-  # 获取指定状态的帮助文本
-  def self.get_state_help(_state, _battler=nil) 
-    # RPG::State 或 STATE_EX::Data_StateEX 或 state_id
-    rgss_state, data_state = get_rgss_state_data_state(_state)
-    return "" if rgss_state == nil
-    t = ""
-    name = rgss_state.name
-    # 特别的，状态名字中的 (..) 或 [..] 为备注信息，需要去除
-    name.gsub!(/\(.*\)|\[.*\]/) { "" }
-    t += get_state_help_text_name(rgss_state.icon_index, name)
-    # 如果传入了battler，则增加层数、解除时机
-    if _battler
-      # 叠加层数
-      v = 0 
-      if data_state # 如果是状态对象
-        v = _battler.state_ex_level(rgss_state.id)
-      else # 默认的状态
-        v = _battler.state_level(rgss_state.id)
-      end
-      t += get_state_help_text_level(v)
-    end
-    # 标签
-    t += get_state_tags(rgss_state)
-    if _battler
-      # 自动解除时机
-      v2 = 0  # 状态计数
-      if data_state # 如果是状态对象
-        v2 = data_state.count
-        type = data_state.count_type
-      else # 默认的状态
-        v2 = _battler.state_turns[rgss_state.id] || 0
-        type = rgss_state.auto_removal_timing
-      end
-      t += get_state_help_text_count(type, v2)
-      # 层数大于1时，抵扣解除
-      t += get_state_help_text_level_for_erase(v, rgss_state)
-      # 受伤解除
-      t += get_state_help_text_on_damage(rgss_state) 
-    end
-    # 备注中的帮助文本
-    t += get_state_help_text_note(rgss_state.note)
-    return t
-  end
-  
-  # 获取状态图标和名称的帮助文本
-  def self.get_state_help_text_name(icon_index, name) 
-    "【\ei[#{icon_index}]#{name}】"
-  end
-  
-  # 获取状态层数的帮助文本
-  def self.get_state_help_text_level(v)
-    if v > 1
-      "(\ec[16]#{v}\ec[0]层)"
-    else
-      ""
-    end
-  end
-  
-  # 获取状态的标签的帮助文本
-  def self.get_state_tags(rgss_state)
-    t = ""
-    rgss_state.tags.each do |tag|
-      _t = get_state_tag_text(tag)
-      t += "「#{_t}」"
-    end
-    t
-  end
-  
-  # 自定义标签的显示文本
-  def self.get_state_tag_text(tag)
-    case tag
-    when "buff"  ; return "\ec[1]有益类\ec[0]"
-    when "debuff"; return "\ec[10]有害类\ec[0]"
-    when "other" ; return "\ec[7]其它类\ec[0]"
-    else; return tag
-    end
-  end
-  
-  # 获取状态自动减少时机的帮助文本
-  def self.get_state_help_text_count(type, v) 
-    if v > 0
-      case type
-      when 1; return "(\ec[16]#{v}\ec[0]次行动解除)"
-      when 2; return "(\ec[16]#{v}\ec[0]回合解除)"
-      when 3; return "(造成\ec[16]#{v}\ec[0]次伤害解除)"
-      when 4; return "(受到\ec[16]#{v}\ec[0]次伤害解除)"
-      # 此为自定义的时机
-      #  需要自己把 battler.update_state_turns_ex(10) 放到脚本中对应位置
-      when 10; return "(\ec[16]#{v}\ec[0]次投掷解除)"
-      end
-    end
-    return "(不自动解除)"
-  end
-  
-  # 获取状态在自动减少时可以用层数抵扣的帮助文本
-  def self.get_state_help_text_level_for_erase(v, rgss_state)
-    if v > 1
-      if rgss_state.reduce_one_level
-        return "（单次解除\ec[16]1\ec[0]层）"
-      else
-        return "（单次全部解除）"
-      end
-    end
-    return ""
-  end
-  
-  # 获取状态受伤概率解除的帮助文本
-  def self.get_state_help_text_on_damage(rgss_state)
-    if rgss_state.remove_by_damage
-      v = rgss_state.chance_by_damage
-      return "(受伤时\ec[16]#{v}%\ec[0]解除)"
-    end
-    return ""
-  end
-  
-  # 获取状态在备注栏中额外增加的帮助文本
-  def self.get_state_help_text_note(note)
-    t = ""
-    note.scan(/<help>(.*?)<\/help>/mi).each do |_params|
-      _t = _params[0]
-      _t.gsub!(/\\n/i) { "\n" }
-      _t.gsub!(/\r/i) { "" }
-      t += _t
-    end
-    return t
-  end
-  
-  #--------------------------------------------------------------------------
-  # ● 【扩展用】方便撰写popup
-  #--------------------------------------------------------------------------
-  def self.state_ex_when_add(state_ex)  # 状态附加时执行的内容
-  end
-  def self.state_ex_when_remove(state_ex) # 状态解除时执行的内容
-  end
-  def self.state_ex_when_trigger(state_ex) # 状态被触发时执行的内容 
-    # 此时 state_ex.battler.result.hp_damage 为已经造成的伤害值或治疗值
-    # 兼容：YEA战斗系统的伤害pop
-    state_ex.battler.make_damage_popups(state_ex.battler_from) if $imported["YEA-BattleEngine"]
-  end
-  
 #==============================================================================
 # ■ 数据类
 #==============================================================================
@@ -706,7 +760,7 @@ class Data_StateEX
   end
   
   # 判定是否包含指定tag数组
-  def tag?(_tags, v=0); state.tags?(_tags, v); end
+  def tag?(_tag); state.tag?(_tag); end
     
   #--------------------------------------------------------------------------
   # ● 增加一层该状态
@@ -866,16 +920,10 @@ class RPG::State
     @param_rate[param_id]
   end
   #--------------------------------------------------------------------------
-  # ● 判断是否包含某些tags
-  #  any → 0-全部包含  正数-至少包含该数目个
+  # ● 判断是否包含指定tag
   #--------------------------------------------------------------------------
-  def tag?(_tags=[], any=0)
-    n = 0
-    any = _tags.size if any == 0
-    _tags.each do |_t|
-      n += 1 if @tags.include?(_t)
-    end
-    return true if n >= any
+  def tag?(_tag)
+    @tags.include?(_tag)
   end
 end
 
@@ -1163,13 +1211,14 @@ class Game_Battler < Game_BattlerBase
   end
   
   # 处理指定 状态对象 的移除
+  #  ignore_count - true 代表无视状态计数，false 代表状态计数为0才消除
   #  返回 true 代表需要从 @states_ex 中删除
-  def check_state_ex_remove?(state)
-    f = state.remove?
+  def check_state_ex_remove?(state, ignore_count=false)
+    f = ignore_count ? true : state.remove?
     if f  # 已达成移除条件
-      data.process_timing_formula(-2)
+      state.process_timing_formula(-2)
       if $imported["YEA-BattleEngine"]
-        make_state_popup(data.id, :rem_state)
+        make_state_popup(state.id, :rem_state)
       end
       # 特殊：可以用 减少1层 替代 全部移除
       if state.reduce_level_for_erase?
@@ -1199,26 +1248,56 @@ class Game_Battler < Game_BattlerBase
     @states_ex = s2
   end
   
-  # 根据标签获取状态
-  def get_states(tags, v=0)
-    s1 = @states.uniq.select { |sid| $data_states[sid].tag?(tags, v) }
-    s2 = @states_ex.select { |data| data.tag?(tags, v) }
-    s1 + s2
+  # 根据标签和自动减少时机获取状态数组
+  # timing → 状态的自动减少时机，nil-全部，数字-对应时机，数组-其中的全部时机
+  def get_states(tag, timing=nil)
+    s1 = @states.uniq.select { |sid| $data_states[sid].tag?(tag) }
+    s2 = @states_ex.select { |data| data.tag?(tag) }
+    (s1 + s2).select { |_s| check_state_timing?(_s, timing) }
+  end
+  # 判定指定状态是否在 timing 时执行计数减一
+  def check_state_timing?(state, timing)
+    return true if timing == nil
+    rgss_state, data_state = STATE_EX.get_rgss_state_data_state(state)
+    if data_state # 如果是状态对象
+      type = data_state.count_type
+    else # 默认的状态
+      type = rgss_state.auto_removal_timing
+    end
+    if timing.is_a?(Integer)
+      return true if type == timing
+    elsif timing.is_a?(Array)
+      return true if timing.include?(type)
+    end
+    return false
   end
   
   # 增减状态数组中的全部状态的计数
   def add_states_count(_states, v)
-    _states.each { |data| add_state_count(state, v) }
+    _states.each { |_state| add_state_count(_state, v) }
   end
-  # 增减状态的计数
-  #  state →  数字（RGSS状态ID）或 状态对象
-  def add_state_count(state, v)
-    if state.is_a?(Integer)
-      @state_turns[state.id] += v
-      remove_state(state.id) if @state_turns[state.id] <= 0
-    elsif state.is_a?(STATE_EX::Data_StateEX)
-      state.add_count(v)
-      @states_ex.delete(state) if check_state_ex_remove?(state)
+  # 增减指定状态的计数
+  #  state → 数字（RGSS状态ID）或 状态对象
+  #    v   → 增加值
+  def add_state_count(_state, v)
+    if _state.is_a?(Integer)
+      @state_turns[_state] += v
+      remove_state(_state) if @state_turns[_state] <= 0
+    elsif _state.is_a?(STATE_EX::Data_StateEX)
+      _state.add_count(v)
+      @states_ex.delete(_state) if check_state_ex_remove?(_state)
+    end
+  end
+  
+  # 移除状态数组中的全部状态
+  def remove_states(_states)
+    _states.each { |_state| remove_state_single(_state) }
+  end
+  def remove_state_single(_state)
+    if _state.is_a?(Integer)
+      remove_state(_state)
+    elsif _state.is_a?(STATE_EX::Data_StateEX)
+      @states_ex.delete(_state) if check_state_ex_remove?(_state, true)
     end
   end
   
@@ -1259,20 +1338,47 @@ class Game_Battler < Game_BattlerBase
       remove_state_ex(data.state.id) if data.state.remove_at_battle_end
     end
   end
-  
+
+  # 应用技能／物品的效果
+  alias eagle_state_ex_item_apply item_apply
+  def item_apply(user, item)
+    eagle_state_ex_item_apply(user, item)
+    if @result.missed
+      # 新增：对于按攻击失误次数来计数的状态，此处减1
+      user.update_state_turns_ex(5)
+    end
+    if @result.evaded
+      # 新增：对于按成功闪避次数来计数的状态，此处减1
+      update_state_turns_ex(6)
+    end
+  end
+
   # 处理伤害
   #    调用前需要设置好
   #    @result.hp_damage   @result.mp_damage 
   #    @result.hp_drain    @result.mp_drain
   alias eagle_state_ex_execute_damage execute_damage
   def execute_damage(user)
-    v = @result.hp_damage  # 提前记录下伤害值，避免pop后被清空
+    # 提前记录下伤害值，避免在pop后被清空
+    v = @result.hp_damage
+    f_crit = @result.critical
     eagle_state_ex_execute_damage(user)
     if v > 0
-      # 新增：对于按造成伤害次数来计数的状态，此处要减1
+      # 新增：对于按造成伤害次数来计数的状态，此处减1
       user.update_state_turns_ex(3)
-      # 新增：对于按受到伤害次数来计数的状态，此处要减1
+      # 新增：对于按受到伤害次数来计数的状态，此处减1
       update_state_turns_ex(4)
+      if f_crit
+        # 新增：对于按造成暴击次数来计数的状态，此处减1
+        user.update_state_turns_ex(13)
+        # 新增：对于按受到暴击次数来计数的状态，此处减1
+        update_state_turns_ex(14)
+      end
+    elsif v < 0
+      # 新增：对于按造成治疗次数来计数的状态，此处减1
+      user.update_state_turns_ex(23)
+      # 新增：对于按受到治疗次数来计数的状态，此处减1
+      update_state_turns_ex(24)
     end
   end
 
