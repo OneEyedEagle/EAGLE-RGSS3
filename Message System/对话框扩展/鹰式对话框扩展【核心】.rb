@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.0"
+$imported["EAGLE-MessageEX"] = "2.2.1"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.0"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.3.19.22 V2.2.1 新增脸图、姓名框是否增加对话框宽高的设置；新增脸图点头
      ----------------------------------------------------------------------
      - 2026.2.23.10 V2.2.0 优化代码
      ----------------------------------------------------------------------
@@ -979,6 +981,8 @@ class Window_EagleMessage < Window_Base
   
   # 移出全部组件
   def eagle_move_out_assets
+    @eagle_last_x = self.x  # 存储对话框移出前的位置
+    @eagle_last_y = self.y
     pop_params[:with_tag] = false
     @eagle_sprite_pop_tag.visible = false  # 隐藏pop的tag
     @eagle_sprite_pause.visible   = false  # 隐藏pause精灵
@@ -1097,7 +1101,11 @@ class Window_EagleMessage < Window_Base
   def eagle_update_func_after_open
     @count_chara_se -= 1 if @count_chara_se > 0  # 打字音倒计时
     (self.visible ? hide : show) if MESSAGE_EX.toggle_visible?
-    force_close if MESSAGE_EX.force_close?
+    if MESSAGE_EX.force_close?
+      force_close
+    else
+      deactivate_force_close
+    end
   end
   
   # 更新因 hold 而保留的拷贝窗口
@@ -1472,9 +1480,11 @@ class Window_EagleMessage < Window_Base
   def eagle_window_width
     w = eagle_window_charas_width
     if w
-      w = [w, eagle_name_width].max  # 确保姓名框的嵌入
-      w += eagle_face_width          # 确保脸图有地方显示
-      w += standard_padding * 2      # 增加边框
+      # 确保姓名框的嵌入
+      w = [w, eagle_name_width].max if MESSAGE_EX::NAME_ADD_WINDOW_WIDTH_HEIGHT
+      # 确保脸图有地方显示
+      w += eagle_face_width         if MESSAGE_EX::FACE_ADD_WINDOW_WIDTH
+      w += standard_padding * 2   # 增加边框
       # 设置最大宽度，避免对话框比屏幕宽而显示不全
       w = [MESSAGE_EX::WINDOW_MAX_WIDTH, w].min if MESSAGE_EX::WINDOW_MAX_WIDTH > 0
       return w
@@ -1485,9 +1495,10 @@ class Window_EagleMessage < Window_Base
   def eagle_window_height
     h = eagle_window_charas_height
     if h
-      h += eagle_name_height         # 确保姓名框的嵌入
+      # 确保姓名框的嵌入
+      h += eagle_name_height         if MESSAGE_EX::NAME_ADD_WINDOW_WIDTH_HEIGHT
       h = [h, eagle_face_height].max if eagle_face_in_window? # 确保脸图完整显示
-      h += standard_padding * 2      # 增加边框
+      h += standard_padding * 2   # 增加边框
       return h
     end
     return window_height
@@ -1517,6 +1528,7 @@ class Window_EagleMessage < Window_Base
       return eagle_check_param_h(win_params[:h]) if win_params[:h] > 0
     end
     h = nil
+    # 打开时，确保至少显示一行
     h = [@eagle_charas_h, line_height].max if eagle_dynamic_h?
     h = @eagle_charas_h_final if eagle_dyn_fit_h?
     if h
@@ -1929,6 +1941,8 @@ class Window_EagleMessage < Window_Base
       break if text.empty?
       process_character(text.slice!(0, 1), text, pos)
     end
+    @eagle_charas_w_final = @eagle_charas_w # 文字绘制后的宽高
+    @eagle_charas_h_final = @eagle_charas_h
     eagle_process_draw_update if !@eagle_chara_sprites.empty?
     eagle_process_force_close if @eagle_force_close 
   end
@@ -2068,6 +2082,10 @@ class Window_EagleMessage < Window_Base
   def eagle_process_force_close
     @pause_skip = true  # 跳过后续的等待按键
     10.times { Fiber.yield }
+  end
+  
+  def deactivate_force_close
+    @eagle_force_close = false
   end
   
   #--------------------------------------------------------------------------
@@ -2216,8 +2234,8 @@ class Window_EagleMessage < Window_Base
   
   # 自动换行
   def eagle_auto_new_line(c_w, pos)
-    return if !@flag_draw  # 预绘制时不判定，避免初始宽度变成最后一行的宽度
     return if func_params[:aw] == false
+    return if !@flag_draw  # 预绘制时不判定，避免初始宽度变成最后一行的宽度
     return if !eagle_fix_w? && eagle_dynamic_w?
     max_w = eagle_charas_max_w
     return if max_w <= 0
@@ -2295,7 +2313,15 @@ class Window_EagleMessage < Window_Base
   end
   # “确定”键按下时启用快进
   def update_show_fast
-    @show_fast = true if Input.trigger?(:C)
+    return if !activate_show_fast?
+    @show_fast = true
+    # 启用快进时，关闭文字移入特效
+    game_message.chara_params.delete(:cin)
+    @eagle_chara_sprites.each { |s| s.move_end }
+  end
+  # 按键启用快进？
+  def activate_show_fast?
+    Input.trigger?(:C)
   end
 
   #--------------------------------------------------------------------------
@@ -2350,14 +2376,14 @@ class Window_EagleMessage < Window_Base
     
     ox_1 = self.ox
     ox_d = 0
-    ox_d = c._x + r.x - self.ox if c._x < self.ox
+    ox_d = c._x + r.x - self.ox if c._x + r.x < self.ox
     d = c._x + r.x + r.width - @eagle_chara_viewport.rect.width - self.ox
     ox_d = d if d > 0
 
     oy_1 = self.oy
     oy_d = 0
-    oy_d = c._y + r.y - self.oy if c._y < self.oy
-    d = c._y + r.y + r.height - @eagle_chara_viewport.rect.height - self.oy
+    oy_d = c._y + r.y - self.oy if c._y + r.y < self.oy
+    d = c._y + r.y + r.height - calc_max_line_height(@eagle_chara_viewport.rect.height) - self.oy 
     oy_d = d if d > 0
 
     if !no_anim && @flag_draw && !@flag_open_close && (ox_d != 0 || oy_d != 0)
@@ -2377,6 +2403,16 @@ class Window_EagleMessage < Window_Base
     self.ox = ox_1 + ox_d
     self.oy = oy_1 + oy_d
     update_moving_charas_oxy # 保证文字跟着contents一起移动
+  end
+  
+  # 根据传入的高度，计算出适配行数的最大高度
+  def calc_max_line_height(h)
+    if win_params[:lhnl] == 0
+      n = h % (line_height + win_params[:ld])
+      n = n > line_height ? n - line_height : 0
+      return h - n
+    end
+    return h
   end
   
   #--------------------------------------------------------------------------
@@ -2455,6 +2491,7 @@ class Window_EagleMessage < Window_Base
     wait(60)
   end
   def handle_escape_pause(text, pos)
+    return if !@flag_draw
     input_pause
   end
   def handle_escape_activate_show_fast(text, pos)
@@ -2965,16 +3002,23 @@ class Window_EagleMessage < Window_Base
   # 重置脸图
   def reset_eagle_sprite_face
     return eagle_move_out_face if face_params[:name] == ""
+    flag_old = false
     if @eagle_sprite_face
       return if @eagle_sprite_face.file_no_change?
-      eagle_move_out_face
+      @eagle_sprite_face.hide
+      MESSAGE_EX.facepool_push(@eagle_sprite_face) # 由精灵池接管
+      flag_old = true
     end
     @eagle_sprite_face = MESSAGE_EX.facepool_new
     @eagle_sprite_face.reset(self)
-    @eagle_sprite_face.motion(:fade_in)
+    if flag_old
+      @eagle_sprite_face.show
+    else
+      @eagle_sprite_face.motion(:fade_in)
+    end
   end
   
-  # 移出脸图
+  # 对话框结束时的移出脸图
   def eagle_move_out_face
     return if @eagle_sprite_face.nil?
     @eagle_sprite_face.motion(:fade_out)
@@ -3336,6 +3380,7 @@ class Window_EagleMessage < Window_Base
 
   # 执行输入等待
   def process_input_pause
+    Input.update  # 避免之前快进时连续按空格，导致输入等待被跳过
     @eagle_auto_continue_c = game_message.auto || MESSAGE_EX::WIN_AUTO_T
     recreate_contents_for_charas
     ox_max = [self.ox, @eagle_charas_w - @eagle_chara_viewport.rect.width].max
@@ -4328,6 +4373,21 @@ class Sprite_EagleFace < Sprite
     end
   end
   
+  # 直接显示
+  def show
+    update_position
+    apply_index
+    @opa = 255
+    self.opacity = @opa
+  end
+  
+  # 直接隐藏
+  def hide
+    @opa = 0
+    update_position
+    @flag_fin = true
+  end
+
   #--------------------------------------------------------------------------
   # ● 执行动作
   #--------------------------------------------------------------------------
@@ -4396,6 +4456,32 @@ class Sprite_EagleFace < Sprite
       Fiber.yield
       t += 1
     end
+  end
+  
+  # 动作：点头
+  def fiber_nod(param_str = "")
+    h = { :t => 30, :v => 0, :dy => 30 }
+    MESSAGE_EX.parse_param(h, param_str, :t)
+    init_y1 = @y1
+    des_y = init_y1 + h[:dy]
+    d_y = des_y - init_y1
+    _i = 0; _t = h[:t]
+    while(true)
+      break if _i > _t
+      per = _i * 1.0 / _t
+      per = (_i == _t ? 1 : motion_nod_easeInOutCubic(per))
+      if _i <= _t / 2
+        @y1 = (init_y1 + d_y * per).round
+      else
+        @y1 = (des_y - d_y * per).round
+      end
+      yield self if block_given?
+      Fiber.yield
+      _i += 1
+    end
+  end
+  def motion_nod_easeInOutCubic(x)
+    return x < 0.5 ? (4 * x * x * x) : (1 - ((-2 * x + 2)**3) / 2);
   end
 
   # 动作：移动
@@ -4593,7 +4679,8 @@ class Font_EagleCharacter
     draw_param_l_rect(bitmap, x, y, w, h) if @params[:l]
     _bitmap = Cache.system("Iconset")
     rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
-    bitmap.blt(x+@dx, y+@dy, _bitmap, rect, 255)
+    opa = @params[:ca] || 255
+    bitmap.blt(x+@dx, y+@dy, _bitmap, rect, opa)
     draw_param_m(bitmap, x, y, w, h, dx, dy) if @params[:m]
     draw_param_k(bitmap, x, y, w, h) if @params[:k]
     draw_param_d(bitmap) if @params[:d]
@@ -4727,6 +4814,7 @@ class Sprite_EagleCharacter < Sprite
     self.mirror = false
     self.blend_type = 0
     self.color = Color.new(255,255,255,0)
+    self.flash(Color.new(255,255,255,0), 0)
     self.opacity = 255
     self.visible = true
   end
@@ -4995,6 +5083,8 @@ class Sprite_EagleCharacter < Sprite
     if sym == :cin
       @dx = @dy = 0
       update_position
+      self.angle = 0
+      self.src_rect.x = self.src_rect.y = 0
       self.zoom_x = self.zoom_y = 1.0
       self.opacity = 255
       @flag_first_move_in = false

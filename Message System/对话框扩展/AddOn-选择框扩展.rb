@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "2.2.0"  # 2026.2.22.11
+$imported["EAGLE-ChoiceEX"] = "2.2.1"  # 2026.3.19.22
 =begin
 ===============================================================================
 
@@ -37,6 +37,8 @@ $imported["EAGLE-ChoiceEX"] = "2.2.0"  # 2026.2.22.11
         -                                                             -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.3.19.22 V2.2.1 修复对话框\M转义符无法优先替换的问题
      ----------------------------------------------------------------------
      - 2026.2.22.11 V2.2.0 随对话框更新
      ----------------------------------------------------------------------
@@ -492,6 +494,8 @@ class Window_EagleChoiceList < Window_Command
   # apply_if 是否应用if语句的效果
   #--------------------------------------------------------------------------
   def process_choice(text, i_e, i_w, apply_if = true)
+    # 提前进行一波对话框转义符处理
+    text = message_window.convert_escape_characters(text)
     # 缩写
     s = $game_switches; v = $game_variables
     # 判定rb{}
@@ -523,7 +527,7 @@ class Window_EagleChoiceList < Window_Command
     MESSAGE_EX.parse_param(@choices_info[i_w][:extra], $1, :ali) if $1
     #  应用 hn 设置，直接覆盖选项文本
     if @choices_info[i_w][:extra][:hn] == 1 && !@choices_info[i_w][:enable]
-      text = MESSAGE_EX::CHOICE_TEXT_EN_HN
+      text = MESSAGE_EX::CHOICE_TEXT_EN_HN.dup
     end
     # 存储绘制的原始文本（去除全部判定文本）
     @choices_info[i_w][:text] = text
@@ -798,9 +802,9 @@ class Window_EagleChoiceList < Window_Command
   #--------------------------------------------------------------------------
   def update
     super
+    return if !self.active    
     update_placement if @message_window.open? && choice_params[:do] == 0
     @choices.each { |i, s| s.update }
-    return if !self.active
     check_cd_auto if choice_params[:cd] > 0
   end
   #--------------------------------------------------------------------------
@@ -1073,7 +1077,6 @@ class Spriteset_Choice
   def draw_text_ex(x, y, h, text)
     @fiber = Fiber.new {
       reset_font_settings
-      text = message_window.convert_escape_characters(text)
       pos = {:x => x, :y => y, :height => h, :x_new => x}
       process_character(text.slice!(0, 1), text, pos) until text.empty?
       @fiber = nil

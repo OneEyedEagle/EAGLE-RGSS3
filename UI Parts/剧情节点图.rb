@@ -5,9 +5,9 @@
 #  【组件-形状绘制 by老鹰】与【按键扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StroyMap"] = "0.5.1"
+$imported["EAGLE-StroyMap"] = "0.6.0"
 #==============================================================================
-# - 2026.1.25.17
+# - 2026.1.27.20
 #==============================================================================
 # - 本插件新增了能够查看剧情节点的系统（仿【死月妖花】）
 #------------------------------------------------------------------------------
@@ -45,22 +45,22 @@ $imported["EAGLE-StroyMap"] = "0.5.1"
 # --------复制以下的内容！--------
 module STORY_MAP
   #--------------------------------------------------------------------------
-  # ● 常量：设置每行的名称
-  #--------------------------------------------------------------------------
-  NAME_LINES = { 
-    # 行名称的数组
-    :data => ["新历121年","新历122年","新历123年"], 
-    # 行名称的高度 
-    :h => 60,
-  }
-  #--------------------------------------------------------------------------
-  # ● 常量：设置每列的名称
+  # ● 常量：设置每列的名称（将作为 :x 的值）
   #--------------------------------------------------------------------------
   NAME_COLS  = { 
     # 列名称的数组
     :data => ["守城方","反叛军","第三方势力"],
     # 列名称的宽度
     :w => 160,
+  }
+  #--------------------------------------------------------------------------
+  # ● 常量：设置每行的名称（将作为 :y 的值）
+  #--------------------------------------------------------------------------
+  NAME_LINES = { 
+    # 行名称的数组
+    :data => ["新历121年","新历122年","新历123年"], 
+    # 行名称的高度 
+    :h => 60,
   }
   #--------------------------------------------------------------------------
   # ● 常量：设置每个剧情节点
@@ -110,7 +110,7 @@ module STORY_MAP
       #  （该位置为 节点中心点 的屏幕上坐标）
       :x2 => nil, 
       :y2 => nil,
-      :zoom2 => 1.0,
+      :zoom2 => nil,
       #------------------------------------------------------------------------
       # 【可选】该节点解锁后，鼠标/键盘点击后显示的详细信息
       #  （数组，其中每一项均对应一个显示的精灵）
@@ -162,8 +162,10 @@ module STORY_MAP
   # ● 常量：设置节点之间的连线
   #--------------------------------------------------------------------------
   LINES = [
-    # 第一项为连线参数，之后按顺序取出两个作为一组连线
-    [{},"1-1","1-2", "1-2","1-3"], 
+    # 第一项为连线参数，之后每一项为一个数组，其中相邻的两个将进行连线。
+    #  数组中如果为 字符串 则代表是节点，如果为 数组 则代表是 行列坐标。
+    #  行列坐标中如果为 字符串 则代表行列的名称，如果为 数字 则代表绝对值。
+    [{}, ["1-1","1-2"], ["1-2","1-3"]], 
     [],
   ]
 #--------------------------------------------------------------------------
@@ -432,11 +434,28 @@ class Sprite_StoryNode < Sprite
     super 
   end
   #--------------------------------------------------------------------------
+  # ● 重设显示视图
+  #  fix_screen_xy 为 true 时则会保持在屏幕上显示的位置不变
+  #--------------------------------------------------------------------------
+  def reset_viewport(viewport, fix_screen_xy=true)
+    old_viewport = self.viewport if self.viewport
+    self.viewport = viewport
+    @sprites.each { |n, s| s.viewport = viewport }
+    if old_viewport and fix_screen_xy
+      dx = self.viewport.rect.x - old_viewport.rect.x
+      self.x -= dx
+      dy = self.viewport.rect.y - old_viewport.rect.y
+      self.y -= dy
+      @sprites.each { |n, s| s.x -= dx; s.y -= dy }
+    end
+  end
+  #--------------------------------------------------------------------------
   # ● 重置显示位置
   #--------------------------------------------------------------------------
   def reset_position(x=0, y=0)
     self.x = x
     self.y = y
+    update_child
   end
   #--------------------------------------------------------------------------
   # ● 重置位图
@@ -619,38 +638,9 @@ class Sprite_StoryNode_Line < Sprite
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
-  def initialize(viewport, node1, node2, params={})
+  def initialize(viewport, params={})
     super(viewport)
-    @node1 = node1; @node2 = node2
     @params = params
-    reset_position
-    reset_bitmap
-    reset_oxy(false)
-  end
-  #--------------------------------------------------------------------------
-  # ● 重置显示位置
-  #--------------------------------------------------------------------------
-  def reset_position
-    self.x = (@node1.x + @node2.x) / 2
-    self.y = (@node1.y + @node2.y) / 2
-    self.z = [@node1.z, @node2.z].min - 5
-  end
-  #--------------------------------------------------------------------------
-  # ● 重置位图
-  #--------------------------------------------------------------------------
-  def reset_bitmap
-    self.bitmap.dispose if self.bitmap
-    offset = 5
-    w = (@node1.x - @node2.x).abs + offset * 2
-    h = (@node1.y - @node2.y).abs + offset * 2
-    self.bitmap = Bitmap.new(w, h)
-    # 绘制从node1到node2的直线
-    _x1 = @node1.x - (self.x - w / 2)
-    _x2 = @node2.x - (self.x - w / 2)
-    _y1 = @node1.y - (self.y - h / 2)
-    _y2 = @node2.y - (self.y - h / 2)
-    c = Color.new(255,255,255, 150)
-    EAGLE.DDALine(self.bitmap, _x1,_y1, _x2, _y2, 1, "1", c)
   end
   #--------------------------------------------------------------------------
   # ● 重置oxy
@@ -855,24 +845,30 @@ class Scene_StoryMap < Scene_MenuBase
   #--------------------------------------------------------------------------
   def start 
     @@init_node ||= nil
-    super
-    init_ui 
     # 是否已经选中某个节点并放大处理
     @flag_current_select = false 
     # 键盘按键用
     @key_move_x = 0
     @key_move_y = 0
     @key_move_c = 0
-    # 初始化视图显示位置
+    super
+    init_bg
+    init_viewport_bg
+    init_cols_lines
+    init_viewport_node
+    init_cursor
+    init_node_info
+    # 确保行列ui的xy已经更新，因为节点需要行列ui的xy
+    update_other_ui_xy
+    init_nodes
+    init_node_lines
     init_viewport_oxy
-    # 更新全部ui
     update_other_ui_xy
   end 
   #--------------------------------------------------------------------------
-  # ● 初始化UI
+  # ● 初始化UI-背景LOGO
   #--------------------------------------------------------------------------
-  def init_ui 
-    # 背景LOGO
+  def init_bg
     @sprite_bg_info = Sprite.new
     @sprite_bg_info.z = 100
     @sprite_bg_info.zoom_x = @sprite_bg_info.zoom_y = 3.0
@@ -883,25 +879,19 @@ class Scene_StoryMap < Scene_MenuBase
     @sprite_bg_info.angle = -90
     @sprite_bg_info.x = Graphics.width + 48
     @sprite_bg_info.y = 0
-
-    # 显示视图
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化UI-背景用视图
+  #--------------------------------------------------------------------------
+  def init_viewport_bg
+    # 该视图用于显示行列标题
     @viewport = Viewport.new(STORY_MAP::VIEWPORT_RECT)
-    @viewport.z = 200
-    # 视图的最大移动边界
-    #  最左边精灵的xy 最右边精灵的xy
-    @limit_rect = Rect.new(@viewport.rect.width, @viewport.rect.height,0,0)
-
-    # 位于中心点的光标
-    @sprite_cursor = Sprite.new(@viewport)
-    @sprite_cursor.z = 20
-    _w = 20; _h = 20
-    @sprite_cursor.bitmap = Bitmap.new(_w, _h)
-    @sprite_cursor.bitmap.fill_rect(0, _h/2, _w, 1, Color.new(255,255,255,255))
-    @sprite_cursor.bitmap.fill_rect(_w/2, 0, 1, _h, Color.new(255,255,255,255))
-    @sprite_cursor.ox = @sprite_cursor.width / 2
-    @sprite_cursor.oy = @sprite_cursor.height / 2
-
-    # 生成行列名称的精灵
+    @viewport.z = 210
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化UI-行列标题
+  #--------------------------------------------------------------------------
+  def init_cols_lines
     @name_lines = {}
     ps = STORY_MAP::NAME_LINES
     ps[:data].each_with_index do |name, i|
@@ -909,7 +899,7 @@ class Scene_StoryMap < Scene_MenuBase
       x = s.ox
       y = i * ps[:h]
       s.reset_init_xyz(x,y,1)
-      @name_lines[name] = s
+      @name_lines[name] = s  # 每一行的标题
     end
     @name_cols = {}
     ps = STORY_MAP::NAME_COLS
@@ -918,12 +908,48 @@ class Scene_StoryMap < Scene_MenuBase
       x = i * ps[:w]
       y = s.oy
       s.reset_init_xyz(x,y,1)
-      @name_cols[name] = s
+      @name_cols[name] = s  # 每一列的标题
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化UI-节点用视图
+  #--------------------------------------------------------------------------
+  def init_viewport_node
+    # 该视图用于显示节点及内容
+    @viewport_node = Viewport.new(STORY_MAP::VIEWPORT_RECT)
+    @viewport_node.z = @viewport.z - 10
     
+    x = @name_cols.values.collect { |s| s.x + s.width }.max
+    @viewport_node.rect.x = x
+    y = @name_lines.values.collect { |s| s.y + s.height }.max
+    @viewport_node.rect.y = y
+    
+    # 视图的最大移动边界
+    #  最左边精灵的xy 最右边精灵的xy
+    @limit_rect = Rect.new(@viewport_node.rect.width, @viewport_node.rect.height,
+      0, 0)
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化UI-光标
+  #--------------------------------------------------------------------------
+  def init_cursor
+    # 位于中心点的光标
+    @sprite_cursor = Sprite.new(@viewport_node)
+    @sprite_cursor.z = 20
+    _w = 20; _h = 20
+    @sprite_cursor.bitmap = Bitmap.new(_w, _h)
+    @sprite_cursor.bitmap.fill_rect(0, _h/2, _w, 1, Color.new(255,255,255,255))
+    @sprite_cursor.bitmap.fill_rect(_w/2, 0, 1, _h, Color.new(255,255,255,255))
+    @sprite_cursor.ox = @sprite_cursor.width / 2
+    @sprite_cursor.oy = @sprite_cursor.height / 2
+
     # 未解锁时提示文本的精灵
     @sprite_hint = Sprite_StoryNode_Hint.new(@viewport)
-        
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化UI-节点详情的精灵
+  #--------------------------------------------------------------------------
+  def init_node_info
     # 点开节点后的暗色遮挡层
     @sprite_layer = Sprite.new(@viewport)
     @sprite_layer.opacity = 0
@@ -945,10 +971,11 @@ class Scene_StoryMap < Scene_MenuBase
     @sprite_cursor2.bitmap.fill_rect(_w/2, 0, 1, _h, Color.new(255,255,255,255))
     @sprite_cursor2.ox = @sprite_cursor.width / 2
     @sprite_cursor2.oy = @sprite_cursor.height / 2
-
-    # 确保行列ui的xy已经更新，因为节点需要行列ui的xy
-    update_other_ui_xy
-
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化UI-节点
+  #--------------------------------------------------------------------------
+  def init_nodes
     # 生成全部节点
     @nodes = {}
     STORY_MAP::NODES.each do |name, ps|
@@ -957,9 +984,11 @@ class Scene_StoryMap < Scene_MenuBase
       else
         next if ps[:if] && STORY_MAP.process_token_if(ps[:if]) != true
       end
-      s = Sprite_StoryNode.new(@viewport, name, ps)
+      s = Sprite_StoryNode.new(@viewport_node, name, ps)
       x = ps[:x].is_a?(Integer) ? ps[:x] : (@name_cols[ps[:x]].x rescue 0)
+      x -= @viewport_node.rect.x
       y = ps[:y].is_a?(Integer) ? ps[:y] : (@name_lines[ps[:y]].y rescue 0)
+      y -= @viewport_node.rect.y
       s.reset_position(x, y)
       s.set_z(10)
       @nodes[name] = s
@@ -969,19 +998,82 @@ class Scene_StoryMap < Scene_MenuBase
       @limit_rect.width = s.x-s.ox if s.x-s.ox > @limit_rect.width
       @limit_rect.height = s.y-s.oy if s.y-s.oy > @limit_rect.height
     end 
-    
-    # 绘制节点间的连线
+  end
+  #--------------------------------------------------------------------------
+  # ● 初始化UI-节点连线
+  #--------------------------------------------------------------------------
+  def init_node_lines
     @lines = []
     STORY_MAP::LINES.each do |v|
-      ps = v[0]
-      c = (v.size - 1) / 2
-      c.times do |i|
-        n1 = v[1 + i * 2]
-        n2 = v[2 + i * 2]
-        next if !@nodes.include?(n1) || !@nodes.include?(n2)
-        l = Sprite_StoryNode_Line.new(@viewport, @nodes[n1], @nodes[n2], ps)
-        @lines.push(l)
+      # v = [{}, ["node", ["col", "line"], ["col", 124]] ]
+      c = v.size - 1
+      c.times { |i| draw_line(v[0], v[1 + i]) }
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 绘制节点连线
+  #--------------------------------------------------------------------------
+  def draw_line(ps, xys)
+    # xys 中可能为节点名称、可能为数组
+    s = Sprite_StoryNode_Line.new(@viewport_node, ps)
+    @lines.push(s)
+    
+    lines = []
+    x_min = 999; x_max = 0; y_min = 999; y_max = 0
+    xys.size.times do |i|
+      xy1 = xys[i]
+      xy2 = xys[i+1]
+      next if xy2 == nil
+      x1, y1 = get_node_xy(xy1)
+      next if x1 == nil or y1 == nil
+      x2, y2 = get_node_xy(xy2)
+      next if x2 == nil or y2 == nil
+      lines.push( [x1, y1, x2, y2] )
+      x_min = [x1, x2, x_min].min
+      x_max = [x1, x2, x_max].max
+      y_min = [y1, y2, y_min].min
+      y_max = [y1, y2, y_max].max
+    end
+    
+    offset = 5  # 上下左右额外增加的空隙
+    w = x_max - x_min + offset * 2
+    h = y_max - y_min + offset * 2
+    s.bitmap = Bitmap.new(w, h)
+    s.reset_oxy(false)
+    s.x = (x_min + x_max) / 2
+    s.y = (y_min + y_max) / 2
+    s.z = 5
+    
+    lines.each do |v|
+      # 绘制从node1到node2的直线
+      _x1 = v[0] - (s.x - w / 2)
+      _y1 = v[1] - (s.y - h / 2)
+      _x2 = v[2] - (s.x - w / 2)
+      _y2 = v[3] - (s.y - h / 2)
+      c = Color.new(255,255,255, 150)
+      EAGLE.DDALine(s.bitmap, _x1,_y1, _x2, _y2, 1, "1", c)
+    end
+  end
+  def get_node_xy(node)  # 解析参数数组，并返回实际用于绘制的坐标
+    if node.is_a?(String)
+      if @nodes.include?(node)
+        n = @nodes[node]
+        return n.x, n.y
+      else
+        return nil, nil
       end
+    end
+    if node.is_a?(Array)
+      x = node[0]; y = node[1]
+      if x.is_a?(String)
+        n = @name_cols[x]
+        x = n ? n.x : nil
+      end
+      if y.is_a?(String)
+        n = @name_lines[y]
+        y = n ? n.y : nil
+      end
+      return x, y
     end
   end
   #--------------------------------------------------------------------------
@@ -996,8 +1088,10 @@ class Scene_StoryMap < Scene_MenuBase
   # ● 将指定node居中
   #--------------------------------------------------------------------------
   def set_node_center(node)
-    @viewport.ox = node.x - @viewport.rect.width/2
-    @viewport.oy = node.y - @viewport.rect.height/2
+    @viewport_node.ox = node.x - @viewport.rect.width/2 + @viewport_node.rect.x
+    @viewport_node.oy = node.y - @viewport.rect.height/2 + @viewport_node.rect.y
+    @viewport.ox = @viewport_node.ox
+    @viewport.oy = @viewport_node.oy
   end
   #--------------------------------------------------------------------------
   # ● 结束
@@ -1056,23 +1150,27 @@ class Scene_StoryMap < Scene_MenuBase
   def update_move 
     if MOUSE_EX.drag?
       dx, dy = MOUSE_EX.drag_dxy
-      @viewport.ox -= dx
-      @viewport.oy -= dy
+      @viewport_node.ox -= dx
+      @viewport_node.oy -= dy
       Input.update
     end
     update_key_move
-    @viewport.ox += @key_move_x
-    @viewport.oy += @key_move_y
+    @viewport_node.ox += @key_move_x
+    @viewport_node.oy += @key_move_y
     # 不能移出边界
     # 最右边精灵的x-ox > 0  最左边精灵的x-ox < @viewport.rect.width
-    v = @limit_rect.width-STORY_MAP::VIEWPORT_L
-    @viewport.ox = v if @viewport.ox > v
-    v = @limit_rect.x-@viewport.rect.width+STORY_MAP::VIEWPORT_R
-    @viewport.ox = v if @viewport.ox < v
-    v = @limit_rect.height - STORY_MAP::VIEWPORT_U
-    @viewport.oy = v if @viewport.oy > v
-    v = @limit_rect.y-@viewport.rect.height+STORY_MAP::VIEWPORT_D
-    @viewport.oy = v if @viewport.oy < v
+    v = @limit_rect.width - @viewport_node.rect.x - STORY_MAP::VIEWPORT_L
+    @viewport_node.ox = v if @viewport_node.ox > v
+    v = @limit_rect.x + @viewport_node.rect.x - @viewport_node.rect.width + STORY_MAP::VIEWPORT_R
+    @viewport_node.ox = v if @viewport_node.ox < v
+    v = @limit_rect.height - @viewport_node.rect.y - STORY_MAP::VIEWPORT_U
+    @viewport_node.oy = v if @viewport_node.oy > v
+    v = @limit_rect.y + @viewport_node.rect.y - @viewport_node.rect.height + STORY_MAP::VIEWPORT_D
+    @viewport_node.oy = v if @viewport_node.oy < v
+    
+    @viewport.ox = @viewport_node.ox
+    @viewport.oy = @viewport_node.oy
+    
     # 更新其它在视图里的UI
     update_other_ui_xy
   end
@@ -1109,9 +1207,9 @@ class Scene_StoryMap < Scene_MenuBase
     end
     
     # 位于视图显示中心的光标
-    r = @viewport.rect
-    @sprite_cursor.x = @viewport.ox + r.width / 2
-    @sprite_cursor.y = @viewport.oy + r.height / 2
+    r = @viewport_node.rect
+    @sprite_cursor.x = @viewport_node.ox + r.width / 2 - @viewport_node.rect.x
+    @sprite_cursor.y = @viewport_node.oy + r.height / 2 - @viewport_node.rect.y
     
     # 未解锁提示精灵
     @sprite_hint.update
@@ -1135,8 +1233,8 @@ class Scene_StoryMap < Scene_MenuBase
     if @current_mouse && @current_mouse.clickable? && MOUSE_EX.up?(:ML)
       @current = @current_mouse
     end
-    @cur_last_ox = @viewport.ox
-    @cur_last_oy = @viewport.oy
+    @cur_last_ox = @viewport_node.ox
+    @cur_last_oy = @viewport_node.oy
     if @current
       if @current.unlock?
         process_current_zoomin
@@ -1154,11 +1252,9 @@ class Scene_StoryMap < Scene_MenuBase
     @sprite_hint.reset(nil)
     # 生成当前节点的详细信息精灵组
     reset_info_sprites(@current) 
-    # 更改当前节点的z值，准备放大
-    @current.set_z(100)
     # 以当前节点的xy，放大全部节点和连线
-    ox = @current.x - (@current.params[:x2] || STORY_MAP::NODE_X2)
-    oy = @current.y - (@current.params[:y2] || STORY_MAP::NODE_Y2) 
+    ox = @current.x + @viewport_node.rect.x - (@current.params[:x2] || STORY_MAP::NODE_X2)
+    oy = @current.y + @viewport_node.rect.y - (@current.params[:y2] || STORY_MAP::NODE_Y2) 
     @nodes.each do |k, s|
       next if s == @current 
       s.set_oxy(@current.x - s.x, @current.y - s.y)
@@ -1166,6 +1262,9 @@ class Scene_StoryMap < Scene_MenuBase
     @lines.each do |l|
       l.set_oxy(@current.x - l.x, @current.y - l.y)
     end
+    # 更改当前节点的视图和z值，准备放大
+    @current.reset_viewport(@viewport, true)
+    @current.set_z(100)
     # 处理放大
     z = @current.params[:zoom2] || STORY_MAP::NODE_ZOOM2
     t = STORY_MAP::NODE_T
@@ -1182,8 +1281,8 @@ class Scene_StoryMap < Scene_MenuBase
     }
     
     # 显示键盘用的光标
-    @sprite_cursor2.x = @viewport.ox + @viewport.rect.width/2
-    @sprite_cursor2.y = @viewport.oy + @viewport.rect.height/2
+    @sprite_cursor2.x = @viewport.ox + @viewport.rect.width/2 - @viewport.rect.x
+    @sprite_cursor2.y = @viewport.oy + @viewport.rect.height/2 - @viewport.rect.y
     @sprite_cursor2.visible = true
     @key_move_x = @key_move_y = 0
   end 
@@ -1195,7 +1294,7 @@ class Scene_StoryMap < Scene_MenuBase
     @sprite_cursor2.visible = false
     @key_move_x = @key_move_y = 0
     # 处理缩小
-    ox ||= @viewport.ox; oy ||= @viewport.oy
+    ox ||= @viewport_node.ox; oy ||= @viewport_node.oy
     t = STORY_MAP::NODE_T
     d_opa1 = 255 / t + 1
     d_opa2 = d_opa1 * 2
@@ -1216,7 +1315,8 @@ class Scene_StoryMap < Scene_MenuBase
     @lines.each do |l|
       l.reset_oxy
     end
-    # 重置当前节点的z值
+    # 重置当前节点的视图和z值
+    @current.reset_viewport(@viewport_node, true)
     @current.set_z(10)
     @flag_current_select = false
     @current = nil
@@ -1230,23 +1330,25 @@ class Scene_StoryMap < Scene_MenuBase
   def update_nodes_zoom_until_end(zx, zy, ox, oy, t=20)  # block
     zx1 = @current.zoom_x; zx2 = zx; dzx = zx2- zx1
     zy1 = @current.zoom_y; zy2 = zy; dzy = zy2- zy1
-    ox1 = @viewport.ox; ox2 = ox; dox = ox2 - ox1
-    oy1 = @viewport.oy; oy2 = oy; doy = oy2 - oy1
+    ox1 = @viewport_node.ox; ox2 = ox; dox = ox2 - ox1
+    oy1 = @viewport_node.oy; oy2 = oy; doy = oy2 - oy1
     t.times do |i|
       update_basic
       if i == t-1
         zx = zx2
         zy = zy2
-        @viewport.ox = ox2
-        @viewport.oy = oy2
+        @viewport_node.ox = ox2
+        @viewport_node.oy = oy2
       else
         v = i * 1.0 / t
         v = STORY_MAP.ease(:node_focus, v)
         zx = zx1 + v * dzx
         zy = zy1 + v * dzy
-        @viewport.ox = ox1 + v * dox
-        @viewport.oy = oy1 + v * doy
+        @viewport_node.ox = ox1 + v * dox
+        @viewport_node.oy = oy1 + v * doy
       end
+      @viewport.ox = @viewport_node.ox
+      @viewport.oy = @viewport_node.oy
       @nodes.each { |k, s| s.zoom_x = zx; s.zoom_y = zy; s.update }
       @lines.each { |l| l.zoom_x = zx; l.zoom_y = zy; l.update }
       yield if block_given?

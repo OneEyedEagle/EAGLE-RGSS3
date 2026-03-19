@@ -224,7 +224,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# △ 状态的自动减少时机                          【RGSS状态和状态对象】
+# △ 状态的自动减少时机（覆盖）                    【RGSS状态和状态对象】
 #
 # - 在默认系统中，状态的自动减少时机仅有 行动结束时 和 回合结束时，
 #   受伤解除 和 战斗解除 都是无视计数直接消除状态，不属于自动减少。
@@ -234,7 +234,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 # - 在 数据库-状态 的备注中填写：
 #
-#      <set timing 时机数字>
+#      <设置时机 时机数字>  或  <set timing 时机数字> 
 #
 #  “时机数字”为该状态计数自动减1的时机，替换为下列之一：
 #
@@ -246,9 +246,9 @@ FLAG_NO_RGSS3_STATE = true
 #
 #------------------注 意-------------------
 #
-#  1. 如果设置了这个，那数据库-状态中设置的 自动解除时机 将失效！
+#  1. 数据库-状态中设置的 自动解除时机 将失效，持续回合数 将作为该时机的计数。
 #
-#  2. 时机数字的 3/4/5/6 都在 on_damage 方法里进行计数-1 ，
+#  2. 时机数字的 3/4/13/14/23/24 都在 on_damage 方法里进行计数-1 ，
 #     如果用了比如【技能多段伤害 by老鹰】，则会多次触发计数-1 。
 #
 #------------------高 级-------------------
@@ -286,7 +286,30 @@ FLAG_NO_RGSS3_STATE = true
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# △ 状态的自动减少与最大叠加层数的交互                  【仅状态对象】
+# △ 状态的自动减少时机（追加）                            【仅状态对象】
+#
+# - 有时一些状态需要既有回合计数，又有受击计数，
+#   本插件尝试增加了另外的自动减少时机，方便设计更灵活多样的状态。
+#
+#-----------------设置方式-----------------
+#
+# - 在 数据库-状态 的备注中填写：
+#
+#      <增加时机 时机数字 v=计数>  或  <add timing 时机数字 v=计数> 
+#
+#  “时机数字”为该状态计数自动减1的时机，具体见 △ 状态的自动减少时机（覆盖）。
+#
+#  “计数” 为该时机的初始计数值，需要为正整数。
+#
+#------------------注 意-------------------
+#
+#  1. 与默认的自动减少时机互相独立。
+#
+#  2. 可设置多个额外增加的时机，其中任一个计数为 0 时将自动移除状态。
+#
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# △ 状态的自动减少与最大叠加层数的交互                    【仅状态对象】
 #---------------------------------------------------------------------
 #
 # - 在默认系统中，状态的回合计数减少到 0 时，将消除全部同ID的状态。
@@ -489,6 +512,12 @@ module STATE_EX
         type = rgss_state.auto_removal_timing
       end
       t += get_state_help_text_count(type, v2)
+      # 增加的自动解除时机
+      if data_state and data_state.more_count?
+        data_state.count_more.each do |_type, _v2|
+          t += get_state_help_text_count(_type, _v2)
+        end
+      end
       # 层数大于1时，抵扣解除
       t += get_state_help_text_level_for_erase(v, rgss_state)
       # 受伤解除
@@ -647,10 +676,19 @@ module STATE_EX
     end
   end
 
-  # 读取状态的自动解除时机
+  # 读取状态的自动解除时机（覆盖数据库的设置）
   def self.read_note_set_timing(t)
-    t =~ /<set timing ?(\d+)>/i
-    return $1 ? $1.to_i : 0
+    t =~ /<(设置时机|set timing) ?(\d+)>/i
+    return $2 ? $2.to_i : 0
+  end
+  
+  # 读取状态的自动解除时机（额外增加的设置）
+  def self.read_note_add_timing(t)
+    a = {}
+    t.scan(/<(增加时机|add timing) ?(\d+) +v=(\d+)>/i).each do |params|
+      a[$2.to_i] = $3.to_i
+    end
+    return a
   end
 
   # 读取死亡后也保留状态的标志
@@ -696,7 +734,8 @@ module STATE_EX
 # ■ 数据类
 #==============================================================================
 class Data_StateEX
-  attr_reader  :id, :level, :count, :count_type, :battler_from, :battler
+  attr_reader  :id, :level, :count, :count_type, :count_more
+  attr_reader  :battler_from, :battler
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
@@ -708,10 +747,10 @@ class Data_StateEX
     @battler_from = battler_from
     # 状态附加的战斗者
     @battler = battler 
-    # 状态在该计数为0时解除
-    reset_count(count)
     # 状态计数减一的时机
     @count_type = state.auto_removal_timing # 0无，1行动结束，2回合结束
+    # 状态在该计数为0时解除
+    reset_count(count)
     # 当前叠加层数
     @level = 1
     # 其他扩展用
@@ -746,7 +785,11 @@ class Data_StateEX
   #--------------------------------------------------------------------------
   # 判定是否移除该状态？
   def remove?
-    @count <= 0
+    return true if @count <= 0 
+    if more_count?
+      return true if @count_more.values.include?(0)
+    end
+    return false
   end
   
   # 判定计数自动减少时，是否可用层数抵消状态移除？
@@ -761,6 +804,11 @@ class Data_StateEX
   
   # 判定是否包含指定tag数组
   def tag?(_tag); state.tag?(_tag); end
+    
+  # 判定是否有多重自动减少时机
+  def more_count?
+    @count_more and !@count_more.empty?
+  end
     
   #--------------------------------------------------------------------------
   # ● 增加一层该状态
@@ -799,6 +847,8 @@ class Data_StateEX
       variance = 1 + [state.max_turns - state.min_turns, 0].max
       @count = state.min_turns + rand(variance)
     end
+    @count_more = state.timing_add.dup   # { 时机数字 => 计数 }
+    @count_more.delete(@count_type)      # 删去重复的时机
   end
   
   #--------------------------------------------------------------------------
@@ -825,15 +875,31 @@ class Data_StateEX
   def update_count(timing, added_states=[])
     # 执行该时机的伤害公式
     process_timing_formula(timing)
-    # 0 表示一直存在的状态，没有计数，不用减少
-    return if @count_type == 0
-    # 查看是否要在该时机让计数减少，若 timing 为 nil，则必定处理减少
-    return if timing != nil and timing != @count_type
-    f = @flag_new
-    @flag_new = false
     # 如果为新附加状态，且在例外状态数组中，比如本次行动才被附加的状态，则不减一
+    f = @flag_new
+    @flag_new = false  # 处理过一次跳过了，下一次必须减一
     return if f && added_states && added_states.include?(@id)
+    return if process_count(timing)
+    return if process_count_more(timing)
+  end
+  
+  # 处理计数减一，返回 true 代表成功减一
+  def process_count(timing)
+    # 0 表示一直存在的状态，没有计数，不用减少
+    return false if @count_type == 0
+    # 查看是否要在该时机让计数减少，若 timing 为 nil，则必定处理减少
+    return false if timing != nil and timing != @count_type
     @count -= 1
+    return true
+  end
+  
+  # 处理额外的计数减一，返回 true 代表成功减一
+  def process_count_more(timing)
+    @count_more.each do |_timing, _v|
+      next if timing != nil and timing != _timing
+      @count_more[_timing] -= 1
+      return 
+    end
   end
   
   #--------------------------------------------------------------------------
@@ -873,7 +939,7 @@ end # end of module
 #==============================================================================
 class RPG::State
   attr_reader :level, :max, :timing_evals, :reserve_when_die, :reduce_one_level
-  attr_reader :param_rate, :param_plus, :tags
+  attr_reader :param_rate, :param_plus, :tags, :timing_add
   #--------------------------------------------------------------------------
   # ● 进入游戏时读取备注栏
   #--------------------------------------------------------------------------
@@ -897,6 +963,9 @@ class RPG::State
     @raw_auto_removal_timing = @auto_removal_timing # 0无，1行动结束，2回合结束
     type = STATE_EX.read_note_set_timing(note)
     @auto_removal_timing = type == 0 ? @raw_auto_removal_timing : type
+    
+    # 额外增加的时机
+    @timing_add = STATE_EX.read_note_add_timing(note)
     
     # 死亡也保留的状态
     @reserve_when_die = STATE_EX.read_note_reserve_when_die(note)

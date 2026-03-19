@@ -2,7 +2,7 @@
 # ■ Add-On2 兼容鼠标 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 # ※ 本插件需要放置在【鼠标扩展 by老鹰】以及各个被兼容脚本之下
 #==============================================================================
-# - 2026.2.22.11 随对话框更新
+# - 2026.3.8.21 随对话框更新
 #==============================================================================
 # - 本插件对【鹰式对话框扩展  by老鹰】及其AddOn进行了简单的鼠标操作兼容
 #==============================================================================
@@ -14,23 +14,17 @@
 #===============================================================================
 if $imported["EAGLE-MessageEX"]
 class Window_EagleMessage
-  #--------------------------------------------------------------------------
-  # ● 等待按键时，按键继续的处理
-  #--------------------------------------------------------------------------
+  # 等待按键时，按键继续的处理
   alias eagle_mouse_ex_process_input_pause_key process_input_pause_key
   def process_input_pause_key
-    if MOUSE_EX.up?(:ML)
-      return @flag_input_loop = false 
-    end
+    return @flag_input_loop = false if MOUSE_EX.up?(:ML)
     eagle_mouse_ex_process_input_pause_key
   end
-  #--------------------------------------------------------------------------
-  # ● 监听“确定”键的按下，更新快进的标志
-  #--------------------------------------------------------------------------
-  alias eagle_mouse_ex_update_show_fast update_show_fast
-  def update_show_fast
-    eagle_mouse_ex_update_show_fast
-    @show_fast = true if mouse_in? && MOUSE_EX.up?(:ML)
+  
+  # 按键启用快进？
+  alias eagle_mouse_ex_activate_show_fast? activate_show_fast?
+  def activate_show_fast?
+    eagle_mouse_ex_activate_show_fast? or (mouse_in? && MOUSE_EX.up?(:ML))
   end
 end 
 end 
