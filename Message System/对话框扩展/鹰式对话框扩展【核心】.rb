@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.1"
+$imported["EAGLE-MessageEX"] = "2.2.2"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.1"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.3.21.8  V2.2.2 pop模式下兼容【简易地图放大 by老鹰】和【Map Effects v1.4.1 by Zeus81】
      ----------------------------------------------------------------------
      - 2026.3.19.22 V2.2.1 新增脸图、姓名框是否增加对话框宽高的设置；新增脸图点头
      ----------------------------------------------------------------------
@@ -1875,6 +1877,8 @@ class Window_EagleMessage < Window_Base
   #   为了减少歧异，文字「\」会被首先替换为转义符（\e）。
   def convert_escape_characters(text)
     result = text.to_s.clone
+    # 特别的：先替换一次变量，确保读取存入变量的各类替换类转义符
+    result.gsub!(/\\V\[(\d+)\]/i) { $game_variables[$1.to_i] }
     result = eagle_process_conv(result)
     result = eagle_process_alias(result)
     result = eagle_process_rb(result)
@@ -2869,6 +2873,7 @@ class Window_EagleMessage < Window_Base
       pop_params[:chara_w] = 32
       pop_params[:chara_h] = 32
     end
+    eagle_pop_init_wh_map_zoom if eagle_pop_init_xy_map_zoom?
   end
 
   # 更新 pop 设置的窗口初始xy
@@ -2898,6 +2903,7 @@ class Window_EagleMessage < Window_Base
       # 如果对象使用的是行走图，则为Game_Chacter（行走图底部中心为显示原点）
       self.x = @eagle_pop_obj.screen_x
       self.y = @eagle_pop_obj.screen_y
+      eagle_pop_init_xy_map_zoom if eagle_pop_init_xy_map_zoom?
     when :battle_sprite
       # 如果对象为战斗者精灵，则为Sprite_Battler（底部中心为显示原点）
       self.x = @eagle_pop_obj.x
@@ -2906,9 +2912,43 @@ class Window_EagleMessage < Window_Base
       # 如果为地图格子，则格子底部中心为显示原点
       self.x = $game_map.adjust_x(@eagle_pop_obj[0]) * 32 + 16
       self.y = $game_map.adjust_y(@eagle_pop_obj[1]) * 32 + 32
+      eagle_pop_init_xy_map_zoom if eagle_pop_init_xy_map_zoom?
     else 
       self.x = default_init_x
       self.y = default_init_y
+    end
+  end
+
+  # 受到其它地图缩放脚本影响？
+  def eagle_pop_init_xy_map_zoom?
+    return true if MESSAGE_EX.in_scene?(:map) and [:map_chara, :map_grid].include?(pop_params[:type])
+    return false 
+  end
+  def eagle_pop_init_xy_map_zoom
+    if $imported["EAGLE-MapZoom"]
+      if $game_map.zoom > 100
+        _xc, _yc = $game_map.check_zoom_center
+        self.x = (self.x - _xc) * $game_map.zoom * 1.0 / 100 + _xc
+        self.y = (self.y - _yc) * $game_map.zoom * 1.0 / 100 + _yc
+        return
+      end
+    end
+    if $imported[:Zeus_Map_Effects]
+      cx = Graphics.width / 2 
+      self.x = (self.x-cx)*$game_map.effects.zoom_x+cx
+      cy = Graphics.height / 2
+      self.y = (self.y-cy)*$game_map.effects.zoom_y+cy
+      return
+    end
+  end
+  def eagle_pop_init_wh_map_zoom
+    if $imported["EAGLE-MapZoom"]
+      pop_params[:chara_w] = (pop_params[:chara_w]*$game_map.zoom*1.0/100).to_i
+      pop_params[:chara_h] = (pop_params[:chara_h]*$game_map.zoom*1.0/100).to_i
+    end
+    if $imported[:Zeus_Map_Effects]
+      pop_params[:chara_w] *= $game_map.effects.zoom_x
+      pop_params[:chara_h] *= $game_map.effects.zoom_y
     end
   end
   

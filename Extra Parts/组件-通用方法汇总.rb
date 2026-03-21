@@ -3,9 +3,9 @@
 # 【此插件兼容VX和VX Ace】
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-CommonMethods"] = "1.1.14"
+$imported["EAGLE-CommonMethods"] = "1.1.15"
 #==============================================================================
-# - 2026.1.14.23 修复parse_tags中key未删除换行符的bug
+# - 2026.3.20.20 修复 get_battler_sprite 方法无法获取敌人精灵的bug
 #==============================================================================
 # - 本插件提供了一系列通用方法，广泛应用于各种插件中
 #---------------------------------------------------------------------------
@@ -133,7 +133,7 @@ $imported["EAGLE-CommonMethods"] = "1.1.14"
 #
 #  EAGLE_COMMON.get_battler_sprite(id)
 #   → 获取id号的Game_Battler对象（战斗场景中），
-#     若 id 为正整数，则返回敌群中对应序号的敌人的Sprite_Battler
+#     若 id 为 0 或正整数，则返回敌群中对应序号的敌人的Sprite_Battler
 #     若 id 为负整数，则返回玩家队伍中对应数据库中 |id| 号的角色，若不存在，则返回nil
 #
 #  EAGLE_COMMON.forward_event_id(chara) 
@@ -635,9 +635,10 @@ module EAGLE_COMMON
   #--------------------------------------------------------------------------
   def self.get_battler_sprite(id)
     return if !SceneManager.scene_is?(Scene_Battle)
-    if id > 0
+    if id >= 0
       ss = SceneManager.scene.spriteset.enemy_sprites
-      return ss[id] || nil 
+      ss.each { |s| return s if s.battler.index == id }
+      return nil 
     else
       ss = SceneManager.scene.spriteset.actor_sprites
       ss.each { |s| return s if s.battler.id == id.abs }
