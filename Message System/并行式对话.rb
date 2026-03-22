@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.4.0"
+$imported["EAGLE-MessagePara2"] = "1.4.1"
 #==============================================================================
-# - 2026.3.21.21 重写注释
+# - 2026.3.22.10 新增<input>设置按键关闭
 #==============================================================================
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -24,6 +24,7 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #  3. 为方便设置，对话框宽高将始终与文字宽高保持一致。
 #
 
+module MESSAGE_PARA2
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # ● 使用方式A：利用事件的显示文字
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -34,12 +35,19 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #    则之后的【显示文字】指令将使用本插件的并行对话框，不使用默认对话框。
 #
+#  ※ 启用并行对话的注释内容
+COMMENT_PARA_ON  = "<并行对话>"
+
+#
 #  - 在 事件指令-注释 中填写：
 #
 #         <正常对话> 
 #
 #    则之后的【显示文字】将仍然使用默认对话框。
 #
+#  ※ 关闭并行对话的注释内容
+COMMENT_PARA_OFF = "<正常对话>"
+
 #------------------------------------------------
 # 【说明】
 #
@@ -62,19 +70,30 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #    对当前并行对话框进行设置。
 #
 #------------------------------------------------
-# 【设置a：脸图规格扩展】
+# 【预设】预先替换的文本
+#
+#  - 方便统一设置，对于同样的并行对话框，就不需要每个里面都写一长串设置了。
+PRE_CONVERT = {}
+
+# 示例：文本中的【角色头顶】会先被替换成后面的文本。
+PRE_CONVERT["【角色头顶】"] = "<pos o=2 o2=8 e=0 fix=1><wait 120><no hangup>"
+
+#------------------------------------------------
+# 【设置a】脸图规格扩展
 #
 #  - 该扩展同【对话框扩展 by老鹰】中的处理。
 #
 #  - 当脸图文件名包含 _数字1x数字2 时（其中为字母x），
-#    将定义该脸图文件的规格为 行数（数字1）x列数（数字2）（默认2行x4列）
+#    将定义该脸图文件的规格为 行数（数字1）x列数（数字2）。
+#    若不写，则默认2行x4列。
 #
 #      如：ace_actor_1x1.png → 该脸图规格为 1×1，含有一张脸图，只有index为0时生效
 #
 #  - 该功能自动生效，只需要注意脸图文件的规格和对话框设置的脸图索引号。
 #
+
 #------------------------------------------------
-# 【设置b：并行对话框的显示位置】
+# 【设置b】并行对话框的显示位置
 #
 #  - 在对话文本中编写：
 #
@@ -120,8 +139,11 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #      <pos o=5 e=-1 o2=8> → 代表对话框中心会显示到玩家的头顶中心位置。
 #
+#  ※ 默认的Z值
+INIT_Z = 200
+
 #------------------------------------------------
-# 【设置c：并行对话框的显示时间】
+# 【设置c】并行对话框的显示时间
 #
 #  - 在对话文本中编写：
 #
@@ -135,8 +157,23 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #    此时请调用全局脚本 MESSAGE_PARA2.finish(id) 来手动移出该并行对话框，
 #      其中的 id 为【设置h】中的唯一标识符（字符串）。
 #
+#  ※ 默认的显示时间（帧）
+WAIT_BEFORE_OUT = 90
+
 #------------------------------------------------
-# 【设置d：并行对话框的关闭条件】
+# 【设置d】并行对话框的按键继续
+#
+#  - 在对话文本中编写：
+#
+#        <input>
+#
+#    用于切换是否能按确定键关闭该并行对话框。
+#
+#  ※ 默认是否启用按键继续（若为 true ，则 <input> 为关闭该功能）
+FLAG_INPUT = false
+
+#------------------------------------------------
+# 【设置e】并行对话框的关闭条件
 #
 #  - 在对话文本中编写：
 #
@@ -146,14 +183,15 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #  - 当 eval(条件) 返回 true 时，该并行对话框才会关闭。
 #
-#  ○ 注意：该设置将覆盖【设置c】中的<wait 数字>效果。
+#  ○ 注意：该设置将覆盖【设置c】【设置d】的效果。
 #
+
 #------------------------------------------------
-# 【设置e：并行对话框的移入移出模式】
+# 【设置f】并行对话框的移入移出模式
 #
 #  - 在对话文本中编写：
 #
-#        <io 模式 时间>
+#        <io 模式 可选参数>
 #
 #    设置该并行对话框的移入移出模式及所用时间。
 #
@@ -163,16 +201,36 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #       zoom   →  放大移入、缩小移出
 #
-#  - 其中 时间 为移入/移出的所用帧数。
+#  - 其中 可选参数 可以替换为以下键值对：
+#
+#       t=数字     # （所有模式）移入/移出的所用帧数
+#
+#       opa=数字   # （所有模式）每帧不透明度的变化量（移入时增加，移出时减少）
+#                      （fade模式）默认值为 255 / t
+#                      （zoom模式）默认值为 0
+#
+#       zin=数字   # （zoom模式）移入完成时的最终缩放比例（默认 1.0）
+#
+#       zout=数字  # （zoom模式）移出完成时的最终缩放比例（默认 0）
 #
 #  - 示例：
 #
-#       <io fade10>   →  淡入淡出分别需要10帧。
+#       <io fade t=10>   →  淡入淡出分别需要10帧。
 #
-#       <io zoom 20>  →  放大移入和缩小移出分别需要20帧。
+#       <io zoom>  →  使用放大移入和缩小移出。
 #
+#       <io zoom zin=2.0>  →  移入后将始终保持放大2倍状态。
+#
+#       <io zoom zin=2.0>  →  移入后将始终保持放大2倍状态。
+#
+#  ※ 默认启用的移入移出模式
+#     "fade" 淡入淡出  "zoom" 缩放
+DEF_IO_TYPE = "fade"
+#  ※ 默认移入移出所需时间
+DEF_IO_T = 20
+
 #------------------------------------------------
-# 【设置f：并行对话框的窗口皮肤】
+# 【设置g】并行对话框的窗口皮肤
 #
 #  - 在对话文本中编写：
 #
@@ -185,17 +243,25 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #  - <skin0> 将切回默认皮肤。
 #
+#  ※ 预设窗口皮肤序号
+ID_TO_SKIN = {}
+ID_TO_SKIN[0] = "Window"  # 0号为默认窗口皮肤
+
+#  ※ 默认所用的窗口皮肤
+DEF_SKIN_ID = 0
+
 #------------------------------------------------
-# 【设置g：并行对话框的窗口皮肤】
+# 【设置h】并行对话框不暂停事件执行
 #
 #  - 在对话文本中编写：
 #
 #        <no hangup>
 #
-#    设置当前并行对话框不会暂停事件执行。
+#    设置当前并行对话框不会暂停当前事件的执行。
 #
+
 #------------------------------------------------
-# 【设置h：并行对话框的唯一标识符】
+# 【设置i】并行对话框的唯一标识符
 #
 #  - 在对话文本中编写：
 #
@@ -208,8 +274,9 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #  - 若不填写，则默认取当前事件的 ID（数字），
 #    即默认状态下，同一事件在同一时刻只显示一个并行对话框。
 #
+
 #------------------------------------------------
-# 【设置i：并行对话框的文字大小】
+# 【设置j】并行对话框的文字大小
 #
 #  - 在对话文本中编写：
 #
@@ -221,8 +288,13 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #      <font 16> → 设置字体大小为16，仅当前并行对话框生效。
 #
+#  ※ 默认文字大小
+FONT_SIZE = 20
+#  ※ 文本周围留出空白的宽度（用于绘制窗口边框）
+TEXT_BORDER_WIDTH = 8
+
 #------------------------------------------------
-# 【设置j：并行对话框的重绘】
+# 【设置k】并行对话框的重绘
 #
 #  - 在对话文本中编写：
 #
@@ -248,7 +320,7 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #      MESSAGE_PARA2.add(sym, data)
 #
-#  - 其中 sym 为该并行对话框的唯一标识符，同【设置h】。
+#  - 其中 sym 为该并行对话框的唯一标识符，同【设置i】。
 #
 #    ○ 注意：为了保证地图事件的并行对话框正常执行，sym 请不要为数字。
 #            推荐使用字符串类型，如 "测试名称" 。
@@ -276,7 +348,7 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #     :io   => "fade"       # 对话框的移入移出模式（fade淡入淡出 zoom缩放）
 #     :io_t => 20           # 移入移出的耗时
 #
-#     :map => true          # 在地图时，是否绑定在地图上
+#     :map => true          # 在地图时，是否绑定在地图上（默认绑定）
 #
 #     :pos => { :o => 2, :e => -1, :o2 => 8  }
 #                           # 对话框的位置设置，同【设置b】
@@ -302,8 +374,6 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #    返回 true，则表示已经完全关闭。
 #
-#  - 其中 sym 为该并行对话框的唯一标识符，同【设置h】。
-#
 #------------------------------------------------
 # 【全局脚本c：强制关闭指定并行对话框】
 #
@@ -311,16 +381,12 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #      MESSAGE_PARA2.finish(sym)
 #
-#  - 其中 sym 为该并行对话框的唯一标识符，同【设置h】。
-#
 #------------------------------------------------
 # 【全局脚本d：获取指定并行对话框的精灵】
 #
 #  - 调用该全局脚本获取指定并行对话框的精灵Sprite：
 #
 #      MESSAGE_PARA2.msg(sym)
-#
-#  - 其中 sym 为该并行对话框的唯一标识符，同【设置h】。
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -347,55 +413,9 @@ $imported["EAGLE-MessagePara2"] = "1.4.0"
 #
 #==============================================================================
 
-module MESSAGE_PARA2
-  #--------------------------------------------------------------------------
-  # ○【常量】事件指令-注释
-  #--------------------------------------------------------------------------
-  # 启用并行对话的注释内容
-  COMMENT_PARA_ON  = "<并行对话>"
-  # 关闭并行对话的注释内容
-  COMMENT_PARA_OFF = "<正常对话>"
-
-  #--------------------------------------------------------------------------
-  # ○【常量】预先替换的文本
-  #  方便统一设置，不需要每个并行对话框都写一长串设置。
-  #--------------------------------------------------------------------------
-  PRE_CONVERT = {}
-  # 并行对话框文本中的 【角色头顶】 就会被替换成后面的设置文本。
-  PRE_CONVERT["【角色头顶】"] = "<pos o=2 o2=8 e=0 fix=1><wait 120><no hangup>"
-
-  #--------------------------------------------------------------------------
-  # ○【常量】定义并行对话框的各项属性
-  #--------------------------------------------------------------------------
-  # 初始Z值
-  INIT_Z = 200
-
-  # 显示帧数
-  WAIT_BEFORE_OUT = 90
-
-  # 移入移出模式
-  #   "fade" 淡入淡出  "zoom" 缩放
-  DEF_IO_TYPE = "fade"
-  # 移入移出所需时间
-  DEF_IO_T = 20
-
-  # 文字大小
-  FONT_SIZE = 20
-
-  # 文本周围留出空白的宽度（用于绘制窗口边框）
-  TEXT_BORDER_WIDTH = 8
-
-  # 窗口皮肤
-  ID_TO_SKIN = {}
-  ID_TO_SKIN[0] = "Window"  # 0号为默认窗口皮肤
-
-  # 默认窗口皮肤
-  DEF_SKIN_ID = 0
-
-
-  #--------------------------------------------------------------------------
-  # ● 以下内容请不要修改！
-  #--------------------------------------------------------------------------
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+#                      - 设置结束，以下内容请不要修改！ -
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
   @sprites = {} # 事件ID => sprite
   def self.init; @sprites = {}; end
@@ -520,6 +540,12 @@ class Sprite_EagleMsg < Sprite
     @flag_no_wait = false
   end
 
+  # 释放
+  def dispose 
+    self.bitmap.dispose if self.bitmap
+    super 
+  end
+
   # 重置
   def reset(_params)
     @flag_no_wait = false
@@ -551,9 +577,11 @@ class Sprite_EagleMsg < Sprite
     params[:skin] = _params[:skin] || DEF_SKIN_ID
     params[:wait] = _params[:wait] || WAIT_BEFORE_OUT
     params[:wait] = 1 if params[:wait] < 0
+    params[:input] = false if params[:input] == nil
     params[:until] = _params[:until] || ""
     params[:io] = _params[:io] || DEF_IO_TYPE
-    params[:io_t] = _params[:io_t] || DEF_IO_T
+    params[:io_params] = _params[:io_params] || {}
+    params[:io_t] = params[:io_params][:t] ? params[:io_params][:t].to_i : DEF_IO_T
     params[:font] = _params[:font] || FONT_SIZE
     
     params[:map] = _params[:map] != nil ? _params[:map] : true
@@ -710,7 +738,7 @@ class Sprite_EagleMsg < Sprite
     end
   end
 
-  # ● 更新位置
+  # 更新位置
   def update_position
     return if params[:pos_update].nil?
     h = params[:pos_update]
@@ -777,14 +805,15 @@ class Sprite_EagleMsg < Sprite
 
   # 移入移出（淡入淡出）
   def until_move_end_fade(type = :in, t = 20)
-    v = 255 / t
+    _opa = params[:io_params][:opa] ? params[:io_params][:opa].to_f : nil
+    _opa = 255 / t if _opa == nil
     loop do
       Fiber.yield
       if type == :in
-        self.opacity += v
+        self.opacity += _opa
         break if self.opacity >= 255
       elsif type == :out
-        self.opacity -= v
+        self.opacity -= _opa
         break if self.opacity <= 0
       end
     end
@@ -792,15 +821,18 @@ class Sprite_EagleMsg < Sprite
 
   # 移入移出（缩放）
   def until_move_end_zoom(type = :in, t = 20)
-    self.opacity = 255
+    _opa = params[:io_params][:opa] ? params[:io_params][:opa].to_f : 0
     _i = 0; _t = t
     _init = 0; _d = 0
+    _zin  = params[:io_params][:zin] ? params[:io_params][:zin].to_f : 1.0
+    _zout = params[:io_params][:zout] ? params[:io_params][:zout].to_f : 0
     if type == :in
       _init = 0
-      _d = 1.0
+      _d = _zin - _init
+      self.opacity = 255 - _opa * t
     elsif type == :out
-      _init = 1.0
-      _d = -1.0
+      _init = self.zoom_x
+      _d = _zout - _init
     end
     while(true)
       break if _i > _t
@@ -808,13 +840,18 @@ class Sprite_EagleMsg < Sprite
       per = (_i == _t ? 1 : ease_value(:zoom, per, type==:in))
       v = _init + _d * per
       self.zoom_x = self.zoom_y = v
+      if type == :in
+        self.opacity += _opa
+      elsif type == :out
+        self.opacity -= _opa
+      end
       Fiber.yield
       _i += 1
     end
     if type == :in
-      self.zoom_x = self.zoom_y = 1.0
+      self.zoom_x = self.zoom_y = _zin
     elsif type == :out
-      self.zoom_x = self.zoom_y = 0
+      self.zoom_x = self.zoom_y = _zout
     end
   end
   def ease_value(type, x, flag=true)
@@ -840,6 +877,7 @@ class Sprite_EagleMsg < Sprite
   def process_wait_count
     if params[:wait] == 0
       loop do
+        break if wait_input?
         break if @flag_no_wait
         Fiber.yield
       end
@@ -847,11 +885,27 @@ class Sprite_EagleMsg < Sprite
     end
     @count_wait = params[:wait]
     loop do
+      break if wait_input?
       break if @flag_no_wait
       Fiber.yield
       @count_wait -= 1
       break if @count_wait <= 0
     end
+  end
+
+  # 在等待时，是否按下按键
+  def wait_input?
+    if FLAG_INPUT == true
+      return false if params[:input] == true
+    else
+      return false if params[:input] != true
+    end
+    return true if Input.trigger?(:C)
+    if $imported["EAGLE-MouseEX"] 
+      # 兼容【鼠标扩展 by老鹰】 鼠标点击并行对话框可关闭
+      return true if mouse_in? && MOUSE_EX.up?(:ML)
+    end
+    return false
   end
 
   # 处理等待直至结束
@@ -918,8 +972,8 @@ class Game_Interpreter
     call_message_para2_2(t, params)
 
     if $imported["EAGLE-MessageLog"]
-      ps = {}
-      ps[:name] = params[:name] if !params[:name].empty?
+    #  ps = {}
+    #  ps[:name] = params[:name] if !params[:name].empty?
       MSG_LOG.new_log(params[:text], ps) if params[:text] != ""
     end
   end
@@ -940,8 +994,9 @@ class Game_Interpreter
     text.gsub!( /<skin:? ?(.*?)>/im ) { params[:skin] = $1; "" }
     text.gsub!( /<wait:? ?(.*?)>/im ) { params[:wait] = $1.to_i; "" }
     text.gsub!( /<until>(.*?)<\/until>/im ) { params[:until] = $1; "" }
-    text.gsub!( /<io:? ?(.*?) ?(\d+)>/im ) {
-      params[:io] = $1; params[:io_t] = $2.to_i; "" }
+    text.gsub!( /<input>/im ) { params[:input] = true; "" }
+    text.gsub!( /<io:? *(\w+) ?(.*?)>/im ) {
+      params[:io] = $1; params[:io_params] = EAGLE_COMMON.parse_tags($2); "" }
     # 设置位置 当前对话框的o处，与 w/m/e 的o处相重合
     text.gsub!( /<pos:? ?(.*?)>/im ) {
       # "o=? wx=? wy=? mx=? my=? e=? o2=? dx=? dy=? fix=? z=?"
@@ -949,9 +1004,9 @@ class Game_Interpreter
       ""
     }
     # 提取位于开头的姓名
-    n = ""
-    text.sub!(/^【(.*?)】|^\[(.*?)\]/m) { n = $1 || $2; "" }
-    params[:name] = n
+    #n = ""
+    #text.sub!(/^【(.*?)】|^\[(.*?)\]/m) { n = $1 || $2; "" }
+    #params[:name] = n
     # 提取可能存在的显示图片（将独立为新的对话框显示）
     text.gsub!(/<pic:? ?(.*?)>/im) {
       _params = params.dup
