@@ -3,9 +3,9 @@
 # 【此插件兼容VX和VX Ace】
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PictureMoveEase"] = "1.0.0"
+$imported["EAGLE-PictureMoveEase"] = "1.0.1"
 #==============================================================================
-# - 2025.7.31.22 图片消除时，将同步清除缓动设置
+# - 2026.3.28.22 增强旧存档的兼容性
 #==============================================================================
 # - 本插件新增了显示图片的缓动移动。
 #
@@ -72,6 +72,7 @@ class Game_Picture
   alias eagle_ease_pic_move move
   def move(origin, x, y, zoom_x, zoom_y, opacity, blend_type, duration)
     eagle_ease_pic_move(origin, x, y, zoom_x, zoom_y, opacity, blend_type, duration)
+    @ease_params ||= {}  # 对于旧存档，可能没有这个变量
     @ease_params[:x0] = @x; @ease_params[:dx] = x - @x
     @ease_params[:y0] = @y; @ease_params[:dy] = y - @y
     @ease_params[:zoom_x0] = @zoom_x; @ease_params[:dzoom_x] = zoom_x - @zoom_x
