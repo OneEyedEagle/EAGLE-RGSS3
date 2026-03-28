@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.2"
+$imported["EAGLE-MessageEX"] = "2.2.3"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.2"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.3.25.21 V2.2.3 修复特定情况下ctog释放时报错的bug；修复进战斗卡死的bug
      ----------------------------------------------------------------------
      - 2026.3.21.8  V2.2.2 pop模式下兼容【简易地图放大 by老鹰】和【Map Effects v1.4.1 by Zeus81】
      ----------------------------------------------------------------------
@@ -875,6 +877,8 @@ class Window_EagleMessage < Window_Base
   # ● 释放
   #--------------------------------------------------------------------------
   def dispose
+    @fiber = nil
+    $game_message.visible = false
     dispose_all_windows
     dispose_back_bitmap
     @back_sprite.dispose
@@ -5165,6 +5169,7 @@ class Sprite_EagleCharacter < Sprite
   # 更新全部已启用的特效
   def update_effects
     @effects.each { |sym, param_s|
+      next if @effect_params[sym] == nil
       m = ("update_effect_" + sym.to_s).to_sym
       method(m).call(@effect_params[sym]) if respond_to?(m)
       # 将调用对应特效的 update_effect_sym(param) 方法，其中 sym 为特效的转义符
@@ -5174,6 +5179,7 @@ class Sprite_EagleCharacter < Sprite
   # 结束全部已启用的特效
   def finish_effects
     @effects.each { |sym, param|
+      next if @effect_params[sym] == nil
       m = ("finish_effect_" + sym.to_s).to_sym
       method(m).call(@effect_params[sym]) if respond_to?(m)
       # 将调用对应特效的 finish_effect_sym(param) 方法，其中 sym 为特效的转义符
