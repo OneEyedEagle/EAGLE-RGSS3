@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.3"
+$imported["EAGLE-MessageEX"] = "2.2.4"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.3"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.4.4.22  V2.2.4 修复\!前后，脸图循环异常的bug
      ----------------------------------------------------------------------
      - 2026.3.25.21 V2.2.3 修复特定情况下ctog释放时报错的bug；修复进战斗卡死的bug
      ----------------------------------------------------------------------
@@ -2500,7 +2502,9 @@ class Window_EagleMessage < Window_Base
   end
   def handle_escape_pause(text, pos)
     return if !@flag_draw
+    eagle_process_input_before
     input_pause
+    eagle_process_input_after
   end
   def handle_escape_activate_show_fast(text, pos)
     @line_show_fast = true
@@ -3381,6 +3385,12 @@ class Window_EagleMessage < Window_Base
     @eagle_sprite_face.finish_loop1 if @eagle_sprite_face
   end
 
+  # 等待按键完了，文字继续绘制前的处理
+  #  \! 转义符后调用
+  def eagle_process_input_after 
+    @eagle_sprite_face.finish_loop2 if @eagle_sprite_face
+  end
+
   # 需要处理输入？
   def input_pause?
     game_message.input_pause? && !@pause_skip
@@ -4216,12 +4226,17 @@ class Sprite_EagleFace < Sprite
   def face_default_size?
     @params[:sole_w] == 96 && @params[:sole_h] == 96
   end
-  
+
   # 文字绘制完成后调用
   def finish_loop1
     if @params[:flag_loop1]
       @params[:loop1][:end] = true
     end
+  end
+  
+  # 文字要继续绘制时调用
+  def finish_loop2
+    start_loop1
   end
   
   #--------------------------------------------------------------------------
@@ -4251,7 +4266,10 @@ class Sprite_EagleFace < Sprite
   def apply_params
     apply_face_bitmap
     apply_face_params
-    apply_loop_params
+    @params[:normal] = {}
+    @params[:normal][:name] = face_params[:name]
+    @params[:normal][:i] = face_params[:i]
+    start_loop1
   end
   
   # 设置脸图bitmap
@@ -4317,7 +4335,20 @@ class Sprite_EagleFace < Sprite
     end
   end
   
+  # 文字开始绘制时调用
+  def start_loop1
+    @params[:flag_loop1] = @params[:flag_loop2] = false
+    # 先复原最开始的脸图
+    face_params[:name] = @params[:normal][:name]
+    face_params[:i] = @params[:normal][:i]
+    apply_face_params
+    # 再读取循环参数
+    apply_loop_params
+  end
+  
+  # 开始文字结束后的循环
   def start_loop2
+    @params[:flag_loop1] = @params[:flag_loop2] = false
     apply_loop_params2
     if @params[:flag_loop2]
       if face_params[:blink][:name] and face_params[:blink][:name] != face_params[:name]

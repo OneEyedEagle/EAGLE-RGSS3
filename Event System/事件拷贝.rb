@@ -2,9 +2,9 @@
 # ■ 事件拷贝 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-EventCopy"] = "1.2.5"
+$imported["EAGLE-EventCopy"] = "1.2.6"
 #=============================================================================
-# - 2023.9.13.20 新增一次性消除全部拷贝事件的快捷指令
+# - 2026.4.3.23 修复地图没有事件时，拷贝出错的bug
 #=============================================================================
 # - 原始创意：Yanfly Engine Ace - Spawn Event
 # - 本插件新增了拷贝事件的方法
@@ -259,7 +259,7 @@ class Game_Map
     if id_want
       id = id_want
     else
-      id = @events.keys.max
+      id = @events.keys.max rescue 100
       id = [id, @events_tmp.keys.max].max if !@events_tmp.empty?
       id = [id, 100].max # 直接增大事件ID，尽可能确保不产生冲突
       id += 1
