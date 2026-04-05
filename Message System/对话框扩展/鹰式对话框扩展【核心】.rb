@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.4"
+$imported["EAGLE-MessageEX"] = "2.2.5"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.4"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.4.5.11  V2.2.5 优化脸图更换的逻辑，方便扩展
      ----------------------------------------------------------------------
      - 2026.4.4.22  V2.2.4 修复\!前后，脸图循环异常的bug
      ----------------------------------------------------------------------
@@ -3018,6 +3020,8 @@ class Window_EagleMessage < Window_Base
     face_params[:m] = MESSAGE_EX.check_bool(face_params[:m])
     face_params[:name] = game_message.face_name
     face_params[:i] = game_message.face_index
+    face_params[:blink][:i] = -1
+    face_params[:blink][:l] = -1 
     reset_eagle_sprite_face
   end
   
@@ -3037,8 +3041,6 @@ class Window_EagleMessage < Window_Base
   # 执行 \faceb 转义符
   def eagle_text_control_faceb(param = "")
     return if !@flag_draw
-    face_params[:blink][:i] = -1
-    face_params[:blink][:l] = -1 
     if param.include?('|')
       params = param.split('|')
       face_params[:blink][:name] = params[0]
@@ -4232,6 +4234,7 @@ class Sprite_EagleFace < Sprite
     if @params[:flag_loop1]
       @params[:loop1][:end] = true
     end
+    start_loop2
   end
   
   # 文字要继续绘制时调用
@@ -4264,17 +4267,28 @@ class Sprite_EagleFace < Sprite
 
   # 更新参数
   def apply_params
-    apply_face_bitmap
-    apply_face_params
-    @params[:normal] = {}
-    @params[:normal][:name] = face_params[:name]
-    @params[:normal][:i] = face_params[:i]
-    start_loop1
+    change_face_name_index(face_params[:name], face_params[:i])
+    apply_loop_params  # 激活开始时的循环（文字显示期间）
   end
   
-  # 设置脸图bitmap
+  #--------------------------------------------------------------------------
+  # ● 更换脸图
+  #--------------------------------------------------------------------------
+  def change_face_name_index(name = nil, index = nil)
+    if name and @params[:name] != name
+      @params[:name] = name
+      apply_face_bitmap
+      process_after_change_face
+      apply_face_params
+    end
+    if index
+      @params[:i] = index
+      apply_index
+    end
+  end
+  
+  # 设置脸图bitmap（需提前设置好 @params[:name] ）
   def apply_face_bitmap
-    @params[:name] = face_params[:name]
     self.bitmap = Cache.face(@params[:name])
     @params[:name] =~ /_(\d+)x(\d+)_?/i  # 从文件名获取行数和列数（默认为2行4列）
     @params[:num_line] = $1 ? $1.to_i : face_default_line
@@ -4294,14 +4308,39 @@ class Sprite_EagleFace < Sprite
   def face_default_line; 2; end
   def face_default_col;  4; end
 
+  # 应用当前帧（需提前设置好 @params[:i] ）
+  def apply_index
+    return if @params[:i] == nil
+    @params[:i] = 0 if @params[:i] >= @params[:num]
+    w = @params[:sole_w]
+    h = @params[:sole_h]
+    x = @params[:i] % @params[:num_col] * w
+    y = @params[:i] / @params[:num_col] * h
+    rect = Rect.new(x, y, w, h)
+    self.src_rect = rect
+  end
+
+  # 更换脸图文件后的处理
+  def process_after_change_face
+  end
+
   # 导入face参数
   def apply_face_params
     # 移入移出的参数
     @params[:it] = face_params[:it]
     @params[:ot] = face_params[:ot]
-    # 设置当前帧
-    @params[:i] = face_params[:i]
-    apply_index
+  end
+
+  #--------------------------------------------------------------------------
+  # ● 循环播放
+  #--------------------------------------------------------------------------
+  # 文字重新开始绘制时调用
+  def start_loop1
+    @params[:flag_loop1] = @params[:flag_loop2] = false
+    # 先复原最开始的脸图
+    change_face_name_index(face_params[:name], face_params[:i])
+    # 再读取循环参数
+    apply_loop_params
   end
   
   # 导入文字绘制期间的循环参数
@@ -4318,58 +4357,28 @@ class Sprite_EagleFace < Sprite
     @params[:loop1][:wait_c] = @params[:loop1][:wait]# 一轮循环结束后的等待
   end
   
+  # 开始文字结束后的循环
+  def start_loop2
+    @params[:flag_loop2] = false
+    if face_params[:blink] and face_params[:blink][:i] and face_params[:blink][:i] >= 0
+      @params[:flag_loop2] = true
+      change_face_name_index(face_params[:blink][:name], face_params[:blink][:i])
+      apply_loop_params2
+    end
+  end
+  
   # 导入文字绘制结束后的循环参数
   def apply_loop_params2
     ps = face_params[:blink]
-    if ps and ps[:i]
-      @params[:flag_loop2] = ps[:i] >= 0
-      @params[:loop2] = { 
-        :i1 => ps[:i], 
-        :i2 => [ps[:i] + ps[:l] - 1, @params[:num]].min,
-        :t  => ps[:lt],  :wait => ps[:lw],
-        :start => false, :end => false,
-      }
-      @params[:loop2][:i_loop] = @params[:loop2][:i1]  # 当前 index
-      @params[:loop2][:t_c]    = @params[:loop2][:t]   # 切换一张脸图后的等待
-      @params[:loop2][:wait_c] = @params[:loop2][:wait]# 一轮循环结束后的等待
-    end
-  end
-  
-  # 文字开始绘制时调用
-  def start_loop1
-    @params[:flag_loop1] = @params[:flag_loop2] = false
-    # 先复原最开始的脸图
-    face_params[:name] = @params[:normal][:name]
-    face_params[:i] = @params[:normal][:i]
-    apply_face_params
-    # 再读取循环参数
-    apply_loop_params
-  end
-  
-  # 开始文字结束后的循环
-  def start_loop2
-    @params[:flag_loop1] = @params[:flag_loop2] = false
-    apply_loop_params2
-    if @params[:flag_loop2]
-      if face_params[:blink][:name] and face_params[:blink][:name] != face_params[:name]
-        face_params[:name] = face_params[:blink][:name]
-        apply_face_bitmap
-      end
-      face_params[:i] = face_params[:blink][:i]
-      apply_face_params
-    end
-  end
-
-  # 应用当前帧
-  def apply_index
-    return if @params[:i] == nil
-    @params[:i] = 0 if @params[:i] >= @params[:num]
-    w = @params[:sole_w]
-    h = @params[:sole_h]
-    x = @params[:i] % @params[:num_col] * w
-    y = @params[:i] / @params[:num_col] * h
-    rect = Rect.new(x, y, w, h)
-    self.src_rect = rect
+    @params[:loop2] = { 
+      :i1 => ps[:i], 
+      :i2 => [ps[:i] + ps[:l] - 1, @params[:num]].min,
+      :t  => ps[:lt],  :wait => ps[:lw],
+      :start => false, :end => false,
+    }
+    @params[:loop2][:i_loop] = @params[:loop2][:i1]  # 当前 index
+    @params[:loop2][:t_c]    = @params[:loop2][:t]   # 切换一张脸图后的等待
+    @params[:loop2][:wait_c] = @params[:loop2][:wait]# 一轮循环结束后的等待
   end
   
   #--------------------------------------------------------------------------
@@ -4427,11 +4436,7 @@ class Sprite_EagleFace < Sprite
         params[:start] = false  # 可以开始循环播放了
         params[:t_c] = 0
         # 处理停止播放
-        if params[:end]
-          @params[sym] = false
-          start_loop2 if sym == :flag_loop1 # 如果是循环1结束，则开始循环2
-          return
-        end
+        return @params[sym] = false if params[:end]
       else
         # 每帧之间的等待
         params[:t_c] -= 1
