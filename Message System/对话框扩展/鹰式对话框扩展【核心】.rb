@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.5"
+$imported["EAGLE-MessageEX"] = "2.2.6"
 =begin
 ===============================================================================
 
@@ -26,7 +26,7 @@ $imported["EAGLE-MessageEX"] = "2.2.5"
      
      更新历史
      ----------------------------------------------------------------------
-     - 2026.4.5.11  V2.2.5 优化脸图更换的逻辑，方便扩展
+     - 2026.4.6.14  V2.2.6 优化脸图更换的逻辑，方便扩展
      ----------------------------------------------------------------------
      - 2026.4.4.22  V2.2.4 修复\!前后，脸图循环异常的bug
      ----------------------------------------------------------------------
@@ -2056,7 +2056,7 @@ class Window_EagleMessage < Window_Base
       text[0] = ''
       sym = obtain_escape_code(text).upcase
       # 先执行win和pop，确保对话框开启前位置和大小确定
-      if sym == "WIN" or sym == "POP"
+      if sym == "WIN" or sym == "POP" or sym == "FACE"
         process_escape_character(sym, text, pos)
         next
       end
@@ -3015,14 +3015,16 @@ class Window_EagleMessage < Window_Base
   # 执行 \facep 转义符
   def eagle_draw_face(text)
     parse_pre_params(text, 'facep', face_params, :dir)
-    face_params[:l] = -1
     face_params[:dir] = MESSAGE_EX.check_bool(face_params[:dir])
     face_params[:m] = MESSAGE_EX.check_bool(face_params[:m])
     face_params[:name] = game_message.face_name
     face_params[:i] = game_message.face_index
+    # 重置循环播放的参数
+    face_params[:l] = -1
     face_params[:blink][:i] = -1
     face_params[:blink][:l] = -1 
     reset_eagle_sprite_face
+    @eagle_sprite_face.reset_before_start if @eagle_sprite_face
   end
   
   # 执行 \face 转义符
@@ -4231,14 +4233,14 @@ class Sprite_EagleFace < Sprite
 
   # 文字绘制完成后调用
   def finish_loop1
-    if @params[:flag_loop1]
-      @params[:loop1][:end] = true
-    end
+    #@params[:loop1][:end] = true if @params[:flag_loop1]
+    @params[:flag_loop1] = false
     start_loop2
   end
   
   # 文字要继续绘制时调用
   def finish_loop2
+    @params[:flag_loop2] = false
     start_loop1
   end
   
@@ -4265,10 +4267,24 @@ class Sprite_EagleFace < Sprite
     @opa = 0 # 不透明度
   end
 
+  # 在文字显示前，脸图应重置一次
+  #  在这之前重置了循环播放的参数，此处再从脸图文件名中获取
+  def reset_before_start
+    process_after_change_face
+    apply_params
+  end
+
   # 更新参数
   def apply_params
-    change_face_name_index(face_params[:name], face_params[:i])
-    apply_loop_params  # 激活开始时的循环（文字显示期间）
+    apply_face_params
+    start_loop1  # 激活开始时的循环（文字显示期间）
+  end
+
+  # 导入face其他参数
+  def apply_face_params
+    # 移入移出的参数
+    @params[:it] = face_params[:it]
+    @params[:ot] = face_params[:ot]
   end
   
   #--------------------------------------------------------------------------
@@ -4279,9 +4295,8 @@ class Sprite_EagleFace < Sprite
       @params[:name] = name
       apply_face_bitmap
       process_after_change_face
-      apply_face_params
     end
-    if index
+    if index and get_init_face_index != index
       @params[:i] = index
       apply_index
     end
@@ -4324,19 +4339,11 @@ class Sprite_EagleFace < Sprite
   def process_after_change_face
   end
 
-  # 导入face参数
-  def apply_face_params
-    # 移入移出的参数
-    @params[:it] = face_params[:it]
-    @params[:ot] = face_params[:ot]
-  end
-
   #--------------------------------------------------------------------------
   # ● 循环播放
   #--------------------------------------------------------------------------
   # 文字重新开始绘制时调用
   def start_loop1
-    @params[:flag_loop1] = @params[:flag_loop2] = false
     # 先复原最开始的脸图
     change_face_name_index(face_params[:name], face_params[:i])
     # 再读取循环参数
@@ -4347,8 +4354,9 @@ class Sprite_EagleFace < Sprite
   def apply_loop_params
     @params[:flag_loop1] = face_params[:l] > 0
     @params[:loop1] = { 
-      :i1 => @params[:i], 
-      :i2 => [@params[:i] + face_params[:l] - 1, @params[:num]].min,
+      # 从对话框预设的脸图为起始
+      :i1 => face_params[:i], 
+      :i2 => [face_params[:i] + face_params[:l] - 1, @params[:num]].min,
       :t  => face_params[:lt],  :wait => face_params[:lw],
       :start => false, :end => false,
     }
@@ -4379,6 +4387,13 @@ class Sprite_EagleFace < Sprite
     @params[:loop2][:i_loop] = @params[:loop2][:i1]  # 当前 index
     @params[:loop2][:t_c]    = @params[:loop2][:t]   # 切换一张脸图后的等待
     @params[:loop2][:wait_c] = @params[:loop2][:wait]# 一轮循环结束后的等待
+  end
+
+  # 获取初始脸图index（去掉循环播放的影响）
+  def get_init_face_index
+    return @params[:loop1][:i1] if @params[:flag_loop1] and @params[:loop1]
+    return @params[:loop2][:i1] if @params[:flag_loop2] and @params[:loop2]
+    return @params[:i]
   end
   
   #--------------------------------------------------------------------------
@@ -4456,7 +4471,6 @@ class Sprite_EagleFace < Sprite
   # 直接显示
   def show
     update_position
-    apply_index
     @opa = 255
     self.opacity = @opa
   end
