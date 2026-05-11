@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.4.0"
+$imported["EAGLE-StateEX"] = "1.4.1"
 #==============================================================================
-# - 2026.3.2.23 新增状态标签；优化注释
+# - 2026.5.3.0 修复默认状态的最大层数设置失效的bug
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -1142,8 +1142,9 @@ class Game_Battler < Game_BattlerBase
   # 附加RGSS状态
   def add_state(state_id)
     if state_addable?(state_id)
-      # 如果可以叠层，或者未附加
-      if (eagle_state_ex?(state_id) && $data_states[state_id].level > 1) || 
+      # 如果可以叠层且未达上限，或者未附加
+      v = $data_states[state_id].level
+      if (eagle_state_ex?(state_id) && v > 1 && v > state_level(state_id)) || 
         !eagle_state_ex?(state_id)
         add_new_state(state_id)
       end
