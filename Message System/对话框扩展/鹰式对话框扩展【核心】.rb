@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.6"
+$imported["EAGLE-MessageEX"] = "2.2.7"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.6"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.5.21.22 V2.2.7 优化脸图循环播放的逻辑，更改为成功显示文字后才激活
      ----------------------------------------------------------------------
      - 2026.4.6.14  V2.2.6 优化脸图更换的逻辑，方便扩展
      ----------------------------------------------------------------------
@@ -2288,6 +2290,7 @@ class Window_EagleMessage < Window_Base
       @eagle_force_close_c = 0
     end
     play_chara_se(pos)  # 播放打字音
+    eagle_face_activate_loop1(pos) # 激活一次脸图循环播放
     eagle_process_draw_update
     wait_for_one_character
   end
@@ -3116,6 +3119,16 @@ class Window_EagleMessage < Window_Base
     return if @eagle_sprite_face == nil
     params = param.split('|')
     @eagle_sprite_face.motion(params[0], params[1] || "")
+  end
+
+  # 激活一次脸图循环播放
+  def eagle_face_activate_loop1(pos)
+    return if @eagle_sprite_face == nil
+    # 特别的：若打字音为 0 ，则不激活脸图循环播放
+    MESSAGE_EX::CAHRA_SE_ADJUST.each do |array, i|
+      return if i == 0 and array.include?(pos[:c])
+    end
+    @eagle_sprite_face.activate_loop1
   end
   
   #--------------------------------------------------------------------------
@@ -4230,6 +4243,11 @@ class Sprite_EagleFace < Sprite
   def face_default_size?
     @params[:sole_w] == 96 && @params[:sole_h] == 96
   end
+  
+  # 每次文字绘制完成后调用，激活一次脸图循环播放
+  def activate_loop1
+    @params[:loop1][:next] = true
+  end
 
   # 文字绘制完成后调用
   def finish_loop1
@@ -4358,7 +4376,7 @@ class Sprite_EagleFace < Sprite
       :i1 => face_params[:i], 
       :i2 => [face_params[:i] + face_params[:l] - 1, @params[:num]].min,
       :t  => face_params[:lt],  :wait => face_params[:lw],
-      :start => false, :end => false,
+      :start => false, :end => false, :next => true,
     }
     @params[:loop1][:i_loop] = @params[:loop1][:i1]  # 当前 index
     @params[:loop1][:t_c]    = @params[:loop1][:t]   # 切换一张脸图后的等待
@@ -4382,7 +4400,7 @@ class Sprite_EagleFace < Sprite
       :i1 => ps[:i], 
       :i2 => [ps[:i] + ps[:l] - 1, @params[:num]].min,
       :t  => ps[:lt],  :wait => ps[:lw],
-      :start => false, :end => false,
+      :start => false, :end => false, :next => true,
     }
     @params[:loop2][:i_loop] = @params[:loop2][:i1]  # 当前 index
     @params[:loop2][:t_c]    = @params[:loop2][:t]   # 切换一张脸图后的等待
@@ -4440,6 +4458,7 @@ class Sprite_EagleFace < Sprite
     elsif @params[:flag_loop2]
       sym = :flag_loop2
       params = @params[:loop2]
+      params[:next] = true  # 对话完成后的脸图循环播放，不再等文字绘制后激活
     end
     if params
       if params[:start] # 一次新的循环开始
@@ -4447,6 +4466,7 @@ class Sprite_EagleFace < Sprite
         return if params[:wait].nil?
         params[:wait_c] -= 1
         return if params[:wait_c] > 0
+        return if params[:next] == false  # 不继续循环播放
         params[:wait_c] = params[:wait]
         params[:start] = false  # 可以开始循环播放了
         params[:t_c] = 0
@@ -4461,6 +4481,7 @@ class Sprite_EagleFace < Sprite
         if params[:i_loop] > params[:i2]
           params[:i_loop] = params[:i1] 
           params[:start] = true
+          params[:next] = false  # 循环结束，关闭继续的flag，除非文字绘制后再打开
         end
       end
       @params[:i] = params[:i_loop]
