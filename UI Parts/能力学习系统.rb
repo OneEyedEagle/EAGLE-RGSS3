@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.8.1"
+$imported["EAGLE-AbilityLearn"] = "1.8.2"
 #==============================================================================
-# - 2026.2.6.20 新增解锁时显示动画
+# - 2026.5.24.22 新增解锁时显示动画
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
@@ -2742,6 +2742,7 @@ class << DataManager
       tokens = ABILITY_LEARN.get_actor_tokens(actor.id)
       tokens.each do |id, ps|
         next if actor.eagle_ability_data.no_unlock?(id) # 不需要解锁的，则跳过
+        next if actor.eagle_ability_data.unlock?(id) # 已经初始解锁的，则跳过
         actor.eagle_ability_data.unlock(id, true)
       end
     end
