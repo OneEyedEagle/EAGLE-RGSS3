@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.4.1"
+$imported["EAGLE-StateEX"] = "1.4.2"
 #==============================================================================
-# - 2026.5.3.0 修复默认状态的最大层数设置失效的bug
+# - 2026.6.1.21 新增获取全部状态的数组
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -762,6 +762,9 @@ class Data_StateEX
   # 获取 RGSS状态对象
   def state;    $data_states[@id]; end
 
+  # 获取显示的优先级
+  def priority; $data_states[@id].priority; end
+
   # 获取特性计算时的对象
   def feature_objects;  [state] * @level;  end
   
@@ -802,7 +805,7 @@ class Data_StateEX
     reduce(1)
   end
   
-  # 判定是否包含指定tag数组
+  # 判定是否包含指定tag
   def tag?(_tag); state.tag?(_tag); end
     
   # 判定是否有多重自动减少时机
@@ -1317,8 +1320,27 @@ class Game_Battler < Game_BattlerBase
     @state_steps = s1_steps
     @states_ex = s2
   end
+
+  # 获取按优先度排序后的全部状态数组
+  #  数组中的 数字 为rgss状态， 其它为 状态对象
+  def get_all_states
+    array = @states.uniq + @states_ex
+    array = array.sort_by { |s| 
+      rgss_state, data_state = STATE_EX.get_rgss_state_data_state(s)
+      if data_state # 如果是状态对象
+        pri = data_state.priority
+        id = data_state.id
+      else
+        pri = $data_states[s].priority
+        id = s
+      end
+      [-pri, id]
+    }
+    array
+  end
   
   # 根据标签和自动减少时机获取状态数组
+  #  数组中的 数字 为rgss状态， 其它为 状态对象
   # timing → 状态的自动减少时机，nil-全部，数字-对应时机，数组-其中的全部时机
   def get_states(tag, timing=nil)
     s1 = @states.uniq.select { |sid| $data_states[sid].tag?(tag) }

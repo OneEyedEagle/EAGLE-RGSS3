@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-Dice"] = "2.0.0"
 #==============================================================================
-# - 2026.5.25.23 重构基本框架
+# - 2026.5.30.114 重构基本框架
 #==============================================================================
 # - 本插件增加了一套独立的骰子系统，能够在任意时刻投掷并返回结果
 #------------------------------------------------------------------------------
@@ -1111,10 +1111,10 @@ class DICE::RollBox_Base
     s.bitmap = Bitmap.new(d.width+ps[:x0]*2, d.height+ps[:y0]+4)
     if $imported["EAGLE-UtilsDrawing2"]
       # 绘制圆角矩形
-      s.bitmap.fill_rounded_rect(0, 0, s.width, s.height-4, 4, Color.new(0,0,0,150))
+      s.bitmap.fill_rounded_rect(0, 0, s.width, s.height-4, 4, Color.new(0,0,0,220))
     else
       # 绘制普通矩形
-      s.bitmap.fill_rect(0, 0, s.width, s.height-4, Color.new(0,0,0,150))
+      s.bitmap.fill_rect(0, 0, s.width, s.height-4, Color.new(0,0,0,220))
     end
     
     d.bind_bitmap(s.bitmap)
@@ -1508,6 +1508,7 @@ class DICE::RollBox_Base
   # 玩家处理时的每帧更新
   def update_when_process_key
     @flag_player_key_finish = true if @n_finish >= @ps[:num]
+    @flag_player_key_finish = true if !@sprite_dices.any? { |s| s.waiting? }
   end
 
   # 更新光标
@@ -1595,7 +1596,7 @@ class DICE::RollBox_Base
       @drag_token = @selected_token
       @drag_dx = @sprite_player.x - @drag_token.x
       @drag_dy = @sprite_player.y - @drag_token.y
-       process_dice_drag_start
+      process_dice_drag_start
     end
   end
   
