@@ -5,60 +5,86 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEXPointer"] = "1.0.1"
+$imported["EAGLE-MouseEXPointer"] = "1.0.2"
 #=============================================================================
-# - 2026.2.9.23
+# - 2026.6.10.23 优化注释
 #=============================================================================
 # - 本插件新增了对鼠标指针的自定义
 #=============================================================================
 # ○ 使用方法
 #=============================================================================
 #  
-#  1. 在 POINTER_INFO 中设置好鼠标指针图像信息，并记住所设置的各个名称。
+#  1. 在 POINTER_INFO 中设置好鼠标指针图像信息，并记住所设置的名称。
 #
-#  2. 对于一般情形下的鼠标指针：
+#--------------------------------------------------------------
 #
-#   - 通常情况下将使用 "默认" 名称的图像设置。
+#  2. 一般情形下的鼠标指针：
 #
-#   - 使用全局脚本 MOUSE_EX.set_pointer("名称") 修改为对应图像。
-#     使用全局脚本 MOUSE_EX.restore_pointer 重置为 "默认" 的图像。
-#     使用全局脚本 MOUSE_EX.lock_pointer 锁定鼠标指针（不自动切换，可用脚本修改）。
-#     使用全局脚本 MOUSE_EX.unlock_pointer 解除鼠标指针的锁定。
+#   - 通常情况使用 "默认" 名称的图像。
 #
-#   - 使用事件脚本 set_mouse_pointer("名称") 修改为对应图像。
-#     使用事件脚本 restore_mouse_pointer 重置为 "默认" 的图像。
-#     使用事件脚本 lock_mouse_pointer 锁定鼠标指针（不自动切换，可用脚本修改）。
-#     使用事件脚本 unlock_mouse_pointer 解除鼠标指针的锁定。
+#   - 使用全局脚本修改指针图像：
 #
-#  3. 对于鼠标停留在 地图事件 上时的鼠标指针：
+#       MOUSE_EX.set_pointer("名称") → 修改鼠标指针为对应图像。
+#
+#       MOUSE_EX.restore_pointer     → 将鼠标指针重置为 "默认" 的图像。
+#
+#       MOUSE_EX.lock_pointer        → 锁定鼠标图像（不自动切换，但可用脚本修改）。
+#
+#       MOUSE_EX.unlock_pointer      → 解除图像锁定。
+#
+#   - 使用事件脚本修改指针图像：
+#
+#       set_mouse_pointer("名称")    → 修改鼠标指针为对应图像。
+#
+#       restore_mouse_pointer        → 将鼠标指针重置为 "默认" 的图像。
+#
+#       lock_mouse_pointer           → 锁定鼠标图像（不自动切换，但可用脚本修改）。
+#
+#       unlock_mouse_pointer         → 解除图像锁定。
+#
+#--------------------------------------------------------------
+#
+#  3. 鼠标停留在 地图事件 上时，自动更换鼠标指针：
 #
 #   - 在事件页开头新增 “添加注释”，并填写
-#    【鼠标指针 名称】
-#     即可在鼠标停留于该事件上时，修改为对应图像。
 #
-#  4. 对于鼠标停留在 窗口Window 和 精灵Sprite 上时的鼠标指针：
+#         【鼠标指针 名称】
 #
-#   - 为窗口或精灵增加了以下方法：
+#     即可在鼠标停留于该事件上时，自动更换为对应图像。
+#
+#--------------------------------------------------------------
+#
+#  4. 鼠标停留在 窗口Window 和 精灵Sprite 上时，自动更换鼠标指针：
+#
+#   - 窗口或精灵调用以下方法：
 #
 #       window.set_mouse_type(name, rect=nil, method=nil)
 #       sprite.set_mouse_type(name, rect=nil, method=nil)
 #
-#           → 鼠标停留在窗口/精灵的rect区域时，更改为 name 名称的图像。
-#             若 rect 为 nil ，则鼠标在窗口/精灵内时即会更改。
-#             可以反复调用，以对不同区域增加不同鼠标图像，先放入将会先判定。
-#           → method 为传入的 method(:方法名称) 对象，鼠标点击左键时将调用该方法。
+#        → 鼠标停留在窗口/精灵的rect区域时，更改为 name 名称的指针图像。
+#           若 rect 为 nil ，则鼠标在窗口/精灵内时即会更改。
+#
+#           可以反复调用，对不同区域设置不同鼠标图像，先设置的会先判定。
+#
+#        → method 为传入的 method(:方法名称) 对象，鼠标点击左键时将调用该方法。
 #
 #       window.delete_mouse_type(name=nil)
 #       sprite.delete_mouse_type(name=nil)
 #
-#           → 删去更改鼠标指针为 name 名称的全部区域判定。
-#             若 name 为 nil ，则删去全部区域判定。
+#        → 删去更改鼠标指针为 name 名称的全部区域判定。
+#           若 name 为 nil ，则删去全部区域判定。
 #
-#  5. 对于鼠标停留在 地图/战斗 - 显示图片 上时的鼠标指针：
+#--------------------------------------------------------------
 #
-#   - 使用全局脚本 MOUSE_EX.set_pic_mouse(pid, name, rect=nil, method=nil) 
-#       对 pic 号显示图片进行设置，
-#     使用全局脚本 MOUSE_EX.delete_mouse_type(pid, name=nil) 进行删除。
+#  5. 鼠标停留在 地图/战斗 - 显示图片 上时，自动更换鼠标指针：
+#
+#   - 利用全局脚本对 pic 号显示图片设置：
+#
+#       MOUSE_EX.set_pic_mouse(pid, name, rect=nil, method=nil) 
+#
+#        → 各项参数与 4. 中一致
+#
+#       MOUSE_EX.delete_mouse_type(pid, name=nil)  → 删除绑定的判定。
 #
 #=============================================================================
 # ○ 隐藏系统鼠标
@@ -96,6 +122,7 @@ module MOUSE_EX
   # ●【常量】调试模式-输出鼠标指针样式切换的LOG
   #--------------------------------------------------------------------------
   DEBUG_MODE = false
+  
   #--------------------------------------------------------------------------
   # ● 读取指定事件的当前页的首条注释里设置的鼠标指针样式
   #--------------------------------------------------------------------------
@@ -107,6 +134,24 @@ module MOUSE_EX
     else
       return nil
     end
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取鼠标位于玩家身上时的指针样式
+  #--------------------------------------------------------------------------
+  def self.get_player_pointer(player)  # Game_Player
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取鼠标位于玩家队友身上时的指针样式
+  #--------------------------------------------------------------------------
+  def self.get_follower_pointer(player)  # Game_Follower
+    return nil
+  end
+  #--------------------------------------------------------------------------
+  # ● 读取鼠标位于载具身上时的指针样式
+  #--------------------------------------------------------------------------
+  def self.get_vehicle_pointer(player)  # Game_Vehicle
+    return nil
   end
   #--------------------------------------------------------------------------
   # ● 未找到指针图像时，绘制默认箭头
@@ -447,19 +492,21 @@ class Sprite_MousePointer < Sprite
   def check_event_under_mouse
     return nil unless SceneManager.scene_is?(Scene_Map)
     SceneManager.scene.spriteset.character_sprites.each do |s|
+      next if !s.mouse_in?(true, false)
       character = s.character
       case character.class.name
       when "Game_Event"
-        if s.mouse_in?(true, false)
-          type = MOUSE_EX.get_event_pointer(character)
-          if type
-            @current_obj = s
-            return type 
-          end
-        end
+        type = MOUSE_EX.get_event_pointer(character)
       when "Game_Vehicle"
+        type = MOUSE_EX.get_vehicle_pointer(character)
       when "Game_Follower"
+        type = MOUSE_EX.get_follower_pointer(character)
       when "Game_Player"
+        type = MOUSE_EX.get_player_pointer(character)
+      end
+      if type
+        @current_obj = s
+        return type 
       end
     end
     return nil 

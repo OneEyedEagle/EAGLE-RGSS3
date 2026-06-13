@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-CharacterMoveEase"] = "1.0.0"
 #==============================================================================
-# - 2026.5.11.21 兼容VX
+# - 2026.6.9.19 兼容VX
 #==============================================================================
 # - 本插件新增了行走图的缓动移动。
 #
@@ -114,7 +114,7 @@ class Game_Character
   #--------------------------------------------------------------------------
   alias eagle_ease_move_update_move update_move
   def update_move
-    return update_move_ease if @ease_params[:active]
+    return update_move_ease if @ease_params and @ease_params[:active]
     eagle_ease_move_update_move
   end
 

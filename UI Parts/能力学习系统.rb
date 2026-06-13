@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.8.2"
+$imported["EAGLE-AbilityLearn"] = "1.8.3"
 #==============================================================================
-# - 2026.5.24.22 新增解锁时显示动画
+# - 2026.6.5.21 优化解锁时显示动画的流畅度
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
@@ -452,7 +452,7 @@ module ABILITY_LEARN
   # 能力可以升级时，显示在能力图标下面的按键提示文本
   KEYHINT_TEXT_LEVELUP = "长按升级"
   # 解锁/升级前需要长按蓄力的帧数
-  KEYHINT_COUNT = 60
+  KEYHINT_COUNT = 30
   # 解锁/升级时的背景默认颜色
   KEYHINT_COLOR_BG   = Color.new(0,0,0,100)
   # 解锁/升级时的背景填充颜色
@@ -1668,13 +1668,12 @@ class << ABILITY_LEARN
     return if @sprite_unlock.visible == false
     if key_unlock?
       @count_unlock += 1
-    elsif @count_unlock > 0
-      @count_unlock -= 5
+    elsif @count_unlock > 3
+      @count_unlock -= 3
     end
     data = @selected_token.data
     id = @selected_token.id
-    if @count_unlock > @max_unlock
-      @count_unlock = 0
+    if @count_unlock >= @max_unlock
       process_unlock(@selected_token)
       if data.can_levelup?(id)  # 如果解锁后能升级，则更改提示文本
         @type_unlock = :lvup
@@ -1686,22 +1685,24 @@ class << ABILITY_LEARN
         @sprite_active.redraw(@selected_token)
         @sprite_active.visible = true
       end
+      @count_unlock = 0
     else
-      @sprite_unlock.redraw(@selected_token, @count_unlock * 1.0 / @max_unlock, @type_unlock)
+      v = 0.1 + @count_unlock * 1.0 / @max_unlock * 0.9
+      @sprite_unlock.redraw(@selected_token, v, @type_unlock)
     end
   end
   #--------------------------------------------------------------------------
   # ● 处理解锁
   #--------------------------------------------------------------------------
   def process_unlock(sprite_token)
-    start_animation(ABILITY_LEARN::ANIM_UNLOCK, sprite_token)
     data = sprite_token.data
     id = sprite_token.id
     data.unlock(id)
     sprite_token.refresh
     @sprite_help.redraw(sprite_token) if @selected_token == sprite_token
     refresh
-    Sound.play_ok
+    start_animation(ABILITY_LEARN::ANIM_UNLOCK, sprite_token)
+    #Sound.play_ok
   end
   #--------------------------------------------------------------------------
   # ● 解锁能力后的重绘
@@ -2260,9 +2261,10 @@ class Sprite_AbilityLearn_Unlock < Sprite
     
     lr_d = KEYHINT_TEXT_MARGIN_LR
     ud_d = KEYHINT_TEXT_MARGIN_UD
-    w = ps[:w] ? ps[:w] : d.width
-    w += lr_d * 2
-    h = d.height + ud_d * 2
+    w0 = ps[:w] ? ps[:w] : d.width
+    w = w0 + lr_d * 2
+    h0 = d.height
+    h = h0 + ud_d * 2
     if self.bitmap 
       if (self.bitmap.width != w or self.bitmap.height != h)
         self.bitmap.dispose
@@ -2273,14 +2275,14 @@ class Sprite_AbilityLearn_Unlock < Sprite
       self.bitmap = Bitmap.new(w, h)
     end
     
-    per_w = self.width * per
+    per_w = w * per
     if $imported["EAGLE-UtilsDrawing2"]
       # 如果使用了【组件-形状绘制2】，则改为圆角矩形
-      self.bitmap.fill_rounded_rect(0,0,self.width,self.height, 5, KEYHINT_COLOR_BG)
-      self.bitmap.fill_rounded_rect(0,0,per_w,self.height, 5, KEYHINT_COLOR_FILL)
+      self.bitmap.fill_rounded_rect(0,0,w,h, 5, KEYHINT_COLOR_BG)
+      self.bitmap.fill_rounded_rect(0,0,per_w,h, 5, KEYHINT_COLOR_FILL)
     else
-      self.bitmap.fill_rect(0,0,self.width,self.height,KEYHINT_COLOR_BG)
-      self.bitmap.fill_rect(0,0,per_w,self.height,KEYHINT_COLOR_FILL)
+      self.bitmap.fill_rect(0,0,w,h,KEYHINT_COLOR_BG)
+      self.bitmap.fill_rect(0,0,per_w,h,KEYHINT_COLOR_FILL)
     end
 
     ps[:x0] = lr_d
