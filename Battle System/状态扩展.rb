@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.4.2"
+$imported["EAGLE-StateEX"] = "1.4.3"
 #==============================================================================
-# - 2026.6.1.21 新增获取全部状态的数组
+# - 2026.6.19.18 更改帮助文本中的数字颜色
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -536,7 +536,7 @@ module STATE_EX
   # 获取状态层数的帮助文本
   def self.get_state_help_text_level(v)
     if v > 1
-      "(\ec[16]#{v}\ec[0]层)"
+      "(\ec[17]#{v}\ec[0]层)"
     else
       ""
     end
@@ -566,19 +566,19 @@ module STATE_EX
   def self.get_state_help_text_count(type, v) 
     if v > 0
       case type
-      when 1; return "(\ec[16]#{v}\ec[0]次行动解除)"
-      when 2; return "(\ec[16]#{v}\ec[0]回合解除)"
-      when 3; return "(造成\ec[16]#{v}\ec[0]次伤害解除)"
-      when 4; return "(受到\ec[16]#{v}\ec[0]次伤害解除)"
-      when 5; return "(\ec[16]#{v}\ec[0]次攻击失误后解除)"
-      when 6; return "(\ec[16]#{v}\ec[0]次闪避后解除)"
-      when 13; return "(暴击\ec[16]#{v}\ec[0]次解除)"
-      when 14; return "(受到\ec[16]#{v}\ec[0]次暴击解除)"
-      when 23; return "(治疗\ec[16]#{v}\ec[0]次解除)"
-      when 24; return "(受到\ec[16]#{v}\ec[0]次治疗解除)"
+      when 1; return "(\ec[17]#{v}\ec[0]次行动解除)"
+      when 2; return "(\ec[17]#{v}\ec[0]回合解除)"
+      when 3; return "(造成\ec[17]#{v}\ec[0]次伤害解除)"
+      when 4; return "(受到\ec[17]#{v}\ec[0]次伤害解除)"
+      when 5; return "(\ec[17]#{v}\ec[0]次攻击失误后解除)"
+      when 6; return "(\ec[17]#{v}\ec[0]次闪避后解除)"
+      when 13; return "(暴击\ec[17]#{v}\ec[0]次解除)"
+      when 14; return "(受到\ec[17]#{v}\ec[0]次暴击解除)"
+      when 23; return "(治疗\ec[17]#{v}\ec[0]次解除)"
+      when 24; return "(受到\ec[17]#{v}\ec[0]次治疗解除)"
       # 此为自定义的时机
       #  需要自己把 battler.update_state_turns_ex(10) 放到脚本中对应位置
-      when 10; return "(\ec[16]#{v}\ec[0]次投掷解除)"
+      when 10; return "(\ec[17]#{v}\ec[0]次投掷解除)"
       end
     end
     return "(不自动解除)"
@@ -588,7 +588,7 @@ module STATE_EX
   def self.get_state_help_text_level_for_erase(v, rgss_state)
     if v > 1
       if rgss_state.reduce_one_level
-        return "（单次解除\ec[16]1\ec[0]层）"
+        return "（单次解除\ec[17]1\ec[0]层）"
       else
         return "（单次全部解除）"
       end
@@ -600,7 +600,7 @@ module STATE_EX
   def self.get_state_help_text_on_damage(rgss_state)
     if rgss_state.remove_by_damage
       v = rgss_state.chance_by_damage
-      return "(受伤时\ec[16]#{v}%\ec[0]解除)"
+      return "(受伤时\ec[17]#{v}%\ec[0]解除)"
     end
     return ""
   end

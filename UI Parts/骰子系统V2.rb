@@ -1105,7 +1105,6 @@ class DICE::RollBox_Base
     ps = { :font_size => 18, :x0 => 8, :y0 => 8, :lhd => 2, :ali => 1 }
     ps[:font_color] = Color.new(255,255,255)
     d = Process_DrawTextEX.new(text, ps)
-    d.run(false)
     
     s.bitmap.dispose if s.bitmap
     s.bitmap = Bitmap.new(d.width+ps[:x0]*2, d.height+ps[:y0]+4)

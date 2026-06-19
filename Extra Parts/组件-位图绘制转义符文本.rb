@@ -2,36 +2,58 @@
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-DrawTextEX"] = "1.0.3"
+$imported["EAGLE-DrawTextEX"] = "1.1.0"
 #==============================================================================
-# - 2023.10.2.13 
+# - 2026.6.19.18 新增\LB转义符
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
-#-----------------------------------------------------------------------------
-# - 新建一个文本绘制处理对象（还未进行绘制）
+#------------------------------------------------------------------------------
+# 【使用举例】
 #
-#     d = Process_DrawTextEX.new(text[, params, bitmap])
+=begin
+
+d = Process_DrawTextEX.new(text[, params, bitmap]) # ①
+# 可用 d.width 与 d.height 获取文字占据的宽度和高度
+# d.bind_bitmap(bitmap[, dispose_old]) # ②（可选）
+d.run   # ③
+# 可用 d.escapes 读取其中未生效的转义符及其参数文本串 # ④（可选）
+
+=end
+# 
+# --------------
+# 【关于①】新建了一个文本绘制处理对象（但还没绘制）
 #
-#   其中 text 为带有转义符的文本字符串
+#  - 其中 text 为带有转义符的文本字符串。
 #
-#     同默认对话框中的绘制类转义符，如 \i、\v
+#   可用转义符包括默认对话框中的绘制类转义符，如 \i、\v。
+#   注意，在脚本的字符串中编写时，需要用 \\ 替换 \（换行符仍然写为\n）。
 #
-#     \ln → 在当前行底部绘制横线，同时进行换行
+#   额外新增的转义符：
 #
-#     注意，在脚本的字符串中编写时，需要用 \\ 替换 \（换行符仍然写为\n）
+#      \ln → 在当前行底部绘制横线，同时进行换行
 #
-#   其中 params 为绘制的控制参数组（见 initialize 方法注释）
-#   其中 bitmap 为需要将文本绘制在其上的位图对象
+#      \lb[text] → 为 text 文本绘制矩形背景（该绘制无法自动跨行）
+#                   若使用了【组件-形状绘制2】，则会绘制圆角矩形
 #
-# - 利用 d.run(false) 执行预绘制
-#   随后可调用 d.width 与 d.height 获得文本绘制总共所需的宽度和高度
+#      \lc[n] → 将后续的 \lb 的矩形颜色更改为 n 号文字颜色
 #
-# - 利用 d.bind_bitmap(bitmap[, dispose_old]) 重新绑定需要绘制文本的位图对象
-#   其中 dispose_old 传入 true 时，将释放旧位图
 #
-# - 利用 d.run(true) 执行绘制
+#  - 其中 params 为绘制的控制参数组（见 initialize 方法注释）
 #
-# - 利用 d.escapes 可获得未被解析的转义符的Hash { :sym => "params" }
+#  - 其中 bitmap 为需要将文本绘制在其上的位图对象
+#
+# --------------
+# 【关于②】（可选）绑定需要绘制文本的位图。
+#
+#  - 其中 dispose_old 传入 true 时，将释放初始化时用的位图。
+#
+# --------------
+# 【关于③】真正进行绘制。
+#
+# --------------
+# 【关于④】（可选）获取其中未解析的转义符
+#
+#  - 其中返回的Hash内容为 { :sym => "params" }
 #
 #==============================================================================
 
@@ -63,10 +85,15 @@ class Process_DrawTextEX
     @params[:ali] ||= 0
 
     @info = {}
-    @info[:w] ||= [] # line_index => width
-    @info[:h] ||= [] # line_index => height
-    @info[:rects] ||= [] # line_index => rect范围
+    @info[:w] = [] # line_index => width
+    @info[:h] = [] # line_index => height
+    @info[:rects] = [] # line_index => rect范围
     @escapes = {}
+
+    @info[:labels] = {}  # line_index => [[rect, c]]
+    @label_cur = nil
+    @label_color = text_color(0)
+
     run(false)
   end
   #--------------------------------------------------------------------------
@@ -76,32 +103,24 @@ class Process_DrawTextEX
     @bitmap.dispose if @bitmap && dispose_old
     @bitmap = bitmap
   end
+
   #--------------------------------------------------------------------------
-  # ● 获取预设文字宽度
-  #--------------------------------------------------------------------------
-  def width_pre
-    return @params[:w] if @params[:w]
-    return self.width
-  end
-  #--------------------------------------------------------------------------
-  # ● 获取文字总占用宽度
+  # ●（外部调用）获取文字总占用的宽度和高度
   #--------------------------------------------------------------------------
   def width
     @info[:w].max
   end
-  #--------------------------------------------------------------------------
-  # ● 获取文字总占用高度
-  #--------------------------------------------------------------------------
   def height
     r = @info[:h].inject(0) { |s, v| s += v }
     r = r + (@info[:h].size - 1) * @params[:lhd] + @params[:y0]
     r + @info[:h_add]
   end
+
   #--------------------------------------------------------------------------
   # ● 进行控制符的事前变换
-  #    在实际绘制前、将控制符替换为实际的内容。
-  #    为了减少歧异，文字「\」会被首先替换为转义符（\e）。
   #--------------------------------------------------------------------------
+  #   在实际绘制前、将控制符替换为实际的内容。
+  #   为了减少歧异，文字「\」会被首先替换为转义符（\e）。
   def convert_escape_characters(text)
     result = text.to_s.clone
     result.gsub!(/\\n/)           { "\n" }
@@ -112,22 +131,20 @@ class Process_DrawTextEX
     result.gsub!(/\eN\[(\d+)\]/i) { actor_name($1.to_i) }
     result.gsub!(/\eP\[(\d+)\]/i) { party_member_name($1.to_i) }
     result.gsub!(/\eG/i)          { Vocab::currency_unit }
+    result.gsub!(/\eLB\[(.*?)\]/i){ "\eLA "+$1+" \eLD" }
     result
   end
-  #--------------------------------------------------------------------------
-  # ● 获取第 n 号角色的名字
-  #--------------------------------------------------------------------------
+  # 获取第 n 号角色的名字
   def actor_name(n)
     actor = n >= 1 ? $game_actors[n] : nil
     actor ? actor.name : ""
   end
-  #--------------------------------------------------------------------------
-  # ● 获取第 n 号队伍成员的名字
-  #--------------------------------------------------------------------------
+  # 获取第 n 号队伍成员的名字
   def party_member_name(n)
     actor = n >= 1 ? $game_party.members[n - 1] : nil
     actor ? actor.name : ""
   end
+
   #--------------------------------------------------------------------------
   # ● 绘制
   #--------------------------------------------------------------------------
@@ -142,8 +159,9 @@ class Process_DrawTextEX
     process_new_line(pos)
     process_character(text.slice!(0, 1), text, pos) until text.empty?
   end
+
   #--------------------------------------------------------------------------
-  # ● 处理换行文字
+  # ● 处理换行
   #--------------------------------------------------------------------------
   def process_new_line(pos)
     pos[:line] += 1
@@ -169,22 +187,58 @@ class Process_DrawTextEX
       # 存储当前行的矩形
       @info[:rects][pos[:line]] = Rect.new(pos[:x], pos[:y], pos[:w], pos[:h])
     end
+    process_draw_labels(pos) if pos[:flag_draw]  # 换行后，先绘制当前行的label
   end
-  #--------------------------------------------------------------------------
-  # ● 处理自动换行
-  #--------------------------------------------------------------------------
+
+  # 获取预设文字宽度
+  def width_pre
+    return @params[:w] if @params[:w]
+    return self.width
+  end
+
+  # 处理自动换行
   def process_auto_new_line(pos, w)
+    return if @label_cur  # 如果有标签，则不能自动换行
     if @params[:w] && pos[:x] + w > pos[:x0] + @params[:w]
       process_new_line(pos)
       pos[:h] = 0
     end
   end
+
+  #--------------------------------------------------------------------------
+  # ● 绘制指定行的标签底纹
+  #--------------------------------------------------------------------------
+  def process_draw_labels(pos)
+    line = pos[:line]
+    return if line < 0 or @info[:labels][line] == nil
+    dx = 0
+    w = @info[:w][line]
+    if @params[:ali] == 1     # 居中
+      dx += (self.width_pre - w) / 2
+    elsif @params[:ali] == 2  # 右对齐
+      dx += (self.width_pre - w)
+    end
+    # 由于预绘制时可能存在其它未计入y的内容，这里需要使用实时的y来绘制
+    y = pos[:y] + @info[:h][line]
+    @info[:labels][line].each do |ps|
+      r = ps[0]; c = ps[1]
+      c.alpha = 150
+      if $imported["EAGLE-UtilsDrawing2"]
+        # 绘制圆角矩形
+        @bitmap.fill_rounded_rect(dx+r.x, y-r.height, r.width, r.height, 4, c)
+      else
+        # 绘制普通矩形
+        @bitmap.fill_rect(dx+r.x, y-r.height, r.width, r.height, c)
+      end
+    end
+  end
+
   #--------------------------------------------------------------------------
   # ● 文字的处理
-  #     c    : 文字
-  #     text : 绘制处理中的字符串缓存（字符串可能会被修改）
-  #     pos  : 绘制位置 {:x, :y, :new_x, :height}
   #--------------------------------------------------------------------------
+  #  c    : 文字
+  #  text : 绘制处理中的字符串缓存（字符串可能会被修改）
+  #  pos  : 绘制位置 {:x, :y, :new_x, :height}
   def process_character(c, text, pos)
     case c
     when "\r"   # 回车
@@ -197,25 +251,21 @@ class Process_DrawTextEX
       process_normal_character(c, pos)
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 处理普通文字
-  #--------------------------------------------------------------------------
+
+  # 处理普通文字
   def process_normal_character(c, pos)
     r = @bitmap.text_size(c); w = r.width; h = r.height
     process_draw_before(pos[:x], pos[:y], w, h, pos)
     @bitmap.draw_text(pos[:x], pos[:y], w * 2, h, c) if pos[:flag_draw]
     process_draw_after(pos[:x], pos[:y], w, h, pos)
   end
-  #--------------------------------------------------------------------------
-  # ● 绘制前
-  #--------------------------------------------------------------------------
+
+  # 绘制前
   def process_draw_before(x, y, w, h, pos)
     process_auto_new_line(pos, w)
     pos[:y] = pos[:y0] + pos[:h] - h if pos[:h] > h
   end
-  #--------------------------------------------------------------------------
-  # ● 绘制后
-  #--------------------------------------------------------------------------
+  # 绘制后
   def process_draw_after(x, y, w, h, pos)
     pos[:x] += w
     pos[:y] = pos[:y0]
@@ -228,24 +278,22 @@ class Process_DrawTextEX
       @info[:rects][pos[:line]].height = pos[:h]
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 获取控制符的实际形式（这个方法会破坏原始数据）
-  #--------------------------------------------------------------------------
-  def obtain_escape_code(text)
-    text.slice!(/^[\$\.\|\^!><\{\}\\]|^[A-Z]+/i)
+
+  # 处理控制符指定的图标绘制
+  def process_draw_icon(icon_index, pos)
+    w = 24; h = 24
+    process_draw_before(pos[:x], pos[:y], w, h, pos)
+    draw_icon(@bitmap, icon_index, pos[:x], pos[:y], !@params[:trans]) if pos[:flag_draw]
+    process_draw_after(pos[:x], pos[:y], w, h, pos)
   end
-  #--------------------------------------------------------------------------
-  # ● 获取控制符的参数（这个方法会破坏原始数据）
-  #--------------------------------------------------------------------------
-  def obtain_escape_param(text)
-    text.slice!(/^\[\d+\]/)[/\d+/].to_i rescue 0
+  # 绘制图标
+  #    enabled : 有效的标志。false 的时候使用半透明效果绘制
+  def draw_icon(bitmap, icon_index, x, y, enabled = true)
+    _bitmap = Cache.system("Iconset")
+    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
+    bitmap.blt(x, y, _bitmap, rect, enabled ? 255 : 120)
   end
-  #--------------------------------------------------------------------------
-  # ● 获取控制符的参数（这个方法会破坏原始数据）
-  #--------------------------------------------------------------------------
-  def obtain_escape_param_string(text)
-    text.slice!(/^\[.*?\]/)[1...-1] || "" rescue ""
-  end
+
   #--------------------------------------------------------------------------
   # ● 控制符的处理
   #     code : 控制符的实际形式（比如“\C[1]”是“C”）
@@ -255,67 +303,53 @@ class Process_DrawTextEX
   def process_escape_character(code, text, pos)
     case code.upcase
     when 'C'
-      change_color(text_color(obtain_escape_param(text)), !@params[:trans])
-    when 'I'
-      process_draw_icon(obtain_escape_param(text), pos)
-    when '{'
-      make_font_bigger
-    when '}'
-      make_font_smaller
-    when 'LN'
-      process_new_line_with_line(text, pos)
-    else
-      @escapes[code] = obtain_escape_param_string(text)
+      c = text_color(obtain_escape_param(text))
+      change_color(c, !@params[:trans])
+    when 'I';    process_draw_icon(obtain_escape_param(text), pos)
+    when '{';    make_font_bigger
+    when '}';    make_font_smaller
+    when 'LN';   process_new_line_with_line(text, pos)
+    when 'LC';   process_label_color(obtain_escape_param(text))
+    when 'LA';   process_label1(text, pos)
+    when 'LD';   process_label2(text, pos)
+    else;        @escapes[code] = obtain_escape_param_string(text)
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 更改内容绘制颜色
+  # 获取控制符的实际形式（这个方法会破坏原始数据）
+  def obtain_escape_code(text)
+    text.slice!(/^[\$\.\|\^!><\{\}\\]|^[A-Z]+/i)
+  end
+  # 获取控制符的参数（这个方法会破坏原始数据）
+  def obtain_escape_param(text)
+    text.slice!(/^\[\d+\]/)[/\d+/].to_i rescue 0
+  end
+  # 获取控制符的参数（这个方法会破坏原始数据）
+  def obtain_escape_param_string(text)
+    text.slice!(/^\[.*?\]/)[1...-1] || "" rescue ""
+  end
+
+  # 更改内容绘制颜色
   #     enabled : 有效的标志。false 的时候使用半透明效果绘制
-  #--------------------------------------------------------------------------
   def change_color(color, enabled = true)
     @bitmap.font.color.set(color)
     @bitmap.font.color.alpha = 120 unless enabled
   end
-  #--------------------------------------------------------------------------
-  # ● 获取文字颜色
-  #     n : 文字颜色编号（0..31）
-  #--------------------------------------------------------------------------
+  # 获取文字颜色
+  #    n : 文字颜色编号（0..31）
   def text_color(n)
     Cache.system("Window").get_pixel(64 + (n % 8) * 8, 96 + (n / 8) * 8)
   end
-  #--------------------------------------------------------------------------
-  # ● 处理控制符指定的图标绘制
-  #--------------------------------------------------------------------------
-  def process_draw_icon(icon_index, pos)
-    w = 24; h = 24
-    process_draw_before(pos[:x], pos[:y], w, h, pos)
-    draw_icon(@bitmap, icon_index, pos[:x], pos[:y], !@params[:trans]) if pos[:flag_draw]
-    process_draw_after(pos[:x], pos[:y], w, h, pos)
-  end
-  #--------------------------------------------------------------------------
-  # ● 绘制图标
-  #     enabled : 有效的标志。false 的时候使用半透明效果绘制
-  #--------------------------------------------------------------------------
-  def draw_icon(bitmap, icon_index, x, y, enabled = true)
-    _bitmap = Cache.system("Iconset")
-    rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
-    bitmap.blt(x, y, _bitmap, rect, enabled ? 255 : 120)
-  end
-  #--------------------------------------------------------------------------
-  # ● 放大字体尺寸
-  #--------------------------------------------------------------------------
+
+  # 放大字体尺寸
   def make_font_bigger
     @bitmap.font.size += 4 if @bitmap.font.size < 64
   end
-  #--------------------------------------------------------------------------
-  # ● 缩小字体尺寸
-  #--------------------------------------------------------------------------
+  # 缩小字体尺寸
   def make_font_smaller
     @bitmap.font.size -= 4 if @bitmap.font.size > 16
   end
-  #--------------------------------------------------------------------------
-  # ● 底部绘制横线并换行
-  #--------------------------------------------------------------------------
+
+  # 底部绘制横线并换行
   def process_new_line_with_line(text, pos)
     dy = 4 + @params[:lhd]
     if pos[:flag_draw]
@@ -329,5 +363,27 @@ class Process_DrawTextEX
     end
     pos[:y0] += dy
     process_new_line(pos)
+  end
+
+  # 绘制标签
+  def process_label1(text, pos)
+    return if pos[:flag_draw]
+    if @label_cur == nil 
+      @label_cur = Rect.new(pos[:x], pos[:y], 0, pos[:h])
+    end
+  end
+  def process_label2(text, pos)
+    return if pos[:flag_draw]
+    if @label_cur
+      @label_cur.width = pos[:x] - @label_cur.x
+      @label_cur.height = [pos[:h], @label_cur.height].max
+      @info[:labels][pos[:line]] ||= []
+      @info[:labels][pos[:line]] << [@label_cur, @label_color]
+      @label_cur = nil
+    end
+  end
+  # 标签颜色
+  def process_label_color(n)
+    @label_color = text_color(n)
   end
 end
