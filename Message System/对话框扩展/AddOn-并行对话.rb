@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【鹰式对话框扩展 V2.0】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara"] = "2.2.0"
+$imported["EAGLE-MessagePara"] = "2.2.1"
 #==============================================================================
-# - 2026.2.22.11 随对话框更新
+# - 2026.6.16.21 修复close?判定出问题的bug；修复\^无效的bug
 #==============================================================================
 # - 本插件利用【鹰式对话框扩展】中的对话框，设计了能够并行显示的对话框。
 
@@ -846,6 +846,7 @@ class Window_EagleMessage_Para < Window_EagleMessage
     while true
       Fiber.yield
       break if para_params[:input] && process_input_pause_key
+      break if @pause_skip
       break if @input_wait_c == 0
       @input_wait_c -= 1
     end
@@ -883,6 +884,11 @@ class Window_EagleMessage_Para < Window_EagleMessage
     # 移出hold和seq的拷贝对话框
     eagle_release_hold
     eagle_clear_seq_window if $imported["EAGLE-MessageSeq"]
+  end
+
+  # 全部窗口都已关闭？
+  def all_close?
+    close?  # 去除对子窗口的判定
   end
 
   #--------------------------------------------------------------------------
