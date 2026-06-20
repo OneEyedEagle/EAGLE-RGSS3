@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.8"
+$imported["EAGLE-MessageEX"] = "2.2.9"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.8"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.6.21.0  V2.2.9 允许自定义脸图切换的方式
      ----------------------------------------------------------------------
      - 2026.6.18.23 V2.2.8 修复\cg报错的bug
      ----------------------------------------------------------------------
@@ -3062,14 +3064,24 @@ class Window_EagleMessage < Window_Base
     flag_old = false
     if @eagle_sprite_face
       return if @eagle_sprite_face.file_no_change?
-      @eagle_sprite_face.hide
+      type = MESSAGE_EX::FACE_OLD_OUT rescue "hide"
+      if type == "out"
+        @eagle_sprite_face.motion(:fade_out)
+      else
+        @eagle_sprite_face.hide
+      end
       MESSAGE_EX.facepool_push(@eagle_sprite_face) # 由精灵池接管
       flag_old = true
     end
     @eagle_sprite_face = MESSAGE_EX.facepool_new
     @eagle_sprite_face.reset(self)
     if flag_old
-      @eagle_sprite_face.show
+      type = MESSAGE_EX::FACE_NEW_IN rescue "show"
+      if type == "in"
+        @eagle_sprite_face.motion(:fade_in)
+      else
+        @eagle_sprite_face.show
+      end
     else
       @eagle_sprite_face.motion(:fade_in)
     end

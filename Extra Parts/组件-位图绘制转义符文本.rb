@@ -2,9 +2,9 @@
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-DrawTextEX"] = "1.1.0"
+$imported["EAGLE-DrawTextEX"] = "1.1.1"
 #==============================================================================
-# - 2026.6.19.18 新增\LB转义符
+# - 2026.6.20.23 修复标签底纹错位的bug
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #------------------------------------------------------------------------------
@@ -153,6 +153,7 @@ class Process_DrawTextEX
     pos = { :line => -1, :x0 => @params[:x0], :x => 0,
       :y0 => @params[:y0], :y => 0,
       :w => 0, :h => 0, :flag_draw => flag_draw }
+    pos[:y_new] = pos[:y0]
     @info[:h_add] = 0
     @bitmap.font.size = @params[:font_size]
     change_color(@params[:font_color], !@params[:trans])
@@ -165,11 +166,11 @@ class Process_DrawTextEX
   #--------------------------------------------------------------------------
   def process_new_line(pos)
     pos[:line] += 1
-    pos[:x0] = @params[:x0] || pos[:x0]
-    pos[:x] = pos[:x0]
-    pos[:y0] = (pos[:y0] + pos[:h])
-    pos[:y0] += @params[:lhd] if pos[:line] > 0
-    pos[:y] = pos[:y0]
+    pos[:x_new] = @params[:x0] || pos[:x0]
+    pos[:x] = pos[:x_new]
+    pos[:y_new] = pos[:y_new] + pos[:h]
+    pos[:y_new] += @params[:lhd] if pos[:line] > 0
+    pos[:y] = pos[:y_new]
     if pos[:flag_draw]
       pos[:w] = @info[:w][pos[:line]]  # 提取下一行的宽高
       pos[:h] = @info[:h][pos[:line]]
@@ -178,7 +179,7 @@ class Process_DrawTextEX
       elsif @params[:ali] == 2  # 右对齐
         pos[:x] += (self.width_pre - pos[:w])
       end
-      pos[:x0_cur] = pos[:x]  # 存储下一行的开头位置
+      pos[:x_new_start] = pos[:x]  # 存储下一行的开头位置
     else  # 预绘制时，计算每一行的宽高
       pos[:w] = 0
       pos[:h] = 0
@@ -199,7 +200,7 @@ class Process_DrawTextEX
   # 处理自动换行
   def process_auto_new_line(pos, w)
     return if @label_cur  # 如果有标签，则不能自动换行
-    if @params[:w] && pos[:x] + w > pos[:x0] + @params[:w]
+    if @params[:w] && pos[:x] + w > pos[:x_new] + @params[:w]
       process_new_line(pos)
       pos[:h] = 0
     end
@@ -218,17 +219,19 @@ class Process_DrawTextEX
     elsif @params[:ali] == 2  # 右对齐
       dx += (self.width_pre - w)
     end
-    # 由于预绘制时可能存在其它未计入y的内容，这里需要使用实时的y来绘制
-    y = pos[:y] + @info[:h][line]
     @info[:labels][line].each do |ps|
       r = ps[0]; c = ps[1]
       c.alpha = 150
+      # 由于x0/y0可能变化，这里需要使用实时的值来绘制
+      _x = pos[:x0] + dx + r.x
+      # 由于预先绘制时存在一些不变化y的情况，这样要用实时的y来绘制
+      _y = pos[:y] + @info[:h][line] - r.height
       if $imported["EAGLE-UtilsDrawing2"]
         # 绘制圆角矩形
-        @bitmap.fill_rounded_rect(dx+r.x, y-r.height, r.width, r.height, 4, c)
+        @bitmap.fill_rounded_rect(_x, _y, r.width, r.height, 4, c)
       else
         # 绘制普通矩形
-        @bitmap.fill_rect(dx+r.x, y-r.height, r.width, r.height, c)
+        @bitmap.fill_rect(_x, _y, r.width, r.height, c)
       end
     end
   end
@@ -263,12 +266,12 @@ class Process_DrawTextEX
   # 绘制前
   def process_draw_before(x, y, w, h, pos)
     process_auto_new_line(pos, w)
-    pos[:y] = pos[:y0] + pos[:h] - h if pos[:h] > h
+    pos[:y] = pos[:y_new] + pos[:h] - h if pos[:h] > h
   end
   # 绘制后
   def process_draw_after(x, y, w, h, pos)
     pos[:x] += w
-    pos[:y] = pos[:y0]
+    pos[:y] = pos[:y_new]
     pos[:w] += w
     pos[:h] = h if pos[:h] < h
     if !pos[:flag_draw]
@@ -353,7 +356,7 @@ class Process_DrawTextEX
   def process_new_line_with_line(text, pos)
     dy = 4 + @params[:lhd]
     if pos[:flag_draw]
-      _x = pos[:x0_cur]
+      _x = pos[:x_new_start]
       _y = pos[:y] + pos[:h]
       _w = pos[:x] - _x
       @bitmap.fill_rect(_x, _y+dy, _w, 1, Color.new(255,255,255,150))
@@ -361,26 +364,32 @@ class Process_DrawTextEX
     else
       @info[:h_add] += dy + 1 + 4
     end
-    pos[:y0] += dy
+    pos[:y_new] += dy
     process_new_line(pos)
   end
 
   # 绘制标签
   def process_label1(text, pos)
-    return if pos[:flag_draw]
-    if @label_cur == nil 
-      @label_cur = Rect.new(pos[:x], pos[:y], 0, pos[:h])
+    if pos[:flag_draw]
+      # 在实际绘制时，赋值以阻止自动换行
+      @label_cur = true
+    else
+      if @label_cur == nil 
+        @label_cur = Rect.new(pos[:x] - pos[:x0], pos[:y] - pos[:y0], 0, pos[:h])
+      end
     end
   end
   def process_label2(text, pos)
-    return if pos[:flag_draw]
-    if @label_cur
-      @label_cur.width = pos[:x] - @label_cur.x
-      @label_cur.height = [pos[:h], @label_cur.height].max
-      @info[:labels][pos[:line]] ||= []
-      @info[:labels][pos[:line]] << [@label_cur, @label_color]
-      @label_cur = nil
+    if pos[:flag_draw]
+    else
+      if @label_cur
+        @label_cur.width = pos[:x] - pos[:x0] - @label_cur.x
+        @label_cur.height = [pos[:h], @label_cur.height].max
+        @info[:labels][pos[:line]] ||= []
+        @info[:labels][pos[:line]] << [@label_cur, @label_color]
+      end
     end
+    @label_cur = nil
   end
   # 标签颜色
   def process_label_color(n)

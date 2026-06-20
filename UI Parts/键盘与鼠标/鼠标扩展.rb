@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.2.3"
+$imported["EAGLE-MouseEX"] = "1.2.4"
 #=============================================================================
-# - 2026.2.8.17 增加对窗口ox和oy的判定
+# - 2026.6.20.23 修复窗口选项无法被鼠标移动选择的bug
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -210,8 +210,8 @@ class Window_Base
   def mouse_in?(_visible = true, _in_contents = true)
     return false if _visible && (!visible || openness < 255 || (opacity == 0 and contents_opacity == 0))
     return false if disposed?
-    rx = MOUSE_EX.x - (self.x - self.ox)
-    ry = MOUSE_EX.y - (self.y - self.oy)
+    rx = MOUSE_EX.x - self.x
+    ry = MOUSE_EX.y - self.y
     if viewport
       rx = rx - self.viewport.rect.x + self.viewport.ox
       ry = ry - self.viewport.rect.y + self.viewport.oy
@@ -390,7 +390,7 @@ class Window_Selectable < Window_Base
     @flag_mouse_unselect_when_out = false
     # 新增一个标识，用于隐藏RGSS的窗口光标
     @flag_no_cursor = false
-    # 新增一个标识，用于判定鼠标滚轮是否需要在窗口内部，才能触发切换选项
+    # 新增一个标识，用于判定鼠标是否需要在窗口内部，才能用滚轮切换选项
     @flag_mouse_scroll_in_win = false
     
     # 存储上一帧鼠标位置
