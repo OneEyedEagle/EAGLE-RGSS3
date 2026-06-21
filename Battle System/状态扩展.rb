@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.4.3"
+$imported["EAGLE-StateEX"] = "1.4.4"
 #==============================================================================
-# - 2026.6.19.18 更改帮助文本中的数字颜色
+# - 2026.6.21.21 优化帮助文本
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -547,7 +547,7 @@ module STATE_EX
     t = ""
     rgss_state.tags.each do |tag|
       _t = get_state_tag_text(tag)
-      t += "「#{_t}」"
+      t += _t
     end
     t
   end
@@ -555,10 +555,10 @@ module STATE_EX
   # 自定义标签的显示文本
   def self.get_state_tag_text(tag)
     case tag
-    when "buff"  ; return "\ec[1]有益\ec[0]"
-    when "debuff"; return "\ec[10]有害\ec[0]"
-    when "other" ; return "\ec[7]其它\ec[0]"
-    else; return tag
+    when "buff"  ; return "「\ec[1]有益\ec[0]」"
+    when "debuff"; return "「\ec[10]有害\ec[0]」"
+    when "other" ; return "「\ec[7]其它\ec[0]」"
+    else; return "「#{tag}」"
     end
   end
   
@@ -588,9 +588,9 @@ module STATE_EX
   def self.get_state_help_text_level_for_erase(v, rgss_state)
     if v > 1
       if rgss_state.reduce_one_level
-        return "（单次解除\ec[17]1\ec[0]层）"
+        return "(单次解除\ec[17]1\ec[0]层)"
       else
-        return "（单次全部解除）"
+        return "(单次全部解除)"
       end
     end
     return ""
