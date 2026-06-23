@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.9"
+$imported["EAGLE-MessageEX"] = "2.2.10"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.9"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.6.23.23 V2.2.10 脸图显示后不再直接自动开始循环
      ----------------------------------------------------------------------
      - 2026.6.21.0  V2.2.9 允许自定义脸图切换的方式
      ----------------------------------------------------------------------
@@ -4390,7 +4392,7 @@ class Sprite_EagleFace < Sprite
       :i1 => face_params[:i], 
       :i2 => [face_params[:i] + face_params[:l] - 1, @params[:num]].min,
       :t  => face_params[:lt],  :wait => face_params[:lw],
-      :start => false, :end => false, :next => true,
+      :start => false, :end => false, :next => false,
     }
     @params[:loop1][:i_loop] = @params[:loop1][:i1]  # 当前 index
     @params[:loop1][:t_c]    = @params[:loop1][:t]   # 切换一张脸图后的等待

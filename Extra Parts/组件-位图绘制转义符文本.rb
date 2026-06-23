@@ -2,9 +2,9 @@
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-DrawTextEX"] = "1.1.1"
+$imported["EAGLE-DrawTextEX"] = "1.1.2"
 #==============================================================================
-# - 2026.6.20.23 修复标签底纹错位的bug
+# - 2026.6.24.0 扩展\c转义符
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #------------------------------------------------------------------------------
@@ -21,26 +21,32 @@ d.run   # ③
 =end
 # 
 # --------------
-# 【关于①】新建了一个文本绘制处理对象（但还没绘制）
+# 【关于①】新建了一个文本绘制处理对象（但还没绘制）。
 #
 #  - 其中 text 为带有转义符的文本字符串。
 #
 #   可用转义符包括默认对话框中的绘制类转义符，如 \i、\v。
 #   注意，在脚本的字符串中编写时，需要用 \\ 替换 \（换行符仍然写为\n）。
 #
-#   额外新增的转义符：
+#    ※ 扩展的转义符：
+#
+#      \c → 可以 \c[数字] 使用默认索引颜色，
+#            可以 \c[r数字g数字b数字a数字] 直接编写颜色，
+#            其中 rgba 四个参数最少需设置一个，未设置的取默认值 255 。
+#
+#    ※ 额外新增的转义符：
 #
 #      \ln → 在当前行底部绘制横线，同时进行换行
 #
-#      \lb[text] → 为 text 文本绘制矩形背景（该绘制无法自动跨行）
-#                   若使用了【组件-形状绘制2】，则会绘制圆角矩形
+#      \lb[text] → 为 text 文本绘制矩形背景（该绘制无法跨行）。
+#                  若使用了【组件-形状绘制2】，则改为绘制圆角矩形。
 #
-#      \lc[n] → 将后续的 \lb 的矩形颜色更改为 n 号文字颜色
+#      \lc[n] → 将后续的 \lb 的矩形颜色更改为 n 号文字颜色。
+#               若使用了【组件-通用方法汇总】，也可以 \lc[r数字g数字b数字a数字]。
 #
+#  - 其中 params 为绘制的控制参数组（见 initialize 方法注释）。
 #
-#  - 其中 params 为绘制的控制参数组（见 initialize 方法注释）
-#
-#  - 其中 bitmap 为需要将文本绘制在其上的位图对象
+#  - 其中 bitmap 为需要将文本绘制在其上的位图对象。
 #
 # --------------
 # 【关于②】（可选）绑定需要绘制文本的位图。
@@ -51,7 +57,7 @@ d.run   # ③
 # 【关于③】真正进行绘制。
 #
 # --------------
-# 【关于④】（可选）获取其中未解析的转义符
+# 【关于④】（可选）获取其中未解析的转义符。
 #
 #  - 其中返回的Hash内容为 { :sym => "params" }
 #
@@ -306,13 +312,13 @@ class Process_DrawTextEX
   def process_escape_character(code, text, pos)
     case code.upcase
     when 'C'
-      c = text_color(obtain_escape_param(text))
+      c = text_color_ex(obtain_escape_param_string(text))
       change_color(c, !@params[:trans])
     when 'I';    process_draw_icon(obtain_escape_param(text), pos)
     when '{';    make_font_bigger
     when '}';    make_font_smaller
     when 'LN';   process_new_line_with_line(text, pos)
-    when 'LC';   process_label_color(obtain_escape_param(text))
+    when 'LC';   process_label_color(obtain_escape_param_string(text))
     when 'LA';   process_label1(text, pos)
     when 'LD';   process_label2(text, pos)
     else;        @escapes[code] = obtain_escape_param_string(text)
@@ -330,12 +336,47 @@ class Process_DrawTextEX
   def obtain_escape_param_string(text)
     text.slice!(/^\[.*?\]/)[1...-1] || "" rescue ""
   end
+  
+  # 解析字符串参数
+  def parse_param(param_hash, param_text)
+    param_text = param_text.downcase rescue ""
+    while(param_text != "")
+      param_text.slice!(/ */)
+      t = param_text.slice!(/^[a-z]+/)
+      param_text.slice!(/ */)
+      if param_text[0] == '='
+        param_text[0] = ''
+        param_text.slice!(/ */)
+      end
+      if param_text[0] == "$"
+        param_text[0] = ''
+        next param_hash[t.to_sym] = nil
+      end
+      param_hash[t.to_sym] = (param_text.slice!(/^\-?\d+/)).to_i
+    end
+    param_hash
+  end
 
   # 更改内容绘制颜色
   #     enabled : 有效的标志。false 的时候使用半透明效果绘制
   def change_color(color, enabled = true)
     @bitmap.font.color.set(color)
     @bitmap.font.color.alpha = 120 unless enabled
+  end
+
+  # 获取文字颜色（扩展）
+  def text_color_ex(t)
+    if $imported["EAGLE-CommonMethods"] 
+      if ['r', 'g', 'b', 'a'].any? { |c| t.include?(c) }
+        h = parse_param({}, t)
+        h[:r] ||= 255
+        h[:g] ||= 255
+        h[:b] ||= 255
+        h[:a] ||= 255
+        return Color.new(h[:r], h[:g], h[:b], h[:a])
+      end
+    end
+    text_color(t.to_i)
   end
   # 获取文字颜色
   #    n : 文字颜色编号（0..31）
@@ -392,7 +433,7 @@ class Process_DrawTextEX
     @label_cur = nil
   end
   # 标签颜色
-  def process_label_color(n)
-    @label_color = text_color(n)
+  def process_label_color(t)
+    @label_color = text_color_ex(t)
   end
 end
