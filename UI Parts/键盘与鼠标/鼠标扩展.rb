@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.2.4"
+$imported["EAGLE-MouseEX"] = "1.2.5"
 #=============================================================================
-# - 2026.6.20.23 修复窗口选项无法被鼠标移动选择的bug
+# - 2026.6.24.21 修复精灵改变src_rect后依然能判定为鼠标选中的bug
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -187,7 +187,11 @@ class Sprite
   #--------------------------------------------------------------------------
   def mouse_in?(_visible = true, _pixel = true)
     return false if disposed?
-    return false if _visible && (self.visible == false || self.opacity == 0)
+    if _visible && (self.visible == false || self.opacity == 0 ||
+      self.src_rect.y >= self.height || self.src_rect.y <= -self.height ||
+      self.src_rect.x >= self.width || self.src_rect.x <= -self.width)
+      return false 
+    end
     return false unless self.bitmap
     return false if self.bitmap.disposed?
     # 计算出鼠标相对于实际位图的坐标 左上原点

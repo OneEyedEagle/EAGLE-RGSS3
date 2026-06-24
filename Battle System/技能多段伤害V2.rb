@@ -2,9 +2,9 @@
 # ■ 技能多段伤害V2 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SkillDamageEX-V2"] = "2.0.0"
+$imported["EAGLE-SkillDamageEX-V2"] = "2.0.1"
 #==============================================================================
-# - 2026.6.23.20 
+# - 2026.6.24.19 修复敌人同时受到多个伤害时无法死亡的bug 
 #==============================================================================
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -80,6 +80,12 @@ $imported["EAGLE-SkillDamageEX-V2"] = "2.0.0"
 #==============================================================================
 
 module SkillDamageEX
+
+  #--------------------------------------------------------------------------
+  # ●【设置】是否启用“鞭尸”功能
+  #  启用时，可能与一些战斗系统产生奇怪交互问题，导致敌人无法死亡
+  #--------------------------------------------------------------------------
+  ENEMY_NO_DIE = true
   
   #--------------------------------------------------------------------------
   # ● 在新增当次行动的全部角色的伤害动画后，执行等待
@@ -232,7 +238,7 @@ class Process_AnimDamage
     @object = obj # 被攻击者（动画显示于其上）
     @items = frame_to_item # frame_index => item
     @frame = 0
-    @object.add_death_resist_count
+    @object.add_death_resist_count if SkillDamageEX::ENEMY_NO_DIE
     apply_item_effects(0)
   end
   # 应用指定帧的技能/物品效果（进行伤害结算）
@@ -250,11 +256,15 @@ class Process_AnimDamage
   end
   # 结束
   def end_apply_item_effects
-    @object.reduce_death_resist_count
+    if SkillDamageEX::ENEMY_NO_DIE
+      @object.reduce_death_resist_count 
+      if @object.hp <= 0
+        @object.add_state(1) 
+        SceneManager.scene.log_window.display_added_states(@object)
+      end
+    end
     if $imported["YEA-BattleEngine"]
       SceneManager.scene.perform_collapse_check(@object)
-    else
-      @object.refresh
     end
   end
 end
