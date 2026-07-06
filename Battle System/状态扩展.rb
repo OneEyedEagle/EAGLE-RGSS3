@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.4.4"
+$imported["EAGLE-StateEX"] = "1.4.5"
 #==============================================================================
-# - 2026.6.21.21 优化帮助文本
+# - 2026.6.28.12 新增战斗结束后计数减1的时机
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -238,6 +238,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 #  “时机数字”为该状态计数自动减1的时机，替换为下列之一：
 #
+#      -1 → 战斗结束时（注意：不要勾选 数据库-状态 中的战斗结束时解除！）
 #       1 → 角色自身行动结束时   2 → 战斗回合结束时
 #       3 → 角色造成伤害时       4 → 角色受到伤害时
 #      13 → 角色造成暴击伤害时  14 → 角色受到暴击伤害时
@@ -439,6 +440,12 @@ FLAG_NO_RGSS3_STATE = true
 #     a = battler.get_states("debuff",1)
 #       → 获取战斗者带有 <tag:debuff> 并且 行动结束时计数减一 的全部状态的数组。
 #
+#   相应的，也有获取战斗者的不包含指定标签的状态数组：
+#
+#     states_array = battler.get_states_no_tag(tag, timing=nil) 
+#
+#   其中参数一致，仅筛选条件为 不包含 tag。
+#
 # - 为战斗者的状态数组中的全部状态增减计数：
 #
 #     battler.add_states_count(states_array, v)
@@ -564,8 +571,9 @@ module STATE_EX
   
   # 获取状态自动减少时机的帮助文本
   def self.get_state_help_text_count(type, v) 
-    if v > 0
+    if v != 0
       case type
+      when -1; return "(\ec[17]#{v}\ec[0]场战斗解除)"
       when 1; return "(\ec[17]#{v}\ec[0]次行动解除)"
       when 2; return "(\ec[17]#{v}\ec[0]回合解除)"
       when 3; return "(造成\ec[17]#{v}\ec[0]次伤害解除)"
@@ -678,14 +686,14 @@ module STATE_EX
 
   # 读取状态的自动解除时机（覆盖数据库的设置）
   def self.read_note_set_timing(t)
-    t =~ /<(设置时机|set timing) ?(\d+)>/i
+    t =~ /<(设置时机|set timing) ?(-?\d+)>/i
     return $2 ? $2.to_i : 0
   end
   
   # 读取状态的自动解除时机（额外增加的设置）
   def self.read_note_add_timing(t)
     a = {}
-    t.scan(/<(增加时机|add timing) ?(\d+) +v=(\d+)>/i).each do |params|
+    t.scan(/<(增加时机|add timing) ?(-?\d+) +v=(\d+)>/i).each do |params|
       a[$2.to_i] = $3.to_i
     end
     return a
@@ -1347,6 +1355,12 @@ class Game_Battler < Game_BattlerBase
     s2 = @states_ex.select { |data| data.tag?(tag) }
     (s1 + s2).select { |_s| check_state_timing?(_s, timing) }
   end
+  # 获取不含标签的状态数组
+  def get_states_no_tag(tag, timing=nil)
+    s1 = @states.uniq.select { |sid| !$data_states[sid].tag?(tag) }
+    s2 = @states_ex.select { |data| data.tag?(tag) }
+    (s1 + s2).select { |_s| check_state_timing?(_s, timing) }
+  end
   # 判定指定状态是否在 timing 时执行计数减一
   def check_state_timing?(state, timing)
     return true if timing == nil
@@ -1429,6 +1443,8 @@ class Game_Battler < Game_BattlerBase
     @states_ex.each do |data|
       remove_state_ex(data.state.id) if data.state.remove_at_battle_end
     end
+    # 对于按战斗计数的状态，此处减1
+    update_state_turns_ex(-1)
   end
 
   # 应用技能／物品的效果

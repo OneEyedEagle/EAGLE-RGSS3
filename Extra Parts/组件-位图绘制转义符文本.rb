@@ -2,9 +2,9 @@
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-DrawTextEX"] = "1.1.2"
+$imported["EAGLE-DrawTextEX"] = "1.1.3"
 #==============================================================================
-# - 2026.6.24.0 扩展\c转义符
+# - 2026.7.6.0 新增单行内的竖直对齐方式
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #------------------------------------------------------------------------------
@@ -65,30 +65,39 @@ d.run   # ③
 
 class Process_DrawTextEX
   attr_reader :text, :info, :escapes
+
+  #--------------------------------------------------------------------------
+  # ● 初始化参数
+  #--------------------------------------------------------------------------
+  def init_params
+    # :font_size → 初始的文字大小
+    @params[:font_size] ||= @bitmap.font.size
+    # :font_color → 初始的文字颜色 Color.new
+    @params[:font_color] ||= text_color(0)
+    # :x0 → 每行起始位置的向右偏移值
+    @params[:x0] ||= 0
+    # :y0 → 首行的向下偏移值
+    @params[:y0] ||= 0
+    # :w → 最大行宽，若超出则会进行自动换行
+    @params[:w] ||= nil
+    # :lhd → 换行时的行间隔
+    @params[:lhd] ||= 0
+    # :trans → 是否半透明绘制
+    @params[:trans] ||= false
+    # :ali → 单行内的水平对齐方式（0左对齐，1居中，2右对齐）
+    @params[:ali] ||= 0
+    # :aliy → 单行内的垂直对齐方式（0顶部对齐，1居中，2底部对齐）
+    @params[:aliy] ||= 1
+  end 
+
   #--------------------------------------------------------------------------
   # ● 初始化
-  #  params
-  #   :font_size → 绘制初始的文字大小
-  #   :font_color → 指定初始的绘制颜色 Color.new
-  #   :x0 → 指定每行的向右偏移值
-  #   :y0 → 指定首行的向下偏移值
-  #   :w → 规定最大行宽，若超出则会进行自动换行
-  #   :lhd → 在换行时，与下一行的间隔距离
-  #   :trans → 是否半透明
-  #   :ali → 行内对齐方式（0左对齐，1居中，2右对齐）
   #--------------------------------------------------------------------------
   def initialize(text, params = {}, bitmap = nil)
     @text = convert_escape_characters(text)
     @bitmap = bitmap || Cache.empty_bitmap
     @params = params
-    @params[:font_size] ||= @bitmap.font.size
-    @params[:font_color] ||= text_color(0)
-    @params[:x0] ||= 0
-    @params[:y0] ||= 0
-    @params[:w] ||= nil
-    @params[:lhd] ||= 0
-    @params[:trans] ||= false
-    @params[:ali] ||= 0
+    init_params
 
     @info = {}
     @info[:w] = [] # line_index => width
@@ -180,6 +189,7 @@ class Process_DrawTextEX
     if pos[:flag_draw]
       pos[:w] = @info[:w][pos[:line]]  # 提取下一行的宽高
       pos[:h] = @info[:h][pos[:line]]
+      # 调整下一行初始的x位置
       if @params[:ali] == 1     # 居中
         pos[:x] += (self.width_pre - pos[:w]) / 2
       elsif @params[:ali] == 2  # 右对齐
@@ -220,6 +230,7 @@ class Process_DrawTextEX
     return if line < 0 or @info[:labels][line] == nil
     dx = 0
     w = @info[:w][line]
+    # 获取因为水平对齐而导致的x偏移
     if @params[:ali] == 1     # 居中
       dx += (self.width_pre - w) / 2
     elsif @params[:ali] == 2  # 右对齐
@@ -231,7 +242,15 @@ class Process_DrawTextEX
       # 由于x0/y0可能变化，这里需要使用实时的值来绘制
       _x = pos[:x0] + dx + r.x
       # 由于预先绘制时存在一些不变化y的情况，这样要用实时的y来绘制
-      _y = pos[:y] + @info[:h][line] - r.height
+      _y = pos[:y]
+      # 根据垂直对齐方式，调整y的值
+      case @params[:aliy]
+      when 0  # 顶部对齐
+      when 1  # 居中
+        _y += (@info[:h][line] - r.height) / 2
+      when 2  # 底部对齐
+        _y += @info[:h][line] - r.height
+      end
       if $imported["EAGLE-UtilsDrawing2"]
         # 绘制圆角矩形
         @bitmap.fill_rounded_rect(_x, _y, r.width, r.height, 4, c)
@@ -271,8 +290,16 @@ class Process_DrawTextEX
 
   # 绘制前
   def process_draw_before(x, y, w, h, pos)
+    # 根据行高，调整y的位置
+    case @params[:aliy]
+    when 0  # 顶部对齐
+      pos[:y] = pos[:y_new]
+    when 1  # 居中
+      pos[:y] = pos[:y_new] + (pos[:h] - h) / 2
+    when 2  # 底部对齐
+      pos[:y] = pos[:y_new] + pos[:h] - h if pos[:h] > h
+    end
     process_auto_new_line(pos, w)
-    pos[:y] = pos[:y_new] + pos[:h] - h if pos[:h] > h
   end
   # 绘制后
   def process_draw_after(x, y, w, h, pos)
