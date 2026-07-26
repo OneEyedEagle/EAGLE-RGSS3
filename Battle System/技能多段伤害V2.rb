@@ -2,9 +2,9 @@
 # ■ 技能多段伤害V2 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SkillDamageEX-V2"] = "2.0.1"
+$imported["EAGLE-SkillDamageEX-V2"] = "2.0.2"
 #==============================================================================
-# - 2026.6.24.19 修复敌人同时受到多个伤害时无法死亡的bug 
+# - 2026.7.25.13 新增固定属性的伤害公式
 #==============================================================================
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -26,10 +26,6 @@ $imported["EAGLE-SkillDamageEX-V2"] = "2.0.1"
 #
 #    （其中 n 为动画帧的序号，与 数据库-动画 中一致，从 1 开始）
 #
-#   <frame n: type, element_id, {formula}, variance, critical>
-#
-#       → 在动画第n帧时结算 formula 公式（使用效果与当前技能一致）
-#
 #   <frame n: self>
 #
 #       → 在动画第n帧时结算当前技能的公式（包含使用效果）
@@ -41,6 +37,23 @@ $imported["EAGLE-SkillDamageEX-V2"] = "2.0.1"
 #   <frame n: i2> 或 <frame n: i 2>
 #
 #       → 在动画第n帧时结算2号物品的数据库中的公式（包含使用效果）
+#
+#   <frame n: type, element_id, {formula}, variance, critical>
+#
+#       → 在动画第n帧时结算 formula 公式（使用效果与当前技能一致）
+#         其中 type 为伤害类型（0~6）
+#              element_id 为属性（0普通攻击，1无）
+#              {formula} 为伤害公式，其中不能再出现{}符号
+#              variance 为离散度（0~100）
+#              critical 为是否允许必杀/暴击（0不允许，1允许）
+#
+#   <frame n: {formula}>
+#
+#       → 在动画第n帧时结算 formula 公式（使用效果与当前技能一致）
+#         其中 type伤害类型 固定为 1体力值伤害
+#              element_id属性 固定为 1无
+#              variance离散度 固定为0
+#              critical允许必杀 固定为 0否
 #
 #------------------------------------------------
 # 【注意】
@@ -123,6 +136,16 @@ module SkillDamageEX
   REGEXP_DAMAGE_SET =
     /(\d)[ ,]*([-\d]+)[ ,]*\{(.*?)\}[ ,]*(\d+)[ ,]*(\d)/
   #--------------------------------------------------------------------------
+  # - 匹配：创建默认参数的 RPG::UsableItem::Damage 对象并调用
+  #  <frame n: {formula}>
+  #   type - 伤害类型为：1 体力值伤害
+  #   element_id - 属性类型ID为：1 无
+  #   formula - 技能公式（写在 {} 内）
+  #   variance - 离散度为：0 
+  #   critical - 是否允许暴击：0 不允许
+  #--------------------------------------------------------------------------
+  REGEXP_DAMAGE2_SET = /\{(.*?)\}/
+  #--------------------------------------------------------------------------
   # - 匹配：调用自身的伤害公式
   #  <frame n: self>
   #--------------------------------------------------------------------------
@@ -144,6 +167,15 @@ module SkillDamageEX
       elsif params[1] =~ REGEXP_SKILL_SET
         object = $1 == 's' ? $data_skills : $data_items
         frame_to_item[frame_index] = object[$2.to_i]
+      elsif params[1] =~ REGEXP_DAMAGE2_SET
+        damage = RPG::UsableItem::Damage.new
+        damage.type = 1
+        damage.element_id = 1
+        damage.formula = $1
+        damage.variance = 0
+        damage.critical = 0
+        _item = item.dup; _item.damage = damage
+        frame_to_item[frame_index] = _item
       else
         params[1] =~ REGEXP_DAMAGE_SET
         damage = RPG::UsableItem::Damage.new

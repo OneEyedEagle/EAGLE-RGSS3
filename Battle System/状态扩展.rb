@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.4.5"
+$imported["EAGLE-StateEX"] = "1.5.0"
 #==============================================================================
-# - 2026.6.28.12 新增战斗结束后计数减1的时机
+# - 2026.7.26.10 现在RGSS状态也可以处理伤害计算了
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -73,7 +73,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 #       其中 ps 为后续扩展用Hash。
 #
-#   （与默认方法对比）附加 1 个默认状态：
+#     附加 1 个默认RGSS状态：
 #
 #     .add_state(state_id) 
 #
@@ -87,6 +87,14 @@ FLAG_NO_RGSS3_STATE = true
 #
 #       其中 v 为解除的数量，nil 将解除全部该ID的状态对象；
 #        （对于可叠加的状态）v 为解除的层数，nil 将解除该ID的状态对象的全部层数。
+#
+#     解除 v 层指定ID的RGSS状态：
+#
+#     .reduce_state_level(state_id, v) 
+#
+#     解除全部指定ID的RGSS状态：
+#
+#     .remove_state(state_id)
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -111,7 +119,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# △ 状态的最大叠加层数                          【RGSS状态和状态对象】
+# △ 状态的最大叠加层数                           【RGSS状态和状态对象】
 #
 # - 在默认系统中，状态同时只能存在一个，再次附加除了刷新计数，没有其他收益。
 #   本插件尝试设计了允许叠层的状态特性。
@@ -149,14 +157,41 @@ FLAG_NO_RGSS3_STATE = true
 #
 #    .state_level(state_id)               →  获取 默认状态 的已附加层数
 #
-#    .reduce_state_level(state_id, v)     →  指定 默认状态 减少 v 层
-#                              如果v为 nil 或不传入或大于已有层数，则消除全部层数
-#
 #    .state_ex_level(state_id)            →  获取 状态对象 的已附加层数
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# △ 状态的最多同时存在数量                              【仅状态对象】
+# △ 状态到达指定层数时触发脚本                   【RGSS状态和状态对象】
+#
+#-----------------设置方式-----------------
+#
+# - 在 数据库-状态 的备注中填写：
+# 
+#      <whenlevel 数字>...</whenlevel>
+#
+#   其中 数字 为 正整数，为该状态附加到该层数时，才执行脚本。
+#
+#   其中 ... 替换为伤害公式，
+#         可以用 a 代表施加该状态的来源战斗者（仅状态对象有效，如果是RGSS状态，请不要使用），
+#                b 代表当前有该状态的战斗者，
+#                s 代表开关组，v 代表变量组，
+#               id 代表当前状态的id，l 代表当前状态的层数。
+#
+#   如 <whenlevel 1>b.hp -= b.mhp * 0.1</whenlevel> 代表
+#         状态叠加到1层时，立即损失10%MHP。
+#
+#   如 <whenlevel 3>b.hp -= b.mhp * 0.1; b.remove_state_ex(id)</whenlevel> 代表
+#         状态叠加到3层时，立即损失10%MHP，并移除该状态对象全部层数。
+#
+#------------------注 意-------------------
+#
+#  1. 仅在状态附加时进行判定，状态减少时不会判定。
+#
+#  2. 如果未设置状态的最大叠加层数，则该项内容可能无效。
+#
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# △ 状态的最多同时存在数量                               【仅状态对象】
 #
 #-----------------设置方式-----------------
 #
@@ -187,7 +222,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# △ 状态的八维属性增加                          【RGSS状态和状态对象】
+# △ 状态的八维属性增加                           【RGSS状态和状态对象】
 #
 # - 在默认系统中，状态只能通过给角色增加 特性-能力-普通能力 来修改八维属性。
 #   本插件尝试设计了与角色装备一致的，通过状态增加角色八维属性具体数值的方式。
@@ -287,7 +322,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# △ 状态的自动减少时机（追加）                            【仅状态对象】
+# △ 状态的自动减少时机（追加）                           【仅状态对象】
 #
 # - 有时一些状态需要既有回合计数，又有受击计数，
 #   本插件尝试增加了另外的自动减少时机，方便设计更灵活多样的状态。
@@ -311,7 +346,6 @@ FLAG_NO_RGSS3_STATE = true
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # △ 状态的自动减少与最大叠加层数的交互                    【仅状态对象】
-#---------------------------------------------------------------------
 #
 # - 在默认系统中，状态的回合计数减少到 0 时，将消除全部同ID的状态。
 #   本插件中的默认状态同理，不管目前多少层，都会在回合计数归零时一起消除。
@@ -329,7 +363,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# △ 状态的伤害计算                                      【仅状态对象】
+# △ 状态的伤害计算                               【RGSS状态和状态对象】
 #
 # - 在默认系统中，中毒状态只能通过给 回合结束时生命恢复 设置负值，来当做中毒。
 #   本插件尝试设计了与技能公式一致的能自定义触发时机的伤害计算。
@@ -346,7 +380,7 @@ FLAG_NO_RGSS3_STATE = true
 #        （其他可用类型请见 △ 状态的自动减少时机）
 #
 #   其中 ... 替换为伤害公式，
-#         可以用 a 代表施加该状态的来源战斗者，
+#         可以用 a 代表施加该状态的来源战斗者（仅状态对象有效，如果是RGSS状态，请不要使用），
 #                b 代表当前有该状态的战斗者，
 #                s 代表开关组，v 代表变量组，
 #               id 代表当前状态的id，l 代表当前状态的层数。
@@ -378,17 +412,20 @@ FLAG_NO_RGSS3_STATE = true
 #
 #----------战斗者Battler 新增方法-----------
 #
-#    .trigger_state_ex(state_id, timing)   → 触发指定状态对象指定类型的伤害计算。
-#            state_id 为 nil 时，触发全部状态对象；
-#                     为 数字 时，触发状态ID为该数字的状态对象；
-#                     为 数组 时，触发状态ID在该数组内的状态对象。
-#            timing   为 nil 时，触发状态的全部时机的伤害计算；
-#                     为 数字 时，触发时机为该数字的伤害计算；
-#                     为 数组 时，触发时机在该数组内的伤害计算。
+#    .trigger_state_timing(state_id, timing)
+#
+#      → 触发指定ID的RGSS状态和状态对象的指定时机的伤害计算（不会减少计数）。
+#
+#        其中 state_id 为 nil 时，触发全部状态；
+#                      为 数字 时，触发ID为该数字的RGSS状态和状态对象；
+#                      为 数组 时，触发ID在该数组内的RGSS状态和状态对象。
+#             timing   为 nil 时，触发全部时机的伤害计算；
+#                      为 数字 时，触发该数字的时机的伤害计算；
+#                      为 数组 时，触发该数组内的时机的伤害计算。
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# △ 状态的帮助文本                              【RGSS状态和状态对象】
+# △ 状态的帮助文本                               【RGSS状态和状态对象】
 #
 #-----------------使用方式-----------------
 #
@@ -410,7 +447,7 @@ FLAG_NO_RGSS3_STATE = true
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# △ 状态的标签                                  【RGSS状态和状态对象】
+# △ 状态的标签                                   【RGSS状态和状态对象】
 #
 # - 在默认系统中，状态都是互相独立的，无法对某一类状态进行批量处理。
 #   本插件为状态增加了 标签，对拥有指定标签的状态能够进行统一处理。
@@ -655,6 +692,14 @@ module STATE_EX
     return $2 ? $2.to_i : 0
   end
   
+  # 读取层数及对应脚本
+  def self.read_note_level_eval(t, level_evals)
+    t.scan(/<whenlevel ?([-\d]+)>(.*?)<\/whenlevel>/mi).each do |params|
+      level = params[0].to_i
+      level_evals[level] = params[1] 
+    end
+  end
+  
   # 读取状态最多同时存在个数
   def self.read_note_max(t)
     t =~ /<(个数|max) *(\d+)>/i
@@ -827,14 +872,15 @@ class Data_StateEX
   #--------------------------------------------------------------------------
   def add_up(battler_from, count, ps)
     @flag_new = true
-    f = false
-    if add_up? 
-      @level += 1
-      f = true
-    end
     @battler_from = battler_from
     reset_count(count)
     @ps = ps
+    f = false
+    if add_up? 
+      @level += 1
+      process_level_formula(@level) # 处理层数增加后的脚本
+      f = true
+    end
     return f  # 返回是否成功叠加了一层
   end
 
@@ -919,27 +965,23 @@ class Data_StateEX
   def process_timing_formula(timing)
     STATE_EX.state_ex_when_add(self)    if timing == -1 # 状态附加时执行的内容
     STATE_EX.state_ex_when_remove(self) if timing == -2 # 状态解除时执行的内容
-    formula = state.timing_evals[timing]
-    return if formula.nil?
-    a = @battler_from 
-    b = @battler
-    v = $game_variables
-    s = $game_switches
-    l = @level 
-    id = @id
-    begin
-      value = Kernel.eval(formula).floor
-    rescue
-      p "【错误】处理 #{@battler.name} 的 #{id} 号状态[#{state.name}]的 timing 脚本时报错：" 
-      p $!
-      value = 0
-    end
+    value = state.process_timing_eval(timing, @battler, @battler_from, @level)
     if value != 0
       @battler.result.clear_damage_values
-      @battler.result.hp_damage = value
+      @battler.result.hp_damage += value
+      @battler.hp -= value
+      STATE_EX.state_ex_when_trigger(self)
+    end
+  end
+
+  # 层数增加时的伤害计算
+  def process_level_formula(level)
+    value = state.process_level_eval(level, @battler, @battler_from)
+    if value != 0
+      @battler.result.clear_damage_values
+      @battler.result.hp_damage += value
       @battler.hp -= value
     end
-    STATE_EX.state_ex_when_trigger(self)
   end
 end
 
@@ -949,7 +991,8 @@ end # end of module
 # ■ 数据库-状态类
 #==============================================================================
 class RPG::State
-  attr_reader :level, :max, :timing_evals, :reserve_when_die, :reduce_one_level
+  attr_reader :level, :level_evals, :max, :timing_evals
+  attr_reader :reserve_when_die, :reduce_one_level
   attr_reader :param_rate, :param_plus, :tags, :timing_add
   #--------------------------------------------------------------------------
   # ● 进入游戏时读取备注栏
@@ -957,6 +1000,10 @@ class RPG::State
   def reset_state_ex
     # 读取可叠加的层数
     @level = STATE_EX.read_note_level(note)
+    # 层数及对应执行的脚本
+    @level_evals = {}
+    STATE_EX.read_note_level_eval(note, @level_evals)
+    
     # 读取可同时存在的数量上限
     @max = STATE_EX.read_note_max(note)
     
@@ -998,6 +1045,47 @@ class RPG::State
   #--------------------------------------------------------------------------
   def param_rate(param_id)
     @param_rate[param_id]
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理层数的公式
+  #--------------------------------------------------------------------------
+  def process_level_eval(level, battler, battler_from)
+    formula = @level_evals[level]
+    return 0 if formula.nil?
+    a = battler_from 
+    b = battler
+    v = $game_variables
+    s = $game_switches
+    id = @id
+    begin
+      value = Kernel.eval(formula).floor
+    rescue
+      p "【错误】处理 #{b.name} 的 #{id} 号状态[#{@name}]的 level=#{level} 对应脚本时报错：" 
+      p $!
+      return 0
+    end
+    return value
+  end
+  #--------------------------------------------------------------------------
+  # ● 处理伤害公式
+  #--------------------------------------------------------------------------
+  def process_timing_eval(timing, battler, battler_from, level)
+    formula = @timing_evals[timing]
+    return 0 if formula.nil?
+    a = battler_from 
+    b = battler
+    v = $game_variables
+    s = $game_switches
+    l = level 
+    id = @id
+    begin
+      value = Kernel.eval(formula).floor
+    rescue
+      p "【错误】处理 #{b.name} 的 #{id} 号状态[#{@name}] timing=#{timing} 对应脚本时报错：" 
+      p $!
+      value = 0
+    end
+    return value
   end
   #--------------------------------------------------------------------------
   # ● 判断是否包含指定tag
@@ -1102,7 +1190,7 @@ class Game_BattlerBase
   end
 
   # 获取指定id的状态对象的已附加个数
-  def state_ex_sum(state_id)  # 状态对象
+  def state_ex_sum(state_id)
     return @states_ex.count {|s| s.id == state_id }
   end
   
@@ -1158,6 +1246,7 @@ class Game_Battler < Game_BattlerBase
       if (eagle_state_ex?(state_id) && v > 1 && v > state_level(state_id)) || 
         !eagle_state_ex?(state_id)
         add_new_state(state_id)
+        process_state_level_eval($data_states[state_id]) # 处理层数的伤害计算
       end
       reset_state_counts(state_id)
       @result.added_states.push(state_id).uniq!
@@ -1192,6 +1281,8 @@ class Game_Battler < Game_BattlerBase
     states.uniq.each do |state|
       # 如果是本次行动增加的状态，则不减1
       next if state.nil?
+      # 处理伤害计算
+      process_state_timing_eval(state, timing)
       next if @result.added_states && @result.added_states.include?(state.id)
       if state.auto_removal_timing == timing
         @state_turns[state.id] -= 1
@@ -1201,6 +1292,26 @@ class Game_Battler < Game_BattlerBase
     update_state_ex_counts(timing) # 增加针对 Data_StateEX 的，避免全部写两次
   end
   def update_state_turns # 不再需要默认的这个方法了，清空
+  end
+  
+  # 处理默认状态的伤害计算
+  def process_state_timing_eval(state, timing)
+    value = state.process_timing_eval(timing, self, nil, state_level(state.id))
+    if value != 0
+      @result.clear_damage_values
+      @result.hp_damage = value
+      self.hp -= value
+    end
+  end
+  # 处理默认状态的层数的伤害计算
+  def process_state_level_eval(state)
+    level = state_level(state.id)
+    value = state.process_level_eval(level, self, nil)
+    if value != 0
+      @result.clear_damage_values
+      @result.hp_damage = value
+      self.hp -= value
+    end
   end
   
   #--------------------------------------------------------------------------
@@ -1261,23 +1372,6 @@ class Game_Battler < Game_BattlerBase
       @result.removed_states.push(state_id).uniq!
       if $imported["YEA-BattleEngine"]
         make_state_popup(state_id, :rem_state)
-      end
-    end
-  end
-  
-  # 触发状态对象的伤害计算（计数不减少）
-  def trigger_state_ex(state_id=nil, timing=nil)
-    @states_ex.each do |s|
-      if (state_id.is_a?(Integer) and state_id != s.id) or 
-         (state_id.is_a?(Array) and !state_id.include?(s.id))
-        next
-      end
-      s.timings.each do |t|
-        if timing == nil or
-          (timing.is_a?(Integer) and timing == t) or
-          (timing.is_a?(Array) and timing.include?(t))
-          s.process_timing_formula(t)
-        end
       end
     end
   end
@@ -1376,6 +1470,35 @@ class Game_Battler < Game_BattlerBase
       return true if timing.include?(type)
     end
     return false
+  end
+  
+  # 触发RGSS状态和状态对象的伤害计算（计数不减少）
+  def trigger_state_timing(state_id=nil, timing=nil)
+    states.uniq.each do |state|
+      next if _check_state_id_for_trigger(state.id, state_id)
+      state.timing_evals.keys.each do |t|
+        if _check_state_timing_for_trigger(t, timing)
+          process_state_timing_eval(state, timing)
+        end
+      end
+    end
+    @states_ex.each do |s|
+      next if _check_state_id_for_trigger(s.id, state_id)
+      s.timings.each do |t|
+        if _check_state_timing_for_trigger(t, timing)
+          s.process_timing_formula(t)
+        end
+      end
+    end
+  end
+  def _check_state_id_for_trigger(cur_id, tar_id) # 不符合目标状态ID？
+    (tar_id.is_a?(Integer) and tar_id != cur_id) or 
+    (tar_id.is_a?(Array) and !tar_id.include?(cur_id))    
+  end
+  def _check_state_timing_for_trigger(cur_timing, tar_timing) # 符合目标时机？
+    tar_timing == nil or
+    (tar_timing.is_a?(Integer) and tar_timing == cur_timing) or
+    (tar_timing.is_a?(Array) and tar_timing.include?(cur_timing))
   end
   
   # 增减状态数组中的全部状态的计数
