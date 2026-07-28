@@ -12,8 +12,9 @@ end
 
 class Window_EagleHelp < Window_Base
   # 初始化
-  def initialize(line_number = 2)
-    super(0, 0, Graphics.width - 80, fitting_height(line_number))
+  def initialize
+    super(0, 0, 64, 64)
+    @des_win_rect = Rect.new(0,0,64,64)
   end
 
   # 设置内容
@@ -36,7 +37,24 @@ class Window_EagleHelp < Window_Base
 
   # 刷新
   def refresh
-    contents.clear
-    draw_text_ex(4, 0, @text)
+    params = { :font_size => 21, :x0 => 4, :y0 => 0, :w => nil }
+    d = Process_DrawTextEX.new(@text, params)
+    cw = d.width
+    ch = d.height + standard_padding * 2
+    if contents.width != cw or contents.height != ch
+      contents.dispose
+      self.contents = Bitmap.new(cw, ch)
+      @des_win_rect.width = cw + standard_padding * 2
+      @des_win_rect.height = ch + standard_padding * 2
+      self.move(@des_win_rect.x, @des_win_rect.y, @des_win_rect.width, @des_win_rect.height)
+    else
+      contents.clear
+    end
+    d.bind_bitmap(contents, true)
+    d.run
+  end
+
+  def update 
+    super 
   end
 end

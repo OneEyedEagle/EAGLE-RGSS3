@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【鹰式对话框扩展 V2.0】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ItemChoiceEX"] = "2.2.0"
+$imported["EAGLE-ItemChoiceEX"] = "2.2.1"
 #=============================================================================
-# - 2026.2.22.11 随对话框更新
+# - 2026.7.28.20 扩展物品类型
 #==============================================================================
 # 【说明】
 #
@@ -49,13 +49,20 @@ module MESSAGE_EX
 #     ---------------------------------------------------------------------
 #  ◇ 物品范围的类型序号
 
-  # 默认只有 :item/:weapon/:armor/:key_item 四种类型
+  # 默认 :item/:weapon/:armor/:key_item 四种类型
+
+  # 在 数据库-物品/武器/护甲 的备注栏中填写 <类别 A> 或 <type: A>
+  #   可以将其放入类型 A 中，可多次重复填写，单个物品可以有多种类型并存。
+  #   注意：这种方式增加的类型在下面数组里为 字符串 ！
+
   INDEX_TO_KEYITEM_TYPE = {
     0 => [:item],
     1 => [:weapon],
     2 => [:armor],
     3 => [:key_item],  # 默认RGSS中的设置
     4 => [:item, :key_item],
+    5 => ["渔具"], # 比如这个会筛出 物品/武器/护甲 中备注了 <类别 渔具> 的
+    6 => ["饵料"], # 比如这个会筛出 物品/武器/护甲 中备注了 <type 饵料> 的
   }
 
 #╚════════════════════════════════════════╝
@@ -67,6 +74,57 @@ module MESSAGE_EX
   # 获取选择物品的种类数组
   def self.keyitem_type(index)
     INDEX_TO_KEYITEM_TYPE[index] || INDEX_TO_KEYITEM_TYPE[3]
+  end
+
+  # 读取物品的类别数组
+  def self.read_note_types(t)
+    a = []
+    t.scan(/<(类别|type) *:? *(.*?)>/i).each do |_t|
+      a.push(_t[1])
+    end
+    a
+  end
+end
+
+#==============================================================================
+# ■ 数据库-物品类
+#==============================================================================
+class RPG::UsableItem
+  #--------------------------------------------------------------------------
+  # ● 进入游戏时读取备注栏
+  #--------------------------------------------------------------------------
+  def reset_item_ex
+    @type = MESSAGE_EX.read_note_types(note)
+  end
+  def type?(c)
+    @type.include?(c)
+  end
+end
+class RPG::EquipItem
+  #--------------------------------------------------------------------------
+  # ● 进入游戏时读取备注栏
+  #--------------------------------------------------------------------------
+  def reset_item_ex
+    @type = MESSAGE_EX.read_note_types(note)
+  end
+  def type?(c)
+    @type.include?(c)
+  end
+end
+
+#==============================================================================
+# ■ DataManager
+#==============================================================================
+class << DataManager
+  #--------------------------------------------------------------------------
+  # ● 读取数据库备注，进行额外设置
+  #--------------------------------------------------------------------------
+  alias eagle_keyitem_ex_load_database load_database
+  def load_database
+    eagle_keyitem_ex_load_database
+    $data_items.each { |s| s.reset_item_ex if s }
+    $data_weapons.each { |s| s.reset_item_ex if s }
+    $data_armors.each { |s| s.reset_item_ex if s }
   end
 end
 
@@ -142,6 +200,7 @@ class Window_EagleKeyItem < Window_ItemList
       when :weapon;   return true if item.is_a?(RPG::Weapon)
       when :armor;    return true if item.is_a?(RPG::Armor)
       when :key_item; return true if item.is_a?(RPG::Item) && item.key_item?
+      else;           return true if item and item.type?(c)
       end
     end
     return false
