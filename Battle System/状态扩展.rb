@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.5.0"
+$imported["EAGLE-StateEX"] = "1.5.1"
 #==============================================================================
-# - 2026.7.26.10 现在RGSS状态也可以处理伤害计算了
+# - 2026.7.30.12 新增死亡时的伤害计算
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -273,12 +273,13 @@ FLAG_NO_RGSS3_STATE = true
 #
 #  “时机数字”为该状态计数自动减1的时机，替换为下列之一：
 #
-#      -1 → 战斗结束时（注意：不要勾选 数据库-状态 中的战斗结束时解除！）
+#     -99 → 战斗结束时（注意：不要勾选 数据库-状态 中的战斗结束时解除！）
 #       1 → 角色自身行动结束时   2 → 战斗回合结束时
 #       3 → 角色造成伤害时       4 → 角色受到伤害时
 #      13 → 角色造成暴击伤害时  14 → 角色受到暴击伤害时
 #      23 → 角色造成治疗时      24 → 角色受到治疗时
 #       5 → 角色攻击失误未命中时 6 → 角色受击成功闪避时
+#       7 → 角色死亡时（特别的，如果伤害处理后hp大于0，则会阻止死亡）
 #
 #------------------注 意-------------------
 #
@@ -1279,10 +1280,10 @@ class Game_Battler < Game_BattlerBase
   #  timing → 1-行动结束时  2-回合结束时
   def update_state_turns_ex(timing = 1)  # 针对 RGSS状态
     states.uniq.each do |state|
-      # 如果是本次行动增加的状态，则不减1
       next if state.nil?
       # 处理伤害计算
       process_state_timing_eval(state, timing)
+      # 如果是本次行动增加的状态，则不减1
       next if @result.added_states && @result.added_states.include?(state.id)
       if state.auto_removal_timing == timing
         @state_turns[state.id] -= 1
@@ -1407,9 +1408,15 @@ class Game_Battler < Game_BattlerBase
   #--------------------------------------------------------------------------
   # ● 针对 RGSS状态 和 状态对象
   #--------------------------------------------------------------------------
-  # 死亡时保留状态
   alias eagle_state_ex_die die
   def die
+    # 处理伤害计算
+    update_state_turns_ex(7)
+    if @hp > 0  # 阻止死亡
+      remove_state(death_state_id)
+      return 
+    end
+    # 死亡时保留状态
     # 对于RGSS状态
     s1 = @states.select { |sid| $data_states[sid].reserve_when_die == true } 
     s1_turns = @state_turns.select { |sid, v| s1.include?(sid) }
@@ -1567,7 +1574,7 @@ class Game_Battler < Game_BattlerBase
       remove_state_ex(data.state.id) if data.state.remove_at_battle_end
     end
     # 对于按战斗计数的状态，此处减1
-    update_state_turns_ex(-1)
+    update_state_turns_ex(-99)
   end
 
   # 应用技能／物品的效果

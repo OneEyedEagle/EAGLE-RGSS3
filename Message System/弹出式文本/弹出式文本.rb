@@ -1,12 +1,12 @@
 #==============================================================================
 # ■ 弹出式文本 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】与
-#  【组件-位图绘制转义符文本 by老鹰】之下
+#  【组件-位图绘制转义符文本 by老鹰】与【组件-缓动函数 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PopText"] = "1.0.0"
+$imported["EAGLE-PopText"] = "1.0.1"
 #==============================================================================
-# - 2026.7.27.22 
+# - 2026.7.29.23 
 #==============================================================================
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -44,6 +44,7 @@ module POP_TEXT
 #         可传入符号一览：
 #              :float      → 上浮、淡出
 #              :float2     → 上浮同时放大、淡出
+#              :float3     → 上浮，暂停，再上浮淡出
 #              :sink       → 下沉、淡出
 #              :zoom1      → 放大、淡出同时缩小
 #              :zoom2      → 上浮、淡出同时缩小
@@ -327,6 +328,27 @@ COMMENT_POP_TEXT = /^POP *?\| *?(.*?) *?\| *?(.*)/mi
         @dy = dy0 + (dy1 - dy0) * per
         self.zoom_x = self.zoom_y = 1.0 + (2.0 - 1.0) * per
         self.opacity = 255 - 255 * per
+        Fiber.yield
+      end
+    end
+    
+    # 开始 - 上浮，暂停，再上浮淡出
+    def run_float3
+      dy0 = - @params[:dy]
+      dy1 = dy0 - 10
+      t = 10
+      t.times do |i|
+        per = EasingFuction.call("easeOutCubic", i * 1.0 / t)
+        @dy = dy0 + (dy1 - dy0) * per
+        Fiber.yield
+      end
+      30.times { Fiber.yield }
+      dy0 = @dy
+      dy1 = @dy - 10
+      t.times do |i|
+        per = EasingFuction.call("easeInCubic", i * 1.0 / t)
+        @dy = dy0 + (dy1 - dy0) * per
+        self.opacity -= 13
         Fiber.yield
       end
     end
