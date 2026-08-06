@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.5.1"
+$imported["EAGLE-StateEX"] = "1.5.2"
 #==============================================================================
-# - 2026.7.30.12 新增死亡时的伤害计算
+# - 2026.8.6.11 修复RGSS状态的附加/解除时伤害计算无效的bug
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -1247,6 +1247,7 @@ class Game_Battler < Game_BattlerBase
       if (eagle_state_ex?(state_id) && v > 1 && v > state_level(state_id)) || 
         !eagle_state_ex?(state_id)
         add_new_state(state_id)
+        process_state_timing_eval($data_states[state_id], -1) # 处理附加时的伤害计算
         process_state_level_eval($data_states[state_id]) # 处理层数的伤害计算
       end
       reset_state_counts(state_id)
@@ -1263,7 +1264,11 @@ class Game_Battler < Game_BattlerBase
         v = state_level(state_id) if v.nil?
         v.times do
           _i = @states.find_index(state_id)
-          @states.delete_at(_i) if _i
+          if _i
+            @states.delete_at(_i) 
+            # 处理移除时的伤害计算
+            process_state_timing_eval($data_states[state_id], -2)
+          end
         end
       else # 否则，全部清除
         erase_state(state_id)
@@ -1274,6 +1279,13 @@ class Game_Battler < Game_BattlerBase
         make_state_popup(state_id, :rem_state)
       end
     end
+  end
+  
+  # 消除状态（全部层数）
+  def erase_state(state_id)
+    v = state_level(state_id)
+    v.times { process_state_timing_eval($data_states[state_id], -2) }
+    super(state_id)
   end
   
   # 更新状态的计数

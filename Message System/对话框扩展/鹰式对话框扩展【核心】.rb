@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.10"
+$imported["EAGLE-MessageEX"] = "2.2.11"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.10"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.8.2.21  V2.2.11 修复金钱框显示后立即消失的bug
      ----------------------------------------------------------------------
      - 2026.6.23.23 V2.2.10 脸图显示后不再直接自动开始循环
      ----------------------------------------------------------------------
@@ -2501,6 +2503,7 @@ class Window_EagleMessage < Window_Base
     'CLC' => :handle_escpae_clc,
   }
   def handle_escape_gold_toggle(text, pos)
+    return if !@flag_draw
     if @gold_window
       @gold_window.open? ? @gold_window.close : @gold_window.open
     end
