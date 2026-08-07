@@ -5,7 +5,7 @@
 $imported ||= {}
 $imported["EAGLE-StateEX"] = "1.5.2"
 #==============================================================================
-# - 2026.8.6.11 修复RGSS状态的附加/解除时伤害计算无效的bug
+# - 2026.8.6.23 修复RGSS状态的附加/解除时伤害计算无效的bug
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -28,7 +28,7 @@ $imported["EAGLE-StateEX"] = "1.5.2"
 #------------------------------------------------
 # 【设置：是否禁用默认状态】
 #
-FLAG_NO_RGSS3_STATE = true 
+FLAG_NO_RGSS3_STATE = false 
 #
 #  若设置为 true ，则不再使用 默认状态，仅使用 状态对象。
 #
@@ -611,13 +611,14 @@ module STATE_EX
   def self.get_state_help_text_count(type, v) 
     if v != 0
       case type
-      when -1; return "(\ec[17]#{v}\ec[0]场战斗解除)"
+      when -99; return "(\ec[17]#{v}\ec[0]场战斗解除)"
       when 1; return "(\ec[17]#{v}\ec[0]次行动解除)"
       when 2; return "(\ec[17]#{v}\ec[0]回合解除)"
       when 3; return "(造成\ec[17]#{v}\ec[0]次伤害解除)"
       when 4; return "(受到\ec[17]#{v}\ec[0]次伤害解除)"
       when 5; return "(\ec[17]#{v}\ec[0]次攻击失误后解除)"
       when 6; return "(\ec[17]#{v}\ec[0]次闪避后解除)"
+      when 7; return "(\ec[17]#{v}\ec[0]次死亡后解除)"
       when 13; return "(暴击\ec[17]#{v}\ec[0]次解除)"
       when 14; return "(受到\ec[17]#{v}\ec[0]次暴击解除)"
       when 23; return "(治疗\ec[17]#{v}\ec[0]次解除)"
