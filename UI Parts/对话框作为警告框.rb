@@ -2,9 +2,9 @@
 # ■ 对话框作为警告框 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MsgAlert"] = "1.0.0"
+$imported["EAGLE-MsgAlert"] = "1.0.1"
 #==============================================================================
-# - 2025.8.31.12
+# - 2026.8.9.21 优化部分细节表现
 #==============================================================================
 # - 本插件利用对话框来作为任意时刻都能使用的警告框。
 #------------------------------------------------------------------------------
@@ -57,8 +57,8 @@ class Scene_Save < Scene_File
       if $imported["EAGLE-MessageEX"]
         w = @savefile_windows[@index]
         x = @savefile_viewport.rect.x + w.x + w.width / 2
-        y = @savefile_viewport.rect.y + w.y + w.height / 2
-        t = "\\win[o=5 x=#{x} y=#{y} fw=1 fh=1]确定要\\c[1]覆盖\\c[0]当前存档吗？"
+        y = @savefile_viewport.rect.y + w.y + w.height / 2 - @savefile_viewport.oy
+        t = "\\win[o=5 x=#{x} y=#{y} z=900 fw=1 fh=1]确定要\\c[1]覆盖\\c[0]当前存档吗？"
         t += "\\choice[ali=1]" if $imported["EAGLE-ChoiceEX"]
         return false if !ALERT.show2(t)
         return eagle_alert_on_savefile_ok
@@ -86,7 +86,8 @@ class Scene_End < Scene_MenuBase
     # 使用默认对话框作为二次确认窗口
     t = "确定要\\c[10]返回标题\\c[0]吗？
 未保存的内容都会丢失！"
-    if ALERT.show(t)
+    ps = { "position" => 2 }
+    if ALERT.show(t,[["是", true], ["否", false]],ps)
       eagle_alert_command_to_title
     else
       @command_window.activate  # 重新激活指令框
@@ -100,12 +101,65 @@ class Scene_End < Scene_MenuBase
     # 使用默认对话框作为二次确认窗口
     t = "确定要\\c[10]退出游戏\\c[0]吗？
 未保存的内容都会丢失！"
-    if ALERT.show(t)
+    ps = { "position" => 2 }
+    if ALERT.show(t,[["是", true], ["否", false]],ps)
       eagle_alert_command_shutdown
     else
       @command_window.activate  # 重新激活指令框
     end
   end
+end
+#
+# 兼容【Yanfly Engine Ace - System Options】
+if $imported["YEA-SystemOptions"]
+class Scene_System < Scene_MenuBase
+  #--------------------------------------------------------------------------
+  # command_to_title
+  #--------------------------------------------------------------------------
+  alias eagle_alert_command_to_title command_to_title
+  def command_to_title
+    # 使用鹰式对话框扩展作为二次确认窗口
+    if $imported["EAGLE-MessageEX"]
+      w = @command_window
+      r = w.item_rect(w.index)
+      t = "\\win[o=2 x=#{Graphics.width/2} y=#{Graphics.height-60} z=900 fw=1 fh=1]"
+      t += "确定要\\c[10]返回标题\\c[0]吗？\n未保存的内容都会丢失！"
+      t += "\\choice[o=4 do=6 ali=1]" if $imported["EAGLE-ChoiceEX"]
+      return @command_window.activate if !ALERT.show2(t)
+      return eagle_alert_command_to_title
+    end
+    ps = { "position" => 1 }
+    if ALERT.show(t, [["是", true], ["否", false]], ps)
+      eagle_alert_command_to_title
+    else
+      @command_window.activate
+    end
+  end
+  #--------------------------------------------------------------------------
+  # command_shutdown
+  #--------------------------------------------------------------------------
+  alias eagle_alert_command_shutdown command_shutdown
+  def command_shutdown
+    # 使用鹰式对话框扩展作为二次确认窗口
+    if $imported["EAGLE-MessageEX"]
+      w = @command_window
+      r = w.item_rect(w.index)
+      t = "\\win[o=2 x=#{Graphics.width/2} y=#{Graphics.height-60} z=900 fw=1 fh=1]"
+      t += "确定要\\c[10]退出游戏\\c[0]吗？\n未保存的内容都会丢失！"
+      t += "\\choice[o=4 do=6 ali=1]" if $imported["EAGLE-ChoiceEX"]
+      if !ALERT.show2(t)
+        return @command_window.activate
+      end
+      return eagle_alert_command_shutdown
+    end
+    ps = { "position" => 1 }
+    if ALERT.show(t, [["是", true], ["否", false]], ps)
+      eagle_alert_command_shutdown
+    else
+      @command_window.activate
+    end
+  end
+end
 end
 #
 #==============================================================================
@@ -154,16 +208,16 @@ module ALERT
     end
     # 更新，直至关闭对话框
     while true
-      window.update
       Input.update
       Graphics.update
+      window.update
       break if msg.visible == false
     end
     # 留出对话框关闭的时间
     15.times { 
-      window.update
       Input.update
       Graphics.update
+      window.update
     }
     # 释放对话框
     window.dispose
@@ -210,6 +264,16 @@ class Window_Message_Alone < Window_Message
     @choice_window = Window_ChoiceList_Alone.new(self, @game_message)
     @number_window = Window_NumberInput.new(self)
     @item_window = Window_KeyItem.new(self)
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置z值
+  #--------------------------------------------------------------------------
+  def z=(v)
+    @gold_window.z = v if @gold_window
+    @choice_window.z = v if @choice_window
+    @number_window.z = v if @number_window
+    @item_window.z = v if @item_window
+    super
   end
   #--------------------------------------------------------------------------
   # ● 处理纤程的主逻辑

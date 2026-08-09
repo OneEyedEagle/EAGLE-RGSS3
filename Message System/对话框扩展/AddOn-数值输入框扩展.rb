@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【鹰式对话框扩展 V2.0】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-NumberInputEX"] = "2.2.0"
+$imported["EAGLE-NumberInputEX"] = "2.2.1"
 #=============================================================================
-# - 2026.2.22.11 随对话框更新
+# - 2026.8.9.21 背景不透明度与对话框保持一致
 #=============================================================================
 # 【使用：设置数字样式】
 #
@@ -285,7 +285,8 @@ class Window_EagleNumberInput < Window_Base
   def update_params_ex
     skin = @message_window.get_cur_windowskin_index(numinput_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(skin)
-    self.opacity = self.back_opacity = numinput_params[:opa]
+    self.opacity = numinput_params[:opa]
+    self.back_opacity = MESSAGE_EX::WINDOW_BACK_OPACITY  # 背景不透明度
     self.contents_opacity = 255
 
     if @flag_in_msg_window # 如果嵌入，则不执行打开

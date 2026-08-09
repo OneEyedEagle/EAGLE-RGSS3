@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-ChoiceEX"] = "2.2.1"  # 2026.3.19.22
+$imported["EAGLE-ChoiceEX"] = "2.2.2"  # 2026.8.9.21
 =begin
 ===============================================================================
 
@@ -37,6 +37,8 @@ $imported["EAGLE-ChoiceEX"] = "2.2.1"  # 2026.3.19.22
         -                                                             -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.8.9.21  V2.2.2 背景不透明度与对话框保持一致
      ----------------------------------------------------------------------
      - 2026.3.19.22 V2.2.1 修复对话框\M转义符无法优先替换的问题
      ----------------------------------------------------------------------
@@ -667,7 +669,8 @@ class Window_EagleChoiceList < Window_Command
   def reset_params_ex
     @skin = @message_window.get_cur_windowskin_index(choice_params[:skin])
     self.windowskin = MESSAGE_EX.windowskin(@skin)
-    self.opacity = self.back_opacity = choice_params[:opa]
+    self.opacity = choice_params[:opa]
+    self.back_opacity = MESSAGE_EX::WINDOW_BACK_OPACITY  # 背景不透明度
     self.contents_opacity = 255
 
     if @flag_in_msg_window # 如果嵌入，则不执行打开
