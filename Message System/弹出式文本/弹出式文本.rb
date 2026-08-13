@@ -203,7 +203,7 @@ COMMENT_POP_TEXT = /^POP *?\| *?(.*?) *?\| *?(.*)/mi
       ps = { :font_size => @params[:size], :x0 => 2, :y0 => 0, :lhd => 2 }
       d = Process_DrawTextEX.new(t, ps)
       
-      self.bitmap = Bitmap.new(d.width, d.height)
+      self.bitmap = Bitmap.new(d.width+12, d.height)
       self.bitmap.font.shadow = false
       self.bitmap.font.outline = true
       d.bind_bitmap(self.bitmap) 

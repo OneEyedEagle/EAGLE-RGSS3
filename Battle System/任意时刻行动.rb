@@ -2,9 +2,9 @@
 # ■ 任意时刻行动 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ActionEX"] = "1.0.2"
+$imported["EAGLE-ActionEX"] = "1.0.3"
 #=============================================================================
-# - 2025.1.12.22
+# - 2026.8.12.21 兼容新版技能多段伤害
 #=============================================================================
 # - 本插件新增了在任意时刻都能强制战斗行动的全局脚本
 # ※ 本插件兼容【SideView100】，请置于其下
@@ -43,8 +43,13 @@ $imported["EAGLE-ActionEX"] = "1.0.2"
 #
 #  - 其中 item 为技能/物品的实例对象
 #
-#     比如 $data_skills[5] 为 5号技能
-#     比如 $data_items[1] 为 1号物品
+#     可以为 $data_skills 或 $data_items 的对象
+#       比如 $data_skills[1] 为 1号技能
+#       比如 $data_items[5] 为 5号物品
+#
+#     可以为 类型+位序 的字符串
+#       比如 "s1" 代表数据库中的1号技能
+#       比如 "i5" 代表数据库中的5号物品
 #
 #  - 其中 ins 为布尔值，true代表立即执行，false代表放入行动序列末尾
 #       若不传入，则为放于末尾，按调用顺序依次执行
@@ -117,6 +122,8 @@ module BattleManager
       # 整合【技能多段伤害 by老鹰】，确保动画与伤害结算结束
       if $imported["EAGLE-SkillDamageEX"]
         scene.eagle_wait_for_animation 
+      elsif $imported["EAGLE-SkillDamageEX-V2"] 
+        SkillDamageEX.wait_after_add_anime { scene.update_for_wait }
       end
       # 新增行动后处理
       scene.process_after_use_item
