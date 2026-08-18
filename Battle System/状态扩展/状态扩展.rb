@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.5.2"
+$imported["EAGLE-StateEX"] = "1.6.0"
 #==============================================================================
-# - 2026.8.6.23 修复RGSS状态的附加/解除时伤害计算无效的bug
+# - 2026.8.18.23 八维属性增减值现在可以设置动态计算值了；新增伤害处理前的状态影响
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -28,7 +28,7 @@ $imported["EAGLE-StateEX"] = "1.5.2"
 #------------------------------------------------
 # 【设置：是否禁用默认状态】
 #
-FLAG_NO_RGSS3_STATE = false 
+FLAG_NO_RGSS3_STATE = true 
 #
 #  若设置为 true ，则不再使用 默认状态，仅使用 状态对象。
 #
@@ -227,13 +227,13 @@ FLAG_NO_RGSS3_STATE = false
 # - 在默认系统中，状态只能通过给角色增加 特性-能力-普通能力 来修改八维属性。
 #   本插件尝试设计了与角色装备一致的，通过状态增加角色八维属性具体数值的方式。
 #
-#-----------------设置方式-----------------
+#--------------设置：固定值--------------
 #
 # - 在 数据库-状态 的备注中填写：
 #
 #     <params>...</params>
 #
-#   其中 ... 替换为 属性名=数字 的反复组合，各个属性只能写一次
+#   其中 ... 替换为 属性名=数字 的反复组合，各个属性只能写一次：
 #
 #     1) 属性名 为 mhp mmp atk def mat mdf agi luk ，依次为数据库-角色的八维属性。
 #
@@ -243,15 +243,36 @@ FLAG_NO_RGSS3_STATE = false
 #   如 <params>mhp=5%</params> 代表 最大生命值+5%
 #   如 <params>mat=5 luk=-3</params> 代表 魔法攻击+5点、幸运-3点
 #
+#--------------设置：动态值--------------
+#
+# - 在 数据库-状态 的备注中填写：
+#
+#     <atk>...</atk>
+#
+#   其中 ... 替换为伤害公式，返回值为该项属性的增减值，
+#         可以用 a 代表施加该状态的来源战斗者（仅状态对象有效，如果是RGSS状态，请不要使用），
+#                b 代表当前有该状态的战斗者，
+#                s 代表开关组，v 代表变量组，
+#               id 代表当前状态的id。
+#
+#   其中 atk 可以换成其它属性名（同上），但各个属性只能写一次。
+#
+#   如 <mhp>v[1]</mhp> 代表 最大生命值 + 1号变量的值
+#   如 <agi>v[2]-1</agi> 代表 敏捷值 + 2号变量的值 - 1
+#
 #------------------注 意-------------------
 #
-#  1. 状态如果有多层，则每一层都会累加一次属性值。
+#  1. 状态如果有多层，则实际附加的属性值将 乘以 状态层数。
 #
-#  2. 状态附加的固定属性值，将在全部附加属性计算完成后增加，
-#     即不受数据库中普通能力-属性倍率、战斗中属性buff的影响。
+#  2. 属性最终值 = (A + B) * C * (1 + D * 0.25 + State_D) + State_B1 + State_B2
 #
-#  3. 状态附加的百分比属性值，将与 战斗中属性buff 进行累加，作为最终的倍率。
-#     即属性的倍率 = 1 + 该属性强化buff层数 x 0.25 + 全部状态的该属性倍率的和。
+#     其中 A 是 数据库-角色/敌人 中设置的值
+#          B 是 数据库-武器/护甲、游戏过程中事件-增减属性值 中的值
+#          C 是 数据库-角色/职业/武器/护甲/敌人/状态 的普通能力倍率变化 连乘后的值
+#          D 是 战斗中属性的 BUFF - DEBUFF 的层数 
+#    State_D 是 全部状态附加的属性的固定百分比值的和
+#    State_B1是 全部状态附加的属性的固定值的和
+#    State_B2是 全部状态附加的属性的动态值的和
 #
 #     如 被附加了带有 <params>mhp=5%</params> 的状态A 和
 #        带有 <params>mhp=15</params>的状态B，且 MHP 的buff层数为 0，
@@ -279,7 +300,7 @@ FLAG_NO_RGSS3_STATE = false
 #      13 → 角色造成暴击伤害时  14 → 角色受到暴击伤害时
 #      23 → 角色造成治疗时      24 → 角色受到治疗时
 #       5 → 角色攻击失误未命中时 6 → 角色受击成功闪避时
-#       7 → 角色死亡时（特别的，如果伤害处理后hp大于0，则会阻止死亡）
+#       7 → 角色死亡时          8 → 角色伤害处理前
 #
 #------------------注 意-------------------
 #
@@ -377,8 +398,17 @@ FLAG_NO_RGSS3_STATE = false
 #
 #   其中 类型 为该伤害计算的触发时机的数字，
 #        -1 → 状态被附加时  -2 → 状态被解除时
-#         1 → 行动结束时     2 → 回合结束时
 #        （其他可用类型请见 △ 状态的自动减少时机）
+#
+#   一些时机的特别处理：
+#
+#        7 → 角色死亡时：
+#           如果状态伤害处理后hp大于0，则会阻止死亡，但状态计数依然会减少。
+#
+#        8 → 技能生效后，但角色受到伤害前：
+#           此时状态的伤害计算不再独立处理，而是会与技能伤害相加，
+#           若为正数，则效果为增加技能伤害，否则减少技能伤害。
+#           在伤害公式中，可以使用 damage 获取技能原本的伤害值。
 #
 #   其中 ... 替换为伤害公式，
 #         可以用 a 代表施加该状态的来源战斗者（仅状态对象有效，如果是RGSS状态，请不要使用），
@@ -619,6 +649,7 @@ module STATE_EX
       when 5; return "(\ec[17]#{v}\ec[0]次攻击失误后解除)"
       when 6; return "(\ec[17]#{v}\ec[0]次闪避后解除)"
       when 7; return "(\ec[17]#{v}\ec[0]次死亡后解除)"
+      when 8; return "(受到\ec[17]#{v}\ec[0]次攻击解除)"
       when 13; return "(暴击\ec[17]#{v}\ec[0]次解除)"
       when 14; return "(受到\ec[17]#{v}\ec[0]次暴击解除)"
       when 23; return "(治疗\ec[17]#{v}\ec[0]次解除)"
@@ -708,7 +739,7 @@ module STATE_EX
     return $2 ? $2.to_i : 0
   end
 
-  # 读取状态附加的属性值
+  # 读取状态附加的属性值（固定值）
   def self.read_note_params(t, param_rate, param_plus)
     t.scan(/<params>(.*?)<\/params>/mi).each do |params|
       h = EAGLE_COMMON.parse_tags(params[0])
@@ -720,6 +751,15 @@ module STATE_EX
           param_plus[param_id] += v.to_i
         end
       end
+    end
+  end
+
+  # 读取状态附加的属性值（动态值）
+  def self.read_note_param_dynamic(t, param_dynamic)
+    STATE_EX::PARAMS_TO_ID.each do |sym, id|
+      t =~ /<#{sym}>(.*?)<\/#{sym}>/mi
+      next if $1 == nil
+      param_dynamic[id] = $1
     end
   end
 
@@ -829,11 +869,16 @@ class Data_StateEX
   # 获取 RGSS状态 的数据库备注
   def note;     state.note;        end
     
-  # 获取附加的属性（最后计算的增减值）
+  # 获取附加的属性（最后的增减值）
   def param_plus(param_id); state.param_plus(param_id) * @level; end
     
   # 获取附加的属性倍率（与buff进行增量叠加）
   def param_rate(param_id); state.param_rate(param_id) * @level; end
+
+  # 获取附加的属性（动态计算的增减值）
+  def param_dynamic(param_id)
+    state.param_dynamic(param_id, @battler, @battler_from) * @level
+  end
 
   # 获取绑定了伤害计算的时机数字的数组
   def timings;  state.timing_evals.keys; end
@@ -931,9 +976,9 @@ class Data_StateEX
   # ● 依据状态更新时机来更新计数
   #  如果传入的 timing 为 nil，则任意时刻的状态都要减少
   #--------------------------------------------------------------------------
-  def update_count(timing, added_states=[])
+  def update_count(timing, added_states=[], flag_formula=true)
     # 执行该时机的伤害公式
-    process_timing_formula(timing)
+    process_timing_formula(timing) if flag_formula
     # 如果为新附加状态，且在例外状态数组中，比如本次行动才被附加的状态，则不减一
     f = @flag_new
     @flag_new = false  # 处理过一次跳过了，下一次必须减一
@@ -964,16 +1009,17 @@ class Data_StateEX
   #--------------------------------------------------------------------------
   # ● 处理指定时机的结算公式
   #--------------------------------------------------------------------------
-  def process_timing_formula(timing)
+  def process_timing_formula(timing, flag_apply=true)
     STATE_EX.state_ex_when_add(self)    if timing == -1 # 状态附加时执行的内容
     STATE_EX.state_ex_when_remove(self) if timing == -2 # 状态解除时执行的内容
     value = state.process_timing_eval(timing, @battler, @battler_from, @level)
-    if value != 0
+    if flag_apply and value != 0
       @battler.result.clear_damage_values
       @battler.result.hp_damage += value
       @battler.hp -= value
       STATE_EX.state_ex_when_trigger(self)
     end
+    return value
   end
 
   # 层数增加时的伤害计算
@@ -984,6 +1030,7 @@ class Data_StateEX
       @battler.result.hp_damage += value
       @battler.hp -= value
     end
+    return value
   end
 end
 
@@ -995,7 +1042,7 @@ end # end of module
 class RPG::State
   attr_reader :level, :level_evals, :max, :timing_evals
   attr_reader :reserve_when_die, :reduce_one_level
-  attr_reader :param_rate, :param_plus, :tags, :timing_add
+  attr_reader :param_rate, :param_plus, :param_dynamic, :tags, :timing_add
   #--------------------------------------------------------------------------
   # ● 进入游戏时读取备注栏
   #--------------------------------------------------------------------------
@@ -1014,6 +1061,9 @@ class RPG::State
     # 八项基础属性的数值增减
     @param_plus = [0] * 8  # 8维属性的增量
     STATE_EX.read_note_params(note, @param_rate, @param_plus)
+    # 八项基础属性的动态数值增减
+    @param_dynamic = [nil] * 8
+    STATE_EX.read_note_param_dynamic(note, @param_dynamic)
     
     # 战斗时机的数字 => 执行的脚本
     @timing_evals = {}
@@ -1037,17 +1087,37 @@ class RPG::State
     @tags = STATE_EX.read_note_tags(note)
   end
   #--------------------------------------------------------------------------
-  # ● 获取该状态附加的属性（最后计算的增减值）
+  # ● 八维属性增减
   #--------------------------------------------------------------------------
+  # 获取该状态附加的属性（最后的增减值）
   def param_plus(param_id)
     @param_plus[param_id]
   end
-  #--------------------------------------------------------------------------
-  # ● 获取该状态附加的属性倍率（与buff进行增量叠加）
-  #--------------------------------------------------------------------------
+
+  # 获取该状态附加的属性倍率（与buff进行增量叠加）
   def param_rate(param_id)
     @param_rate[param_id]
   end
+
+  # 获取该状态附加的属性（动态计算的增减值）
+  def param_dynamic(param_id, battler, battler_from)
+    formula = @param_dynamic[param_id]
+    return 0 if formula.nil?
+    a = battler_from 
+    b = battler
+    v = $game_variables
+    s = $game_switches
+    id = @id
+    begin
+      value = Kernel.eval(formula).round
+    rescue
+      p "【错误】处理 #{b.name} 的 #{id} 号状态[#{@name}]的 #{param_id}号动态属性 对应脚本时报错：" 
+      p $!
+      return 0
+    end
+    return value
+  end
+
   #--------------------------------------------------------------------------
   # ● 处理层数的公式
   #--------------------------------------------------------------------------
@@ -1059,6 +1129,7 @@ class RPG::State
     v = $game_variables
     s = $game_switches
     id = @id
+    damage = battler.result.hp_damage 
     begin
       value = Kernel.eval(formula).floor
     rescue
@@ -1080,12 +1151,13 @@ class RPG::State
     s = $game_switches
     l = level 
     id = @id
+    damage = battler.result.hp_damage 
     begin
       value = Kernel.eval(formula).floor
     rescue
       p "【错误】处理 #{b.name} 的 #{id} 号状态[#{@name}] timing=#{timing} 对应脚本时报错：" 
       p $!
-      value = 0
+      return 0
     end
     return value
   end
@@ -1129,22 +1201,25 @@ class Game_BattlerBase
   #--------------------------------------------------------------------------
   # 获取 普通能力 的值
   def param(param_id)
-    # 数据库-角色/敌人 中设置的基础数值
-    value = param_base(param_id) 
-    # 数据库-武器/护甲、游戏过程中事件-增减属性值 中额外的增加值
-    value += param_plus(param_id)
+    value = param_init(param_id)
     # 数据库中设置的 角色/职业/武器/护甲/敌人/状态 的普通能力倍率变化
     #  连乘后的倍率
     value *= param_rate(param_id) 
     # 战斗中的buff影响的倍率
     value *= param_buff_rate(param_id)
-    # （新增）因为 状态扩展 而额外增减的属性值
-    value += states.compact.inject(0) { |r, item|
-      r += item.param_plus(param_id) }
-    value += @states_ex.compact.inject(0) { |r, item|
-      r += item.param_plus(param_id) }
+    # 状态增加的值
+    value += param_plus_state(param_id)
     # 确保在范围内
     [[value, param_max(param_id)].min, param_min(param_id)].max.to_i
+  end
+  
+  # 能力的初始值
+  def param_init(param_id)
+    # 数据库-角色/敌人 中设置的基础数值
+    value = param_base(param_id) 
+    # 数据库-武器/护甲、游戏过程中事件-增减属性值 中额外的增加值
+    value += param_plus(param_id)
+    return value
   end
 
   # 获取普通能力的强化／弱化变化率
@@ -1157,6 +1232,20 @@ class Game_BattlerBase
     v += @states_ex.compact.inject(0) { |r, item|
       r += item.param_rate(param_id) }
     v 
+  end
+  
+  # （新增）因为 状态扩展 而额外增减的属性值
+  def param_plus_state(param_id)
+    value = 0
+    value += states.compact.inject(0) { |r, item|
+      r += item.param_plus(param_id)
+      r += item.param_dynamic(param_id, self, nil)
+    }
+    value += @states_ex.compact.inject(0) { |r, item|
+      r += item.param_plus(param_id)
+      r += item.param_dynamic(param_id)
+    }
+    return value
   end
   
   #--------------------------------------------------------------------------
@@ -1452,11 +1541,13 @@ class Game_Battler < Game_BattlerBase
       if data_state # 如果是状态对象
         pri = data_state.priority
         id = data_state.id
+        l = data_state.level
       else
         pri = $data_states[s].priority
         id = s
+        l = state_level(id)
       end
-      [-pri, id]
+      [-pri, id, l]
     }
     array
   end
@@ -1613,6 +1704,9 @@ class Game_Battler < Game_BattlerBase
     # 提前记录下伤害值，避免在pop后被清空
     v = @result.hp_damage
     f_crit = @result.critical
+    # 特别的，对于时机8，其伤害计算的结果将与技能伤害相加
+    v_add = update_count_and_get_state_damage_value(8)
+    @result.hp_damage = v + v_add
     eagle_state_ex_execute_damage(user)
     if v > 0
       # 新增：对于按造成伤害次数来计数的状态，此处减1
@@ -1632,7 +1726,32 @@ class Game_Battler < Game_BattlerBase
       update_state_turns_ex(24)
     end
   end
-
+  
+  # 对于时机8（伤害应用前），状态计数减一，且获取伤害计算和
+  def update_count_and_get_state_damage_value(timing = 8)
+    value = 0
+    # RGSS状态
+    states.uniq.each do |state|
+      next if state.nil?
+      # 获取伤害计算的值
+      value += state.process_timing_eval(timing, self, nil, state_level(state.id))
+      # 如果是本次行动增加的状态，则不减1
+      next if @result.added_states && @result.added_states.include?(state.id)
+      if state.auto_removal_timing == timing
+        @state_turns[state.id] -= 1
+        remove_state(state.id) if @state_turns[state.id] == 0
+      end
+    end
+    # Data_StateEX
+    @states_ex.each { |data| 
+      value += data.process_timing_formula(timing, false)
+      data.update_count(timing, @result.added_states, false)
+    }
+    # 删去需要移除的状态
+    @states_ex.delete_if { |data| check_state_ex_remove?(data) }
+    return value
+  end
+  
   # 受到伤害时解除状态
   alias eagle_state_ex_remove_states_by_damage remove_states_by_damage
   def remove_states_by_damage

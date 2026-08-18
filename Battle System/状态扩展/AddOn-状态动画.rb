@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【状态扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX-Anim"] = "1.0.0"
+$imported["EAGLE-StateEX-Anim"] = "1.0.1"
 #==============================================================================
-# - 2026.8.6.13 
+# - 2026.8.18.13 
 #==============================================================================
 
 module STATE_EX
@@ -340,8 +340,8 @@ end
 class STATE_EX::Data_StateEX
   # 处理指定时机的结算公式
   alias eagle_state_anim_process_timing_formula process_timing_formula
-  def process_timing_formula(timing)
-    eagle_state_anim_process_timing_formula(timing)
+  def process_timing_formula(timing, flag_apply=true)
+    v = eagle_state_anim_process_timing_formula(timing, flag_apply)
 
     anim_id = state.anims[timing] || 0
     STATE_EX.anim_add_for_once(@battler, state.id, anim_id) if anim_id > 0
@@ -350,6 +350,8 @@ class STATE_EX::Data_StateEX
       anim_id = state.anims[0] || 0
       STATE_EX.anim_add_loop(@battler, state.id, anim_id) if anim_id > 0
     end
+    
+    return v
   end
 end 
 
