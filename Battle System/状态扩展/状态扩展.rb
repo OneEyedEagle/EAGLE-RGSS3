@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.6.0"
+$imported["EAGLE-StateEX"] = "1.6.1"
 #==============================================================================
-# - 2026.8.18.23 八维属性增减值现在可以设置动态计算值了；新增伤害处理前的状态影响
+# - 2026.8.19.22 八维属性增减值现在可以设置动态计算值了；新增伤害处理前的状态影响
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -406,9 +406,10 @@ FLAG_NO_RGSS3_STATE = true
 #           如果状态伤害处理后hp大于0，则会阻止死亡，但状态计数依然会减少。
 #
 #        8 → 技能生效后，但角色受到伤害前：
-#           此时状态的伤害计算不再独立处理，而是会与技能伤害相加，
-#           若为正数，则效果为增加技能伤害，否则减少技能伤害。
+#           此时状态的伤害计算不再独立处理，而是会覆盖原本的技能伤害，
+#           若结果为正数，则为伤害，否则将变为治疗。
 #           在伤害公式中，可以使用 damage 获取技能原本的伤害值。
+#           将按照数据库中设置的优先级由小到大逐个计算并覆盖。
 #
 #   其中 ... 替换为伤害公式，
 #         可以用 a 代表施加该状态的来源战斗者（仅状态对象有效，如果是RGSS状态，请不要使用），
@@ -1013,7 +1014,7 @@ class Data_StateEX
     STATE_EX.state_ex_when_add(self)    if timing == -1 # 状态附加时执行的内容
     STATE_EX.state_ex_when_remove(self) if timing == -2 # 状态解除时执行的内容
     value = state.process_timing_eval(timing, @battler, @battler_from, @level)
-    if flag_apply and value != 0
+    if flag_apply and value and value != 0
       @battler.result.clear_damage_values
       @battler.result.hp_damage += value
       @battler.hp -= value
@@ -1025,7 +1026,7 @@ class Data_StateEX
   # 层数增加时的伤害计算
   def process_level_formula(level)
     value = state.process_level_eval(level, @battler, @battler_from)
-    if value != 0
+    if value and value != 0
       @battler.result.clear_damage_values
       @battler.result.hp_damage += value
       @battler.hp -= value
@@ -1123,7 +1124,7 @@ class RPG::State
   #--------------------------------------------------------------------------
   def process_level_eval(level, battler, battler_from)
     formula = @level_evals[level]
-    return 0 if formula.nil?
+    return nil if formula.nil?
     a = battler_from 
     b = battler
     v = $game_variables
@@ -1135,7 +1136,7 @@ class RPG::State
     rescue
       p "【错误】处理 #{b.name} 的 #{id} 号状态[#{@name}]的 level=#{level} 对应脚本时报错：" 
       p $!
-      return 0
+      return nil
     end
     return value
   end
@@ -1144,7 +1145,7 @@ class RPG::State
   #--------------------------------------------------------------------------
   def process_timing_eval(timing, battler, battler_from, level)
     formula = @timing_evals[timing]
-    return 0 if formula.nil?
+    return nil if formula.nil?
     a = battler_from 
     b = battler
     v = $game_variables
@@ -1157,7 +1158,7 @@ class RPG::State
     rescue
       p "【错误】处理 #{b.name} 的 #{id} 号状态[#{@name}] timing=#{timing} 对应脚本时报错：" 
       p $!
-      return 0
+      return nil
     end
     return value
   end
@@ -1400,7 +1401,7 @@ class Game_Battler < Game_BattlerBase
   # 处理默认状态的伤害计算
   def process_state_timing_eval(state, timing)
     value = state.process_timing_eval(timing, self, nil, state_level(state.id))
-    if value != 0
+    if value and value != 0
       @result.clear_damage_values
       @result.hp_damage = value
       self.hp -= value
@@ -1410,7 +1411,7 @@ class Game_Battler < Game_BattlerBase
   def process_state_level_eval(state)
     level = state_level(state.id)
     value = state.process_level_eval(level, self, nil)
-    if value != 0
+    if value and value != 0
       @result.clear_damage_values
       @result.hp_damage = value
       self.hp -= value
@@ -1704,9 +1705,8 @@ class Game_Battler < Game_BattlerBase
     # 提前记录下伤害值，避免在pop后被清空
     v = @result.hp_damage
     f_crit = @result.critical
-    # 特别的，对于时机8，其伤害计算的结果将与技能伤害相加
-    v_add = update_count_and_get_state_damage_value(8)
-    @result.hp_damage = v + v_add
+    # 特别的，对于时机8，其伤害计算将覆盖技能伤害
+    update_count_and_change_damage(8)
     eagle_state_ex_execute_damage(user)
     if v > 0
       # 新增：对于按造成伤害次数来计数的状态，此处减1
@@ -1727,29 +1727,34 @@ class Game_Battler < Game_BattlerBase
     end
   end
   
-  # 对于时机8（伤害应用前），状态计数减一，且获取伤害计算和
-  def update_count_and_get_state_damage_value(timing = 8)
-    value = 0
-    # RGSS状态
-    states.uniq.each do |state|
-      next if state.nil?
-      # 获取伤害计算的值
-      value += state.process_timing_eval(timing, self, nil, state_level(state.id))
-      # 如果是本次行动增加的状态，则不减1
-      next if @result.added_states && @result.added_states.include?(state.id)
-      if state.auto_removal_timing == timing
-        @state_turns[state.id] -= 1
-        remove_state(state.id) if @state_turns[state.id] == 0
+  # 对于时机8，按优先级由小到大修改伤害
+  def update_count_and_change_damage(timing = 8)
+    array = get_all_states.reverse
+    array.each do |s|
+      if s.is_a?(Integer)
+        # RGSS状态
+        state = $data_states[s]
+        # 覆盖技能伤害值
+        v = state.process_timing_eval(timing, self, nil, state_level(state.id))
+        @result.hp_damage = v if v
+        # 如果是本次行动增加的状态，则不减1
+        next if @result.added_states && @result.added_states.include?(state.id)
+        if state.auto_removal_timing == timing
+          @state_turns[state.id] -= 1
+          remove_state(state.id) if @state_turns[state.id] == 0
+        end
+      else
+        # Data_StateEX
+        @states_ex.each { |data| 
+          # 覆盖技能伤害值
+          v = data.process_timing_formula(timing, false)
+          @result.hp_damage = v if v
+          data.update_count(timing, @result.added_states, false)
+        }
       end
     end
-    # Data_StateEX
-    @states_ex.each { |data| 
-      value += data.process_timing_formula(timing, false)
-      data.update_count(timing, @result.added_states, false)
-    }
     # 删去需要移除的状态
     @states_ex.delete_if { |data| check_state_ex_remove?(data) }
-    return value
   end
   
   # 受到伤害时解除状态
