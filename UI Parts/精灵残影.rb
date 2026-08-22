@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-SpriteGhost"] = "1.0.0"
+$imported["EAGLE-SpriteGhost"] = "1.1.0"
 #==============================================================================
-# - 2022.2.4.22
+# - 2026.8.22.21 新增绑定到地图上的处理
 #==============================================================================
 if $imported["EAGLE-CommonMethods"] == nil
   p "警告：没有放在【组件-通用方法汇总 by老鹰】之下，继续使用一定会报错！"
@@ -22,11 +22,18 @@ end
 #     其中 obj 为 Sprite类及其子类的实例
 #     其中 params 为传入参数的Hash，可省略
 #              （具体参数及预设值可见 INIT_PARAMS 常量）
+#
 #     参数一览：
+#
 #       :t  → 残影的出现间隔时间
+#
 #       :tc  → 每次残影出现间隔的倒计时（当倒计时为0时出现残影，之后赋值 :t）
+#
 #       :opa → 残影每帧减少的透明度
+#
 #       :blend_type → 残影显示模式（0正常，1加法，2减法）
+#
+#       :map → 是否绑定到地图上（true是，false否）
 #
 #  - 利用脚本为指定精灵解除残影
 #
@@ -54,7 +61,7 @@ end
 #-----------------------------------------------------------------------------
 # 【使用 - 地图上的人物】
 #
-#  - 利用脚本为指定事件添加残影更新
+#  - 利用脚本为指定事件添加残影更新（默认将跟随地图移动）
 #
 #        SPRITE_GHOST.add_chara(id[, params])
 #
@@ -89,16 +96,17 @@ module SPRITE_GHOST
     :tc => 0, # 每次残影出现间隔的倒计时（当倒计时为0时出现残影，之后赋值 :t）
     :opa => 20, # 残影每帧减少的透明度
     :blend_type => 0, # 残影显示模式（0正常，1加法，2减法）
+    :map => false, # 是否绑定到地图上
   }
   #--------------------------------------------------------------------------
   # ● 新增残影处理
   #--------------------------------------------------------------------------
   def self.add(obj, params = {})
     return if obj.nil?
-    params.merge!(INIT_PARAMS)
-    params[:active] = true # 当为 true 时，能够生成残影
+    ps = INIT_PARAMS.merge(params)
+    ps[:active] = true # 当为 true 时，能够生成残影
     @datas[obj].finish if @datas[obj]
-    @datas[obj] = Process_Ghost.new(obj, params)
+    @datas[obj] = Process_Ghost.new(obj, ps)
   end
   #--------------------------------------------------------------------------
   # ● 结束残影生成
@@ -132,6 +140,7 @@ module SPRITE_GHOST
   def self.add_chara(id, params = {})
     begin
       s = SceneManager.scene.spriteset.get_chara_sprite(id)
+      params[:map] ||= true
       add(s, params)
     rescue
       p "请不要在 Scene_Map 之外的场景使用 SPRITE_GHOST.add_chara"
@@ -196,7 +205,13 @@ class Process_Ghost
   # ● 更新全部残影
   #--------------------------------------------------------------------------
   def update_sprites
-    @sprites.each { |s| s.opacity -= @params[:opa] }
+    @sprites.each { |s| 
+      s.opacity -= @params[:opa]
+      if @params[:map] == true
+        s.x = s.x0 - ($game_map.display_x - s.map_xy[0]) * 32
+        s.y = s.y0 - ($game_map.display_y - s.map_xy[1]) * 32
+      end
+    }
   end
   #--------------------------------------------------------------------------
   # ● 新增一个残影
@@ -208,6 +223,7 @@ class Process_Ghost
       s.dispose
     end
     s = Sprite_Ghost.new(@obj)
+    s.map_xy = [$game_map.display_x, $game_map.display_y] if @params[:map] == true
     s.blend_type = @params[:blend_type]
     @sprites.push(s)
     @params[:tc] = @params[:t]
@@ -247,11 +263,14 @@ end
 # ○ 实际显示的残影精灵
 #=============================================================================
 class Sprite_Ghost < Sprite
+  attr_accessor  :map_xy, :x0, :y0
   #--------------------------------------------------------------------------
   # ● 初始化
   #--------------------------------------------------------------------------
   def initialize(s)
     super(nil)
+    @x0 = @y0 = 0
+    @map_xy = nil
     reset(s)
   end
   #--------------------------------------------------------------------------
@@ -261,8 +280,8 @@ class Sprite_Ghost < Sprite
     self.viewport = s.viewport if s.viewport
     self.bitmap = s.bitmap
     self.src_rect = s.src_rect
-    self.x = s.x
-    self.y = s.y
+    self.x = @x0 = s.x
+    self.y = @y0 = s.y
     self.z = s.z
     self.z -= 1 if self.z > 0
     self.ox = s.ox
