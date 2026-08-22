@@ -4,26 +4,18 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-缓动函数 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PopText"] = "1.0.1"
+$imported["EAGLE-PopText"] = "1.1.0"
 #==============================================================================
-# - 2026.7.29.23 
+# - 2026.8.22.12 新增弹出式物品获得
 #==============================================================================
-
+module POP_TEXT
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-# ● 什么是 弹出式文本
+# ● 弹出式文本
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #
 #  1. 在各类游戏中都有受击时显示伤害数字的设定，这就是本插件所说的弹出式文本。
 #
 #  2. 弹出式文本在创建后，将自动移入、自动移出，且不会跟随角色移动。
-#
-
-module POP_TEXT
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-# ● 使用方式A：利用全局脚本
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-#
-#  - 该弹出式文本能够在任意时刻调用，此处对可使用的全局脚本进行说明。
 #
 #------------------------------------------------
 # 【全局脚本a：生成一个弹出式文本】
@@ -122,6 +114,76 @@ module POP_TEXT
 # - 正则匹配：事件指令-注释中的文本格式
 COMMENT_POP_TEXT = /^POP *?\| *?(.*?) *?\| *?(.*)/mi
 
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+# ● 弹出式获得物品
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+#
+#  - 在一些游戏中击败敌人后会爆出物品，物品吸附到主角身上后才会获得物品，
+#    本插件便是在【地图上】新增了这样的获得物品演出。
+#
+#  - 弹出式物品获得在创建后，将自动从指定事件上爆出、等待一小会、再自动移至玩家，
+#    最后获得对应设置的物品，期间玩家移动，物品将跟随玩家移动。
+#
+#------------------------------------------------
+# 【全局脚本：生成一个地图上从指定事件处弹出的物品获得】
+#
+#  - 调用该全局脚本生成一个弹出式物品获得，并自动移至玩家处、获得对应物品：
+#
+#      POP_TEXT.gain_item(params)
+#
+#    其中 params 为参数Hash，必须设置以下参数：
+#
+#     :item => 字符串 或 物品实例,   → 获得的物品
+#                      若为 字符串 ，则为 物品类别字母+物品ID 的形式：
+#                         'i'代表物品，'w'代表武器，'a'代表护甲。
+#                         可以用 | 分割多个物品的字符串。
+#                      若为 物品实例 , 则为 $data_items[1] 等对象。
+#                         可以传入数组，其中为多个 实例。
+#
+#     :eid => 数字,        → 所绑定的事件ID。
+#                            正整数为地图上的对应ID号事件；
+#                            负整数为玩家队伍中对应ID号的角色。
+#
+#    可以设置以下参数：
+#
+#     :name => true 或 false,   → 文本中是否显示物品名称（默认true显示）
+#     
+#     :type => :符号,      → 移入移出方式（默认:item1）
+#
+#         可传入符号一览：
+#              :item1      → 从指定事件弹出，自动移至主角处，获得物品
+#              :item2      → 从指定事件弹出，主角靠近时自动移至主角处，获得物品
+#
+#    同样的，params 也可以为字符串形式，如 "item=i1 eid=1"
+#
+#  - 示例：
+#
+#     POP_TEXT.gain_item({:item => "i1", :eid => 1 })
+#     POP_TEXT.gain_item("item=i1 eid=1")
+#
+#       → 在1号事件上弹出1号物品，并自动移至玩家身上后获得1号物品。
+#
+#------------------------------------------------
+# 【事件注释：生成一个地图上从指定事件处弹出的物品获得】
+#
+# - 在事件指令-注释中，编写该样式文本（需作为行首，且中途不可换行）
+#
+#       POPITEM|tag字符串|文本
+#
+#    其中 POPITEM 为固定的识别文本，不可缺少。
+#    其中 tag字符串 为【全局脚本：生成一个地图上从指定事件处弹出的物品获得】
+#             中的参数的标签对，用空格分隔不同参数。
+#             特别的，可以用 eid=0 显示到当前事件。
+#
+#  - 示例：
+#
+#    POPITEM|eid=0 item=i1|i2
+#       → 在当前事件上分别弹出的1号和2号物品的图标+名称，
+#         并移动至玩家身上，再获得它。
+#
+# - 正则匹配：事件指令-注释中的文本格式
+COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
+
 #==============================================================================
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -129,28 +191,25 @@ COMMENT_POP_TEXT = /^POP *?\| *?(.*?) *?\| *?(.*)/mi
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
   #--------------------------------------------------------------------------
-  # ● 生成一个POP
+  # ● 生成一个POP文本
   #--------------------------------------------------------------------------
   def self.new(params = {})
-    if params.is_a?(String)
-      params = EAGLE_COMMON.parse_tags(params)
-      a = [:bid, :size, :x, :y, :z, :dy, :type, :map]
-      a.each { |sym| params[sym] = params[sym] if params[sym] }
-      params[:type] = params[:type].to_sym if params[:type]
-    end
+    params = process_string_params(t) if params.is_a?(String)
     params[:bid] = get_battler_id(params[:battler]) if params[:battler]
-    if @sprites_pop_finish.empty?
-      s = Sprite_Pop.new
-    else
-      s = @sprites_pop_finish.pop
-    end
-    s.reset(params)
-    @sprites_pop_new.push(s)
+    new_sprite(params)
   end
-  
-  #--------------------------------------------------------------------------
-  # ● 由战斗者获取其战斗中唯一ID
-  #--------------------------------------------------------------------------  
+
+  # 处理字符串形式的参数
+  def self.process_string_params(t, syms=[])
+    params = EAGLE_COMMON.parse_tags(t)
+    a = [:eid, :bid, :size, :x, :y, :z, :dy, :type, :map]
+    a += syms
+    a.each { |sym| params[sym] = params[sym] if params[sym] }
+    params[:type] = params[:type].to_sym if params[:type]
+    params
+  end
+
+  # 由战斗者获取其战斗中唯一ID
   def self.get_battler_id(battler)
     return nil if battler == nil
     if battler.actor?  # 我方战斗者ID = 数据库ID的相反数
@@ -159,11 +218,64 @@ COMMENT_POP_TEXT = /^POP *?\| *?(.*?) *?\| *?(.*)/mi
       return battler.index
     end
   end
+
+  #--------------------------------------------------------------------------
+  # ● 生成一个POP物品获得
+  #--------------------------------------------------------------------------
+  def self.gain_item(params = {})
+    params = process_string_params(t, [:item, :show_name]) if params.is_a?(String)
+    return if params[:item].nil?
+    params[:type] ||= :item1
+    if params[:name].nil?
+      params[:name] = true
+    else
+      params[:name] = params[:name] == '1' ? true : false
+    end 
+    if params[:item].is_a?(String)
+      if params[:item].include?('|')
+        # 包含多个物品
+        items = params[:item].split('|')
+        items.each { |t| params[:item] = t; gain_item_raw(params.dup) }
+        return 
+      end
+    elsif params[:item].is_a?(Array)
+      items = params[:item]
+      items.each { |t| params[:item] = t; gain_item_raw(params.dup) }
+    end
+    gain_item_raw(params)
+  end
+  def self.gain_item_raw(params)
+    # 需要已设置 params[:item] 为 "i1" 或 $data_items[1]
+    if params[:item].is_a?(String)
+      type = params[:item][0]
+      id = params[:item][1..-1].to_i
+      params[:item] = EAGLE_COMMON.get_item_obj(type, id)
+    end
+    params[:text] = "\ei[#{params[:item].icon_index}]"
+    params[:text] += "#{params[:item].name}" if params[:name]
+    new_sprite(params)
+  end
+
+  # 处理实际获得物品
+  def self.gain_item_rgss(item)
+    $game_party.gain_item(item, 1)
+  end
   
   #--------------------------------------------------------------------------
-  # ● 每帧更新
+  # ● 处理精灵组
   #--------------------------------------------------------------------------
   @sprites_pop = []; @sprites_pop_new = []; @sprites_pop_finish = []
+  def self.new_sprite(params)
+    if @sprites_pop_finish.empty?
+      s = Sprite_Pop.new
+    else
+      s = @sprites_pop_finish.pop
+    end
+    s.reset(params)
+    @sprites_pop_new.push(s)
+    s
+  end
+
   def self.update
     @sprites_pop = @sprites_pop.concat(@sprites_pop_new)
     @sprites_pop_new.clear
@@ -461,6 +573,83 @@ COMMENT_POP_TEXT = /^POP *?\| *?(.*?) *?\| *?(.*)/mi
       50.times { self.opacity -= 5; Fiber.yield }
     end
 
+    # 开始 - 弹出物品图标，然后吸附至玩家身上，最后获得物品
+    def run_item1
+      vx = (rand * 2 - 1) * 3
+      dy0 = 0
+      # -@y1 确保伤害数字都掉落在同一水平面
+      dy1 = - @y1 + @params[:dy]
+      d_dy = dy1 - dy0
+      t = 40
+      t.times do |i|
+        @dx += vx
+        v = EasingFuction.call("easeOutBounce", i * 1.0 / t)
+        @dy = dy0 + d_dy * v
+        Fiber.yield
+      end
+      15.times { Fiber.yield }
+      run_to_player
+      POP_TEXT.gain_item_rgss(@params[:item])
+    end
+
+    # 开始 - 弹出物品图标，靠近时才吸附，最后获得物品
+    def run_item2
+      vx = (rand * 2 - 1) * 3
+      dy0 = 0
+      # -@y1 确保伤害数字都掉落在同一水平面
+      dy1 = - @y1 + @params[:dy]
+      d_dy = dy1 - dy0
+      t = 40
+      t.times do |i|
+        @dx += vx
+        v = EasingFuction.call("easeOutBounce", i * 1.0 / t)
+        @dy = dy0 + d_dy * v
+        Fiber.yield
+      end
+      flag = false
+      opa = 255
+      while self.opacity > 0
+        _dx = $game_player.screen_x - self.x
+        _dy = $game_player.screen_y - 16 - self.y
+        if _dx.abs + _dy.abs < 96
+          self.opacity = 255
+          flag = true 
+          break
+        end
+        Fiber.yield
+        opa -= 0.2
+        self.opacity = opa
+      end
+      if flag
+        run_to_player
+        POP_TEXT.gain_item_rgss(@params[:item])
+      end
+    end
+
+    # 结束 - 吸附至玩家身上
+    def run_to_player
+      dx1 = dy1 = i = 0
+      t = 20
+      while self.opacity > 0
+        _dx1 = $game_player.screen_x - @x0 + ($game_map.display_x - @x0_map) * 32
+        _dy1 = $game_player.screen_y - 16 - @y0 + ($game_map.display_y - @y0_map) * 32
+        if dx1 != _dx1 or dy1 != _dy1
+          i = 0
+          dx0 = @dx
+          dy0 = @dy
+          dx1 = _dx1
+          dy1 = _dy1
+        end
+        i += 1
+        per = EasingFuction.call("easeOutCirc", i * 1.0 / t)
+        @dx = dx0 + (dx1 - dx0) * per
+        @dy = dy0 + (dy1 - dy0) * per
+        Fiber.yield
+        self.opacity -= 10
+        break if i >= t
+      end
+    end
+
     #--------------------------------------------------------------------------
     # ● 释放
     #--------------------------------------------------------------------------
@@ -507,6 +696,12 @@ class Game_Interpreter
       ps[:text] = v[1]  # text
       ps[:cur_event_id] = @event_id
       POP_TEXT.new(ps)
+    end
+    t.scan(POP_TEXT::COMMENT_POP_ITEM).each do |v|
+      ps = v[0].lstrip.rstrip  # tags string  # 去除前后空格
+      ps = EAGLE_COMMON.parse_tags(ps)
+      ps[:cur_event_id] = @event_id
+      POP_TEXT.gain_item(ps)
     end
   end
 end

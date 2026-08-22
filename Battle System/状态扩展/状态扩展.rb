@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX"] = "1.6.1"
+$imported["EAGLE-StateEX"] = "1.6.2"
 #==============================================================================
-# - 2026.8.19.22 八维属性增减值现在可以设置动态计算值了；新增伤害处理前的状态影响
+# - 2026.8.22.15 新增状态锁血
 #==============================================================================
 #
 # - 由于在默认的 Game_BattlerBase 中，@states 存储了角色当前全部状态的ID，
@@ -116,6 +116,27 @@ FLAG_NO_RGSS3_STATE = true
 #      <死亡保留>  或  <reserve when die>
 #
 #   则在角色死亡时，该状态将不会被清除。
+#
+
+#-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# △ 状态锁血                                    【RGSS状态和状态对象】
+#
+# - 当角色有状态时，HP不会低于指定值，且触发时将自动打开开关。
+#
+#-----------------设置方式-----------------
+#
+# - 在 数据库-状态 的备注中填写：
+#
+#      <锁血 值 开关ID>  或  <hp lock 值 开关ID>
+#
+#   其中 值 为锁血的数值，若带有 % 符号，则会作为百分比值。
+#   其中 开关ID 为 事件-开关操作 中的对应开关，当触发锁血时，将会自动打开该开关。
+#
+#   如 <锁血 1 2> 代表HP到1点时将不再下降，且打开2号开关。
+#
+#   如 <锁血 50% 1> 代表HP到一半时将不再下降，且打开1号开关。
+#
+#   同时，可以在 敌群-事件页 中设置开关开启时触发的事件，来制作BOSS的多阶段演出。
 #
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -796,6 +817,18 @@ module STATE_EX
   def self.read_note_level_reduce(t)
     return (t =~ /<层数抵扣消除|reduce one level>/i) != nil 
   end
+  
+  # 读取状态锁血的数值或比例值，及开关
+  def self.read_note_hp_lock(t)
+    t =~ /<(锁血|hp lock) *:? *(.*?)(%)? (.*?)>/i
+    if $2
+      v = $2.to_i
+      v = v * 1.0 / 100 if $3
+      sid = $4.to_i
+      return v, sid
+    end
+    return nil
+  end
 
   # 读取状态的标签数组
   def self.read_note_tags(t)
@@ -883,6 +916,10 @@ class Data_StateEX
 
   # 获取绑定了伤害计算的时机数字的数组
   def timings;  state.timing_evals.keys; end
+    
+  # 获取锁血值及开关
+  def hp_lock; state.hp_lock; end
+  def hp_lock_sw; state.hp_lock_sw; end
   
   #--------------------------------------------------------------------------
   # ● 判定
@@ -1042,7 +1079,7 @@ end # end of module
 #==============================================================================
 class RPG::State
   attr_reader :level, :level_evals, :max, :timing_evals
-  attr_reader :reserve_when_die, :reduce_one_level
+  attr_reader :reserve_when_die, :reduce_one_level, :hp_lock, :hp_lock_sw
   attr_reader :param_rate, :param_plus, :param_dynamic, :tags, :timing_add
   #--------------------------------------------------------------------------
   # ● 进入游戏时读取备注栏
@@ -1083,6 +1120,9 @@ class RPG::State
 
     # 用层数来抵扣消除的标记
     @reduce_one_level = STATE_EX.read_note_level_reduce(note)
+    
+    # 锁血的数值或比例值
+    @hp_lock, @hp_lock_sw = STATE_EX.read_note_hp_lock(note)
     
     # 标签数组
     @tags = STATE_EX.read_note_tags(note)
@@ -1289,6 +1329,30 @@ class Game_BattlerBase
   #--------------------------------------------------------------------------
   # ● 为 状态对象 兼容默认方法
   #--------------------------------------------------------------------------
+  # 更改 HP 
+  alias eagle_states_ex_hp hp=
+  def hp=(hp)
+    get_all_states.each do |s|
+      if s.is_a?(Integer) # RGSS状态
+        state = $data_states[s]
+      else # Data_StateEX
+        state = s
+      end
+      if state.hp_lock 
+        flag = false
+        if state.hp_lock < 1 and hp_rate < state.hp_lock
+          hp = (state.hp_lock * mhp).floor
+          flag = true
+        elsif state.hp_lock > 1 and @hp < state.hp_lock
+          hp = state.hp_lock
+          flag = true
+        end
+        $game_switches[state.hp_lock_sw] = true if flag
+      end
+    end
+    eagle_states_ex_hp(hp)
+  end
+  
   # 清除状态信息
   alias eagle_states_ex_clear_states clear_states
   def clear_states
@@ -1745,12 +1809,10 @@ class Game_Battler < Game_BattlerBase
         end
       else
         # Data_StateEX
-        @states_ex.each { |data| 
-          # 覆盖技能伤害值
-          v = data.process_timing_formula(timing, false)
-          @result.hp_damage = v if v
-          data.update_count(timing, @result.added_states, false)
-        }
+        # 覆盖技能伤害值
+        v = s.process_timing_formula(timing, false)
+        @result.hp_damage = v if v
+        s.update_count(timing, @result.added_states, false)
       end
     end
     # 删去需要移除的状态
