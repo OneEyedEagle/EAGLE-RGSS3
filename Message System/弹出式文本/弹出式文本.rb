@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-缓动函数 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PopText"] = "1.1.0"
+$imported["EAGLE-PopText"] = "1.1.1"
 #==============================================================================
-# - 2026.8.22.12 新增弹出式物品获得
+# - 2026.8.23.13 新增弹出式物品获得；新增鼠标拾取
 #==============================================================================
 module POP_TEXT
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -119,15 +119,15 @@ COMMENT_POP_TEXT = /^POP *?\| *?(.*?) *?\| *?(.*)/mi
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #
 #  - 在一些游戏中击败敌人后会爆出物品，物品吸附到主角身上后才会获得物品，
-#    本插件便是在【地图上】新增了这样的获得物品演出。
+#    本插件便是新增了这样的获得物品演出。
 #
 #  - 弹出式物品获得在创建后，将自动从指定事件上爆出、等待一小会、再自动移至玩家，
 #    最后获得对应设置的物品，期间玩家移动，物品将跟随玩家移动。
 #
 #------------------------------------------------
-# 【全局脚本：生成一个地图上从指定事件处弹出的物品获得】
+# 【全局脚本：生成一个弹出的物品获得】
 #
-#  - 调用该全局脚本生成一个弹出式物品获得，并自动移至玩家处、获得对应物品：
+#  - 调用该全局脚本生成一个弹出式物品获得，并自动移动、获得对应物品：
 #
 #      POP_TEXT.gain_item(params)
 #
@@ -140,19 +140,16 @@ COMMENT_POP_TEXT = /^POP *?\| *?(.*?) *?\| *?(.*)/mi
 #                      若为 物品实例 , 则为 $data_items[1] 等对象。
 #                         可以传入数组，其中为多个 实例。
 #
-#     :eid => 数字,        → 所绑定的事件ID。
-#                            正整数为地图上的对应ID号事件；
-#                            负整数为玩家队伍中对应ID号的角色。
-#
 #    可以设置以下参数：
 #
-#     :name => true 或 false,   → 文本中是否显示物品名称（默认true显示）
+#     :name => true 或 false,   → 文本中是否显示物品名称（默认false不显示）
 #     
-#     :type => :符号,      → 移入移出方式（默认:item1）
+#     :type => :符号,    → 移入移出方式（默认:item1）
 #
 #         可传入符号一览：
-#              :item1      → 从指定事件弹出，自动移至主角处，获得物品
-#              :item2      → 从指定事件弹出，主角靠近时自动移至主角处，获得物品
+#              :item1    → （仅地图）弹出，自动拾取并获得物品
+#              :item2    → （仅地图）弹出，主角靠近时自动拾取并获得物品
+#              :item3    → （需【鼠标扩展 by老鹰】）弹出，鼠标靠近时自动拾取并获得物品
 #
 #    同样的，params 也可以为字符串形式，如 "item=i1 eid=1"
 #
@@ -227,7 +224,7 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
     return if params[:item].nil?
     params[:type] ||= :item1
     if params[:name].nil?
-      params[:name] = true
+      params[:name] = false
     else
       params[:name] = params[:name] == '1' ? true : false
     end 
@@ -369,10 +366,11 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
         return
       end
 
-      @x0 = @params[:x] || 0
-      @y0 = @params[:y] || 0
+      @x0 = @params[:x] ? @params[:x].to_i : 0
+      @y0 = @params[:y] ? @params[:y].to_i : 0
       @x1 = @y1 = 0
-      @z  = @params[:z] || 100
+      @params[:dy] = @params[:dy] ? @params[:dy].to_i : 0
+      @z  = @params[:z] ? @params[:z].to_i :  100
     end
 
     #--------------------------------------------------------------------------
@@ -558,6 +556,10 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
 
     # 开始 - 弹跳（缓动函数），再淡出
     def run_bounce2
+      process_bounce_ease
+      50.times { self.opacity -= 5; Fiber.yield }
+    end
+    def process_bounce_ease # 进行弹跳（缓动函数）
       vx = (rand * 2 - 1) * 3
       dy0 = 0
       # -@y1 确保伤害数字都掉落在同一水平面
@@ -570,42 +572,42 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
         @dy = dy0 + d_dy * v
         Fiber.yield
       end
-      50.times { self.opacity -= 5; Fiber.yield }
     end
 
     # 开始 - 弹出物品图标，然后吸附至玩家身上，最后获得物品
     def run_item1
-      vx = (rand * 2 - 1) * 3
-      dy0 = 0
-      # -@y1 确保伤害数字都掉落在同一水平面
-      dy1 = - @y1 + @params[:dy]
-      d_dy = dy1 - dy0
-      t = 40
-      t.times do |i|
-        @dx += vx
-        v = EasingFuction.call("easeOutBounce", i * 1.0 / t)
-        @dy = dy0 + d_dy * v
-        Fiber.yield
-      end
+      process_bounce_ease
       15.times { Fiber.yield }
-      run_to_player
+      move_to_player
       POP_TEXT.gain_item_rgss(@params[:item])
     end
-
-    # 开始 - 弹出物品图标，靠近时才吸附，最后获得物品
-    def run_item2
-      vx = (rand * 2 - 1) * 3
-      dy0 = 0
-      # -@y1 确保伤害数字都掉落在同一水平面
-      dy1 = - @y1 + @params[:dy]
-      d_dy = dy1 - dy0
-      t = 40
-      t.times do |i|
-        @dx += vx
-        v = EasingFuction.call("easeOutBounce", i * 1.0 / t)
-        @dy = dy0 + d_dy * v
+    # 吸附至玩家身上
+    def move_to_player
+      dx1 = dy1 = i = 0
+      t = 20
+      while self.opacity > 0
+        _dx1 = $game_player.screen_x - @x0 + ($game_map.display_x - @x0_map) * 32
+        _dy1 = $game_player.screen_y - 16 - @y0 + ($game_map.display_y - @y0_map) * 32
+        if dx1 != _dx1 or dy1 != _dy1
+          i = 0
+          dx0 = @dx
+          dy0 = @dy
+          dx1 = _dx1
+          dy1 = _dy1
+        end
+        i += 1
+        per = EasingFuction.call("easeOutCirc", i * 1.0 / t)
+        @dx = dx0 + (dx1 - dx0) * per
+        @dy = dy0 + (dy1 - dy0) * per
         Fiber.yield
+        self.opacity -= 10
+        break if i >= t
       end
+    end
+
+    # 开始 - 弹出物品图标，玩家靠近时才吸附，最后获得物品
+    def run_item2
+      process_bounce_ease
       flag = false
       opa = 255
       while self.opacity > 0
@@ -621,18 +623,45 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
         self.opacity = opa
       end
       if flag
-        run_to_player
+        move_to_player
         POP_TEXT.gain_item_rgss(@params[:item])
       end
     end
-
-    # 结束 - 吸附至玩家身上
-    def run_to_player
+    
+    # 开始 - 弹出物品图标，鼠标靠近时吸附，最后获得物品
+    def run_item3
+      process_bounce_ease
+      if $imported["EAGLE-MouseEX"]
+        flag = false
+        opa = 255
+        while self.opacity > 0
+          _dx = MOUSE_EX.x - self.x
+          _dy = MOUSE_EX.y - self.y
+          if _dx.abs + _dy.abs < 96
+            self.opacity = 255
+            flag = true 
+            break
+          end
+          Fiber.yield
+          opa -= 0.2
+          self.opacity = opa
+        end
+        if flag
+          move_to_mouse
+          POP_TEXT.gain_item_rgss(@params[:item])
+        end
+      else
+        move_to_player
+        POP_TEXT.gain_item_rgss(@params[:item])
+      end
+    end
+    # 吸附至鼠标
+    def move_to_mouse
       dx1 = dy1 = i = 0
       t = 20
       while self.opacity > 0
-        _dx1 = $game_player.screen_x - @x0 + ($game_map.display_x - @x0_map) * 32
-        _dy1 = $game_player.screen_y - 16 - @y0 + ($game_map.display_y - @y0_map) * 32
+        _dx1 = MOUSE_EX.x - self.x + @dx - 16
+        _dy1 = MOUSE_EX.y - self.y + @dy - 16
         if dx1 != _dx1 or dy1 != _dy1
           i = 0
           dx0 = @dx

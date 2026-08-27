@@ -2,9 +2,9 @@
 # ■ 任意时刻行动 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ActionEX"] = "1.0.3"
+$imported["EAGLE-ActionEX"] = "1.0.4"
 #=============================================================================
-# - 2026.8.12.21 兼容新版技能多段伤害
+# - 2026.8.24.12 修复战斗结束时可能报错的bug
 #=============================================================================
 # - 本插件新增了在任意时刻都能强制战斗行动的全局脚本
 # ※ 本插件兼容【SideView100】，请置于其下
@@ -158,7 +158,10 @@ module BattleManager
       scene.show_animation(targets, item.animation_id)
     end
     # 应用伤害
-    targets.each {|tar| item.repeats.times { scene.invoke_item(tar, item) } }
+    targets.each {|tar| 
+      next if tar.nil?
+      item.repeats.times { scene.invoke_item(tar, item) }
+    }
     # 处理行动结束
     scene.process_action_end 
     # 消除日志
@@ -259,7 +262,8 @@ module BattleManager
   #--------------------------------------------------------
   # 回合开始前（指令输入前）
   def self.input_start
-    if SceneManager.scene.flag_process_turn_start != true
+    if SceneManager.scene_is?(Scene_Battle) and 
+       SceneManager.scene.flag_process_turn_start != true
       SceneManager.scene.flag_process_turn_start = true
       SceneManager.scene.process_before_turn_start
     end
@@ -269,13 +273,17 @@ module BattleManager
   # 回合开始后（指令输入后，全部角色行动前）
   def self.turn_start
     eagle_battler_action_ex_turn_start
-    SceneManager.scene.process_after_turn_start
+    if SceneManager.scene_is?(Scene_Battle)
+      SceneManager.scene.process_after_turn_start
+    end
   end
   #--------------------------------------------------------
   # 战斗开始
   def self.battle_start
     eagle_battler_action_ex_battle_start
-    SceneManager.scene.process_after_battle_start
+    if SceneManager.scene_is?(Scene_Battle)
+      SceneManager.scene.process_after_battle_start
+    end
   end
 end
 #==============================================================================
