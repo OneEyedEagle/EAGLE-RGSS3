@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【鹰式对话框扩展 V2.0】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-NumberInputEX"] = "2.2.1"
+$imported["EAGLE-NumberInputEX"] = "2.2.2"
 #=============================================================================
-# - 2026.8.9.21 背景不透明度与对话框保持一致
+# - 2026.8.29.0 修复换行符失效的bug
 #=============================================================================
 # 【使用：设置数字样式】
 #
@@ -189,12 +189,11 @@ class Window_EagleNumberInput < Window_Base
     _x = 0; _y = 0; _w = 0; _h = 0; _index = 0
     $game_message.numinput_pattern.each_char do |c|
       if c == "\n"
-        _y += _h; _h = 0; next
+        _x = 0; _y += _h; _h = 0; next
       end
       is_number = c == "*"
       rect = text_size(is_number ? '0' : c)
       _h = [rect.height, line_height, _h].max
-      @height_max = [@height_max, _h].max
       if is_number
         place = 10 ** (@digits_max - 1 - _index)
         v = @number / place % 10
@@ -208,6 +207,7 @@ class Window_EagleNumberInput < Window_Base
       _x += _w
       @width_max = [@width_max, _x].max
     end
+    @height_max = _y + _h
   end
 
   # 更新窗口宽高
@@ -305,18 +305,23 @@ class Window_EagleNumberInput < Window_Base
     _x = 0; _y = 0; _w = 0; _h = 0; _index = 0
     $game_message.numinput_pattern.each_char do |c|
       if c == "\n"
-        _y += _h; _h = 0
+        _x = 0; _y += _h; _h = 0
         next
       end
       is_number = c == "*"
       _c = is_number ? @numbers[_index].to_s : c
       rect = text_size(_c)
+      ali = 0
       if is_number
         rect.width = [rect.width, 20].max
+        draw_width = rect.width
+        ali = 1
         _index += 1
+      else
+        draw_width = rect.width*2
       end
       rect.height = [rect.height, line_height, _h].max
-      draw_text(_x+1,_y,rect.width+2,rect.height, _c, 1)
+      draw_text(_x,_y,draw_width,rect.height, _c, ali)
       _x += rect.width
       _h = rect.height
     end

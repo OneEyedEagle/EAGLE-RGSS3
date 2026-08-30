@@ -4,17 +4,72 @@ module SELECT_ACTOR
 
   COMMENT_SELECT_ACTOR = /^选人\|(.*)/mi
   
+  PARAMS = {}
+  
+  PARAMS["default"] = {
+    # 需要选择的角色数量
+    :n   => 1,
+    
+    # 是否从全数据库角色中挑选（1全数据库，0仅队伍中角色）
+    :all => 0,
+    
+    # 角色的数据库备注栏中【必须】有的字符串
+    :tag => [], # ["<男>", "<喜好：主角>"] ← 这样填写
+    
+    # 角色的数据库备注栏中【不能】有的字符串
+    :no_tag => [],  # ["<肥胖>", "<喜好：榴莲>"] ← 有这些字符串的角色不会出现
+    
+    # 角色需要满足的条件
+    #  如果不是nil，那 eval 后返回 true 才算满足条件
+    #  其中可以用 a 代表当前角色 $data_actors[ID]
+    :cond => nil,
+      
+    # 背景的z值
+    :z => 100,
+    # 显示在顶上的帮助文本，可以有两行
+    :title => "※ 请选择角色：",
+    # 根据角色ID，显示不同的帮助文本，可以有两行
+    :help => {
+      0 => "「选我！」",  # 如果没找到对应角色的，则取这个帮助文本
+    },
+      
+    # 选择完成后，第一个选择的角色的ID将存入该变量
+    :vid => 0,
+  }
+  
+  PARAMS["温泉"] = {
+    :title => "※ 请决定由谁体验温泉：\n   （对应角色将获得 \ec[17]500\ec[0] 点经验）",
+    :vid => 40,
+    :help => {
+      0 => "「选我！」",
+      1 => "「好久没泡温泉啦~」",
+    },
+  }
+  
+  HELP_WINDOW_WIDTH = Graphics.width - 64
+  ACTOR_WINDOW_WIDTH = 300
+  
+  ACTOR_WINDOW_LINE_MAX = 8
+  
+  COMMAND_TEXT_FINISH = "→ 完成 " # 将自动加上已选人数和可选人数
+  HELP_TEXT_FINISH    = "完成角色选择。"
+  
+
   def self.run_init_params(params)
-    @params = params
-    @params[:n] ||= 1 # 需要选择的角色数量
-    @params[:n] = @params[:n].to_i
-    @params[:all] ||= true # 是否从全数据库角色中挑选，若false，则从队伍中角色
-    @params[:all] = @params[:all] == "1" ? true : false
+    ps0 = PARAMS["default"].dup
     
-    @params[:tag] ||= [] # 角色备注栏中需要有的tag
-    @params[:no_tag] ||= [] # 角色备注栏中不能有的tag
-    @params[:cond] ||= nil # 角色需要满足的条件
+    id = params[:id]
+    ps1 = PARAMS[id] || {} if id != "default"
+    ps0 = ps0.merge!(ps1) if ps1
+    ps0 = ps0.merge!(params)
     
+    ps0[:n]   = ps0[:n].to_i
+    ps0[:all] = ps0[:all].to_i == 1 ? true : false
+    ps0[:z]   = ps0[:z].to_i
+    ps0[:vid] = ps0[:vid] ? ps0[:vid].to_i : 0
+
+    @params = ps0
+    @flag_state = nil
     @flag_finish = false
     last_select.clear
   end
@@ -29,71 +84,143 @@ module SELECT_ACTOR
       yield if block_given?
       break if run_finish?
     end
-    30.times { 
-      run_update
-      yield
-    } if block_given? and !last_select.empty?
     run_finish
-    30.times { 
+    while true 
       run_update
       yield
-    } if block_given? 
+      break if @s_bg.opacity <= 0
+    end if block_given? 
     run_dispose
   end
   
   def self.run_init
-    w = 300
+    w = SELECT_ACTOR::HELP_WINDOW_WIDTH
     @w_title = Window_EagleActorListTitle.new(w)
-    @w_title.refresh(@params[:n])
+    @w_title.refresh(@params[:title])
     
+    w = SELECT_ACTOR::ACTOR_WINDOW_WIDTH
     @w_list = Window_EagleActorList.new(0,0,w,32)
     @w_list.set_handler(:ok, SELECT_ACTOR.method(:method_empty))
     @w_list.set_handler(:cancel, SELECT_ACTOR.method(:method_finish))
-    @w_list.title_window = @w_title
     @w_list.reset(@params)
-  end
-  
-  def self.run_reset_position
-    @w_list.x = Graphics.width / 2 - @w_list.width / 2
-    @w_list.y = Graphics.height / 2 - @w_list.height / 2
     
-    @w_title.x = @w_list.x
-    @w_title.y = @w_list.y - @w_title.height
-  end
-  
-  def self.run_start
-    @w_list.open
-  end
-  
-  def self.run_update
-    @w_list.update
-    @w_title.update
-  end
-  
-  def self.run_finish?
-    @flag_finish
-  end
-  
-  def self.run_finish
-    @w_list.close
-    @w_title.close
-  end
-  
-  def self.run_dispose
-    @w_list.dispose
-    @w_title.dispose
-  end
-
-  class << self; attr_accessor :last_select; end
-  def self.last_select
-    @last_select ||= []
-    @last_select
+    @w_help = Window_EagleActorListHelp.new
+    @w_list.help_window = @w_help
+    
+    @s_bg = Sprite.new
+    h = @w_title.height + @w_list.height + @w_help.height
+    @s_bg.bitmap = Bitmap.new(HELP_WINDOW_WIDTH, h)
+    c = Color.new(0,0,0,150)
+    if $imported["EAGLE-UtilsDrawing2"]
+      # 如果使用了【组件-形状绘制2】，则改为圆角矩形
+      @s_bg.bitmap.fill_rounded_rect(0,0,@s_bg.width,@s_bg.height, 4, c)
+    else
+      @s_bg.bitmap.fill_rect(0,0,@s_bg.width,@s_bg.height, c)
+    end
   end
   
   def self.method_empty
   end
   def self.method_finish
     @flag_finish = true
+  end
+  
+  
+  def self.run_reset_position
+    @s_bg.opacity = 0
+    @s_bg.x = (Graphics.width - @s_bg.width) / 2
+    @s_bg.y = (Graphics.height - @s_bg.height) / 2
+    @s_bg.z = @params[:z]
+    
+    @w_title.x = @s_bg.x
+    @w_title.y = @s_bg.y
+    @w_title.z = @s_bg.z + 1
+    @w_title.opacity = @w_title.contents_opacity = 0
+    
+    @w_list.x = (Graphics.width - @w_list.width) / 2
+    @w_list.y = @w_title.y + @w_title.height
+    @w_list.z = @s_bg.z + 1
+    @w_list.opacity = @w_list.contents_opacity = 0
+    
+    @w_help.x = @w_title.x
+    @w_help.y = @w_list.y + @w_list.height
+    @w_help.z = @s_bg.z + 1
+    @w_help.opacity = @w_help.contents_opacity = 0
+    
+    [ Rect.new(@w_title.x-@s_bg.x+12,@w_title.y-@s_bg.y+@w_title.height,@w_title.width-24,1),
+      Rect.new(@w_help.x-@s_bg.x+12,@w_help.y-@s_bg.y,@w_help.width-24,1),
+    ].each do |r|
+      @s_bg.bitmap.fill_rect(r, Color.new(255,255,255,150))
+    end
+  end
+  
+  def self.run_start
+    @flag_state = :in
+    @w_list.activate
+  end
+  
+  def self.run_update
+    run_update_raw
+    case @flag_state
+    when :in;   run_update_in
+    when :wait; run_update_wait
+    when :out;  run_update_out
+    end
+  end
+  
+  def self.run_update_raw
+    @w_list.update
+  end
+  
+  def self.run_update_in
+    v = 12
+    @s_bg.opacity += v
+    @w_list.contents_opacity += v
+    @w_title.contents_opacity += v
+    @w_help.contents_opacity += v
+    @flag_state = :wait if @s_bg.opacity >= 255
+  end
+  
+  def self.run_update_wait
+  end
+  
+  def self.run_update_out
+    v = 15
+    @s_bg.opacity -= v
+    @w_list.contents_opacity -= v
+    @w_title.contents_opacity -= v
+    @w_help.contents_opacity -= v
+    @flag_state = :wait if @s_bg.opacity <= 0
+  end
+  
+  def self.run_finish?
+    @flag_finish == true
+  end
+  
+  def self.run_finish
+    @flag_state = :out
+    if @params[:vid] and @params[:vid] > 0
+      if last_select[0]
+        $game_variables[@params[:vid]] = last_select[0].id
+      else
+        $game_variables[@params[:vid]] = 0
+      end
+    end
+  end
+  
+  def self.run_dispose
+    @s_bg.bitmap.dispose
+    @s_bg.dispose
+    @w_list.dispose
+    @w_title.dispose
+    @w_help.dispose
+  end
+  
+
+  class << self; attr_accessor :last_select; end
+  def self.last_select
+    @last_select ||= []
+    @last_select
   end
   
   def self.cond_tag(a, array)
@@ -123,15 +250,12 @@ module SELECT_ACTOR
   end
 
 class Window_EagleActorList < Window_Selectable
-  attr_accessor  :title_window
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
   def initialize(x, y, width, height)
     super
-    self.openness = 0
     @data = []
-    @title_window = nil
   end
 
   # 获取列数
@@ -191,7 +315,7 @@ class Window_EagleActorList < Window_Selectable
   
   # 获取显示行数
   def visible_line_number
-    [item_max, 9].min
+    [item_max, SELECT_ACTOR::ACTOR_WINDOW_LINE_MAX].min
   end
 
   # 获取项目数
@@ -223,7 +347,9 @@ class Window_EagleActorList < Window_Selectable
     actor = @data[index]
     if actor == nil
       change_color(text_color(17))
-      draw_text(rect.x, rect.y, rect.width, item_height, "→ 完成选择 ←", 1)
+      t = SELECT_ACTOR::COMMAND_TEXT_FINISH
+      t += "(#{SELECT_ACTOR.last_select.size}/#{@params[:n]})"
+      draw_text(rect.x, rect.y, rect.width, item_height, t, 1)
       return
     end
     change_color(normal_color)
@@ -254,14 +380,14 @@ class Window_EagleActorList < Window_Selectable
       end
     end
     redraw_current_item
-    @title_window.refresh
+    redraw_item(item_max-1)
   end
 
   #--------------------------------------------------------------------------
   # ● 更新帮助内容
   #--------------------------------------------------------------------------
   def update_help
-    @help_window.set_item(item)
+    @help_window.set_actor(@params, item)
   end
 end
 
@@ -272,17 +398,62 @@ class Window_EagleActorListTitle < Window_Base
   #--------------------------------------------------------------------------
   def initialize(w, line_number = 2)
     super(0, 0, w, fitting_height(line_number))
-    @n = nil
   end
   #--------------------------------------------------------------------------
   # ● 刷新
   #--------------------------------------------------------------------------
-  def refresh(n = nil)
-    @n = n if n
+  def refresh(t)
     contents.clear
-    t = "※ 请选择角色：\n"
-    t += "（最多 \ec[17]#{@n}\ec[0]，已选 \ec[17]#{SELECT_ACTOR.last_select.size}\ec[0]）"
-    draw_text_ex(4, 0, t)
+    ps = { :x0 => 4, :y0 => 0, :lhd => 4 }
+    d = Process_DrawTextEX.new(t, ps, contents)
+    d.run
+  end
+end
+
+class Window_EagleActorListHelp < Window_Base
+  #--------------------------------------------------------------------------
+  # ● 初始化对象
+  #--------------------------------------------------------------------------
+  def initialize(line_number = 2)
+    super(0, 0, SELECT_ACTOR::HELP_WINDOW_WIDTH, fitting_height(line_number))
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置内容
+  #--------------------------------------------------------------------------
+  def set_text(text)
+    if text != @text
+      @text = text
+      refresh
+    end
+  end
+  #--------------------------------------------------------------------------
+  # ● 清除
+  #--------------------------------------------------------------------------
+  def clear
+    set_text("")
+  end
+  #--------------------------------------------------------------------------
+  # ● 设置物品
+  #     item : 技能、物品等
+  #--------------------------------------------------------------------------
+  def set_actor(params, actor)
+    if actor == nil
+      t = SELECT_ACTOR::HELP_TEXT_FINISH 
+    elsif params[:help]
+      t = params[:help][actor.id] 
+      t = params[:help][0] if t == nil
+      t = "" if t == nil
+    end
+    set_text(t)
+  end
+  #--------------------------------------------------------------------------
+  # ● 刷新
+  #--------------------------------------------------------------------------
+  def refresh
+    contents.clear
+    ps = { :x0 => 4, :y0 => 0, :lhd => 4, :w => contents.width, :ali => 1 }
+    d = Process_DrawTextEX.new(@text, ps, contents)
+    d.run
   end
 end
 
@@ -307,4 +478,3 @@ class Game_Interpreter
     end
   end
 end
-

@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【状态扩展 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-StateEX-Anim"] = "1.0.1"
+$imported["EAGLE-StateEX-Anim"] = "1.0.2"
 #==============================================================================
-# - 2026.8.18.13 
+# - 2026.8.28.23 修复在事件中添加状态时报错的bug
 #==============================================================================
 
 module STATE_EX
@@ -82,6 +82,7 @@ module STATE_EX
   
   # 避免同一个状态显示重复动画
   def self.anim_any?(object, state_id, anim_id)
+    return true if !SceneManager.scene_is?(Scene_Battle)
     @sprites1.any? { |s| s.check?(object, state_id, anim_id) } 
   end
 
