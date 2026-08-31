@@ -6,7 +6,7 @@
 $imported ||= {}
 $imported["EAGLE-SelectActor"] = "1.0.0"
 #==============================================================================
-# - 2026.8.31.11 
+# - 2026.8.31.21 
 #==============================================================================
 module SELECT_ACTOR
 #==============================================================================
@@ -71,7 +71,9 @@ PARAMS["default"] = {
   :z => 100,
   #------------------------------------
   # - 显示在上方的帮助文本，左对齐，可以有两行，用\n换行。
-  :title => "※ 请选择角色：",
+  :title   => "※ 请选择角色：",
+  # - 显示在上方的帮助窗口的宽度（下方的帮助窗口与它保持一致宽度）
+  :title_w => Graphics.width - 64,
   #------------------------------------
   # - 显示在下方的帮助文本，居中对齐，可以有两行。
   #   根据角色ID会显示不同的文本，
@@ -79,6 +81,15 @@ PARAMS["default"] = {
   :help => {
     0 => "「选我！」",
   },
+  #------------------------------------
+  # - 角色列表窗口的最大显示行数
+  :list_line => 8,
+  # - 角色列表窗口的显示列数
+  :list_col  => 1, 
+  # - 角色列表窗口的宽度
+  :list_w    => 300,
+  # - 角色列表窗口在水平方向上的左右移动量
+  :list_dx   => 0,
       
   #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   # 【结果的设置】
@@ -98,16 +109,6 @@ PARAMS["技能学习"] = {
   :tag => ["<武器：剑>"],  # 这样就只有备注栏里有 <武器：剑> 的角色才能选了
   :help => {
     0 => "「不会让您失望的！」",
-  },
-}
-
-# 事件注释里写  选人|id=温泉  就能使用了！
-PARAMS["温泉"] = {
-  :title => "※ 请决定谁泡温泉：\n  （对应角色将获得 \ec[17]500\ec[0] 点经验）",
-  :vid => 40,
-  :help => {
-    0 => "「让我去，求求了！」",
-    1 => "「好久没泡温泉啦。」",
   },
 }
 
@@ -150,21 +151,7 @@ PARAMS["温泉"] = {
 #==============================================================================
 # 【常量设置】
 #==============================================================================
-# 【常量：上方帮助窗口的宽度】
-# （下方帮助窗口也是这个宽度）
-  HELP_WINDOW_WIDTH = Graphics.width - 64
 
-#------------------------------------------------
-# 【常量：角色列表窗口的设置】
-# 宽度
-  ACTOR_WINDOW_WIDTH = 400
-
-# 最大显示行数
-  ACTOR_WINDOW_LINE_MAX = 8
-
-# 显示列数
-  ACTOR_WINDOW_COL_MAX = 2
-  
 #------------------------------------------------
 # 【常量：角色列表中，已选角色的显示颜色】
 # （窗口皮肤的颜色索引数字 或 Color.new）
@@ -202,6 +189,11 @@ PARAMS["温泉"] = {
     ps0[:n]   = ps0[:n].to_i
     ps0[:all] = ps0[:all].to_i == 1 ? true : false
     ps0[:z]   = ps0[:z].to_i
+    ps0[:title_w] = ps0[:title_w].to_i
+    ps0[:list_col] = ps0[:list_col].to_i
+    ps0[:list_line] = ps0[:list_line].to_i
+    ps0[:list_w] = ps0[:list_w].to_i
+    ps0[:list_dx] = ps0[:list_dx].to_i
     ps0[:vid] = ps0[:vid] ? ps0[:vid].to_i : 0
 
     @params = ps0
@@ -237,26 +229,26 @@ PARAMS["温泉"] = {
   #--------------------------------------------------------------------------
   # 初始化
   def self.run_init
-    w = SELECT_ACTOR::HELP_WINDOW_WIDTH
+    w = @params[:title_w]
     @w_title = Window_EagleActorListTitle.new(w)
     @w_title.refresh(@params[:title])
     
-    w = SELECT_ACTOR::ACTOR_WINDOW_WIDTH
-    @w_list = Window_EagleActorList.new(0,0,w)
+    w2 = @params[:list_w]
+    @w_list = Window_EagleActorList.new(0,0,w2)
     @w_list.set_handler(:ok, SELECT_ACTOR.method(:method_empty))
     @w_list.set_handler(:cancel, SELECT_ACTOR.method(:method_finish))
     @w_list.reset(@params)
     
-    @w_help = Window_EagleActorListHelp.new
+    @w_help = Window_EagleActorListHelp.new(w)
     @w_list.help_window = @w_help
     
     @s_bg = Sprite.new
     h = @w_title.height + @w_list.height + @w_help.height
-    @s_bg.bitmap = Bitmap.new(HELP_WINDOW_WIDTH, h)
+    @s_bg.bitmap = Bitmap.new(w, h)
     c = Color.new(0,0,0,150)
     if $imported["EAGLE-UtilsDrawing2"]
       # 如果使用了【组件-形状绘制2】，则改为圆角矩形
-      @s_bg.bitmap.fill_rounded_rect(0,0,@s_bg.width,@s_bg.height, 4, c)
+      @s_bg.bitmap.fill_rounded_rect(0,0,@s_bg.width,@s_bg.height, 12, c)
     else
       @s_bg.bitmap.fill_rect(0,0,@s_bg.width,@s_bg.height, c)
     end
@@ -280,7 +272,7 @@ PARAMS["温泉"] = {
     @w_title.z = @s_bg.z + 10
     @w_title.opacity = @w_title.contents_opacity = 0
     
-    @w_list.x = (Graphics.width - @w_list.width) / 2
+    @w_list.x = (Graphics.width - @w_list.width) / 2 + @params[:list_dx]
     @w_list.y = @w_title.y + @w_title.height
     @w_list.z = @s_bg.z + 10
     @w_list.opacity = @w_list.contents_opacity = 0
@@ -391,9 +383,9 @@ class << SELECT_ACTOR
     eagle_select_actor_run_update_in
   end
 
-  alias eagle_select_actor_run_start run_start
+  alias eagle_select_actor_run_update_raw run_update_raw
   def run_update_raw # UI基础更新
-    eagle_select_actor_run_start
+    eagle_select_actor_run_update_raw
   end
   alias eagle_select_actor_run_update_wait run_update_wait
   def run_update_wait # UI移动结束后更新
@@ -405,7 +397,7 @@ class << SELECT_ACTOR
   end
 
   alias eagle_select_actor_run_finish run_finish
-  def run_update_run_finish # UI移出
+  def run_finish # UI移出
     eagle_select_actor_run_finish
   end
   alias eagle_select_actor_run_update_out run_update_out
@@ -493,7 +485,7 @@ class Window_EagleActorList < Window_Selectable
 
   # 获取列数
   def col_max
-    return SELECT_ACTOR::ACTOR_WINDOW_COL_MAX
+    return @params ? @params[:list_col] : 1
   end
   # 行间距的宽度
   def spacing
@@ -559,7 +551,7 @@ class Window_EagleActorList < Window_Selectable
   def visible_line_number
     v = item_max / col_max
     v += 1 if item_max % col_max > 0
-    [v, SELECT_ACTOR::ACTOR_WINDOW_LINE_MAX].min
+    [v, @params[:list_line]].min
   end
 
   # 获取项目数
@@ -571,6 +563,7 @@ class Window_EagleActorList < Window_Selectable
   def item
     @data && index >= 0 ? @data[index] : nil
   end
+  def actor; item; end
 
   # 查询此物品是否可用
   def enable?(item)
@@ -590,8 +583,8 @@ class Window_EagleActorList < Window_Selectable
     rect.x += 2
     y = rect.y + (item_height - contents.font.size) / 2
     rect.width -= 4
-    actor = @data[index]
-    if actor == nil
+    _actor = @data[index]
+    if _actor == nil
       c = SELECT_ACTOR.text_color(SELECT_ACTOR::ACTOR_WINDOW_FINISH_COLOR, self.windowskin)
       t = SELECT_ACTOR::ACTOR_WINDOW_FINISH
       t += "(#{SELECT_ACTOR.last_select.size}/#{@params[:n]})"
@@ -602,13 +595,19 @@ class Window_EagleActorList < Window_Selectable
       return
     end
     c = normal_color
-    if SELECT_ACTOR.last_select.include?(item)
+    if SELECT_ACTOR.last_select.include?(_actor)
       c = SELECT_ACTOR.text_color(SELECT_ACTOR::ACTOR_WINDOW_SELECTED_COLOR, self.windowskin)
     end
     ps = { :x0 => rect.x, :y0 => y, :w => rect.width, :ali => 1 }
     ps[:font_color] = c
-    d = Process_DrawTextEX.new(actor.name, ps, contents)
+    d = Process_DrawTextEX.new(_actor.name, ps, contents)
     d.run
+  end
+
+  # 更新帮助内容
+  def update_help
+    @help_window.set_actor(@params, actor)
+    @flag_cursor_change = true
   end
 
   #--------------------------------------------------------------------------
@@ -617,45 +616,33 @@ class Window_EagleActorList < Window_Selectable
   def call_ok_handler
     activate
     call_handler(:ok)
-    if item == nil
+    if actor == nil
       call_cancel_handler
       return
     end
-    if SELECT_ACTOR.last_select.include?(item)
-      SELECT_ACTOR.last_select.delete(item)
+    if SELECT_ACTOR.last_select.include?(actor)
+      SELECT_ACTOR.last_select.delete(actor)
     else
       if SELECT_ACTOR.last_select.size >= @params[:n]
         Sound.play_buzzer
         return
       else
-        SELECT_ACTOR.last_select.push(item)
+        SELECT_ACTOR.last_select.push(actor)
       end
     end
     redraw_current_item
     redraw_item(item_max-1)
-  end
-
-  #--------------------------------------------------------------------------
-  # ● 更新帮助内容
-  #--------------------------------------------------------------------------
-  def update_help
-    @help_window.set_actor(@params, item)
-    @flag_cursor_change = true
   end
 end
 #===============================================================================
 # ○ 上方的帮助窗口
 #===============================================================================
 class Window_EagleActorListTitle < Window_Base
-  #--------------------------------------------------------------------------
-  # ● 初始化对象
-  #--------------------------------------------------------------------------
+  # 初始化
   def initialize(w, line_number = 2)
     super(0, 0, w, fitting_height(line_number))
   end
-  #--------------------------------------------------------------------------
-  # ● 刷新
-  #--------------------------------------------------------------------------
+  # 刷新
   def refresh(t)
     contents.clear
     ps = { :x0 => 4, :y0 => 0, :lhd => 4 }
@@ -667,31 +654,22 @@ end
 # ○ 下方的帮助窗口
 #===============================================================================
 class Window_EagleActorListHelp < Window_Base
-  #--------------------------------------------------------------------------
-  # ● 初始化对象
-  #--------------------------------------------------------------------------
-  def initialize(line_number = 2)
-    super(0, 0, SELECT_ACTOR::HELP_WINDOW_WIDTH, fitting_height(line_number))
+  # 初始化
+  def initialize(w, line_number = 2)
+    super(0, 0, w, fitting_height(line_number))
   end
-  #--------------------------------------------------------------------------
-  # ● 设置内容
-  #--------------------------------------------------------------------------
+  # 设置内容
   def set_text(text)
     if text != @text
       @text = text
       refresh
     end
   end
-  #--------------------------------------------------------------------------
-  # ● 清除
-  #--------------------------------------------------------------------------
+  # 清除
   def clear
     set_text("")
   end
-  #--------------------------------------------------------------------------
-  # ● 设置物品
-  #     item : 技能、物品等
-  #--------------------------------------------------------------------------
+  # 设置角色
   def set_actor(params, actor)
     if actor == nil
       t = SELECT_ACTOR::HELP_TEXT_FINISH 
@@ -702,9 +680,7 @@ class Window_EagleActorListHelp < Window_Base
     end
     set_text(t)
   end
-  #--------------------------------------------------------------------------
-  # ● 刷新
-  #--------------------------------------------------------------------------
+  # 刷新
   def refresh
     contents.clear
     ps = { :x0 => 4, :y0 => 0, :lhd => 4, :w => contents.width, :ali => 1 }
@@ -719,9 +695,7 @@ end # end of module
 # ○ Game_Interpreter
 #===============================================================================
 class Game_Interpreter
-  #--------------------------------------------------------------------------
-  # ● 添加注释
-  #--------------------------------------------------------------------------
+  # 指令-注释
   alias eagle_select_actor_command_108 command_108
   def command_108
     eagle_select_actor_command_108
