@@ -8,8 +8,6 @@ $imported["EAGLE-SelectActor"] = "1.0.0"
 #==============================================================================
 # - 2026.8.31.11 
 #==============================================================================
-# - 本插件新增了可以在任意时刻使用的角色选择处理
-
 module SELECT_ACTOR
 #==============================================================================
 # 【使用：在事件中选人】
@@ -86,7 +84,7 @@ PARAMS["default"] = {
   # 【结果的设置】
   #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   # - 选人结束后，第一个选择的角色的ID将存入该变量。
-  #   注意：与显示顺序无关，仅看选中的时间。
+  #   注意：与显示顺序无关，仅看选中的先后顺序。
   :vid => 0,
 }
   
@@ -133,16 +131,16 @@ PARAMS["温泉"] = {
 # 【使用：获取选人结果】
 #==============================================================================
 #
-# - 利用全局脚本，可以轻松获得选人的结果：
+# - 利用全局脚本，可以获得选人的结果：
 #
 #     SELECT_ACTOR.actor1   →  获取第一个选择的角色 $game_actors[ID]
 #     SELECT_ACTOR.actor2   →  获取第二个选择的角色 $game_actors[ID]
 #     SELECT_ACTOR.actor3   →  获取第三个选择的角色 $game_actors[ID]
 #     SELECT_ACTOR.actor4   →  获取第四个选择的角色 $game_actors[ID]
 #
-#   如果想获得数据库ID，则可以通过 SELECT_ACTOR.actor1.id 
+#   如果想获得角色ID，则可以 SELECT_ACTOR.actor1.id 
 #
-#   如果同时还选了第五个、第六个等等，则可以通过读取选人的结果数组：
+#   如果同时还选了第五个、第六个等等，则可以直接读取选人结果的数组：
 #
 #     SELECT_ACTOR.last_select  → 按顺序存储了全部已选择角色
 #
@@ -153,18 +151,19 @@ PARAMS["温泉"] = {
 # 【常量设置】
 #==============================================================================
 # 【常量：上方帮助窗口的宽度】
-
+# （下方帮助窗口也是这个宽度）
   HELP_WINDOW_WIDTH = Graphics.width - 64
 
 #------------------------------------------------
-# 【常量：角色列表的宽度】
+# 【常量：角色列表窗口的设置】
+# 宽度
+  ACTOR_WINDOW_WIDTH = 400
 
-  ACTOR_WINDOW_WIDTH = 300
-
-#------------------------------------------------
-# 【常量：角色列表的最大显示行数】
-
+# 最大显示行数
   ACTOR_WINDOW_LINE_MAX = 8
+
+# 显示列数
+  ACTOR_WINDOW_COL_MAX = 2
   
 #------------------------------------------------
 # 【常量：角色列表中，已选角色的显示颜色】
@@ -176,8 +175,7 @@ PARAMS["温泉"] = {
 
 # 该项将自动添加到角色最后一行
 # 文本末尾将自动加上已选人数和可选人数的统计
-
-  ACTOR_WINDOW_FINISH = "→ 完成 "
+  ACTOR_WINDOW_FINISH = "完成√\ec[0]"
 
 # 该项的显示颜色
 # （窗口皮肤的颜色索引数字 或 Color.new）
@@ -235,7 +233,7 @@ PARAMS["温泉"] = {
   end
 
   #--------------------------------------------------------------------------
-  # ● 方便alias的方法组
+  # ● 全流程方法
   #--------------------------------------------------------------------------
   # 初始化
   def self.run_init
@@ -244,7 +242,7 @@ PARAMS["温泉"] = {
     @w_title.refresh(@params[:title])
     
     w = SELECT_ACTOR::ACTOR_WINDOW_WIDTH
-    @w_list = Window_EagleActorList.new(0,0,w,32)
+    @w_list = Window_EagleActorList.new(0,0,w)
     @w_list.set_handler(:ok, SELECT_ACTOR.method(:method_empty))
     @w_list.set_handler(:cancel, SELECT_ACTOR.method(:method_finish))
     @w_list.reset(@params)
@@ -279,17 +277,17 @@ PARAMS["温泉"] = {
     
     @w_title.x = @s_bg.x
     @w_title.y = @s_bg.y
-    @w_title.z = @s_bg.z + 1
+    @w_title.z = @s_bg.z + 10
     @w_title.opacity = @w_title.contents_opacity = 0
     
     @w_list.x = (Graphics.width - @w_list.width) / 2
     @w_list.y = @w_title.y + @w_title.height
-    @w_list.z = @s_bg.z + 1
+    @w_list.z = @s_bg.z + 10
     @w_list.opacity = @w_list.contents_opacity = 0
     
     @w_help.x = @w_title.x
     @w_help.y = @w_list.y + @w_list.height
-    @w_help.z = @s_bg.z + 1
+    @w_help.z = @s_bg.z + 10
     @w_help.opacity = @w_help.contents_opacity = 0
     
     [ Rect.new(@w_title.x-@s_bg.x+12,@w_title.y-@s_bg.y+@w_title.height,@w_title.width-24,1),
@@ -304,26 +302,6 @@ PARAMS["温泉"] = {
     @flag_state = :in
     @w_list.activate
   end
-  
-  # 更新
-  def self.run_update
-    run_update_raw
-    case @flag_state
-    when :in;   run_update_in
-    when :wait; run_update_wait
-    when :out;  run_update_out
-    end
-  end
-  
-  # 每帧更新（基础）
-  def self.run_update_raw
-    @w_list.update
-    if @w_list.flag_cursor_change
-      @w_list.flag_cursor_change = false
-      run_update_when_change 
-    end
-  end
-  
   # 更新UI移入
   def self.run_update_in
     v = 12
@@ -334,20 +312,26 @@ PARAMS["温泉"] = {
     @flag_state = :wait if @s_bg.opacity >= 255
   end
   
+  # 更新
+  def self.run_update
+    run_update_raw
+    case @flag_state
+    when :in;   run_update_in
+    when :wait; run_update_wait
+    when :out;  run_update_out
+    end
+  end
+  # 每帧更新（基础）
+  def self.run_update_raw
+    @w_list.update
+    if @w_list.flag_cursor_change
+      @w_list.flag_cursor_change = false
+      run_update_when_change 
+    end
+  end
   # 更新UI等待
   def self.run_update_wait
   end
-  
-  # 更新UI移出
-  def self.run_update_out
-    v = 15
-    @s_bg.opacity -= v
-    @w_list.contents_opacity -= v
-    @w_title.contents_opacity -= v
-    @w_help.contents_opacity -= v
-    @flag_state = :wait if @s_bg.opacity <= 0
-  end
-
   # 角色选择框光标移动后执行一次
   def self.run_update_when_change
   end
@@ -356,8 +340,7 @@ PARAMS["温泉"] = {
   def self.run_finish?
     @flag_finish == true
   end
-  
-  # UI结束
+  # UI移出
   def self.run_finish
     @flag_state = :out
     if @params[:vid] and @params[:vid] > 0
@@ -367,6 +350,15 @@ PARAMS["温泉"] = {
         $game_variables[@params[:vid]] = 0
       end
     end
+  end
+  # 更新UI移出
+  def self.run_update_out
+    v = 15
+    @s_bg.opacity -= v
+    @w_list.contents_opacity -= v
+    @w_title.contents_opacity -= v
+    @w_help.contents_opacity -= v
+    @flag_state = :wait if @s_bg.opacity <= 0
   end
   
   # 释放UI
@@ -378,6 +370,56 @@ PARAMS["温泉"] = {
     @w_help.dispose
   end
   
+=begin 
+# 扩展用
+class << SELECT_ACTOR
+  alias eagle_select_actor_run_init run_init
+  def run_init  # 初始化
+    eagle_select_actor_run_init
+  end
+  alias eagle_select_actor_run_reset_position run_reset_position
+  def run_reset_position # 设置位置
+    eagle_select_actor_run_reset_position
+  end
+
+  alias eagle_select_actor_run_start run_start
+  def run_start # UI移入
+    eagle_select_actor_run_start
+  end
+  alias eagle_select_actor_run_update_in run_update_in
+  def run_update_in # 更新UI移入
+    eagle_select_actor_run_update_in
+  end
+
+  alias eagle_select_actor_run_start run_start
+  def run_update_raw # UI基础更新
+    eagle_select_actor_run_start
+  end
+  alias eagle_select_actor_run_update_wait run_update_wait
+  def run_update_wait # UI移动结束后更新
+    eagle_select_actor_run_update_wait
+  end
+  alias eagle_select_actor_run_update_when_change run_update_when_change
+  def run_update_when_change # 角色光标移动后执行一次
+    eagle_select_actor_run_update_when_change
+  end
+
+  alias eagle_select_actor_run_finish run_finish
+  def run_update_run_finish # UI移出
+    eagle_select_actor_run_finish
+  end
+  alias eagle_select_actor_run_update_out run_update_out
+  def run_update_out # 更新UI移出
+    eagle_select_actor_run_update_out
+  end
+
+  alias eagle_select_actor_run_dispose run_dispose
+  def run_dispose # 释放UI
+    eagle_select_actor_run_dispose
+  end
+end
+=end
+
   #--------------------------------------------------------------------------
   # ● 选人结果
   #--------------------------------------------------------------------------
@@ -443,7 +485,7 @@ class Window_EagleActorList < Window_Selectable
   #--------------------------------------------------------------------------
   # ● 初始化对象
   #--------------------------------------------------------------------------
-  def initialize(x, y, width, height)
+  def initialize(x, y, width, height=fitting_height(1))
     super
     @data = []
     @flag_cursor_change = true
@@ -451,7 +493,11 @@ class Window_EagleActorList < Window_Selectable
 
   # 获取列数
   def col_max
-    return 1
+    return SELECT_ACTOR::ACTOR_WINDOW_COL_MAX
+  end
+  # 行间距的宽度
+  def spacing
+    return 4
   end
 
   # 计算窗口显示指定行数时的应用高度
@@ -511,7 +557,9 @@ class Window_EagleActorList < Window_Selectable
   
   # 获取显示行数
   def visible_line_number
-    [item_max, SELECT_ACTOR::ACTOR_WINDOW_LINE_MAX].min
+    v = item_max / col_max
+    v += 1 if item_max % col_max > 0
+    [v, SELECT_ACTOR::ACTOR_WINDOW_LINE_MAX].min
   end
 
   # 获取项目数
@@ -539,22 +587,28 @@ class Window_EagleActorList < Window_Selectable
   #--------------------------------------------------------------------------
   def draw_item(index)
     rect = item_rect(index)
+    rect.x += 2
+    y = rect.y + (item_height - contents.font.size) / 2
     rect.width -= 4
     actor = @data[index]
     if actor == nil
       c = SELECT_ACTOR.text_color(SELECT_ACTOR::ACTOR_WINDOW_FINISH_COLOR, self.windowskin)
-      change_color(c)
       t = SELECT_ACTOR::ACTOR_WINDOW_FINISH
       t += "(#{SELECT_ACTOR.last_select.size}/#{@params[:n]})"
-      draw_text(rect.x, rect.y, rect.width, item_height, t, 1)
+      ps = { :x0 => rect.x, :y0 => y, :w => rect.width, :ali => 1 }
+      ps[:font_color] = c
+      d = Process_DrawTextEX.new(t, ps, contents)
+      d.run
       return
     end
-    change_color(normal_color)
+    c = normal_color
     if SELECT_ACTOR.last_select.include?(item)
       c = SELECT_ACTOR.text_color(SELECT_ACTOR::ACTOR_WINDOW_SELECTED_COLOR, self.windowskin)
-      change_color(c)
     end
-    draw_text(rect.x, rect.y, rect.width, item_height, actor.name, 1)
+    ps = { :x0 => rect.x, :y0 => y, :w => rect.width, :ali => 1 }
+    ps[:font_color] = c
+    d = Process_DrawTextEX.new(actor.name, ps, contents)
+    d.run
   end
 
   #--------------------------------------------------------------------------
