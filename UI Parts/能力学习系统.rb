@@ -6,9 +6,9 @@
 #  【组件-形状绘制 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-AbilityLearn"] = "1.8.3"
+$imported["EAGLE-AbilityLearn"] = "1.8.4"
 #==============================================================================
-# - 2026.6.5.21 优化解锁时显示动画的流畅度
+# - 2026.9.27.21 优化等级显示及升级进度UI
 #==============================================================================
 # - 本插件新增了每个角色的能力学习界面（仿【霓虹深渊】）
 #------------------------------------------------------------------------------
@@ -1668,8 +1668,8 @@ class << ABILITY_LEARN
     return if @sprite_unlock.visible == false
     if key_unlock?
       @count_unlock += 1
-    elsif @count_unlock > 3
-      @count_unlock -= 3
+    elsif @count_unlock > 0
+      @count_unlock -= (@count_unlock > 3 ? 3 : 1)
     end
     data = @selected_token.data
     id = @selected_token.id
@@ -1687,7 +1687,7 @@ class << ABILITY_LEARN
       end
       @count_unlock = 0
     else
-      v = 0.1 + @count_unlock * 1.0 / @max_unlock * 0.9
+      v =  @count_unlock * 1.0 / @max_unlock
       @sprite_unlock.redraw(@selected_token, v, @type_unlock)
     end
   end
@@ -1998,7 +1998,7 @@ class Sprite_AbilityLearn_Token < Sprite_Base
     self.bitmap.font.size = s
     self.bitmap.font.outline = true
     self.bitmap.font.color = Color.new(255,255,255,255)
-    self.bitmap.draw_text(0,self.height-s,self.width,s, level, 1)
+    self.bitmap.draw_text(0,self.height-s,self.width,s, "#{level}/#{f}", 1)
   end
   #--------------------------------------------------------------------------
   # ● 绘制启用/禁用状态
