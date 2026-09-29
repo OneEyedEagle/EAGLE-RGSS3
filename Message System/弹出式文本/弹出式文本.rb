@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-缓动函数 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PopText"] = "1.1.1"
+$imported["EAGLE-PopText"] = "1.1.2"
 #==============================================================================
-# - 2026.8.23.13 新增弹出式物品获得；新增鼠标拾取
+# - 2026.9.29.2 修复使用图块作为事件图像时报错的bug
 #==============================================================================
 module POP_TEXT
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -331,7 +331,7 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
         @x0 = c.screen_x
         @y0 = c.screen_y
         s = EAGLE_COMMON.get_chara_sprite(eid)
-        if s # 上移行走图的一半高度
+        if s and s.tile_id == 0 # 上移行走图的一半高度
           @y0 -= s.ch / 2
         else
           @y0 -= 16
@@ -660,8 +660,8 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
       dx1 = dy1 = i = 0
       t = 20
       while self.opacity > 0
-        _dx1 = MOUSE_EX.x - self.x + @dx - 16
-        _dy1 = MOUSE_EX.y - self.y + @dy - 16
+        _dx1 = MOUSE_EX.x - self.x + @dx + 8
+        _dy1 = MOUSE_EX.y - self.y + @dy + 8
         if dx1 != _dx1 or dy1 != _dy1
           i = 0
           dx0 = @dx
@@ -693,7 +693,7 @@ end
 # ○ Sprite_Character
 #===============================================================================
 class Sprite_Character < Sprite_Base
-  attr_reader :cw, :ch
+  attr_reader :tile_id, :cw, :ch
 end
 
 #===============================================================================

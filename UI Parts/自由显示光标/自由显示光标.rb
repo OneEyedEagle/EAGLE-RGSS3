@@ -2,9 +2,9 @@
 # ■ 自由显示光标 by 老鹰（https://github.com/OneEyedEagle/EAGLE-RGSS3）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-Cursor"] = "1.0.4"
+$imported["EAGLE-Cursor"] = "1.0.5"
 #==============================================================================
-# - 2025.1.3.13 修复战斗结束时报错的bug
+# - 2026.9.28.14 调整帮助文字的z值
 #==============================================================================
 # - 本插件新增了一个允许利用全局脚本自由控制位置的光标
 #-----------------------------------------------------------------------------
@@ -307,7 +307,7 @@ class Spriteset_EagleCursor
   def init_help(ps)
     @sprite_help = Sprite.new(ps[:vp])
     @sprite_help.z = ps[:z] || CURSOR::Z 
-    @sprite_help.z -= 1
+    @sprite_help.z += 1
     @sprite_help.visible = false
   end
   #--------------------------------------------------------------------------
@@ -447,7 +447,7 @@ class Spriteset_EagleCursor
     # 新建一个位图
     tag_h = 5
     c = Color.new(0,0,0,150)
-    b = Bitmap.new(d.width + 4 *2, d.height + 2 * 2 + tag_h)
+    b = Bitmap.new(d.width + 4 * 2, d.height + 2 * 2 + tag_h)
     b.fill_rect(0,0,b.width,b.height-tag_h, c)
     # 绘制文字
     d.bind_bitmap(b)
@@ -465,7 +465,7 @@ class Spriteset_EagleCursor
 
     @sprite_help.bitmap = b
     @sprite_help.ox = @sprite_help.width / 2
-    @sprite_help.oy = @sprite_help.height
+    @sprite_help.oy = @sprite_help.height + 4
   end
   #--------------------------------------------------------------------------
   # ● 更新帮助文本
