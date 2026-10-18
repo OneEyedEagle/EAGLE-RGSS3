@@ -90,13 +90,13 @@ module PICKUP_EVENT
 # 【鼠标】鼠标按键 - 搬起事件
 #  （需要【鼠标扩展 by老鹰】，或者改成你自己的鼠标系统）
   def self.mouse_pickup?
-    MOUSE_EX.press?(:ML)
+    MOUSE_EX.press?(:ML, 5)
   end
   
 # 【鼠标】鼠标按键 - 放下事件
 #  （需要【鼠标扩展 by老鹰】，或者改成你自己的鼠标系统）
   def self.mouse_drop?
-    !MOUSE_EX.press?(:ML)
+    MOUSE_EX.press?(:ML, 5)
   end
   
 # 【鼠标】获取鼠标所在地图格子的RGSS坐标

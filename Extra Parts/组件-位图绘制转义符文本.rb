@@ -2,9 +2,9 @@
 # ■ 组件-位图绘制转义符文本 by 老鹰（http://oneeyedeagle.lofter.com/）
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-DrawTextEX"] = "1.1.3"
+$imported["EAGLE-DrawTextEX"] = "1.1.4"
 #==============================================================================
-# - 2026.7.6.0 新增单行内的竖直对齐方式
+# - 2026.10.18.11 修复同一行内的竖直对齐方式不同的bug
 #==============================================================================
 # - 本插件提供了在位图上绘制转义符文本的方法
 #------------------------------------------------------------------------------
@@ -218,7 +218,6 @@ class Process_DrawTextEX
     return if @label_cur  # 如果有标签，则不能自动换行
     if @params[:w] && pos[:x] + w > pos[:x_new] + @params[:w]
       process_new_line(pos)
-      pos[:h] = 0
     end
   end
 
@@ -290,16 +289,17 @@ class Process_DrawTextEX
 
   # 绘制前
   def process_draw_before(x, y, w, h, pos)
+    # 查看是否要换行
+    process_auto_new_line(pos, w)
     # 根据行高，调整y的位置
     case @params[:aliy]
     when 0  # 顶部对齐
       pos[:y] = pos[:y_new]
     when 1  # 居中
-      pos[:y] = pos[:y_new] + (pos[:h] - h) / 2
+      pos[:y] = pos[:y_new] + (@info[:h][pos[:line]] - h) / 2
     when 2  # 底部对齐
-      pos[:y] = pos[:y_new] + pos[:h] - h if pos[:h] > h
+      pos[:y] = pos[:y_new] + @info[:h][pos[:line]] - h if @info[:h][pos[:line]] > h
     end
-    process_auto_new_line(pos, w)
   end
   # 绘制后
   def process_draw_after(x, y, w, h, pos)

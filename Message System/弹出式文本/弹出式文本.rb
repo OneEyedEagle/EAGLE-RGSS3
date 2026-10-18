@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-缓动函数 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PopText"] = "1.1.2"
+$imported["EAGLE-PopText"] = "1.1.3"
 #==============================================================================
-# - 2026.9.29.2 修复使用图块作为事件图像时报错的bug
+# - 2026.10.17.16 修复弹跳报错的bug
 #==============================================================================
 module POP_TEXT
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -328,8 +328,10 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
         # 初始位置为行走图底部中心
         e = @params[:cur_event_id] ? $game_map.events[@params[:cur_event_id]] : nil
         c = EAGLE_COMMON.get_chara(e, eid)
-        @x0 = c.screen_x
-        @y0 = c.screen_y
+        if c
+          @x0 = c.screen_x
+          @y0 = c.screen_y
+        end
         s = EAGLE_COMMON.get_chara_sprite(eid)
         if s and s.tile_id == 0 # 上移行走图的一半高度
           @y0 -= s.ch / 2
@@ -568,7 +570,7 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
       t = 40
       t.times do |i|
         @dx += vx
-        v = EasingFuction.call("easeOutBounce", i * 1.0 / t)
+        v = EasingFuction.call("easeOutBounce", (i+1) * 1.0 / t)
         @dy = dy0 + d_dy * v
         Fiber.yield
       end
