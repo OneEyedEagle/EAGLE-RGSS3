@@ -2,8 +2,8 @@
 # ■ 角色头顶显示图标 by 老鹰 (EAGLE-RGSS3)
 #   兼容 RGSS2 (VX) 与 RGSS3 (VX Ace)
 #==============================================================================
-# 【版本】1.3.0
-# 【更新】2026.2.11 利用DeepSeek优化代码
+# 【版本】1.3.1
+# 【更新】2026.10.25.10 增强显示位置的扩展性
 #==============================================================================
 # 功能：
 #   为地图上的角色（玩家、事件）添加头顶图标显示功能，支持多种动画与位置设置。
@@ -29,7 +29,7 @@
 #==============================================================================
 
 $imported ||= {}
-$imported["EAGLE-EventPopIcon"] = "1.3.0"
+$imported["EAGLE-EventPopIcon"] = "1.3.1"
 
 #==============================================================================
 # ■ 模块 POP_ICON
@@ -62,6 +62,9 @@ module POP_ICON
     },
     'look' => {
       :icon => 16, :type => 1, :dy => 30, :pos => 0, :opa => 0
+    },
+    '调查' => {
+      :icon => 4, :type => 1, :pos => 0, :opa => 0
     },
     # 可在此继续添加更多预设...
   }
@@ -119,18 +122,17 @@ module POP_ICON
       end
     end
 
-    # 基础位置：角色精灵的位置，并依据位置类型调整 y 坐标
-    icon_sprite.x = char_sprite.x
-    icon_sprite.y = char_sprite.y
+    # 基础位置：角色精灵的中心位置，并依据位置类型调整 y 坐标
+    icon_sprite.x = char_sprite.x - char_sprite.ox + char_sprite.width / 2
+    icon_sprite.y = char_sprite.y - char_sprite.oy + char_sprite.height / 2
     icon_sprite.z = char_sprite.z + 200
 
     case params[:pos]
-    when 0
-      icon_sprite.y -= char_sprite.height
-    when 1
-      # 脚下：无需额外调整（已在原点设置中处理）
-    when 2
+    when 0 # 头顶
       icon_sprite.y -= char_sprite.height / 2
+    when 1 # 脚下
+      icon_sprite.y += char_sprite.height / 2
+    when 2 # 中心
     end
 
     # 应用动画效果（偏移计算）

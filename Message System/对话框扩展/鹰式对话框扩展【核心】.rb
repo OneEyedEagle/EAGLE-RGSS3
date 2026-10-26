@@ -1,6 +1,6 @@
 #encoding:utf-8
 $imported ||= {}
-$imported["EAGLE-MessageEX"] = "2.2.11"
+$imported["EAGLE-MessageEX"] = "2.2.12"
 =begin
 ===============================================================================
 
@@ -25,6 +25,8 @@ $imported["EAGLE-MessageEX"] = "2.2.11"
         -                                                              -
      
      更新历史
+     ----------------------------------------------------------------------
+     - 2026.10.25.10V2.2.12 增强\pop显示位置的可扩展性
      ----------------------------------------------------------------------
      - 2026.8.2.21  V2.2.11 修复金钱框显示后立即消失的bug
      ----------------------------------------------------------------------
@@ -2888,12 +2890,16 @@ class Window_EagleMessage < Window_Base
   # 存储pop对象的宽高
   def eagle_set_pop_sprite_info(s)
     if s.is_a?(Sprite)
-      pop_params[:chara_w] = s.width
-      pop_params[:chara_h] = s.height
+      pop_params[:chara_w]  = s.width
+      pop_params[:chara_ox] = s.ox
+      pop_params[:chara_h]  = s.height
+      pop_params[:chara_oy] = s.oy
     end
     if pop_params[:type] == :map_grid
-      pop_params[:chara_w] = 32
-      pop_params[:chara_h] = 32
+      pop_params[:chara_w]  = 32
+      pop_params[:chara_ox] = 16
+      pop_params[:chara_h]  = 32
+      pop_params[:chara_oy] = 16
     end
     eagle_pop_init_wh_map_zoom if eagle_pop_init_xy_map_zoom?
   end
@@ -2911,29 +2917,28 @@ class Window_EagleMessage < Window_Base
     when 3,6,9; self.x += (params[:chara_w] / 2 + params[:d])
     end
     case params[:do]
-    when 1,2,3; self.y += (params[:d])
-    when 4,5,6; self.y -= (params[:chara_h] / 2)
-    when 7,8,9; self.y -= (params[:chara_h] + params[:d])
+    when 1,2,3; self.y += (params[:chara_h] / 2 + params[:d])
+    when 7,8,9; self.y -= (params[:chara_h] / 2 + params[:d])
     end
   end
 
   # pop对象的xy
   def eagle_pop_init_xy
-    # 对话框左上角定位到绑定对象位图的对应o位置
+    # 对话框左上角定位到绑定对象的中心位置
     case pop_params[:type]
     when :map_chara
-      # 如果对象使用的是行走图，则为Game_Chacter（行走图底部中心为显示原点）
-      self.x = @eagle_pop_obj.screen_x
-      self.y = @eagle_pop_obj.screen_y
+      # 如果对象使用的是行走图，则为Game_Chacter（默认为行走图底部中心位置）
+      self.x = @eagle_pop_obj.screen_x - pop_params[:chara_ox] + pop_params[:chara_w] / 2
+      self.y = @eagle_pop_obj.screen_y - pop_params[:chara_oy] + pop_params[:chara_h] / 2
       eagle_pop_init_xy_map_zoom if eagle_pop_init_xy_map_zoom?
     when :battle_sprite
-      # 如果对象为战斗者精灵，则为Sprite_Battler（底部中心为显示原点）
-      self.x = @eagle_pop_obj.x
-      self.y = @eagle_pop_obj.y
+      # 如果对象为战斗者精灵，则为Sprite_Battler（默认为战斗图底部中心位置）
+      self.x = @eagle_pop_obj.x - pop_params[:chara_ox] + pop_params[:chara_w] / 2
+      self.y = @eagle_pop_obj.y - pop_params[:chara_oy] + pop_params[:chara_h] / 2
     when :map_grid
-      # 如果为地图格子，则格子底部中心为显示原点
+      # 如果为地图格子，则取格子中心位置
       self.x = $game_map.adjust_x(@eagle_pop_obj[0]) * 32 + 16
-      self.y = $game_map.adjust_y(@eagle_pop_obj[1]) * 32 + 32
+      self.y = $game_map.adjust_y(@eagle_pop_obj[1]) * 32 + 16
       eagle_pop_init_xy_map_zoom if eagle_pop_init_xy_map_zoom?
     else 
       self.x = default_init_x

@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MessagePara2"] = "1.4.1"
+$imported["EAGLE-MessagePara2"] = "1.4.2"
 #==============================================================================
-# - 2026.3.22.10 新增<input>设置按键关闭
+# - 2026.10.25.10 增强绑定到地图事件时的兼容性，现在按照精灵实际位置了
 #==============================================================================
 
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -726,9 +726,6 @@ class Sprite_EagleMsg < Sprite
         h[:e] = h[:e].to_i
         h[:obj] = MESSAGE_PARA2.get_event(h[:e], params[:event_id]) rescue $game_player
         h[:o2] = 8 if h[:o2] <= 0 || h[:o2] > 9
-        s = MESSAGE_PARA2.get_event_sprite(h[:obj])
-        h[:obj_w] = s.width rescue 0
-        h[:obj_h] = s.height rescue 0
       end
       h[:dx] = h[:dx].to_i
       h[:dy] = h[:dy].to_i
@@ -751,10 +748,12 @@ class Sprite_EagleMsg < Sprite
       _y = $game_map.adjust_y(h[:my]) * 32
       r.set(_x, _y, 32, 32)
     when :event # 事件的底部中心点
-      _x = h[:obj].screen_x - h[:obj_w] / 2
-      _y = h[:obj].screen_y - h[:obj_h]
+      s = MESSAGE_PARA2.get_event_sprite(h[:obj])
+      return if s.nil?
+      _x = s.x - s.ox 
+      _y = s.y - s.oy
       # 修改为图像的左上角坐标
-      r.set(_x, _y, h[:obj_w], h[:obj_h])
+      r.set(_x, _y, s.width, s.height)
     end
     EAGLE_COMMON.reset_xy(self, h[:o], r, h[:o2])
     EAGLE_COMMON.reset_sprite_oxy(self, h[:o])

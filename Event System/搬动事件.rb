@@ -4,9 +4,9 @@
 # ※ 推荐与【按键扩展】【鼠标扩展】【自由显示光标】一起使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PickUpEvent"] = "1.0.0"
+$imported["EAGLE-PickUpEvent"] = "1.0.1"
 #==============================================================================
-# - 2026.9.28.17
+# - 2026.10.24.17 修复不使用鼠标即报错的bug
 #==============================================================================
 # - 本插件新增了搬运事件的功能。
 #=============================================================================
@@ -55,7 +55,7 @@ module PICKUP_EVENT
 #
 # 3. 本插件已兼容【大体型事件 by老鹰】，方便设置占据多个格子的事件并搬动。
 #
-# 4. 建议与【自由显示光标 by老鹰】一同使用，将显示当前是否能放下的文本。
+# 4. 建议与【自由显示光标 by老鹰】一同使用，将显示一个展示当前是否能放下的光标。
 
 #【常量】在【自由显示光标】中使用的光标的ID
   CURSOR_ID = "搬动事件"
@@ -70,8 +70,17 @@ module PICKUP_EVENT
 # 【常量】匹配注释的正则
 #  （事件页开头的注释中，需要有这个文本，才能被搬动）
   COMMENT_PICKUP = /<可搬动>/mi
+  
+#-----------------------------------------------------------
+# 【键盘相关】
 
-# 【键盘】键盘按键 - 搬起事件
+# 键盘触发搬动的前置条件
+#  （s 是 Sprite_Character ，e 是 Game_Event）
+  def self.keyboard_cond?(s, e)
+    event_in_front_of_player?(e) 
+  end
+
+# 键盘按键 - 搬起事件
 #  （玩家正对事件时，按下该键开始搬动）
   def self.keyboard_pickup?
     if $imported["EAGLE-InputEX"]
@@ -80,27 +89,35 @@ module PICKUP_EVENT
     Input.trigger?(:A)
   end
   
-# 【键盘】键盘按键 - 放下事件
+# 键盘按键 - 放下事件
 #  （搬动事件时，按下该键放下）
 #  （如果没有空位，则会放置失败）
   def self.keyboard_drop?
     keyboard_pickup?  # 与搬起的按键一致
   end
   
-# 【鼠标】鼠标按键 - 搬起事件
+#-----------------------------------------------------------
+# 【鼠标相关】
 #  （需要【鼠标扩展 by老鹰】，或者改成你自己的鼠标系统）
+
+# 鼠标触发搬动的前置条件
+#  （s 是 Sprite_Character ，e 是 Game_Event）
+  def self.mouse_cond?(s, e)
+    return false if !$imported["EAGLE-MouseEX"]
+    s.mouse_in?(true, false)
+  end
+  
+# 鼠标按键 - 搬起事件
   def self.mouse_pickup?
     MOUSE_EX.press?(:ML, 5)
   end
   
-# 【鼠标】鼠标按键 - 放下事件
-#  （需要【鼠标扩展 by老鹰】，或者改成你自己的鼠标系统）
+# 鼠标按键 - 放下事件
   def self.mouse_drop?
-    MOUSE_EX.press?(:ML, 5)
+    !MOUSE_EX.press?(:ML, 5)
   end
   
-# 【鼠标】获取鼠标所在地图格子的RGSS坐标
-#  （需要【鼠标扩展 by老鹰】，或者改成你自己的鼠标系统）
+# 获取鼠标所在地图格子的RGSS坐标
   def self.mouse_map_xy
     return MOUSE_EX.map_x, MOUSE_EX.map_y
   end
@@ -183,8 +200,8 @@ module PICKUP_EVENT
   
   # 满足拿取的按键要求？
   def self.pickup_key?(s, e)
-    return 1 if event_in_front_of_player?(e) and keyboard_pickup?
-    return 2 if s.mouse_in?(true, false) and mouse_pickup?
+    return 1 if keyboard_cond?(s, e) and keyboard_pickup?
+    return 2 if mouse_cond?(s, e)    and mouse_pickup?
     return 0
   end
   # 检查指定事件是否在玩家面前

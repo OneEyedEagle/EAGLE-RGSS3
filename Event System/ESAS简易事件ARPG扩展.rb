@@ -3,9 +3,9 @@
 # ※ 本插件需要放置在【组件-通用方法汇总 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-ESAS"] = "1.1.7"
+$imported["EAGLE-ESAS"] = "1.2.0"
 #==============================================================================
-# - 2023.3.18.23 优化pop的动态
+# - 2026.10.25.10 移除POP模块 
 #==============================================================================
 # - 本插件新增一系列方便事件脚本调用的方法，用于创作简易ARPG
 #--------------------------------------------------------------------------
@@ -15,14 +15,13 @@ $imported["EAGLE-ESAS"] = "1.1.7"
 # - 还需要一些RGSS的基础认识，如知道地图上的事件，其数据存储在Game_Event对象中
 #   同时可以通过 $game_map.events[id] 获取指定id序号的事件
 # - 本插件核心在于各个时机增加对指定事件页的（并行）调用
-#--------------------------------------------------------------------------
+
 # 【注意】
 # - 对于本插件的新增脚本
 #     标注了【全局】的可以在任意地方使用
 #     标注了【地图】的可以在地图上时使用（即开启菜单时就不可以用了）
 #     标注了【事件】的必须在事件脚本中使用
-#--------------------------------------------------------------------------
-#
+
 #=============================================================================
 # ○ 核心 - 事件页执行扩展
 #=============================================================================
@@ -167,8 +166,7 @@ $imported["EAGLE-ESAS"] = "1.1.7"
 #     当事件的第2页符合出现条件并显示时，同步开始并行执行当前地图2号事件的第1页
 #     并且执行过程中的【本事件】均为 1号事件
 #
-#--------------------------------------------------------------------------
-#
+
 #=============================================================================
 # ○ 模块 - 动画
 #=============================================================================
@@ -207,8 +205,7 @@ $imported["EAGLE-ESAS"] = "1.1.7"
 #             ps[:chara_id] = 1 # 设置调用来源为1号事件
 #             ESAS.anim_map(112, 6, 9, ps) # 并行显示112号动画
 #
-#--------------------------------------------------------------------------
-#
+
 #=============================================================================
 # ○ 模块 - 目标获取
 #=============================================================================
@@ -300,8 +297,7 @@ $imported["EAGLE-ESAS"] = "1.1.7"
 #      ids = ESAS.select_ids(ids, :<enemy>)
 #    则 ids = [ 5 ]
 #
-#--------------------------------------------------------------------------
-#
+
 #=============================================================================
 # ○ 模块 - 事件迭代
 #=============================================================================
@@ -329,43 +325,13 @@ $imported["EAGLE-ESAS"] = "1.1.7"
 #         再开启3号事件的独立开关A，在3号事件上面显示1号动画，
 #      最后开启当前事件（2号事件）的独立开关A
 #
-#--------------------------------------------------------------------------
-#
+
 #=============================================================================
 # ○ 模块 - POP
 #=============================================================================
-# - 为了让ARPG能更加生动，伤害数字等信息文本的显示也不可或缺
-#   本插件新增了扩展性较强的气泡文本显示模块，能够轻松增加任意弹出文本
-#--------------------------------------------------------------------------
-#  ESAS.new_pop(params)
+# - 该模块已废弃，如需弹出文本，请使用【弹出式文本 by老鹰】。
 #
-#  【全局】生成一个立即显示，然后消失的气泡文本，
-#
-#     params → 各种参数的Hash
-#        :text => 需要绘制的文本（单行，不可含转义符）
-#        :cid => 绑定显示的角色ID（-1为玩家，正数为事件）
-#        :type => 显示模式
-#             :float 浮起并逐渐透明
-#             :zoom1 由放大状态，动态缩小并透明
-#             :zoom2 动态放大上浮，再动态缩小下降
-#             :bounce 从事件图像中心向上弹出落地后跳起，并逐渐透明
-#        :w / :h => 精灵宽度、高度
-#        :size => 字体大小
-#        :c => 字体颜色的索引号
-#        :shadow => 字体启用阴影？（true 或 1 代表启用，false 或 0 代表关闭，默认true）
-#        :outline => 字体启用描边？（true 或 1 代表启用，false 或 0 代表关闭，默认false）
-#        :screen => 传入 1 时代表绑定到屏幕上，否则默认绑定到地图上
-#
-# - 示例：
-#    在玩家行走图上显示 10 的文本
-#      ESAS.new_pop( {:cid => -1, :text => "10"} )
-#
-# - 也可以编写tags字符串进行设置：
-#
-#      ESAS.new_pop( "text=miss cid=-1 c=17" )
-#
-#--------------------------------------------------------------------------
-#
+
 #=============================================================================
 # ○ 模块 - 扩展
 #=============================================================================
@@ -494,7 +460,6 @@ module ESAS
   #--------------------------------------------------------------------------
   def self.update
     update_anims
-    update_pops
   end
 end
 class Scene_Base
@@ -1378,7 +1343,7 @@ class Sprite_EagleBase < Sprite_Base
     when 1
       if @character
         s = ESAS.get_chara_sprite(@chara_id)
-        s.flash(timing.flash_color, timing.flash_duration * @ani_rate)
+        s.flash(timing.flash_color, timing.flash_duration * @ani_rate) if s
       else
         self.flash(timing.flash_color, timing.flash_duration * @ani_rate)
       end
@@ -1389,7 +1354,7 @@ class Sprite_EagleBase < Sprite_Base
     when 3
       if @character
         s = ESAS.get_chara_sprite(@chara_id)
-        s.flash(nil, timing.flash_duration * @ani_rate)
+        s.flash(nil, timing.flash_duration * @ani_rate) if s
       else
         self.flash(nil, timing.flash_duration * @ani_rate)
       end
@@ -1712,275 +1677,6 @@ class Game_Interpreter
 end
 
 #=============================================================================
-# ○ POP
-#=============================================================================
-module ESAS
-  #--------------------------------------------------------------------------
-  # ● 每帧更新
-  #--------------------------------------------------------------------------
-  @sprites_pop = []
-  def self.update_pops
-    return if @sprites_pop.empty?
-    tmp = []
-    @sprites_pop.each do |s|
-      s.update
-      next s.dispose if s.finish
-      tmp.push(s)
-    end
-    @sprites_pop = tmp
-  end
-  #--------------------------------------------------------------------------
-  # ● 新生成一个POP
-  #--------------------------------------------------------------------------
-  def self.new_pop(params = {})
-    # :text => 绘制文本
-    # :cid => 绑定角色的ID
-    # :type => 显示模式
-    # :screen => 1 时绑定到屏幕上，否则绑定到地图上
-    # :w / :h => 精灵宽度高度
-    # :size => 字体大小
-    # :c => 字体颜色
-    if params.is_a?(String)
-      params = EAGLE_COMMON.parse_tags(params)
-      a = [:cid, :w, :h, :size, :c, :screen]
-      a.each { |sym| params[sym] = params[sym].to_i if params[sym] }
-      params[:type] = params[:type].to_sym if params[:type]
-    end
-    s = Sprite_Pop.new(params)
-    s.reset
-    @sprites_pop.push(s)
-  end
-  #--------------------------------------------------------------------------
-  # ● POP精灵
-  #--------------------------------------------------------------------------
-  class Sprite_Pop < Sprite
-    attr_reader :finish
-    #--------------------------------------------------------------------------
-    # ● 初始化
-    #--------------------------------------------------------------------------
-    def initialize(params)
-      super(nil)
-      @x0 = @y0 = @dx = @dy = 0
-      @params = params
-      process_params
-      @fiber = Fiber.new { run }
-      @finish = false
-    end
-    #--------------------------------------------------------------------------
-    # ● 处理参数
-    #--------------------------------------------------------------------------
-    def process_params
-      @params[:type] ||= :float
-      @params[:chara] = ESAS.get_chara(@params[:cid])
-      @params[:chara_s] = ESAS.get_chara_sprite(@params[:cid])
-    end
-    #--------------------------------------------------------------------------
-    # ● 绑定到地图上？
-    #--------------------------------------------------------------------------
-    def map?
-      @params[:screen] != 1
-    end
-    #--------------------------------------------------------------------------
-    # ● 释放
-    #--------------------------------------------------------------------------
-    def dispose
-      self.bitmap.dispose
-      super
-    end
-    #--------------------------------------------------------------------------
-    # ● 重置
-    #--------------------------------------------------------------------------
-    def reset
-      self.visible = false
-      self.bitmap.dispose if self.bitmap
-      w = @params[:w] || 64
-      h = @params[:h] || 18
-      self.bitmap = Bitmap.new(w, h)
-      redraw
-      reset_position
-    end
-    #--------------------------------------------------------------------------
-    # ● 重绘
-    #--------------------------------------------------------------------------
-    def redraw
-      t = @params[:text]
-      #self.bitmap.font.name =
-      self.bitmap.font.size = @params[:size] || @params[:h] || 18
-      self.bitmap.font.color = text_color( @params[:c] || 0 )
-      self.bitmap.font.shadow = EAGLE_COMMON.check_bool(@params[:shadow], true)
-      self.bitmap.font.outline = EAGLE_COMMON.check_bool(@params[:outline], false)
-      self.bitmap.draw_text(0,0,self.width,self.height, t, 1)
-    end
-    #--------------------------------------------------------------------------
-    # * Get Text Color
-    #     n : Text color number (0..31)
-    #--------------------------------------------------------------------------
-    def text_color(n)
-      Cache.system("Window").get_pixel(64 + (n % 8) * 8, 96 + (n / 8) * 8)
-    end
-    #--------------------------------------------------------------------------
-    # ● 重设初始位置
-    #--------------------------------------------------------------------------
-    def reset_position
-      self.ox = self.width / 2
-      self.oy = self.height / 2
-      # 初始位置为行走图中心
-      if c = @params[:chara]  # 该位置为行走图底部中点
-        @x0 = c.screen_x
-        @y0 = c.screen_y
-      end
-      if s = @params[:chara_s] # 上移行走图的一半高度
-        @y0 -= s.ch / 2
-      else
-        @y0 -= 16
-      end
-      self.z = 300
-      # 如果绑定到地图上，就存储当前的地图xy
-      if map?
-        @x0_map = $game_map.display_x
-        @y0_map = $game_map.display_y
-      end
-    end
-    #--------------------------------------------------------------------------
-    # ● 每帧更新
-    #--------------------------------------------------------------------------
-    def update
-      super
-      @fiber.resume if @fiber
-      update_position
-    end
-    #--------------------------------------------------------------------------
-    # ● 更新位置
-    #--------------------------------------------------------------------------
-    def update_position
-      _x = _y = 0
-      if map?
-        _x = (@x0_map - $game_map.display_x) * 32
-        _y = (@y0_map - $game_map.display_y) * 32
-      end
-      self.x = @x0 + _x + @dx
-      self.y = @y0 + _y + @dy
-      self.visible = true
-    end
-    #--------------------------------------------------------------------------
-    # ● 开始
-    #--------------------------------------------------------------------------
-    def run
-      begin
-        self.method("run_#{@params[:type]}").call
-      rescue
-        p "使用ESAS的POP时发生错误！"
-        p "- 报错信息：#{$!}"
-        p "- 请检查 :type 参数是否正确！已经用默认弹跳默认进行替换"
-        run_float
-      end
-      self.opacity = 0
-      @finish = true
-    end
-    #--------------------------------------------------------------------------
-    # ● 开始 - 浮现
-    #--------------------------------------------------------------------------
-    def run_float
-      dy0 = 0
-      dy1 = -24
-      d = (@params[:chara_s] ? @params[:chara_s].ch / 2 - 16 : 0)
-      t = 30
-      t.times do |i|
-        per = easeSimple(i * 1.0 / t)
-        @dy = -d + dy0 + (dy1 - dy0) * per
-        Fiber.yield
-      end
-      20.times { |i| Fiber.yield }
-      30.times { self.opacity -= 7; Fiber.yield }
-    end
-    def easeSimple(v)
-      1 - 2**(-10 * v)
-    end
-    #--------------------------------------------------------------------------
-    # ● 开始 - 缩小
-    #--------------------------------------------------------------------------
-    def run_zoom1
-      d = (@params[:chara_s] ? @params[:chara_s].ch / 2 - 16 : 0)
-      @dy = -24 - d
-      update_position
-      t = 30
-      t.times do |i|
-        per = easeOutBack(i * 1.0 / t)
-        self.zoom_x = self.zoom_y = 2.0 + (1.0 - 2.0) * per
-        Fiber.yield
-      end
-      20.times { Fiber.yield }
-      t.times do |i| 
-        per = easeOutBack(i * 1.0 / t)
-        self.zoom_x = self.zoom_y = 1.0 + (0.0 - 1.0) * per
-        self.opacity -= 7
-        Fiber.yield
-      end
-    end
-    #--------------------------------------------------------------------------
-    # ● 开始 - 上浮放大
-    #--------------------------------------------------------------------------
-    def run_zoom2
-      dy0 = 24
-      dy1 = -24
-      d = (@params[:chara_s] ? @params[:chara_s].ch / 2 - 16 : 0)
-      t = 30
-      t.times do |i|
-        per = easeOutBack(i * 1.0 / t)
-        self.zoom_x = self.zoom_y = 0 + (1.0 - 0) * per
-        @dy = -d + dy0 + (dy1 - dy0) * per
-        Fiber.yield
-      end
-      20.times { Fiber.yield }
-      t.times do |i| 
-        per = easeInBack(i * 1.0 / t)
-        self.zoom_x = self.zoom_y = 1.0 - 1.0 * per
-        @dy = -d + dy1 + (dy0 - dy1) * per
-        self.opacity -= 7
-        Fiber.yield
-      end
-    end
-    def easeInBack(x)
-      c1 = 1.70158
-      c3 = c1 + 1
-      return c3 * x * x * x - c1 * x * x
-    end
-    def easeOutBack(v)
-      return 0 if v == 0
-      return 1 if v == 1
-      c1 = 1.70158
-      c3 = c1 + 1
-      return 1 + c3 * (v - 1)**3 + c1 * (v - 1)**2
-    end
-    #--------------------------------------------------------------------------
-    # ● 开始 - 弹跳
-    #--------------------------------------------------------------------------
-    def run_bounce
-      vx = rand * 2 - 1
-      vy = -2 - rand(2)
-      f = false
-      # 反弹线的y值
-      zero_line = @params[:chara_s] ? @params[:chara_s].ch / 2 : 16
-      90.times do |i|
-        @dx += vx
-        @dy += vy
-        vy += 1 if i % 4 == 0
-        Fiber.yield
-        if (@dy >= zero_line) && f == false
-          vy = (-vy * 0.5).to_i
-          f = true
-        end
-        if (vy == 0)
-          f = false
-          vx = 0 if @dy >= zero_line
-        end
-      end
-      30.times { self.opacity -= 7; Fiber.yield }
-    end
-  end # end of class Sprite_Pop
-end
-
-#=============================================================================
 # ○ 其它
 #=============================================================================
 class Game_CharacterBase
@@ -2016,8 +1712,9 @@ class Sprite_Character < Sprite_Base
       if @character.tmp[:hp_draw] != @character.hp
         @eagle_sprite_hp.opacity = 200
         redraw_eagle_hp
+        return
       end
-      if @character.hp <= 0 || @character.esas_empty?
+      if @character.hp.nil? || @character.hp < 0 || @character.esas_empty?
         @character.hp = nil
         dispose_eagle_hp
       end
@@ -2028,8 +1725,10 @@ class Sprite_Character < Sprite_Base
     @character.tmp[:hp_max] = @character.hp if @character.tmp[:hp_max].nil?
     @character.tmp[:hp_draw] = @character.hp
     @eagle_sprite_hp = ::Sprite.new(viewport)
-    @eagle_sprite_hp.bitmap = Bitmap.new(@cw, 4)
-    @eagle_sprite_hp.ox = @eagle_sprite_hp.width / 2
+    cw = @cw || 32
+    @eagle_sprite_hp.bitmap = Bitmap.new(cw, 4)
+    # 兼容【大体型事件】
+    @eagle_sprite_hp.ox = self.ox
     @eagle_sprite_hp.oy = 0
     @eagle_sprite_hp.opacity = 0
     redraw_eagle_hp

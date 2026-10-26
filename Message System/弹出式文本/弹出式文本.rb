@@ -4,9 +4,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-缓动函数 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PopText"] = "1.1.3"
+$imported["EAGLE-PopText"] = "1.1.4"
 #==============================================================================
-# - 2026.10.17.16 修复弹跳报错的bug
+# - 2026.10.25.10 修复移动至鼠标时报错的bug
 #==============================================================================
 module POP_TEXT
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -662,8 +662,8 @@ COMMENT_POP_ITEM = /^POPITEM *?\|(.*)$/i
       dx1 = dy1 = i = 0
       t = 20
       while self.opacity > 0
-        _dx1 = MOUSE_EX.x - self.x + @dx + 8
-        _dy1 = MOUSE_EX.y - self.y + @dy + 8
+        _dx1 = [[(MOUSE_EX.x - self.x), Graphics.width].min, -Graphics.width].max + @dx + 8
+        _dy1 = [[(MOUSE_EX.y - self.y), Graphics.height].min,-Graphics.height].max + @dy + 8
         if dx1 != _dx1 or dy1 != _dy1
           i = 0
           dx0 = @dx
