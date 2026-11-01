@@ -4,9 +4,9 @@
 # ※ 推荐与【按键扩展】【鼠标扩展】【自由显示光标】一起使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PickUpEvent"] = "1.0.1"
+$imported["EAGLE-PickUpEvent"] = "1.0.2"
 #==============================================================================
-# - 2026.10.24.17 修复不使用鼠标即报错的bug
+# - 2026.10.31.15 增强可扩展性，同一帧内不连续处理放下和拿起
 #==============================================================================
 # - 本插件新增了搬运事件的功能。
 #=============================================================================
@@ -28,7 +28,7 @@ module PICKUP_EVENT
 #
 # 2.2 使用鼠标开始搬动：（需使用【鼠标扩展 by老鹰】）
 #
-#     鼠标放到该事件的图像上，长按鼠标左键，将搬起该事件。
+#     鼠标放到该事件的图像上，按鼠标右键，将搬起该事件。
 #
 #-----------------------------------------------
 # 3.1 使用键盘放下事件：
@@ -40,9 +40,9 @@ module PICKUP_EVENT
 #
 # 3.2 使用鼠标放下事件：
 #
-#     长按鼠标左键将保持搬动状态，松开将尝试放下事件：
+#     按鼠标右键将尝试放下事件：
 #
-#       如果放置失败，将重置事件位置。
+#       如果放置失败，可以设置重置事件位置，也可以同键盘处理保持一致。
 #
 #-----------------------------------------------------------
 # ○ 注意
@@ -109,13 +109,19 @@ module PICKUP_EVENT
   
 # 鼠标按键 - 搬起事件
   def self.mouse_pickup?
-    MOUSE_EX.press?(:ML, 5)
+    MOUSE_EX.up?(:MR)
+    #MOUSE_EX.press?(:ML, 5)
   end
   
 # 鼠标按键 - 放下事件
   def self.mouse_drop?
-    !MOUSE_EX.press?(:ML, 5)
+    MOUSE_EX.up?(:MR)
+    #!MOUSE_EX.press?(:ML, 5)
   end
+  
+# 如果鼠标放下事件失败，是否重置搬动，并把事件放回原位置
+#  true - 自动放回原位置   false - 仅播放警告音效
+  FLAG_RESET_MOUSE_FAIL = false
   
 # 获取鼠标所在地图格子的RGSS坐标
   def self.mouse_map_xy
@@ -145,7 +151,7 @@ module PICKUP_EVENT
     elsif f == false
       # 已经拿取了其它事件，返回
       return 
-    elsif f == nil
+    elsif f == nil and @flag_process_drop == false
       # 还没有拿取任何事件，可以尝试拿取
       f3 = pickup_key?(s, e)
       if f3 > 0
@@ -156,9 +162,17 @@ module PICKUP_EVENT
   end
   
   # 判定当前事件是否已经拿起
-  def self.pickup_event?(e)
-    return nil if @event == nil 
+  #   传入 nil 时代表是否有任意事件被拿起
+  def self.pickup_event?(e=nil)
+    return nil if @event == nil
+    return true if e == nil and @event != nil
     @event == e
+  end
+  
+  # 重置flag：放下事件
+  #  在同一帧内，如果已经成功处理了放下事件，不能再同时处理拿起事件
+  def self.reset_drop_flag
+    @flag_process_drop = false
   end
   
   # 判定是否能放下事件
@@ -252,6 +266,7 @@ module PICKUP_EVENT
     when 2 # 鼠标选择
     end
     reset_params
+    @flag_process_drop = true
   end
   
   def self.drop_fail
@@ -259,8 +274,12 @@ module PICKUP_EVENT
     when 1 # 键盘按键
       Sound.play_buzzer
     when 2 # 鼠标选择
-      event_reset_position
-      reset_params
+      if PICKUP_EVENT::FLAG_RESET_MOUSE_FAIL
+        event_reset_position
+        reset_params
+      else
+        Sound.play_buzzer
+      end
     end
   end
   
@@ -306,6 +325,15 @@ module PICKUP_EVENT
 end
 
 class Game_Map
+  #--------------------------------------------------------------------------
+  # ● 更新画面
+  #     main : 事件解释器更新的标志
+  #--------------------------------------------------------------------------
+  alias eagle_pickup_update update
+  def update(main = false)
+    PICKUP_EVENT.reset_drop_flag
+    eagle_pickup_update(main)
+  end
   #--------------------------------------------------------------------------
   # ● 检测／设置启动中的地图事件
   #--------------------------------------------------------------------------
