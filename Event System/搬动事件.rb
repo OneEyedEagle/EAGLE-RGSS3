@@ -4,9 +4,9 @@
 # ※ 推荐与【按键扩展】【鼠标扩展】【自由显示光标】一起使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PickUpEvent"] = "1.0.2"
+$imported["EAGLE-PickUpEvent"] = "1.1.0"
 #==============================================================================
-# - 2026.10.31.15 增强可扩展性，同一帧内不连续处理放下和拿起
+# - 2026.11.13.22 优化搬运表现，增加显示在玩家头顶的设置
 #==============================================================================
 # - 本插件新增了搬运事件的功能。
 #=============================================================================
@@ -95,6 +95,10 @@ module PICKUP_EVENT
   def self.keyboard_drop?
     keyboard_pickup?  # 与搬起的按键一致
   end
+
+# 键盘拿起事件时，被拿起的事件是在玩家头顶还是在玩家面前一格
+#  true - 玩家头顶   false - 玩家面前一格
+  FLAG_KEYBOARD_EVENT_POS = false
   
 #-----------------------------------------------------------
 # 【鼠标相关】
@@ -141,11 +145,11 @@ module PICKUP_EVENT
       if @params[:last_x] != _x or @params[:last_y] != _y
         @params[:last_x] = _x
         @params[:last_y] = _y
-        move_event(s, e, _x, _y)
+        move_event_when_pickup(s, e)
         # 检查是否能放下
         f2 = drop_event?(_x, _y)
-        update_help_text(f2)
         @params[:last_drop_result] = f2
+        update_help_text
       end
       drop_event(@params[:last_drop_result]) if drop_key?(s) 
     elsif f == false
@@ -155,12 +159,14 @@ module PICKUP_EVENT
       # 还没有拿取任何事件，可以尝试拿取
       f3 = pickup_key?(s, e)
       if f3 > 0
-        pickup_event(e)
+        @params ||= {}
         @params[:key] = f3
+        pickup_event(e)
       end
     end
   end
   
+  #--------------------------------------------------------------------------
   # 判定当前事件是否已经拿起
   #   传入 nil 时代表是否有任意事件被拿起
   def self.pickup_event?(e=nil)
@@ -169,12 +175,14 @@ module PICKUP_EVENT
     @event == e
   end
   
+  #--------------------------------------------------------------------------
   # 重置flag：放下事件
   #  在同一帧内，如果已经成功处理了放下事件，不能再同时处理拿起事件
   def self.reset_drop_flag
     @flag_process_drop = false
   end
   
+  #--------------------------------------------------------------------------
   # 判定是否能放下事件
   def self.drop_event?(_x, _y)
     return false if !map_xy_empty?(_x, _y)
@@ -187,6 +195,7 @@ module PICKUP_EVENT
     end
     return true
   end
+  
   # 地图上的指定位置可以放置？
   def self.map_xy_empty?(_x, _y)
     return false unless $game_map.valid?(_x, _y)
@@ -196,7 +205,8 @@ module PICKUP_EVENT
     return true
   end
   
-  # 获取事件移动的落位处
+  #--------------------------------------------------------------------------
+  # 获取事件的落位处
   def self.destination_xy
     case @params[:key]
     when 1 # 键盘按键
@@ -205,38 +215,77 @@ module PICKUP_EVENT
       return mouse_map_xy
     end
   end
+  
   # 获取玩家面前一格
   def self.player_front_xy
-    x = $game_map.round_x_with_direction($game_player.x, $game_player.direction)
-    y = $game_map.round_y_with_direction($game_player.y, $game_player.direction)
+    x = $game_map.round_x_with_direction($game_player.real_x, $game_player.direction)
+    y = $game_map.round_y_with_direction($game_player.real_y, $game_player.direction)
     return x, y
   end
   
+  #--------------------------------------------------------------------------
+  # 移动事件
+  def self.move_event_when_pickup(s, e)
+    case @params[:key]
+    when 1 # 键盘按键
+      if @params[:on_head] == true
+        # 玩家头顶
+        pl = $game_player
+        e.moveto_pickup(pl.x, pl.y, pl.real_x, pl.real_y)
+      else
+        # 玩家面前
+        e.moveto(@params[:last_x], @params[:last_y])
+      end
+    when 2 # 鼠标选择
+      e.moveto(@params[:last_x], @params[:last_y])
+    end
+    s.update_position
+  end
+  
+  # 每次移动位置后，显示是否能放置
+  def self.update_help_text
+    # @params[:last_drop_result] 存储了当前是否能放下
+    f = @params[:last_drop_result]
+    if @params[:key] == 1 and @params[:on_head] == true  # 事件显示在玩家头顶时
+      if $imported["EAGLE-Cursor"]
+        CURSOR.set_map_xy(PICKUP_EVENT::CURSOR_ID, @params[:last_x], @params[:last_y], 
+          {:map=>true, :text=>f ? "可放置" : "空间不足",:d=>12,:ins=>true})
+      end
+      return
+    end
+    if $imported["EAGLE-Cursor"]
+      CURSOR.set_map_chara(PICKUP_EVENT::CURSOR_ID, @event.id, {:map=>true,
+        :text=>f ? "可放置" : "空间不足",:d=>12,:ins=>true})
+    end
+  end
+
+  #--------------------------------------------------------------------------
   # 满足拿取的按键要求？
   def self.pickup_key?(s, e)
     return 1 if keyboard_cond?(s, e) and keyboard_pickup?
     return 2 if mouse_cond?(s, e)    and mouse_pickup?
     return 0
   end
+  
   # 检查指定事件是否在玩家面前
   def self.event_in_front_of_player?(e)
     front_x, front_y = player_front_xy
     e.pos?(front_x, front_y)
   end
 
+  #--------------------------------------------------------------------------
   # 满足放下的按键要求？
   def self.drop_key?(s)
     return true if @params[:key] == 1 and keyboard_drop?
     return true if @params[:key] == 2 and mouse_drop?
     return false
   end
-
+  
   #--------------------------------------------------------------------------
   # ● 处理拿起事件
   #--------------------------------------------------------------------------
   def self.pickup_event(e)
     @event = e
-    @params ||= {}
     @params[:init_x] = e.x
     @params[:init_y] = e.y
     @params[:init_through] = @event.through
@@ -248,6 +297,14 @@ module PICKUP_EVENT
   end
   
   def self.pickup_success
+    case @params[:key]
+    when 1 # 键盘按键
+      @params[:on_head] = PICKUP_EVENT::FLAG_KEYBOARD_EVENT_POS
+      if @params[:on_head]
+        @event.pickup_dy = -$game_player.sprite_height
+      end
+    when 2 # 鼠标选择
+    end
     if $imported["EAGLE-Cursor"]
       CURSOR.new(PICKUP_EVENT::CURSOR_ID, {:pic=>PICKUP_EVENT::CURSOR_PIC})
     end
@@ -263,6 +320,8 @@ module PICKUP_EVENT
   def self.drop_success
     case @params[:key]
     when 1 # 键盘按键
+      @event.moveto(@params[:last_x], @params[:last_y])
+      @event.pickup_dy = 0
     when 2 # 鼠标选择
     end
     reset_params
@@ -304,24 +363,6 @@ module PICKUP_EVENT
     event_reset_position
     reset_params
   end
-  
-  #--------------------------------------------------------------------------
-  # ● 处理移动事件
-  #--------------------------------------------------------------------------
-  def self.move_event(s, e, _x, _y)
-    e.moveto(_x, _y)
-    s.update_position
-  end
-  
-  #--------------------------------------------------------------------------
-  # ● 每次移动位置后，显示是否能放置
-  #--------------------------------------------------------------------------
-  def self.update_help_text(drop_success=true)
-    if $imported["EAGLE-Cursor"]
-      CURSOR.set_map_chara(PICKUP_EVENT::CURSOR_ID, @event.id, {:map=>true,
-        :text=>drop_success ? "可放置" : "空间不足",:d=>12,:ins=>true})
-    end
-  end
 end
 
 class Game_Map
@@ -342,6 +383,33 @@ class Game_Map
     event = eagle_pickup_setup_starting_map_event
     PICKUP_EVENT.force_drop if event
     event
+  end
+end
+
+class Game_CharacterBase
+  attr_accessor   :sprite_width, :sprite_height, :pickup_dx, :pickup_dy
+  #--------------------------------------------------------------------------
+  # ● 初始化公有成员变量
+  #--------------------------------------------------------------------------
+  alias eagle_pickup_cb_init_public_members init_public_members
+  def init_public_members
+    eagle_pickup_cb_init_public_members
+    @sprite_width = 0
+    @sprite_height = 0
+    @pickup_dx = 0
+    @pickup_dy = 0
+  end
+  #--------------------------------------------------------------------------
+  # ● 移动到指定位置
+  #--------------------------------------------------------------------------
+  def moveto_pickup(x, y, real_x, real_y)
+    @x = x % $game_map.width
+    @y = y % $game_map.height
+    @real_x = real_x
+    @real_y = real_y
+    @prelock_direction = 0
+    straighten
+    update_bush_depth
   end
 end
 
@@ -374,6 +442,24 @@ end
 
 class Sprite_Character < Sprite_Base
   attr_reader  :character
+  #--------------------------------------------------------------------------
+  # ● 设置角色的位图
+  #--------------------------------------------------------------------------
+  alias eagle_pickup_set_character_bitmap set_character_bitmap
+  def set_character_bitmap
+    eagle_pickup_set_character_bitmap
+    @character.sprite_width  = @cw
+    @character.sprite_height = @ch
+  end
+  #--------------------------------------------------------------------------
+  # ● 更新位置
+  #--------------------------------------------------------------------------
+  alias eagle_pickup_update_position update_position
+  def update_position
+    eagle_pickup_update_position
+    self.x += @character.pickup_dx
+    self.y += @character.pickup_dy
+  end
   #--------------------------------------------------------------------------
   # ● 更新其它
   #--------------------------------------------------------------------------
