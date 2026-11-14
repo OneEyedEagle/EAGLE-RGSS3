@@ -5,9 +5,9 @@
 # ※ 本插件部分功能需要 RGD(> 1.5.0) 才能正常使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEX"] = "1.3.0"
+$imported["EAGLE-MouseEX"] = "1.3.1"
 #=============================================================================
-# - 2026.9.28.12 新增获取鼠标的地图上坐标
+# - 2026.11.14.11 修复精灵判定像素点是否有像素失败的bug
 #=============================================================================
 # - 本插件新增了一系列鼠标控制的方法
 # - 按照 ○ 标志，请逐项阅读各项的注释，并对标记了【常量】的项进行必要的修改
@@ -220,7 +220,9 @@ class Sprite
     end
     # 边界判定  src_rect - 该矩形内的位图为精灵 (0,0) 处显示位图
     return false if rx < 0 || ry < 0 || rx > width || ry > height
-    return self.bitmap.get_pixel(rx, ry).alpha != 0 if _pixel
+    if _pixel
+      return self.bitmap.get_pixel(rx+self.src_rect.x, ry+self.src_rect.y).alpha != 0 
+    end
     return true
   end
 end

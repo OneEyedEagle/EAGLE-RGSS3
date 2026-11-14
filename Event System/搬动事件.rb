@@ -4,9 +4,9 @@
 # ※ 推荐与【按键扩展】【鼠标扩展】【自由显示光标】一起使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PickUpEvent"] = "1.1.0"
+$imported["EAGLE-PickUpEvent"] = "1.1.1"
 #==============================================================================
-# - 2026.11.13.22 优化搬运表现，增加显示在玩家头顶的设置
+# - 2026.11.14.11 优化搬运表现，增加显示在玩家头顶的设置
 #==============================================================================
 # - 本插件新增了搬运事件的功能。
 #=============================================================================
@@ -98,7 +98,11 @@ module PICKUP_EVENT
 
 # 键盘拿起事件时，被拿起的事件是在玩家头顶还是在玩家面前一格
 #  true - 玩家头顶   false - 玩家面前一格
-  FLAG_KEYBOARD_EVENT_POS = false
+  FLAG_KEYBOARD_EVENT_POS = true
+
+# 如果 FLAG_KEYBOARD_EVENT_POS 为 true ，键盘搬动事件时显示在玩家头顶，
+#  则此处设置事件额外增加的 z 值，确保能显示在其它事件上方
+  ON_HEAD_DZ = 100
   
 #-----------------------------------------------------------
 # 【鼠标相关】
@@ -302,6 +306,7 @@ module PICKUP_EVENT
       @params[:on_head] = PICKUP_EVENT::FLAG_KEYBOARD_EVENT_POS
       if @params[:on_head]
         @event.pickup_dy = -$game_player.sprite_height
+        @event.pickup_dz = PICKUP_EVENT::ON_HEAD_DZ
       end
     when 2 # 鼠标选择
     end
@@ -322,6 +327,7 @@ module PICKUP_EVENT
     when 1 # 键盘按键
       @event.moveto(@params[:last_x], @params[:last_y])
       @event.pickup_dy = 0
+      @event.pickup_dz = 0
     when 2 # 鼠标选择
     end
     reset_params
@@ -387,7 +393,7 @@ class Game_Map
 end
 
 class Game_CharacterBase
-  attr_accessor   :sprite_width, :sprite_height, :pickup_dx, :pickup_dy
+  attr_accessor :sprite_width, :sprite_height, :pickup_dx, :pickup_dy, :pickup_dz
   #--------------------------------------------------------------------------
   # ● 初始化公有成员变量
   #--------------------------------------------------------------------------
@@ -398,6 +404,7 @@ class Game_CharacterBase
     @sprite_height = 0
     @pickup_dx = 0
     @pickup_dy = 0
+    @pickup_dz = 0
   end
   #--------------------------------------------------------------------------
   # ● 移动到指定位置
@@ -459,6 +466,7 @@ class Sprite_Character < Sprite_Base
     eagle_pickup_update_position
     self.x += @character.pickup_dx
     self.y += @character.pickup_dy
+    self.z += @character.pickup_dz
   end
   #--------------------------------------------------------------------------
   # ● 更新其它

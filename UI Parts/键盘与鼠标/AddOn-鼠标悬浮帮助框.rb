@@ -6,9 +6,9 @@
 #  【组件-位图绘制转义符文本 by老鹰】与【组件-位图绘制窗口皮肤 by老鹰】之下
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-MouseEXHelp"] = "1.0.0"
+$imported["EAGLE-MouseEXHelp"] = "1.0.1"
 #=============================================================================
-# - 2026.11.1.1 4
+# - 2026.11.14.11 修复地图事件无法显示文本的bug
 #=============================================================================
 # - 本插件新增了全局显示在鼠标指针旁的帮助文本
 #=============================================================================
@@ -436,7 +436,7 @@ module MOUSE_OBJECT
   # ● 更新鼠标帮助文本
   #--------------------------------------------------------------------------
   def update_mouse_help_text
-    return if self.is_a?(Sprite) and !self.mouse_in?
+    return if self.is_a?(Sprite) and !self.mouse_in?(true, false)
     return if self.is_a?(Window) and !self.mouse_in?
     data = get_mouse_help(MOUSE_EX.x, MOUSE_EX.y)
     if data
@@ -459,8 +459,8 @@ module MOUSE_OBJECT
     @mouse_help.each do |a|
       r = a[1]
       return a if r == nil
-      next if mouse_x < r.x || mouse_x > r.x + r.width-1 
-      next if mouse_y < r.y || mouse_y > r.y + r.height-1
+      next if rx < r.x || rx > r.x + r.width-1 
+      next if ry < r.y || ry > r.y + r.height-1
       return a
     end
     return nil
@@ -526,7 +526,7 @@ end
 # ○ Game_Event
 #===============================================================================
 class Game_Event < Game_Character
-  attr_reader   :mouse_help
+  attr_accessor   :mouse_help, :mouse_help_last
   #--------------------------------------------------------------------------
   # ● 设置事件页的设置
   #--------------------------------------------------------------------------
@@ -537,6 +537,7 @@ class Game_Event < Game_Character
     t = EAGLE_COMMON.event_comment_head(@list, true)
     t.scan(MOUSE_EX::REGEXP_MAP_CHARA_HELP).each do |ps|
       @mouse_help = ps[0]
+      @mouse_help_last = nil
     end
   end
 end
@@ -548,7 +549,10 @@ class Sprite_Character < Sprite_Base
   def update_other
     eagle_mouse_help_text_update_other
     if @character && @character.is_a?(Game_Event)
-      set_mouse_help(@character.mouse_help)
+      if @character.mouse_help_last != @character.mouse_help
+        @character.mouse_help_last = @character.mouse_help
+        set_mouse_help(@character.mouse_help)
+      end
     end
   end
 end
