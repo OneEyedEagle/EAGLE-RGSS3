@@ -4,9 +4,9 @@
 # ※ 推荐与【按键扩展】【鼠标扩展】【自由显示光标】一起使用
 #==============================================================================
 $imported ||= {}
-$imported["EAGLE-PickUpEvent"] = "1.1.1"
+$imported["EAGLE-PickUpEvent"] = "1.1.2"
 #==============================================================================
-# - 2026.11.14.11 优化搬运表现，增加显示在玩家头顶的设置
+# - 2026.11.14.22 新增参数设置
 #==============================================================================
 # - 本插件新增了搬运事件的功能。
 #=============================================================================
@@ -16,9 +16,24 @@ module PICKUP_EVENT
 # ○ 使用方式
 #-----------------------------------------------------------
 # 
-# 1. 对于能够搬动的事件，需要在其事件页的开头增加一个 注释 指令，并在其中填入：
+# 1.1 对于能够搬动的事件，需要在其事件页的开头增加一个 注释 指令，并在其中填入：
 #
 #       <可搬动>
+#
+# 1.2 如果需要设置一些特别的参数，可以这样写：
+#
+#       <可搬动>{参数A=值1 参数B=值2...}
+#
+#     其中可以设置的参数有：
+#
+#        head=1   →  用键盘搬运时，被搬动的事件显示在玩家头顶。
+#                     若未设置，则按 FLAG_KEYBOARD_EVENT_POS 的设置。
+#
+#        cond=值|值|...  → 设置放下事件的条件，多个条件用 | 符号隔开。
+#                     具体条件请自行在 def self.drop_event_ex_cond? 方法中设置。
+#                     已设置的两个条件可用于参考：
+#                        cond=1    → 只能放置在 1号区域
+#                        cond=-1   → 不能放置在 1号区域
 #
 #-----------------------------------------------
 # 2.1 使用键盘开始搬动：
@@ -69,7 +84,7 @@ module PICKUP_EVENT
 #
 # 【常量】匹配注释的正则
 #  （事件页开头的注释中，需要有这个文本，才能被搬动）
-  COMMENT_PICKUP = /<可搬动>/mi
+  COMMENT_PICKUP = /<可搬动>({(.*?)})?/mi
   
 #-----------------------------------------------------------
 # 【键盘相关】
@@ -98,7 +113,7 @@ module PICKUP_EVENT
 
 # 键盘拿起事件时，被拿起的事件是在玩家头顶还是在玩家面前一格
 #  true - 玩家头顶   false - 玩家面前一格
-  FLAG_KEYBOARD_EVENT_POS = true
+  FLAG_KEYBOARD_EVENT_POS = false
 
 # 如果 FLAG_KEYBOARD_EVENT_POS 为 true ，键盘搬动事件时显示在玩家头顶，
 #  则此处设置事件额外增加的 z 值，确保能显示在其它事件上方
@@ -136,6 +151,29 @@ module PICKUP_EVENT
     return MOUSE_EX.map_x, MOUSE_EX.map_y
   end
 
+#-----------------------------------------------------------
+# 【放置条件自定义】
+
+  # 判定事件是否能放下（扩展用）
+  def self.drop_event_ex?(s, e, _x, _y)
+    # s 是当前正在拿起的事件所对应的 Sprite_Character
+    # e 是当前正在拿起的事件所对应的 Game_Event
+    # (_x, _y) 是计划放置的地图坐标
+    return true
+  end
+  
+  # 针对预设的参数中的 cond=条件值 进行判定
+  #  其中 c 是已经分割后的单个条件值
+  def self.drop_event_ex_cond?(s, e, _x, _y, c)
+    case c
+    when "-1"  # 不能放置在1号区域上
+      return false if $game_map.region_id(_x, _y) == 1
+    when "1"   # 只能放置在1号区域上
+      return false if $game_map.region_id(_x, _y) != 1
+    end
+    return true
+  end
+  
 #=============================================================================
   
   #--------------------------------------------------------------------------
@@ -151,9 +189,9 @@ module PICKUP_EVENT
         @params[:last_y] = _y
         move_event_when_pickup(s, e)
         # 检查是否能放下
-        f2 = drop_event?(_x, _y)
+        f2 = drop_event?(s, e, _x, _y)
         @params[:last_drop_result] = f2
-        update_help_text
+        update_help_text(s, e)
       end
       drop_event(@params[:last_drop_result]) if drop_key?(s) 
     elsif f == false
@@ -188,14 +226,20 @@ module PICKUP_EVENT
   
   #--------------------------------------------------------------------------
   # 判定是否能放下事件
-  def self.drop_event?(_x, _y)
+  def self.drop_event?(s, e, _x, _y)
     return false if !map_xy_empty?(_x, _y)
     if $imported["EAGLE-BigEvent"]
-      @event.eagle_pos.each do |xy|
+      e.eagle_pos.each do |xy|
         _x2 = _x + xy[0]
         _y2 = _y + xy[1]
         return false if !map_xy_empty?(_x2, _y2)
       end
+    end
+    return false if !drop_event_ex?(s, e, _x, _y)
+    if e.params_pickup[:cond]
+      e.params_pickup[:cond].each { |c| 
+        return false if !drop_event_ex_cond?(s, e, _x, _y, c)
+      }
     end
     return true
   end
@@ -204,8 +248,8 @@ module PICKUP_EVENT
   def self.map_xy_empty?(_x, _y)
     return false unless $game_map.valid?(_x, _y)
     return false if !$game_map.passable?(_x, _y, 2)
-    return false if $game_map.events_xy_nt(_x, _y).any? { |e| 
-      e != @event and e.normal_priority? }
+    return false if @params[:init_through] == false and 
+      $game_map.events_xy_nt(_x, _y).any?{|e| e != @event and e.normal_priority?}
     return true
   end
   
@@ -247,19 +291,19 @@ module PICKUP_EVENT
   end
   
   # 每次移动位置后，显示是否能放置
-  def self.update_help_text
+  def self.update_help_text(s, e)
     # @params[:last_drop_result] 存储了当前是否能放下
     f = @params[:last_drop_result]
     if @params[:key] == 1 and @params[:on_head] == true  # 事件显示在玩家头顶时
       if $imported["EAGLE-Cursor"]
         CURSOR.set_map_xy(PICKUP_EVENT::CURSOR_ID, @params[:last_x], @params[:last_y], 
-          {:map=>true, :text=>f ? "可放置" : "空间不足",:d=>12,:ins=>true})
+          {:map=>true, :text=>f ? "可放置" : "不可放置",:d=>12,:ins=>true})
       end
       return
     end
     if $imported["EAGLE-Cursor"]
-      CURSOR.set_map_chara(PICKUP_EVENT::CURSOR_ID, @event.id, {:map=>true,
-        :text=>f ? "可放置" : "空间不足",:d=>12,:ins=>true})
+      CURSOR.set_map_chara(PICKUP_EVENT::CURSOR_ID, e.id, {:map=>true,
+        :text=>f ? "可放置" : "不可放置",:d=>12,:ins=>true})
     end
   end
 
@@ -292,7 +336,7 @@ module PICKUP_EVENT
     @event = e
     @params[:init_x] = e.x
     @params[:init_y] = e.y
-    @params[:init_through] = @event.through
+    @params[:init_through] = e.through
     @params[:last_x] = nil
     @params[:last_y] = nil
     @params[:last_drop_result] = false
@@ -303,7 +347,11 @@ module PICKUP_EVENT
   def self.pickup_success
     case @params[:key]
     when 1 # 键盘按键
-      @params[:on_head] = PICKUP_EVENT::FLAG_KEYBOARD_EVENT_POS
+      if @event.params_pickup[:head]
+        @params[:on_head] = @event.params_pickup[:head] == "1"
+      else
+        @params[:on_head] = PICKUP_EVENT::FLAG_KEYBOARD_EVENT_POS
+      end
       if @params[:on_head]
         @event.pickup_dy = -$game_player.sprite_height
         @event.pickup_dz = PICKUP_EVENT::ON_HEAD_DZ
@@ -421,7 +469,7 @@ class Game_CharacterBase
 end
 
 class Game_Event < Game_Character
-  attr_accessor :through, :flag_pickup
+  attr_accessor :through, :flag_pickup, :params_pickup
   #--------------------------------------------------------------------------
   # ● 初始化公有成员变量
   #--------------------------------------------------------------------------
@@ -429,6 +477,7 @@ class Game_Event < Game_Character
   def init_public_members
     eagle_pickup_init_public_members
     @flag_pickup = false
+    @params_pickup = {}
   end
   #--------------------------------------------------------------------------
   # ● 设置事件页的设置
@@ -438,6 +487,9 @@ class Game_Event < Game_Character
     eagle_pickup_setup_page_settings
     t = EAGLE_COMMON.event_comment_head(@list)
     @flag_pickup = true if t =~ PICKUP_EVENT::COMMENT_PICKUP
+    @params_pickup = EAGLE_COMMON.parse_tags($2) if $1
+    t2 = @params_pickup[:cond]
+    @params_pickup[:cond] = t2.split(/\|/) if t2
   end
   #--------------------------------------------------------------------------
   # ● 能够更新搬动？
